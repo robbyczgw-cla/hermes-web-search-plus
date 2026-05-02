@@ -2,8 +2,9 @@
 .env
 config.json
 
-# Cache
+# Cache / generated local reports
 .cache/
+eval/
 __pycache__/
 *.pyc
 *.pyo

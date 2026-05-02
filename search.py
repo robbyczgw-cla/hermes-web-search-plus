@@ -1580,6 +1580,150 @@ def _choose_tie_winner(query: str, winners: List[str], priority: List[str]) -> s
     return ordered_winners[idx]
 
 
+def _result_domain(url: str) -> str:
+    try:
+        netloc = urlparse(url or "").netloc.lower()
+        return netloc[4:] if netloc.startswith("www.") else netloc
+    except Exception:
+        return ""
+
+
+def _snippet_text(item: Dict[str, Any]) -> str:
+    return " ".join(
+        str(item.get(k) or "")
+        for k in ("description", "snippet", "content", "raw_content", "summary")
+    ).strip()
+
+
+def build_quality_report(
+    query: str,
+    result: Dict[str, Any],
+    routing_info: Dict[str, Any],
+    providers_considered: List[str],
+    eligible_providers: List[str],
+    cooldown_skips: List[Dict[str, Any]],
+    errors: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Build transparent search-quality diagnostics without changing results."""
+    results = result.get("results", []) or []
+    domains = [_result_domain(r.get("url", "")) for r in results]
+    domains = [d for d in domains if d]
+    unique_domains = sorted(set(domains))
+    duplicate_count = int(result.get("metadata", {}).get("dedup_count", 0) or 0)
+
+    short_snippets = 0
+    for item in results:
+        if len(_snippet_text(item)) < 40:
+            short_snippets += 1
+
+    extract_reasons: List[str] = []
+    confidence_level = routing_info.get("confidence_level") or "unknown"
+    confidence_score = routing_info.get("confidence")
+    if confidence_level == "low" or (confidence_score is not None and float(confidence_score or 0) < 0.4):
+        extract_reasons.append("low routing confidence")
+    if len(results) < 3:
+        extract_reasons.append("few search results")
+    if results and len(unique_domains) <= 1:
+        extract_reasons.append("low domain diversity")
+    if duplicate_count:
+        extract_reasons.append("duplicate results detected")
+    if results and short_snippets / max(len(results), 1) >= 0.5:
+        extract_reasons.append("thin snippets")
+
+    skipped = []
+    for item in cooldown_skips:
+        skipped.append({
+            "provider": item.get("provider"),
+            "reason": "cooldown",
+            "cooldown_remaining_seconds": item.get("cooldown_remaining_seconds"),
+        })
+    for err in errors:
+        skipped.append({
+            "provider": err.get("provider"),
+            "reason": "error",
+            "error": err.get("error"),
+        })
+
+    return {
+        "query": query,
+        "selected_provider": routing_info.get("provider") or result.get("provider"),
+        "routing_reason": routing_info.get("reason"),
+        "confidence": confidence_level,
+        "confidence_score": routing_info.get("confidence"),
+        "providers_considered": providers_considered,
+        "eligible_providers": eligible_providers,
+        "skipped_providers": skipped,
+        "result_count": len(results),
+        "domain_count": len(unique_domains),
+        "domains": unique_domains,
+        "domain_diversity": (len(unique_domains) / len(results)) if results else 0.0,
+        "duplicate_count": duplicate_count,
+        "thin_snippet_count": short_snippets,
+        "extract_recommended": bool(extract_reasons),
+        "extract_reasons": extract_reasons,
+        "scores": routing_info.get("scores", {}),
+    }
+
+
+def select_research_providers(
+    primary_provider: str,
+    provider_priority: List[str],
+    available_providers: set,
+    max_providers: int = 3,
+) -> List[str]:
+    """Pick a compact provider set for research mode."""
+    preferred = [primary_provider, "linkup", "tavily", "exa", "firecrawl", "brave", "serper", "you", "querit"]
+    ordered: List[str] = []
+    for provider in preferred + provider_priority:
+        if provider and provider in available_providers and provider not in ordered:
+            ordered.append(provider)
+        if len(ordered) >= max_providers:
+            break
+    return ordered
+
+
+def run_research_mode(
+    query: str,
+    research_providers: List[str],
+    execute_search,
+    extract_urls,
+    max_results: int,
+    max_extract_urls: int = 3,
+) -> Dict[str, Any]:
+    """Run broad search, deduplicate, then extract top sources for grounding."""
+    provider_results: List[Tuple[str, Dict[str, Any]]] = []
+    provider_errors: List[Dict[str, Any]] = []
+
+    for provider in research_providers:
+        try:
+            payload = execute_search(provider)
+            provider_results.append((provider, payload))
+        except Exception as e:
+            provider_errors.append({"provider": provider, "error": str(e)})
+
+    deduped, dedup_count = deduplicate_results_across_providers(provider_results, max_results)
+    urls = [r.get("url") for r in deduped if r.get("url")][:max_extract_urls]
+    extracted = extract_urls(urls) if urls else {"provider": None, "results": []}
+
+    return {
+        "mode": "research",
+        "provider": "research",
+        "query": query,
+        "results": deduped,
+        "source_summaries": extracted.get("results", []),
+        "routing": {
+            "providers_queried": [p for p, _ in provider_results],
+            "provider_errors": provider_errors,
+            "extraction_provider": extracted.get("provider"),
+        },
+        "metadata": {
+            "dedup_count": dedup_count,
+            "providers_merged": [p for p, _ in provider_results],
+            "extracted_url_count": len(urls),
+        },
+    }
+
+
 # =============================================================================
 # HTTP Client
 # =============================================================================
@@ -3340,6 +3484,28 @@ Full docs: See README.md and SKILL.md
     
     # Output
     parser.add_argument("--compact", action="store_true")
+    parser.add_argument(
+        "--quality-report",
+        action="store_true",
+        help="Attach transparent routing/result diagnostics to the JSON output"
+    )
+    parser.add_argument(
+        "--mode",
+        default="normal",
+        choices=["normal", "research"],
+        help="Search mode: normal single-provider route or research multi-provider + extraction"
+    )
+    parser.add_argument(
+        "--research-providers",
+        nargs="+",
+        help="Explicit provider list for --mode research"
+    )
+    parser.add_argument(
+        "--research-extract-count",
+        type=int,
+        default=3,
+        help="Number of top research-mode URLs to extract for grounding"
+    )
     
     # Caching options
     parser.add_argument(
@@ -3615,7 +3781,71 @@ Full docs: See README.md and SKILL.md
         "exa_verbosity": args.exa_verbosity,
         "category": args.category,
         "similar_url": args.similar_url,
+        "mode": args.mode,
+        "quality_report": args.quality_report,
     }
+
+    providers_considered = providers_to_try.copy()
+
+    if args.mode == "research":
+        available_research_providers = {
+            p for p in providers_to_try
+            if p not in disabled_providers and get_api_key(p, config) and not provider_in_cooldown(p)[0]
+        }
+        if provider and get_api_key(provider, config) and not provider_in_cooldown(provider)[0]:
+            available_research_providers.add(provider)
+        if args.research_providers:
+            research_providers = [
+                p for p in args.research_providers
+                if p not in disabled_providers and get_api_key(p, config) and not provider_in_cooldown(p)[0]
+            ]
+        else:
+            research_providers = select_research_providers(
+                primary_provider=provider,
+                provider_priority=provider_priority,
+                available_providers=available_research_providers,
+                max_providers=3,
+            )
+
+        if not research_providers:
+            error_result = {
+                "error": "No configured providers available for research mode",
+                "provider": provider,
+                "query": args.query,
+                "routing": routing_info,
+                "cooldown_skips": cooldown_skips,
+            }
+            print(json.dumps(error_result, indent=2), file=sys.stderr)
+            sys.exit(1)
+
+        result = run_research_mode(
+            query=args.query,
+            research_providers=research_providers,
+            execute_search=execute_with_retry,
+            extract_urls=lambda urls: extract_plus(
+                urls=urls,
+                provider="linkup",
+                output_format="markdown",
+                config=config,
+            ),
+            max_results=args.max_results,
+            max_extract_urls=args.research_extract_count,
+        )
+        routing_info["mode"] = "research"
+        routing_info["provider"] = "research"
+        result["routing"].update(routing_info)
+        result["quality_report"] = build_quality_report(
+            query=args.query,
+            result=result,
+            routing_info=routing_info,
+            providers_considered=providers_considered,
+            eligible_providers=research_providers,
+            cooldown_skips=cooldown_skips,
+            errors=result.get("routing", {}).get("provider_errors", []),
+        )
+        indent = None if args.compact else 2
+        print(json.dumps(result, indent=indent, ensure_ascii=False))
+        return
 
     # Check cache first (unless --no-cache is set)
     cached_result = None
@@ -3714,6 +3944,17 @@ Full docs: See README.md and SKILL.md
             result["deduplicated"] = False
             result.setdefault("metadata", {})
             result["metadata"].setdefault("dedup_count", 0)
+
+        if args.quality_report:
+            result["quality_report"] = build_quality_report(
+                query=args.query,
+                result=result,
+                routing_info=routing_info,
+                providers_considered=providers_considered,
+                eligible_providers=eligible_providers,
+                cooldown_skips=cooldown_skips,
+                errors=errors,
+            )
 
         indent = None if args.compact else 2
         print(json.dumps(result, indent=indent, ensure_ascii=False))
