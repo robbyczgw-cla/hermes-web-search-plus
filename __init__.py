@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v1.6.1
-Multi-provider web search and URL extraction with intelligent auto-routing.
+web-search-plus — Hermes Plugin v1.7.0
+Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "1.6.1"
+__version__ = "1.7.0"
 
 import json
 import os

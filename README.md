@@ -1,6 +1,6 @@
 # web-search-plus — Hermes Plugin
 
-Multi-provider web search with intelligent auto-routing for [Hermes Agent](https://github.com/NousResearch/hermes-agent).
+Multi-provider web search, URL extraction, quality reports, and opt-in research mode for [Hermes Agent](https://github.com/NousResearch/hermes-agent).
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) (OpenClaw) to the Hermes Plugin API.
 
@@ -56,6 +56,8 @@ Both tools are exposed by the `web-search-plus` toolset; enabling `web-search-pl
 - **Exa Deep Research** — `depth=deep` for multi-source synthesis, `depth=deep-reasoning` for cross-document analysis
 - **Adaptive fallback** — automatically skips providers on cooldown (1h after failure)
 - **Routing transparency** — every response includes a `routing` object explaining provider choice
+- **Quality reports** — optional provider diagnostics, result-count summaries, and execution metadata
+- **Research mode** — opt-in multi-provider search + extraction with a best-effort time budget
 - **Time & domain filtering** — `time_range`, `include_domains`, `exclude_domains`
 - **URL extraction** — `web_extract_plus` extracts clean content via Firecrawl, Linkup, Tavily, Exa, or You.com
 - **Local caching** — avoids duplicate API calls (1h TTL)
@@ -119,6 +121,15 @@ SEARXNG_INSTANCE_URL=https://your-instance.example.com
 | `time_range` | string | — | `day`, `week`, `month`, `year` |
 | `include_domains` | string[] | — | Restrict search to domains |
 | `exclude_domains` | string[] | — | Exclude domains |
+| `quality_report` | boolean | `false` | Include provider diagnostics and result-quality metadata |
+| `mode` | string | `"normal"` | `normal` or opt-in `research` |
+| `research_time_budget` | number | `55.0` | Best-effort seconds budget for research mode provider/extraction work |
+
+### Quality report and research mode
+
+`quality_report=True` adds diagnostic metadata without changing provider selection. Use it when tuning routing, comparing providers, or debugging weak result sets.
+
+`mode="research"` is intentionally opt-in: it can query multiple providers and extract selected result URLs, so it is slower and may spend more API credits than normal search. The default `research_time_budget=55.0` keeps the run bounded; when the budget is exhausted, remaining providers or extraction steps are skipped and reported in routing metadata instead of hanging or failing the whole response. Search results already collected are preserved even if extraction fails.
 
 ### `web_extract_plus`
 
@@ -159,6 +170,12 @@ web_search_plus(query="YC startups web scraping", provider="firecrawl")
 web_search_plus(query="find credible sources and citations for AI tutoring outcomes", provider="linkup")
 # → Linkup source-grounded retrieval
 
+web_search_plus(query="best bookshelf speakers under 1000", quality_report=True)
+# → Normal search plus diagnostic routing/result-quality metadata
+
+web_search_plus(query="compare recent reviews of turntables under 1000", mode="research", research_time_budget=45)
+# → Opt-in multi-provider research; keeps partial results if extraction hits errors/budget
+
 web_extract_plus(urls=["https://example.com"], provider="firecrawl")
 # → Extract clean markdown from a URL
 
@@ -176,6 +193,10 @@ cd ~/.hermes/hermes-agent
 source venv/bin/activate
 python ~/.hermes/plugins/web-search-plus/search.py \
   --query "test query" --provider auto --max-results 5 --compact
+
+python ~/.hermes/plugins/web-search-plus/search.py \
+  --query "compare recent reviews of turntables under 1000" \
+  --mode research --quality-report --research-time-budget 45 --compact
 ```
 
 ---
@@ -185,6 +206,7 @@ python ~/.hermes/plugins/web-search-plus/search.py \
 ```
 __init__.py      — Hermes plugin entry, tool schema, handler
 search.py        — Core engine: providers, routing, caching, fallback
+scripts/         — Golden query evaluator and support scripts
 plugin.yaml      — Plugin manifest
 .env.template    — API key reference
 CHANGELOG.md     — Version history

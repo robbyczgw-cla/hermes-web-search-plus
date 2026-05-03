@@ -1,6 +1,6 @@
 name: web-search-plus
-version: "1.6.1"
-description: "Multi-provider web search and URL extraction with intelligent auto-routing (10 search providers, 5 extract providers)"
+version: "1.7.0"
+description: "Multi-provider web search, URL extraction, quality reports, and opt-in research mode"
 author: robbyczgw-cla
 requires_env: []
 optional_env:
