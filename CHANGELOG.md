@@ -11,10 +11,19 @@
 - Research mode now has a best-effort `research_time_budget` defaulting to 55 seconds, exposed through the Hermes tool schema and CLI as `--research-time-budget`.
 - Extraction failures no longer fail the entire research response; partial search results are preserved and errors are reported in routing metadata.
 - Budget exhaustion now skips remaining provider/extraction work instead of hanging or spending API calls blindly.
+- Plugin metadata now matches the shipped tool surface: search, extraction, quality reports, and research mode.
+
+### 🧰 Maintenance
+- Added `requirements.txt` with bounded runtime dependencies.
+- Added GitHub Actions CI for Ruff, pytest, and Python compile checks.
+- Synchronized README, manifest, module headers, and CLI docs for the v1.7.0 release.
 
 ### 🧪 Tests
 - Added regression coverage for research-mode extraction failures and time-budget exhaustion.
 - Test suite: 47/47 unit tests passing.
+
+### 🙏 Contributors
+- Robby / **@robbyczgw-cla**
 
 ## [v1.6.1] — 2026-04-29
 
