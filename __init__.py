@@ -66,6 +66,7 @@ def _run_search(
     exclude_domains: Optional[List[str]] = None,
     mode: str = "normal",
     quality_report: bool = False,
+    research_time_budget: float = 55.0,
 ) -> dict:
     """Call search.py subprocess and return parsed JSON result."""
     cmd = [
@@ -85,7 +86,7 @@ def _run_search(
     if exclude_domains:
         cmd += ["--exclude-domains"] + exclude_domains
     if mode != "normal":
-        cmd += ["--mode", mode]
+        cmd += ["--mode", mode, "--research-time-budget", str(research_time_budget)]
     if quality_report:
         cmd.append("--quality-report")
 
@@ -306,6 +307,13 @@ def register(ctx: Any) -> None:
                     "description": "Attach routing/result quality diagnostics such as selected provider, skips, dedup count, domain diversity, and extraction recommendation.",
                     "default": False,
                 },
+                "research_time_budget": {
+                    "type": "number",
+                    "description": "Best-effort wall-clock budget in seconds for research mode. Checked between provider calls and before extraction.",
+                    "default": 55.0,
+                    "minimum": 1,
+                    "maximum": 75,
+                },
             },
             "required": ["query"],
         },
@@ -314,7 +322,7 @@ def register(ctx: Any) -> None:
     def handler(args_or_query, provider: str = "auto", count: int = 5, depth: str = "normal",
                 time_range: Optional[str] = None, include_domains: Optional[List[str]] = None,
                 exclude_domains: Optional[List[str]] = None, mode: str = "normal",
-                quality_report: bool = False, **kwargs) -> str:
+                quality_report: bool = False, research_time_budget: float = 55.0, **kwargs) -> str:
         # Hermes registry passes the entire input dict as first positional arg
         if isinstance(args_or_query, dict):
             query = args_or_query.get("query", "")
@@ -326,6 +334,7 @@ def register(ctx: Any) -> None:
             exclude_domains = args_or_query.get("exclude_domains", exclude_domains)
             mode = args_or_query.get("mode", mode)
             quality_report = args_or_query.get("quality_report", quality_report)
+            research_time_budget = args_or_query.get("research_time_budget", research_time_budget)
         else:
             query = args_or_query
         data = _run_search(
@@ -338,6 +347,7 @@ def register(ctx: Any) -> None:
             exclude_domains=exclude_domains,
             mode=mode,
             quality_report=quality_report,
+            research_time_budget=research_time_budget,
         )
         return _format_results(data)
 

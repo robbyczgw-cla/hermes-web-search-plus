@@ -145,6 +145,62 @@ class ResearchModeTests(unittest.TestCase):
         ])
         self.assertEqual(result["source_summaries"][0]["content"], "content for https://example.com/a")
 
+    def test_research_mode_keeps_search_results_when_extraction_fails(self):
+        def execute(provider):
+            return {"provider": provider, "results": [
+                {"url": "https://source.test/a", "title": "A", "description": "Alpha"},
+            ]}
+
+        def extract(urls):
+            raise RuntimeError("extract provider timed out")
+
+        result = search.run_research_mode(
+            query="grounded answer please",
+            research_providers=["linkup"],
+            execute_search=execute,
+            extract_urls=extract,
+            max_results=3,
+            max_extract_urls=1,
+        )
+
+        self.assertEqual(len(result["results"]), 1)
+        self.assertEqual(result["source_summaries"], [])
+        self.assertEqual(result["routing"]["extraction_provider"], None)
+        self.assertEqual(result["routing"]["extraction_error"], "extract provider timed out")
+        self.assertEqual(result["metadata"]["extracted_url_count"], 0)
+
+    def test_research_mode_respects_time_budget_between_providers_and_skips_extract(self):
+        ticks = iter([0.0, 0.0, 6.0, 6.0])
+        calls = []
+
+        def now():
+            return next(ticks)
+
+        def execute(provider):
+            calls.append(provider)
+            return {"provider": provider, "results": [
+                {"url": f"https://{provider}.test/a", "title": provider, "description": "Result"},
+            ]}
+
+        def extract(urls):
+            raise AssertionError("extract should be skipped once budget is exhausted")
+
+        result = search.run_research_mode(
+            query="time boxed research",
+            research_providers=["linkup", "tavily"],
+            execute_search=execute,
+            extract_urls=extract,
+            max_results=5,
+            max_extract_urls=1,
+            time_budget_seconds=5,
+            now_fn=now,
+        )
+
+        self.assertEqual(calls, ["linkup"])
+        self.assertEqual(result["routing"]["provider_errors"], [{"provider": "tavily", "error": "skipped: research time budget exhausted"}])
+        self.assertEqual(result["routing"]["extraction_error"], "skipped: research time budget exhausted")
+        self.assertEqual(result["metadata"]["extracted_url_count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
