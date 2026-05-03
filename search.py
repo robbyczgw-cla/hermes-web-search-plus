@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-Web Search Plus — Unified Multi-Provider Search with Intelligent Auto-Routing
-Supports: Serper (Google), Brave Search, Tavily (Research), Querit (Multilingual AI Search),
-Exa (Neural), Perplexity (Direct Answers)
+Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
+Version: 1.6.1
+Supports search providers: Serper (Google), Brave Search, Tavily, Querit,
+Linkup, Exa, Firecrawl, Perplexity, You.com, SearXNG.
+Supports extract providers: Firecrawl, Linkup, Tavily, Exa, You.com.
 
 Smart Routing uses multi-signal analysis:
   - Query intent classification (shopping, research, discovery)
@@ -13,7 +15,7 @@ Smart Routing uses multi-signal analysis:
 
 Usage:
     python3 search.py --query "..."                    # Auto-route based on query
-    python3 search.py --provider [serper|tavily|querit|exa] --query "..." [options]
+    python3 search.py --provider [serper|brave|tavily|linkup|querit|exa|firecrawl|perplexity|you|searxng|auto] --query "..." [options]
 
 Examples:
     python3 search.py -q "iPhone 16 Pro price"              # → Serper (shopping intent)
@@ -1296,7 +1298,6 @@ class QueryAnalyzer:
         
         # Find the winner
         max_score = max(available.values())
-        total_score = sum(available.values()) or 1.0
         
         # Handle ties using deterministic per-query distribution
         priority = self.auto_config.get("provider_priority", ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "brave", "serper", "you", "searxng"])
@@ -3044,7 +3045,7 @@ def search_searxng(
         is_timeout = "timed out" in reason.lower()
         raise ProviderRequestError(f"Cannot reach SearXNG instance at {instance_url}. Error: {reason}", transient=is_timeout)
     except TimeoutError:
-        raise ProviderRequestError(f"SearXNG request timed out after 30s. Check instance health.", transient=True)
+        raise ProviderRequestError("SearXNG request timed out after 30s. Check instance health.", transient=True)
     
     # Parse results
     raw_results = data.get("results", [])
