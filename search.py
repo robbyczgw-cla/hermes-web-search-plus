@@ -25,6 +25,7 @@ Examples:
 
 import argparse
 from http.client import IncompleteRead
+import gzip as _gzip_module
 import hashlib
 import json
 import os
@@ -1782,6 +1783,32 @@ def execute_provider_with_retry(provider: str, operation, max_attempts: int = 3)
     raise last_error if last_error else Exception(f"Unknown {provider} provider execution error")
 
 
+def _read_response_body(response) -> bytes:
+    """Read HTTP response body with automatic Content-Encoding decompression.
+
+    urllib.request.urlopen() does NOT auto-decompress unlike the ``requests`` library,
+    so we handle gzip/deflate manually based on the ``Content-Encoding`` header.
+    """
+    import zlib
+    encoding = (response.getheader("Content-Encoding") or "").strip().lower()
+    raw = response.read()
+
+    if encoding in ("gzip", "x-gzip"):
+        return _gzip_module.decompress(raw)
+    elif encoding == "deflate":
+        try:
+            return zlib.decompress(raw)
+        except zlib.error:
+            # Some servers send raw deflate without a zlib header/trailer wrapper
+            return zlib.decompress(raw, -zlib.MAX_WBITS)
+    elif encoding == "br":
+        raise ValueError(
+            "Brotli-compressed response detected but the 'brotli' package is not installed. "
+            "Install it with: pip install brotli"
+        )
+    return raw
+
+
 def make_request(url: str, headers: dict, body: dict, timeout: int = 30) -> dict:
     """Make HTTP POST request and return JSON response."""
     # Ensure User-Agent is set (required by some APIs like Exa/Cloudflare)
@@ -1792,9 +1819,10 @@ def make_request(url: str, headers: dict, body: dict, timeout: int = 30) -> dict
     
     try:
         with urlopen(req, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
+            return json.loads(_read_response_body(response).decode("utf-8"))
     except HTTPError as e:
-        error_body = e.read().decode("utf-8") if e.fp else str(e)
+        error_raw = _read_response_body(e) if hasattr(e, 'fp') else None
+        error_body = error_raw.decode("utf-8") if error_raw else str(e)
         try:
             error_json = json.loads(error_body)
             error_detail = error_json.get("error") or error_json.get("message") or error_body
@@ -1833,9 +1861,10 @@ def make_get_request(url: str, headers: dict, timeout: int = 30) -> dict:
 
     try:
         with urlopen(req, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
+            return json.loads(_read_response_body(response).decode("utf-8"))
     except HTTPError as e:
-        error_body = e.read().decode("utf-8") if e.fp else str(e)
+        error_raw = _read_response_body(e) if hasattr(e, 'fp') else None
+        error_body = error_raw.decode("utf-8") if error_raw else str(e)
         try:
             error_json = json.loads(error_body)
             error_detail = error_json.get("error") or error_json.get("message") or error_body
@@ -3034,9 +3063,9 @@ def search_you(
     
     try:
         with urlopen(req, timeout=30) as response:
-            data = json.loads(response.read().decode("utf-8"))
+            data = json.loads(_read_response_body(response).decode("utf-8"))
     except HTTPError as e:
-        error_body = e.read().decode("utf-8") if e.fp else str(e)
+        error_body = _read_response_body(e).decode("utf-8") if e.fp else str(e)
         try:
             error_json = json.loads(error_body)
             error_detail = error_json.get("error") or error_json.get("message") or error_body
@@ -3199,9 +3228,9 @@ def search_searxng(
     
     try:
         with urlopen(req, timeout=30) as response:
-            data = json.loads(response.read().decode("utf-8"))
+            data = json.loads(_read_response_body(response).decode("utf-8"))
     except HTTPError as e:
-        error_body = e.read().decode("utf-8") if e.fp else str(e)
+        error_body = _read_response_body(e).decode("utf-8") if e.fp else str(e)
         try:
             error_json = json.loads(error_body)
             error_detail = error_json.get("error") or error_json.get("message") or error_body
