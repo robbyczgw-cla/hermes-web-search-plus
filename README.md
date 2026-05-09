@@ -15,10 +15,10 @@ hermes plugins install robbyczgw-cla/hermes-web-search-plus --enable
 # 2) Run the standalone provider setup helper
 python ~/.hermes/plugins/web-search-plus/setup.py setup
 
-# Recommended minimum keys:
-# TAVILY_API_KEY=...
-# LINKUP_API_KEY=...
-# BRAVE_API_KEY=...
+# Recommended starter set:
+# TAVILY_API_KEY=...   # search/research
+# LINKUP_API_KEY=...   # extraction + fuller cited answers
+# BRAVE_API_KEY=...    # broad independent web search
 
 # 3) Restart/reload your Hermes session so plugin tools are registered
 # CLI: exit and start `hermes` again, or use /reset in-session
@@ -40,7 +40,7 @@ After restart/reset, use the plugin tools:
 - `web_extract_plus` — provider-specific URL extraction via Firecrawl, Linkup, Tavily, Exa, or You.com
 - `web_answer_plus` — citation-ready answers from search + selected source extraction
 
-Both tools are exposed by the `web-search-plus` toolset; enabling `web-search-plus` enables both.
+All three tools are exposed by the `web-search-plus` toolset. Individual tools register by capability: search keys enable `web_search_plus`/`web_answer_plus`; extraction-capable keys enable `web_extract_plus` and fuller `web_answer_plus` citations.
 
 ---
 
@@ -83,21 +83,25 @@ Auto-routing scores providers based on query signals (keywords, intent, linguist
 
 ### API Keys
 
-```bash
-# Required (at least one)
-SERPER_API_KEY=***        # https://serper.dev — 2,500 free/mo
-BRAVE_API_KEY=***         # https://brave.com/search/api/ — $5.00/mo in free credits; you won't be charged
-TAVILY_API_KEY=***        # https://tavily.com — 1,000 free/mo
-EXA_API_KEY=***           # https://exa.ai — 1,000 free/mo
+All provider keys are optional at install time; the tools appear based on configured capabilities:
 
-# Optional
-QUERIT_API_KEY=***        # https://querit.ai
-LINKUP_API_KEY=***        # https://linkup.so — source-backed search + fetch
+- **Search / answer:** configure at least one search-capable provider, e.g. `TAVILY_API_KEY`, `BRAVE_API_KEY`, `EXA_API_KEY`, `LINKUP_API_KEY`, `FIRECRAWL_API_KEY`, `SERPER_API_KEY`, `QUERIT_API_KEY`, `PERPLEXITY_API_KEY`, `KILOCODE_API_KEY`, `YOU_API_KEY`, or `SEARXNG_INSTANCE_URL`.
+- **Extraction:** configure at least one extraction-capable provider: `LINKUP_API_KEY` preferred, or `FIRECRAWL_API_KEY`, `TAVILY_API_KEY`, `EXA_API_KEY`, `YOU_API_KEY`.
+- **Best starter set:** `TAVILY_API_KEY` + `LINKUP_API_KEY` + optional `BRAVE_API_KEY`.
+
+```bash
+# Search-capable providers
+SERPER_API_KEY=***        # https://serper.dev — Google-like SERP
+BRAVE_API_KEY=***         # https://brave.com/search/api/ — independent web index
+TAVILY_API_KEY=***        # https://tavily.com — research/search, also extraction
+EXA_API_KEY=***           # https://exa.ai — semantic search, also extraction
+QUERIT_API_KEY=***        # https://querit.ai — multilingual/realtime search
+LINKUP_API_KEY=***        # https://linkup.so — source-backed search + preferred extraction
 FIRECRAWL_API_KEY=***     # https://firecrawl.dev — search + scrape/extract
-PERPLEXITY_API_KEY=***    # https://perplexity.ai/settings/api
+PERPLEXITY_API_KEY=***    # https://perplexity.ai/settings/api — direct answer-style search
 KILOCODE_API_KEY=***      # Alternate credential path for the `perplexity` provider via Kilo Gateway
-YOU_API_KEY=***           # https://api.you.com
-SEARXNG_INSTANCE_URL=https://your-instance.example.com
+YOU_API_KEY=***           # https://api.you.com — search + extraction
+SEARXNG_INSTANCE_URL=https://your-instance.example.com  # self-hosted search, no API key
 ```
 
 > Python 3.8+ required. The normal Hermes plugin install handles dependencies. For manual/local development, install the pinned runtime deps with `python3 -m pip install -r requirements.txt` inside the Hermes/plugin environment.
@@ -142,7 +146,7 @@ Use `web_answer_plus` when the user wants the answer, not just raw search result
 | `country` | string | `"auto"` | Optional country/region code such as `AT`, `DE`, `US` |
 | `max_extracts` | integer | `2` | Advanced cost guard; hard-capped at 5 |
 
-Defaults are intentionally conservative: quick mode asks for 3 sources and extracts up to 2 URLs; deep mode asks for 6 sources and still caps extraction at 5. `freshness="auto"` applies recency filters only when the query looks current/news/latest/date-sensitive.
+Defaults are intentionally conservative: quick mode asks for 3 sources and extracts up to 2 URLs; deep mode asks for 6 sources and still caps extraction at 5. `freshness="auto"` applies recency filters only when the query looks current/news/latest/date-sensitive. Linkup is preferred for answer extraction; if Linkup is missing but another extraction provider is configured, `web_answer_plus` falls back to the normal extraction chain. If no extraction provider is configured, it still returns a source-backed snippet answer with an explicit warning.
 
 Examples:
 

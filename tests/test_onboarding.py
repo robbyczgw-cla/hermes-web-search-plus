@@ -48,23 +48,44 @@ def test_provider_catalog_has_recommended_starter_metadata():
     assert "search" in by_provider["brave"]["capabilities"]
 
 
-def test_provider_status_detects_any_configured_key_without_requiring_all(monkeypatch):
+def test_provider_status_detects_capability_tiers_without_requiring_all(monkeypatch):
     env = {"TAVILY_API_KEY": "tvly-test", "LINKUP_API_KEY": ""}
 
     status = wsp._provider_config_status(env=env)
 
     assert status["configured"] is True
+    assert status["search_configured"] is True
+    assert status["extract_configured"] is True
+    assert status["answer_configured"] is True
     assert status["configured_count"] == 1
+    assert status["configured_search_count"] == 1
+    assert status["configured_extract_count"] == 1
     assert status["providers"]["tavily"]["configured"] is True
     assert status["providers"]["linkup"]["configured"] is False
+
+
+def test_provider_status_allows_search_only_with_extraction_hint():
+    env = {"BRAVE_API_KEY": "brave-test"}
+
+    status = wsp._provider_config_status(env=env)
+    text = wsp._render_setup_guidance(env=env)
+
+    assert status["search_configured"] is True
+    assert status["extract_configured"] is False
+    assert status["answer_configured"] is True
+    assert "extraction=no" in text
+    assert "add LINKUP_API_KEY" in text
 
 
 def test_setup_guidance_points_unconfigured_users_to_one_simple_path():
     text = wsp._render_setup_guidance(env={})
 
     assert "web-search-plus is installed but no provider keys are configured" in text
+    assert "No single key is mandatory" in text
+    assert "extraction-capable" in text
     assert "Recommended starter" in text
     assert "TAVILY_API_KEY" in text
+    assert "LINKUP_API_KEY" in text
     assert "python ~/.hermes/plugins/web-search-plus/setup.py setup" in text
     assert "hermes web-search-plus setup" not in text
 

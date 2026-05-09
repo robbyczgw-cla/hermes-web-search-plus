@@ -61,6 +61,19 @@ def test_normalize_answer_sources_creates_citation_ready_records():
     ]
 
 
+def test_preferred_answer_extract_provider_prefers_linkup_then_auto(monkeypatch):
+    for key in wsp._EXTRACT_PROVIDER_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+    assert wsp._preferred_answer_extract_provider() is None
+
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    assert wsp._preferred_answer_extract_provider() == "auto"
+
+    monkeypatch.setenv("LINKUP_API_KEY", "lk-test")
+    assert wsp._preferred_answer_extract_provider() == "linkup"
+
+
 def test_answer_evidence_cleaner_strips_common_scrape_noise():
     raw = "# Title [Reload]() Skip to content ![logo](data:image/svg+xml;base64,abc) Tom &amp; Jerry <strong>bold</strong>"
 
@@ -90,6 +103,7 @@ def test_web_answer_plus_tool_registered_with_simple_user_facing_schema():
 
 
 def test_web_answer_plus_json_output_uses_quick_defaults_and_extracts_top_sources(monkeypatch):
+    monkeypatch.setenv("LINKUP_API_KEY", "lk-test")
     calls = {"search": [], "extract": []}
 
     def fake_search(**kwargs):
@@ -144,6 +158,7 @@ def test_web_answer_plus_json_output_uses_quick_defaults_and_extracts_top_source
 
 
 def test_web_answer_plus_caps_extracts_and_reports_cost(monkeypatch):
+    monkeypatch.setenv("LINKUP_API_KEY", "lk-test")
     calls = {"extract": []}
 
     monkeypatch.setattr(wsp, "_run_search", lambda **kwargs: {
@@ -177,6 +192,7 @@ def test_web_answer_plus_caps_extracts_and_reports_cost(monkeypatch):
 
 
 def test_web_answer_plus_marks_failed_extractions(monkeypatch):
+    monkeypatch.setenv("LINKUP_API_KEY", "lk-test")
     monkeypatch.setattr(wsp, "_run_search", lambda **kwargs: {
         "provider": "brave",
         "results": [
@@ -207,7 +223,34 @@ def test_web_answer_plus_empty_result_is_explicit_and_query_scoped(monkeypatch):
     assert any("Only 0 citation-ready sources" in warning for warning in payload["warnings"])
 
 
+def test_web_answer_plus_degrades_to_snippets_without_extract_provider(monkeypatch):
+    for key in wsp._EXTRACT_PROVIDER_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    calls = {"extract": 0}
+
+    monkeypatch.setattr(wsp, "_run_search", lambda **kwargs: {
+        "provider": "brave",
+        "results": [
+            {"title": "Snippet Source", "url": "https://example.com/a", "snippet": "Readable snippet evidence"},
+        ],
+    })
+
+    def fake_extract(**kwargs):
+        calls["extract"] += 1
+        return {"provider": "linkup", "results": []}
+
+    monkeypatch.setattr(wsp, "_run_extract", fake_extract)
+
+    payload = wsp._compose_answer_payload(query="snippet-only topic", sources=1, max_extracts=1)
+
+    assert calls["extract"] == 0
+    assert payload["cost_estimate"]["extract_provider"] is None
+    assert "Readable snippet evidence" in payload["answer"]
+    assert any("no extraction-capable provider configured" in warning for warning in payload["warnings"])
+
+
 def test_web_answer_plus_skips_extraction_when_global_budget_is_exhausted(monkeypatch):
+    monkeypatch.setenv("LINKUP_API_KEY", "lk-test")
     calls = {"extract": 0}
 
     class FakeClock:

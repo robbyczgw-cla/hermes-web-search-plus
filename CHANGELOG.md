@@ -9,11 +9,13 @@
 
 ### 🔧 Improved
 - `plugin.yaml` now advertises `web_answer_plus`, onboarding metadata, and the `on_session_start` hook.
+- Provider-key wording is capability-based: no single key is globally required; search keys enable search/answer, extraction-capable keys enable URL extraction and fuller cited answers.
 - Answer defaults stay budget-safe: quick mode uses 3 sources and up to 2 extracts; deep mode uses broader search with extraction hard-capped at 5 URLs.
+- `web_answer_plus` prefers Linkup for extraction, falls back to the normal extraction chain when another extract provider is configured, and degrades to snippet-backed answers with an explicit warning when no extraction provider exists.
 
 ### 🧪 Tests
 - Added regression coverage for answer defaults, freshness detection, citation normalization, locale hints, extraction status, cost guards, provider catalog, setup helper behavior, and onboarding hints.
-- Test suite: 66/66 unit tests passing locally.
+- Test suite: 73/73 unit tests passing locally.
 
 ## [v1.7.1] — 2026-05-06
 

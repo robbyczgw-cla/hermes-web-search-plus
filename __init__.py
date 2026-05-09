@@ -187,24 +187,43 @@ def _get_provider_catalog() -> List[Dict[str, Any]]:
 
 
 def _provider_config_status(env: Optional[Mapping[str, str]] = None) -> Dict[str, Any]:
-    """Describe which providers are configured; any one provider is enough."""
+    """Describe configured providers by capability tier.
+
+    No single provider key is globally required. Search, extraction, and answer
+    quality are capability-based: one search provider enables search/snippet
+    answers; one extraction-capable provider enables URL extraction and fuller
+    cited answers. Linkup is preferred for answer extraction when available, but
+    it is not a hard requirement.
+    """
     env = env if env is not None else os.environ
     providers: Dict[str, Dict[str, Any]] = {}
     configured_count = 0
+    configured_search_count = 0
+    configured_extract_count = 0
     for item in _PROVIDER_CATALOG:
         key = item["env"]
         configured = bool((env.get(key) or "").strip())
         configured_count += int(configured)
+        capabilities = item.get("capabilities", [])
+        if configured and "search" in capabilities:
+            configured_search_count += 1
+        if configured and "extract" in capabilities:
+            configured_extract_count += 1
         providers[item["provider"]] = {
             "env": key,
             "display_name": item["display_name"],
             "configured": configured,
             "recommended": item.get("recommended", False),
-            "capabilities": item.get("capabilities", []),
+            "capabilities": capabilities,
         }
     return {
         "configured": configured_count > 0,
+        "search_configured": configured_search_count > 0,
+        "extract_configured": configured_extract_count > 0,
+        "answer_configured": configured_search_count > 0,
         "configured_count": configured_count,
+        "configured_search_count": configured_search_count,
+        "configured_extract_count": configured_extract_count,
         "total": len(_PROVIDER_CATALOG),
         "providers": providers,
     }
@@ -232,11 +251,25 @@ def _render_setup_guidance(env: Optional[Mapping[str, str]] = None) -> str:
             for meta in status["providers"].values()
             if meta["configured"]
         ]
-        return "web-search-plus is configured. Providers: " + ", ".join(configured)
+        lines = ["web-search-plus is configured. Providers: " + ", ".join(configured)]
+        lines.append(
+            "Capabilities: "
+            f"search={'yes' if status['search_configured'] else 'no'}, "
+            f"extraction={'yes' if status['extract_configured'] else 'no'}, "
+            f"answer={'yes' if status['answer_configured'] else 'no'}"
+        )
+        if status["search_configured"] and not status["extract_configured"]:
+            lines.append(
+                "Tip: add LINKUP_API_KEY (preferred) or another extraction key "
+                "for fuller web_answer_plus citations and web_extract_plus."
+            )
+        return "\n".join(lines)
 
     lines = [
         "web-search-plus is installed but no provider keys are configured.",
-        "Run `python ~/.hermes/plugins/web-search-plus/setup.py setup` to configure a starter provider.",
+        "No single key is mandatory, but at least one search-capable provider is needed for web_search_plus/web_answer_plus.",
+        "Add LINKUP_API_KEY or another extraction-capable provider for web_extract_plus and fuller cited answers.",
+        "Run `python ~/.hermes/plugins/web-search-plus/setup.py setup` to configure recommended starter providers.",
         "",
         "Recommended starter providers:",
     ]
@@ -765,6 +798,22 @@ def _run_extract_with_timeout(timeout_seconds: int, **kwargs) -> Dict[str, Any]:
         signal.signal(signal.SIGALRM, previous_handler)
 
 
+def _preferred_answer_extract_provider(env: Optional[Mapping[str, str]] = None) -> Optional[str]:
+    """Choose an extraction provider for web_answer_plus.
+
+    Linkup is preferred because it is cheap and citation-friendly. If Linkup is
+    not configured, fall back to the normal extraction provider chain when any
+    extraction-capable key is present. If no extraction provider is configured,
+    answer mode degrades honestly to search snippets.
+    """
+    env = env if env is not None else os.environ
+    if (env.get("LINKUP_API_KEY") or "").strip():
+        return "linkup"
+    if any((env.get(k) or "").strip() for k in _EXTRACT_PROVIDER_ENV_KEYS):
+        return "auto"
+    return None
+
+
 def _compose_answer_payload(
     query: str,
     mode: str = "quick",
@@ -814,16 +863,23 @@ def _compose_answer_payload(
 
     urls_to_extract = [s["url"] for s in normalized[:extract_count]]
     extract_data: Dict[str, Any] = {"results": []}
-    if urls_to_extract:
+    extract_provider = _preferred_answer_extract_provider()
+    if urls_to_extract and not extract_provider:
+        warnings.append(
+            "Extraction skipped: no extraction-capable provider configured. "
+            "Add LINKUP_API_KEY (preferred), FIRECRAWL_API_KEY, TAVILY_API_KEY, EXA_API_KEY, or YOU_API_KEY for fuller cited answers."
+        )
+        extract_data = {"provider": None, "results": [], "error": "no extraction-capable provider configured"}
+    elif urls_to_extract:
         remaining = remaining_budget_seconds()
         if remaining < 1.0:
             warnings.append("Extraction skipped: answer wall-clock budget exhausted after search.")
-            extract_data = {"provider": "linkup", "results": [], "error": "answer wall-clock budget exhausted"}
+            extract_data = {"provider": extract_provider, "results": [], "error": "answer wall-clock budget exhausted"}
         else:
             extract_data = _run_extract_with_timeout(
                 timeout_seconds=max(1, int(min(12 if mode == "quick" else 25, remaining))),
                 urls=urls_to_extract,
-                provider="linkup",
+                provider=extract_provider,
                 output_format="markdown",
             )
         extracted_by_url = {r.get("url"): r for r in extract_data.get("results", [])}
@@ -865,7 +921,7 @@ def _compose_answer_payload(
         "freshness_applied": freshness_info["applied"],
     }
     cost_estimate = {
-        "extract_provider": "linkup" if urls_to_extract else None,
+        "extract_provider": extract_provider if urls_to_extract else None,
         "extracts_requested": len(urls_to_extract),
         "approx_eur": round(len(urls_to_extract) * 0.001, 4),
     }
