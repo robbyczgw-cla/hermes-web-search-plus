@@ -293,7 +293,7 @@ def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bo
         "web-search-plus is installed but no provider keys are configured.",
         "No single key is mandatory, but at least one search-capable provider is needed for web_search_plus/web_answer_plus.",
         "Add LINKUP_API_KEY or another extraction-capable provider for web_extract_plus and fuller cited answers.",
-        "Run `python ~/.hermes/plugins/web-search-plus/setup.py setup` to configure recommended starter providers.",
+        "Run `python ~/.hermes/plugins/web-search-plus/setup.py setup` to walk through every supported provider, or add `--preset starter` for the short path.",
         "",
         "Recommended starter providers:",
     ]
@@ -337,7 +337,7 @@ def _render_status_dashboard(status: Optional[Dict[str, Any]] = None, *, color: 
         lines.append("│ Starter: Tavily + Linkup + Brave is the best first setup.")
     lines.extend([
         "╰─ Next commands",
-        "   python ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter",
+        "   python ~/.hermes/plugins/web-search-plus/setup.py setup",
         "   python ~/.hermes/plugins/web-search-plus/setup.py list",
         "   python ~/.hermes/plugins/web-search-plus/search.py --query \"Hermes Agent latest release\" --quality-report",
     ])
@@ -439,7 +439,7 @@ def _unconfigured_session_hint(
 def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     parser.description = "Configure web-search-plus provider keys with a tiny, secret-safe wizard."
     parser.epilog = (
-        "Presets: starter=Tavily+Linkup+Brave, lean=Tavily+Linkup, "
+        "Default setup prompts every provider. Presets: starter=Tavily+Linkup+Brave, lean=Tavily+Linkup, "
         "search=Tavily+Brave+Serper, extract=Linkup+Firecrawl+Tavily."
     )
     subs = parser.add_subparsers(dest="web_search_plus_command")
@@ -447,7 +447,7 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     status.add_argument("--plain", action="store_true", help="Print compact legacy text instead of the dashboard")
     setup = subs.add_parser("setup", help="Run the provider-key setup wizard")
     setup.add_argument("providers", nargs="*", help="Provider names to configure (overrides --preset)")
-    setup.add_argument("--preset", default="starter", help="starter, lean, search, extract, or all (default: starter)")
+    setup.add_argument("--preset", default="all", help="starter, lean, search, extract, or all (default: all)")
     setup.add_argument("--open", action="store_true", help="Open signup URLs in a browser before prompting")
     setup.add_argument("--env-path", help="Override Hermes .env path")
     setup.add_argument("--show-values", action="store_true", help="Use visible input instead of hidden secret prompts")
@@ -469,7 +469,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
 
     if command == "setup":
         selected = set(getattr(args, "providers", None) or [])
-        catalog = [item for item in _PROVIDER_CATALOG if item["provider"] in selected] if selected else _providers_for_preset(getattr(args, "preset", "starter"))
+        catalog = [item for item in _PROVIDER_CATALOG if item["provider"] in selected] if selected else _providers_for_preset(getattr(args, "preset", "all"))
         if not catalog:
             raise SystemExit("No matching providers. Run `python ~/.hermes/plugins/web-search-plus/setup.py list`.")
 

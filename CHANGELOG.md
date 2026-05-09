@@ -4,7 +4,7 @@
 
 ### ✨ Added
 - **`web_answer_plus` MVP** — a simple answer-first tool that searches, extracts selected sources, and returns citation-ready answers with confidence, freshness, source, warning, and cost metadata.
-- **Provider onboarding helper** — standalone `setup.py` with a secret-safe dashboard, provider catalog, dry-run mode, setup presets (`starter`, `lean`, `search`, `extract`, `all`), and hidden prompts so users can configure provider keys without relying on unreleased Hermes core plugin-CLI support.
+- **Provider onboarding helper** — standalone `setup.py` with a secret-safe dashboard, provider catalog, dry-run mode, full-provider default setup, optional presets (`starter`, `lean`, `search`, `extract`, `all`), and hidden prompts so users can configure provider keys without relying on unreleased Hermes core plugin-CLI support.
 - **Session-start onboarding hint** — nudges users once when no provider keys are configured, without spamming future sessions.
 
 ### 🔧 Improved
@@ -14,8 +14,8 @@
 - `web_answer_plus` prefers Linkup for extraction, falls back to the normal extraction chain when another extract provider is configured, and degrades to snippet-backed answers with an explicit warning when no extraction provider exists.
 
 ### 🧪 Tests
-- Added regression coverage for answer defaults, freshness detection, citation normalization, locale hints, output shapes, quick/deep mode selection, fallback extractor cost metadata, extraction status, cost guards, provider catalog, setup presets, setup dashboard rendering, dry-run setup behavior, and onboarding hints.
-- Test suite: 78/78 unit tests passing locally.
+- Added regression coverage for answer defaults, freshness detection, citation normalization, locale hints, output shapes, quick/deep mode selection, fallback extractor cost metadata, extraction status, cost guards, provider catalog, full-provider default setup, optional presets, setup dashboard rendering, dry-run setup behavior, empty-key tool gating, and onboarding hints.
+- Test suite: 80/80 unit tests passing locally.
 
 ## [v1.7.1] — 2026-05-06
 

@@ -41,9 +41,11 @@ hermes plugins install robbyczgw-cla/hermes-web-search-plus --enable
 
 # 2) Configure provider keys with the standalone setup wizard
 python ~/.hermes/plugins/web-search-plus/setup.py status
-python ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter
+python ~/.hermes/plugins/web-search-plus/setup.py setup
 
-# Starter preset:
+# Bare setup prompts every supported provider; press Enter to skip what you do not have.
+# Fast starter preset if you want the short path:
+# python ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter
 # TAVILY_API_KEY=...   # search/research
 # LINKUP_API_KEY=...   # extraction + fuller cited answers
 # BRAVE_API_KEY=...    # broad independent web search
@@ -72,12 +74,14 @@ The setup wizard is intentionally nicer than “paste keys and pray”:
 ```bash
 python ~/.hermes/plugins/web-search-plus/setup.py status
 python ~/.hermes/plugins/web-search-plus/setup.py list
+python ~/.hermes/plugins/web-search-plus/setup.py setup
 python ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter --open
 python ~/.hermes/plugins/web-search-plus/setup.py setup brave linkup --env-path ~/.hermes/.env
 ```
 
 Presets:
 
+- default / `all` — prompt every supported provider; Enter skips missing keys.
 - `starter` — Tavily + Linkup + Brave; best first-run setup.
 - `lean` — Tavily + Linkup; cheapest useful search + extraction pairing.
 - `search` — Tavily + Brave + Serper; broad search coverage.

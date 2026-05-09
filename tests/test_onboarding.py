@@ -140,6 +140,8 @@ def test_setup_command_treats_eof_as_blank_input(monkeypatch, capsys):
 
     out = capsys.readouterr().out
     assert "Setup plan:" in out
+    for item in wsp._get_provider_catalog():
+        assert item["display_name"] in out
     assert "No keys entered; nothing changed." in out
 
 
@@ -150,17 +152,33 @@ def test_status_dashboard_is_secret_safe_and_actionable():
     assert "✓ search" in text
     assert "• extraction" in text
     assert "super-secret" not in text
-    assert "setup.py setup --preset starter" in text
+    assert "setup.py setup" in text
+    assert "setup.py setup --preset starter" not in text
 
 
 def test_setup_presets_choose_expected_providers():
     starter = {item["provider"] for item in wsp._providers_for_preset("starter")}
     lean = {item["provider"] for item in wsp._providers_for_preset("lean")}
     extract = {item["provider"] for item in wsp._providers_for_preset("extract")}
+    all_providers = {item["provider"] for item in wsp._providers_for_preset("all")}
 
     assert starter == {"tavily", "linkup", "brave"}
     assert lean == {"tavily", "linkup"}
     assert extract == {"linkup", "firecrawl", "tavily"}
+    assert all_providers == {item["provider"] for item in wsp._get_provider_catalog()}
+
+
+def test_bare_setup_defaults_to_all_supported_providers(monkeypatch, capsys):
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "--dry-run"])
+
+    args.func(args)
+
+    out = capsys.readouterr().out
+    assert "Setup plan:" in out
+    for item in wsp._get_provider_catalog():
+        assert item["display_name"] in out
 
 
 def test_setup_dry_run_prints_plan_without_prompting(monkeypatch, capsys):
@@ -186,3 +204,23 @@ def test_register_exposes_core_independent_session_onboarding_surfaces():
     assert "web-search-plus" not in ctx.cli_commands
     assert "web-search-plus-setup" in ctx.commands
     assert "on_session_start" in ctx.hooks
+
+
+def test_tool_check_functions_treat_missing_or_empty_keys_as_unconfigured(monkeypatch):
+    for key in wsp._PROVIDER_ENV_KEYS:
+        monkeypatch.setenv(key, "")
+    ctx = FakeCtx()
+
+    wsp.register(ctx)
+
+    assert ctx.tools["web_search_plus"]["check_fn"]() is False
+    assert ctx.tools["web_answer_plus"]["check_fn"]() is False
+    assert ctx.tools["web_extract_plus"]["check_fn"]() is False
+
+    monkeypatch.setenv("BRAVE_API_KEY", "brave-test")
+    assert ctx.tools["web_search_plus"]["check_fn"]() is True
+    assert ctx.tools["web_answer_plus"]["check_fn"]() is True
+    assert ctx.tools["web_extract_plus"]["check_fn"]() is False
+
+    monkeypatch.setenv("LINKUP_API_KEY", "linkup-test")
+    assert ctx.tools["web_extract_plus"]["check_fn"]() is True
