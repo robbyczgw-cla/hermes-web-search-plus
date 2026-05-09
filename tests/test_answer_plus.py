@@ -33,6 +33,53 @@ def test_detect_locale_handles_common_non_english_eu_queries():
     assert locale["language"] == "fr"
     assert locale["country"] == "FR"
     assert locale["language_confidence"] in {"medium", "high"}
+    assert locale["script"] == "Latn"
+
+
+KNOWN_LOCALE_QUERIES = [
+    ("qué tiempo hace mañana en Madrid", "es", "ES", "weather"),
+    ("der preisvergleich für lautsprecher in Österreich", "de", "AT", "shopping"),
+    ("quelle est la définition de DAC audio", "fr", "FR", "define"),
+    ("ultime notizie hi-fi questa settimana Italia", "it", "IT", "news"),
+    ("melhores preços de amplificadores no Brasil", "pt", "BR", "shopping"),
+]
+
+
+def test_detect_locale_covers_core_latin_languages_and_intents():
+    for query, language, country, intent in KNOWN_LOCALE_QUERIES:
+        locale = wsp._detect_answer_locale(query, "auto", "auto")
+
+        assert locale["language"] == language
+        assert locale["country"] == country
+        assert locale["script"] == "Latn"
+        assert locale["language_confidence"] in {"medium", "high"}
+        assert locale["intent_hint"] == intent
+
+
+def test_detect_locale_falls_back_to_english_on_ambiguous_latin_text():
+    locale = wsp._detect_answer_locale("apollo nova studio reference", "auto", "auto")
+
+    assert locale["language"] == "en"
+    assert locale["country"] == "US"
+    assert locale["script"] == "Latn"
+    assert locale["language_confidence"] == "low"
+    assert locale["intent_hint"] == "general"
+
+
+def test_detect_locale_identifies_unsupported_scripts_without_guessing_country():
+    locale = wsp._detect_answer_locale("ما هو أفضل مضخم صوت", "auto", "auto")
+
+    assert locale["language"] == "ar"
+    assert locale["country"] == "US"
+    assert locale["script"] == "Arab"
+    assert locale["intent_hint"] == "general"
+
+
+def test_detect_freshness_understands_romance_news_terms():
+    assert wsp._detect_answer_freshness("noticias de esta semana sobre DACs", "auto")["applied"] == "week"
+    assert wsp._detect_answer_freshness("dernières nouvelles hi-fi cette semaine", "auto")["applied"] == "week"
+    assert wsp._detect_answer_freshness("ultime notizie hi-fi questa settimana", "auto")["applied"] == "week"
+    assert wsp._detect_answer_freshness("notícias de hoje sobre amplificadores", "auto")["applied"] == "day"
 
 
 def test_normalize_answer_sources_creates_citation_ready_records():

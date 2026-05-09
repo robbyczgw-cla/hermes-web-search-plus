@@ -718,16 +718,77 @@ def _format_extract_results(data: dict) -> str:
     return "\n".join(lines).strip()
 
 
+_ANSWER_LANGUAGE_PROFILES = {
+    "de": {
+        "terms": ["der", "die", "das", "und", "für", "was", "wie", "preis", "günstig", "vergleich", "österreich", "deutschland", "schweiz", "nachrichten", "definieren"],
+        "diacritics": "äöüß",
+    },
+    "es": {
+        "terms": ["el", "la", "los", "las", "qué", "que", "cómo", "como", "tiempo", "precio", "barato", "comparación", "alternativas", "españa", "méxico", "noticias"],
+        "diacritics": "áéíóúñ¿¡",
+    },
+    "fr": {
+        "terms": ["le", "la", "les", "des", "quelle", "quel", "meilleur", "meilleurs", "pas cher", "comparaison", "avis", "france", "définition", "nouvelles"],
+        "diacritics": "àâçéèêëîïôùûüÿœ",
+    },
+    "it": {
+        "terms": ["il", "lo", "gli", "le", "che", "prezzo", "migliori", "confronto", "italia", "notizie", "questa settimana", "definizione"],
+        "diacritics": "àèéìòù",
+    },
+    "pt": {
+        "terms": ["o", "a", "os", "as", "qual", "preço", "preços", "melhores", "comparação", "brasil", "portugal", "notícias", "hoje"],
+        "diacritics": "áâãàçéêíóôõú",
+    },
+    "en": {
+        "terms": ["the", "what", "how", "best", "price", "cheap", "compare", "review", "news", "latest", "define", "weather"],
+        "diacritics": "",
+    },
+}
+
+_ANSWER_INTENT_TERMS = {
+    "weather": ["weather", "forecast", "wetter", "tiempo", "météo", "meteo", "tempo"],
+    "news": ["news", "latest", "updates", "nachrichten", "neueste", "noticias", "nouvelles", "notizie", "notícias"],
+    "define": ["define", "definition", "what is", "was ist", "definieren", "definición", "définition", "definizione", "definição"],
+    "shopping": ["price", "cheap", "buy", "review", "preis", "günstig", "vergleich", "precio", "barato", "preço", "preços", "pas cher", "prezzo"],
+    "time": ["time in", "uhrzeit", "hora en", "heure à", "ora a"],
+    "calc": ["calculate", "berechne", "calcular", "calculer", "calcola"],
+}
+
+
+def _detect_answer_script(query: str) -> str:
+    """Return a coarse script label without external calls or full language guessing."""
+    if re.search(r"[\u0600-\u06ff]", query):
+        return "Arab"
+    if re.search(r"[\u0400-\u04ff]", query):
+        return "Cyrl"
+    if re.search(r"[\u3040-\u30ff]", query):
+        return "Jpan"
+    if re.search(r"[\u4e00-\u9fff]", query):
+        return "Hans"
+    return "Latn"
+
+
+def _detect_answer_intent(query: str) -> str:
+    q = query.lower()[:1000]
+    for intent, terms in _ANSWER_INTENT_TERMS.items():
+        if any(term in q for term in terms):
+            return intent
+    return "general"
+
+
 def _detect_answer_freshness(query: str, requested: str = "auto") -> Dict[str, str]:
     """Resolve answer freshness from an explicit value or lightweight query signals."""
     requested = requested or "auto"
     if requested != "auto":
         return {"requested": requested, "applied": "none" if requested == "none" else requested, "reason": "explicit freshness requested"}
 
-    q = query.lower()
-    day_terms = ["today", "right now", "breaking", "heute", "gerade", "aktuell", "now"]
-    week_terms = ["latest", "this week", "past week", "recent", "news", "updates", "neueste", "diese woche", "nachrichten"]
-    month_terms = ["this month", "past month", "dieser monat", "letzter monat"]
+    q = query.lower()[:1000]
+    day_terms = ["today", "right now", "breaking", "heute", "gerade", "aktuell", "now", "hoje", "hoy", "oggi", "aujourd'hui"]
+    week_terms = [
+        "latest", "this week", "past week", "recent", "news", "updates", "neueste", "diese woche", "nachrichten",
+        "noticias", "esta semana", "últimas", "dernières", "cette semaine", "nouvelles", "ultime", "questa settimana", "notizie", "notícias",
+    ]
+    month_terms = ["this month", "past month", "dieser monat", "letzter monat", "este mes", "ce mois", "questo mese", "este mês"]
     if any(term in q for term in day_terms):
         return {"requested": requested, "applied": "day", "reason": "query looked time-sensitive"}
     if any(term in q for term in week_terms) or re.search(r"\b20[2-9][0-9]\b", q):
@@ -739,35 +800,38 @@ def _detect_answer_freshness(query: str, requested: str = "auto") -> Dict[str, s
 
 def _detect_answer_locale(query: str, language: str = "auto", country: str = "auto") -> Dict[str, str]:
     """Small locale detector for web_answer_plus. Deliberately conservative."""
-    q = query.lower()
-    detected_language = None if language == "auto" else language
+    sample = query[:1000]
+    q = sample.lower()
+    script = _detect_answer_script(sample)
+    detected_language = None if language == "auto" else language.lower()
     detected_country = None if country == "auto" else country.upper()
     confidence = "explicit" if detected_language else "low"
 
     if not detected_language:
-        language_signals = [
-            ("fr", ["meilleur", "meilleurs", "pas cher", "comparaison", "avis", "france"]),
-            ("es", ["precio", "barato", "comparación", "alternativas", "españa", "méxico"]),
-            ("it", ["prezzo", "migliori", "confronto", "italia"]),
-            ("pt", ["preço", "melhores", "comparação", "brasil", "portugal"]),
-            ("de", ["preis", "günstig", "vergleich", "österreich", "deutschland", "schweiz"]),
-        ]
-        for code, terms in language_signals:
-            if any(term in q for term in terms):
-                detected_language = code
-                confidence = "medium"
-                break
-    if not detected_language:
-        if re.search(r"[\u3040-\u30ff]", query):
-            detected_language, confidence = "ja", "medium"
-        elif re.search(r"[\u4e00-\u9fff]", query):
-            detected_language, confidence = "zh", "medium"
-        elif re.search(r"[\u0600-\u06ff]", query):
+        if script == "Arab":
             detected_language, confidence = "ar", "medium"
-        elif re.search(r"[\u0400-\u04ff]", query):
+        elif script == "Cyrl":
             detected_language, confidence = "ru", "medium"
+        elif script == "Jpan":
+            detected_language, confidence = "ja", "medium"
+        elif script == "Hans":
+            detected_language, confidence = "zh", "medium"
+
+    if not detected_language and script == "Latn":
+        scores = {}
+        for code, profile in _ANSWER_LANGUAGE_PROFILES.items():
+            term_score = sum(1 for term in profile["terms"] if re.search(rf"(?<!\w){re.escape(term)}(?!\w)", q))
+            accent_score = sum(2 for char in profile["diacritics"] if char in q)
+            scores[code] = term_score + accent_score
+        best_language, best_score = max(scores.items(), key=lambda item: item[1])
+        if best_score >= 2 or (best_language != "en" and best_score >= 1 and any(ch in q for ch in _ANSWER_LANGUAGE_PROFILES[best_language]["diacritics"])):
+            detected_language = best_language
+            confidence = "high" if best_score >= 4 else "medium"
         else:
             detected_language, confidence = "en", "low"
+
+    if not detected_language:
+        detected_language = "en"
 
     if not detected_country:
         country_signals = {
@@ -776,8 +840,9 @@ def _detect_answer_locale(query: str, language: str = "auto", country: str = "au
             "FR": ["france", "paris"],
             "ES": ["españa", "spain", "madrid"],
             "MX": ["méxico", "mexico"],
-            "IT": ["italia", "italy"],
-            "BR": ["brasil", "brazil"],
+            "IT": ["italia", "italy", "roma", "milano"],
+            "BR": ["brasil", "brazil", "são paulo"],
+            "PT": ["portugal", "lisboa"],
             "JP": ["日本", "japan"],
         }
         for code, terms in country_signals.items():
@@ -785,9 +850,15 @@ def _detect_answer_locale(query: str, language: str = "auto", country: str = "au
                 detected_country = code
                 break
     if not detected_country:
-        detected_country = {"de": "DE", "fr": "FR", "es": "ES", "it": "IT", "pt": "BR", "ja": "JP"}.get(detected_language, "US")
+        detected_country = {"de": "DE", "fr": "FR", "es": "ES", "it": "IT", "pt": "BR", "ja": "JP"}.get(detected_language, "US") if script == "Latn" else "US"
 
-    return {"language": detected_language, "country": detected_country, "language_confidence": confidence}
+    return {
+        "language": detected_language,
+        "country": detected_country,
+        "language_confidence": confidence,
+        "script": script,
+        "intent_hint": _detect_answer_intent(sample),
+    }
 
 
 def _source_type_for_url(url: str) -> str:
