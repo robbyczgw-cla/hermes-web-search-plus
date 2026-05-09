@@ -196,6 +196,22 @@ def test_setup_dry_run_prints_plan_without_prompting(monkeypatch, capsys):
     assert "Dry run only" in out
 
 
+def test_setup_dry_run_uses_target_env_path_for_dashboard(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("BRAVE_API_KEY", "live-env-should-not-count")
+    env_path = tmp_path / ".env"
+    env_path.write_text("TAVILY_API_KEY=x\n")
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "--preset", "starter", "--dry-run", "--env-path", str(env_path)])
+
+    args.func(args)
+
+    out = capsys.readouterr().out
+    assert "Providers: 1/11 configured" in out
+    assert "Active: Tavily" in out
+    assert "Brave Search" not in out.split("Setup plan:", 1)[0]
+
+
 def test_register_exposes_core_independent_session_onboarding_surfaces():
     ctx = FakeCtx()
 

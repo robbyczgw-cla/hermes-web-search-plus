@@ -186,6 +186,20 @@ def _get_provider_catalog() -> List[Dict[str, Any]]:
     return [dict(item) for item in _PROVIDER_CATALOG]
 
 
+def _read_env_file(path: Path) -> Dict[str, str]:
+    """Read simple KEY=VALUE entries from an env file without exposing secrets."""
+    values: Dict[str, str] = {}
+    if not path.exists():
+        return values
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
 def _provider_config_status(env: Optional[Mapping[str, str]] = None) -> Dict[str, Any]:
     """Describe configured providers by capability tier.
 
@@ -474,7 +488,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
             raise SystemExit("No matching providers. Run `python ~/.hermes/plugins/web-search-plus/setup.py list`.")
 
         env_path = Path(getattr(args, "env_path", None) or _get_hermes_env_path())
-        print(_render_status_dashboard())
+        print(_render_status_dashboard(_provider_config_status(_read_env_file(env_path))))
         print("\nSetup plan:")
         for item in catalog:
             rec = " recommended" if item.get("recommended") else ""
