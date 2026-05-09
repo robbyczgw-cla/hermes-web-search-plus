@@ -1,5 +1,20 @@
 # Changelog
 
+## [v1.8.0] — 2026-05-09
+
+### ✨ Added
+- **`web_answer_plus` MVP** — a simple answer-first tool that searches, extracts selected sources, and returns citation-ready answers with confidence, freshness, source, warning, and cost metadata.
+- **Provider onboarding helper** — standalone `setup.py` with `list`, `status`, and `setup` commands so users can configure provider keys without relying on unreleased Hermes core plugin-CLI support.
+- **Session-start onboarding hint** — nudges users once when no provider keys are configured, without spamming future sessions.
+
+### 🔧 Improved
+- `plugin.yaml` now advertises `web_answer_plus`, onboarding metadata, and the `on_session_start` hook.
+- Answer defaults stay budget-safe: quick mode uses 3 sources and up to 2 extracts; deep mode uses broader search with extraction hard-capped at 5 URLs.
+
+### 🧪 Tests
+- Added regression coverage for answer defaults, freshness detection, citation normalization, locale hints, extraction status, cost guards, provider catalog, setup helper behavior, and onboarding hints.
+- Test suite: 66/66 unit tests passing locally.
+
 ## [v1.7.1] — 2026-05-06
 
 ### 🐛 Fixed

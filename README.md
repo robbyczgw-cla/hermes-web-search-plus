@@ -1,6 +1,6 @@
 # web-search-plus — Hermes Plugin
 
-Multi-provider web search, URL extraction, quality reports, and opt-in research mode for [Hermes Agent](https://github.com/NousResearch/hermes-agent).
+Multi-provider web search, URL extraction, cited web answers, quality reports, and opt-in research mode for [Hermes Agent](https://github.com/NousResearch/hermes-agent).
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) (OpenClaw) to the Hermes Plugin API.
 
@@ -12,15 +12,13 @@ Multi-provider web search, URL extraction, quality reports, and opt-in research 
 # 1) Install + enable the Hermes plugin
 hermes plugins install robbyczgw-cla/hermes-web-search-plus --enable
 
-# 2) Add at least one provider key to Hermes' env file
-hermes config env-path
-$EDITOR "$(hermes config env-path)"
+# 2) Run the standalone provider setup helper
+python ~/.hermes/plugins/web-search-plus/setup.py setup
 
 # Recommended minimum keys:
-# BRAVE_API_KEY=...
 # TAVILY_API_KEY=...
-# EXA_API_KEY=...
 # LINKUP_API_KEY=...
+# BRAVE_API_KEY=...
 
 # 3) Restart/reload your Hermes session so plugin tools are registered
 # CLI: exit and start `hermes` again, or use /reset in-session
@@ -40,6 +38,7 @@ After restart/reset, use the plugin tools:
 
 - `web_search_plus` — multi-provider web search and auto-routing
 - `web_extract_plus` — provider-specific URL extraction via Firecrawl, Linkup, Tavily, Exa, or You.com
+- `web_answer_plus` — citation-ready answers from search + selected source extraction
 
 Both tools are exposed by the `web-search-plus` toolset; enabling `web-search-plus` enables both.
 
@@ -47,6 +46,7 @@ Both tools are exposed by the `web-search-plus` toolset; enabling `web-search-pl
 
 ## Features
 
+- **Cited answers** — `web_answer_plus` returns an answer, citation-ready sources, confidence/freshness metadata, and budget-safe extraction
 - **Intelligent auto-routing** — picks the best provider based on query intent
 - **10 providers** — Serper, Brave, Tavily, Exa, Querit, Linkup, Firecrawl, Perplexity, You.com, SearXNG
 - **Exa Deep Research** — `depth=deep` for multi-source synthesis, `depth=deep-reasoning` for cross-document analysis
@@ -127,6 +127,39 @@ SEARXNG_INSTANCE_URL=https://your-instance.example.com
 
 `mode="research"` is intentionally opt-in: it can query multiple providers and extract selected result URLs, so it is slower and may spend more API credits than normal search. The default `research_time_budget=55.0` keeps the run bounded; when the budget is exhausted, remaining providers or extraction steps are skipped and reported in routing metadata instead of hanging or failing the whole response. Search results already collected are preserved even if extraction fails.
 
+### `web_answer_plus`
+
+Use `web_answer_plus` when the user wants the answer, not just raw search results. It keeps the public surface small: quick/deep mode, source count, freshness, output shape, and optional locale.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `query` | string | **required** | Question or research query to answer from the web |
+| `mode` | string | `"quick"` | `quick` = fast cited answer; `deep` = broader research-mode answer |
+| `sources` | integer | quick `3`, deep `6` | Number of citation-ready sources to return, max 10 |
+| `freshness` | string | `"auto"` | `auto`, `none`, `day`, `week`, `month`, or `year` |
+| `output` | string | `"answer"` | `answer`, `brief`, `sources`, or `json` |
+| `language` | string | `"auto"` | Optional language code such as `de`, `en`, `es`, `fr` |
+| `country` | string | `"auto"` | Optional country/region code such as `AT`, `DE`, `US` |
+| `max_extracts` | integer | `2` | Advanced cost guard; hard-capped at 5 |
+
+Defaults are intentionally conservative: quick mode asks for 3 sources and extracts up to 2 URLs; deep mode asks for 6 sources and still caps extraction at 5. `freshness="auto"` applies recency filters only when the query looks current/news/latest/date-sensitive.
+
+Examples:
+
+```python
+web_answer_plus(query="What changed in Hermes Agent this week?")
+# → concise answer + sources + confidence/freshness metadata
+
+web_answer_plus(query="Best DAC amps under 500 EUR in Austria", mode="deep", sources=6, country="AT")
+# → broader cited answer with Austrian locale hint
+
+web_answer_plus(query="OpenAI latest model announcements", freshness="week", output="brief")
+# → short answer scoped to recent results
+
+web_answer_plus(query="Sources about Linkup extraction pricing", output="sources")
+# → sources-only list
+```
+
 ### `web_extract_plus`
 
 Extract content from specific URLs using provider-specific extraction backends.
@@ -200,8 +233,9 @@ python ~/.hermes/plugins/web-search-plus/search.py \
 ## Architecture
 
 ```
-__init__.py      — Hermes plugin entry, tool schema, handler
+__init__.py      — Hermes plugin entry, tool schema, handlers, answer/onboarding helpers
 search.py        — Core engine: providers, routing, caching, fallback
+setup.py         — Standalone provider onboarding helper
 scripts/         — Golden query evaluator and support scripts
 plugin.yaml      — Plugin manifest
 .env.template    — API key reference
