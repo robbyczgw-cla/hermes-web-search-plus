@@ -3,19 +3,24 @@
 ## [v1.8.0] — 2026-05-09
 
 ### ✨ Added
-- **`web_answer_plus` MVP** — a simple answer-first tool that searches, extracts selected sources, and returns citation-ready answers with confidence, freshness, source, warning, and cost metadata.
-- **Provider onboarding helper** — standalone `setup.py` with a secret-safe dashboard, provider catalog, dry-run mode, full-provider default setup, optional presets (`starter`, `lean`, `search`, `extract`, `all`), and hidden prompts so users can configure provider keys without relying on unreleased Hermes core plugin-CLI support.
-- **Session-start onboarding hint** — nudges users once when no provider keys are configured, without spamming future sessions.
+- **`web_answer_plus`** — a new answer-first Hermes tool. It searches the web, selects useful sources, extracts the best pages when possible, and returns a concise answer with citations, warnings, freshness, confidence, and bounded-cost metadata.
+- **Standalone provider setup** — `setup.py` now gives users a secret-safe way to inspect and configure provider keys without waiting for Hermes core plugin-CLI support.
+- **Provider setup presets** — default setup walks through every supported provider; optional presets keep quick starts short (`starter`, `lean`, `search`, `extract`, `all`).
+- **One-shot onboarding hint** — users with no configured provider keys get a single helpful setup hint instead of a dead tool surface.
+- **README hero and release docs** — refreshed public documentation around the three main jobs: search, answer, and extract.
 
 ### 🔧 Improved
-- `plugin.yaml` now advertises `web_answer_plus`, onboarding metadata, and the `on_session_start` hook.
-- Provider-key wording is capability-based: no single key is globally required; search keys enable search/answer, extraction-capable keys enable URL extraction and fuller cited answers.
-- Answer defaults stay budget-safe: quick mode uses 3 sources and up to 2 extracts; deep mode uses broader search with extraction hard-capped at 5 URLs.
-- `web_answer_plus` prefers Linkup for extraction, falls back to the normal extraction chain when another extract provider is configured, and degrades to snippet-backed answers with an explicit warning when no extraction provider exists.
+- Provider keys are now explained by capability, not as one fake “required key” list:
+  - search-capable keys unlock `web_search_plus` and snippet-backed `web_answer_plus`;
+  - extraction-capable keys unlock `web_extract_plus` and fuller cited answers.
+- `web_answer_plus` keeps defaults cheap and predictable: quick mode uses 3 sources and up to 2 extracts; deep mode broadens search but still caps extraction at 5 URLs.
+- Linkup is preferred for answer extraction, but it is not a hard dependency. If another extraction provider is configured, the normal extraction fallback path can still be used.
+- If no extraction provider exists, `web_answer_plus` returns snippet-backed answers with an explicit warning instead of pretending it has full source text.
+- Setup now respects `--env-path` consistently for both the dashboard and writes, preserving existing `.env` entries and never printing entered secret values.
 
 ### 🧪 Tests
-- Added regression coverage for answer defaults, freshness detection, citation normalization, locale hints, output shapes, quick/deep mode selection, fallback extractor cost metadata, extraction status, cost guards, provider catalog, full-provider default setup, optional presets, setup dashboard rendering, dry-run setup behavior, empty-key tool gating, and onboarding hints.
-- Test suite: 80/80 unit tests passing locally.
+- Added regression coverage for answer defaults, freshness detection, citation normalization, locale hints, output shapes, quick/deep mode selection, fallback extractor cost metadata, extraction status, cost guards, provider catalog, full-provider default setup, optional presets, target-env dashboard behavior, dry-run setup behavior, empty-key tool gating, and onboarding hints.
+- Test suite: 81/81 unit tests passing locally.
 
 ## [v1.7.1] — 2026-05-06
 

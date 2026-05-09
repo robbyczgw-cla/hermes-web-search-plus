@@ -1,7 +1,7 @@
 # web-search-plus — Hermes Plugin
 
 <p align="center">
-  <img src="docs/assets/web-search-plus-hero.png" alt="Abstract overview of web-search-plus routing a query through multiple providers into search, answer, and extraction flows" width="100%">
+  <img src="docs/assets/web-search-plus-hero.png" alt="Simple overview of web-search-plus turning a question or URLs into search results, cited answers, or clean extracted page content" width="100%">
 </p>
 
 <p align="center">
