@@ -1,10 +1,6 @@
 # web-search-plus — Hermes Plugin
 
 <p align="center">
-  <img src="docs/assets/web-search-plus-v18-hero.png" alt="Hermes web-search-plus v1.8 overview showing web_search_plus, web_answer_plus, and web_extract_plus routing across configured providers" width="100%">
-</p>
-
-<p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-22d3ee.svg"></a>
   <img alt="Python 3.8+" src="https://img.shields.io/badge/python-3.8%2B-34d399.svg">
   <img alt="Hermes Plugin" src="https://img.shields.io/badge/Hermes-plugin-a78bfa.svg">
