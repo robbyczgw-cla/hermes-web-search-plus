@@ -24,6 +24,7 @@ Examples:
 """
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.client import IncompleteRead
 import gzip
 import hashlib
@@ -2514,8 +2515,8 @@ def extract_linkup(
 ) -> dict:
     """Extract URL content using Linkup fetch."""
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    results: List[Dict[str, Any]] = []
-    for url in urls:
+
+    def fetch_one(url: str) -> Dict[str, Any]:
         body = {
             "url": url,
             "extractImages": include_images,
@@ -2524,19 +2525,28 @@ def extract_linkup(
         }
         data = make_request(api_url, headers, body, timeout=timeout)
         if data.get("error"):
-            results.append(_normalize_extract_result("linkup", url, error=str(data.get("error"))))
-            continue
+            return _normalize_extract_result("linkup", url, error=str(data.get("error")))
         markdown = data.get("markdown") or ""
         raw_html = data.get("rawHtml") or data.get("raw_html") or ""
         content = raw_html if output_format == "html" else markdown or raw_html
-        results.append(_normalize_extract_result(
+        return _normalize_extract_result(
             "linkup",
             url,
             content=content,
             raw_content=content,
             raw_html=raw_html if raw_html else None,
             images=data.get("images") if include_images else None,
-        ))
+        )
+
+    if len(urls) <= 1:
+        return {"provider": "linkup", "results": [fetch_one(url) for url in urls]}
+
+    indexed_results: Dict[int, Dict[str, Any]] = {}
+    with ThreadPoolExecutor(max_workers=min(len(urls), 5)) as executor:
+        futures = {executor.submit(fetch_one, url): idx for idx, url in enumerate(urls)}
+        for future in as_completed(futures):
+            indexed_results[futures[future]] = future.result()
+    results = [indexed_results[idx] for idx in range(len(urls)) if idx in indexed_results]
     return {"provider": "linkup", "results": results}
 
 

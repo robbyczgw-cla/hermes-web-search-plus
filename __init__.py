@@ -18,6 +18,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
@@ -387,6 +388,7 @@ def _run_search(
     research_time_budget: float = 55.0,
     language: Optional[str] = None,
     country: Optional[str] = None,
+    subprocess_timeout: int = 75,
 ) -> dict:
     """Call search.py subprocess and return parsed JSON result."""
     cmd = [
@@ -421,7 +423,7 @@ def _run_search(
             cmd,
             capture_output=True,
             text=True,
-            timeout=75,
+            timeout=subprocess_timeout,
             env=env,
         )
         if result.returncode != 0:
@@ -434,7 +436,7 @@ def _run_search(
         return json.loads(result.stdout)
 
     except subprocess.TimeoutExpired:
-        return {"error": "Search timed out after 75s", "provider": provider, "query": query, "results": []}
+        return {"error": f"Search timed out after {subprocess_timeout}s", "provider": provider, "query": query, "results": []}
     except Exception as e:
         return {"error": str(e), "provider": provider, "query": query, "results": []}
 
@@ -446,6 +448,7 @@ def _run_extract(
     include_images: bool = False,
     include_raw_html: bool = False,
     render_js: bool = False,
+    subprocess_timeout: int = 90,
 ) -> dict:
     """Call search.py extract mode and return parsed JSON result."""
     cmd = [
@@ -468,7 +471,7 @@ def _run_extract(
 
     env = os.environ.copy()
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=90, env=env)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=subprocess_timeout, env=env)
         if result.returncode != 0:
             stderr = result.stderr.strip()
             try:
@@ -477,7 +480,7 @@ def _run_extract(
                 return {"error": stderr or "Extract failed", "provider": provider, "results": []}
         return json.loads(result.stdout)
     except subprocess.TimeoutExpired:
-        return {"error": "Extract timed out after 90s", "provider": provider, "results": []}
+        return {"error": f"Extract timed out after {subprocess_timeout}s", "provider": provider, "results": []}
     except Exception as e:
         return {"error": str(e), "provider": provider, "results": []}
 
@@ -704,13 +707,20 @@ def _clean_answer_evidence(text: str, max_chars: int = 380) -> str:
     return cut + "…"
 
 
-def _build_source_backed_answer(query: str, sources: List[Dict[str, Any]], extract_data: Dict[str, Any], extract_count: int) -> str:
+def _build_source_backed_answer(
+    query: str,
+    sources: List[Dict[str, Any]],
+    extract_data: Dict[str, Any],
+    extract_count: int,
+    max_chars: int = 6000,
+) -> str:
     """Build a user-readable answer-shaped brief without pretending to do LLM synthesis."""
     if not sources:
-        return "No usable sources were found."
+        return f"No usable sources for: {query}"
 
     extracted_results = extract_data.get("results", []) or []
-    lines = [f"Source-backed brief for: {query}", ""]
+    usable_extracted = [r for r in extracted_results if not r.get("error") and (r.get("content") or r.get("raw_content"))]
+    lines = [f"Source-backed brief for: {query}", "", f"Based on {len(usable_extracted)} of {min(len(sources), extract_count)} selected source(s) with {len(sources)} citation-ready source(s) found.", ""]
     for idx, src in enumerate(sources[:max(1, extract_count)], 1):
         extracted = next((r for r in extracted_results if r.get("url") == src["url"]), {})
         raw_text = extracted.get("content") or extracted.get("raw_content") or src.get("snippet") or ""
@@ -722,7 +732,11 @@ def _build_source_backed_answer(query: str, sources: List[Dict[str, Any]], extra
     if len(sources) > extract_count:
         lines.append("")
         lines.append(f"Also found {len(sources) - extract_count} additional citation-ready source(s) below.")
-    return "\n".join(lines).strip()
+    text = "\n".join(lines).strip()
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars].rsplit("\n", 1)[0].strip()
+    return cut + "\n…"
 
 
 class _ExtractionTimeout(Exception):
@@ -731,6 +745,7 @@ class _ExtractionTimeout(Exception):
 
 def _run_extract_with_timeout(timeout_seconds: int, **kwargs) -> Dict[str, Any]:
     """Run extraction with a best-effort local timeout for answer-mode UX."""
+    kwargs.setdefault("subprocess_timeout", max(1, int(timeout_seconds)))
     if threading.current_thread() is not threading.main_thread() or not hasattr(signal, "SIGALRM"):
         return _run_extract(**kwargs)
 
@@ -768,6 +783,12 @@ def _compose_answer_payload(
     extract_count = min(requested_extract_count, extract_cap, source_count)
     counterpoints = bool(include_counterpoints)
     warnings: List[str] = []
+    global_budget_seconds = 35.0 if mode == "deep" else 20.0
+    started_at = time.monotonic()
+
+    def remaining_budget_seconds() -> float:
+        return max(0.0, global_budget_seconds - (time.monotonic() - started_at))
+
     if requested_extract_count > extract_cap:
         warnings.append(f"max_extracts capped at {extract_cap} to protect provider budget.")
     freshness_info = _detect_answer_freshness(query, freshness)
@@ -780,22 +801,31 @@ def _compose_answer_payload(
         time_range=None if freshness_info["applied"] == "none" else freshness_info["applied"],
         mode="research" if mode == "deep" else "normal",
         quality_report=True,
-        research_time_budget=55.0 if mode == "deep" else 20.0,
+        research_time_budget=min(55.0 if mode == "deep" else 20.0, remaining_budget_seconds()),
         language=locale["language"],
         country=locale["country"],
+        subprocess_timeout=max(1, int(remaining_budget_seconds())),
     )
     results = search_data.get("results", [])[:source_count]
     normalized = _normalize_answer_sources(results, provider=search_data.get("provider"), limit=source_count)
 
+    if search_data.get("error"):
+        warnings.append(f"Search issue: {search_data['error']}")
+
     urls_to_extract = [s["url"] for s in normalized[:extract_count]]
     extract_data: Dict[str, Any] = {"results": []}
     if urls_to_extract:
-        extract_data = _run_extract_with_timeout(
-            timeout_seconds=12 if mode == "quick" else 25,
-            urls=urls_to_extract,
-            provider="linkup",
-            output_format="markdown",
-        )
+        remaining = remaining_budget_seconds()
+        if remaining < 1.0:
+            warnings.append("Extraction skipped: answer wall-clock budget exhausted after search.")
+            extract_data = {"provider": "linkup", "results": [], "error": "answer wall-clock budget exhausted"}
+        else:
+            extract_data = _run_extract_with_timeout(
+                timeout_seconds=max(1, int(min(12 if mode == "quick" else 25, remaining))),
+                urls=urls_to_extract,
+                provider="linkup",
+                output_format="markdown",
+            )
         extracted_by_url = {r.get("url"): r for r in extract_data.get("results", [])}
         extract_error = extract_data.get("error")
         if extract_error:
@@ -850,6 +880,7 @@ def _compose_answer_payload(
         "sources": normalized,
         "warnings": warnings,
         "cost_estimate": cost_estimate,
+        "budget": {"wall_clock_seconds": global_budget_seconds, "elapsed_seconds": round(time.monotonic() - started_at, 3)},
         "search": {"provider": search_data.get("provider"), "routing": search_data.get("routing", {})},
         "extraction": {"provider": extract_data.get("provider"), "requested_urls": urls_to_extract},
     }

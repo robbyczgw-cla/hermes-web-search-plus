@@ -195,3 +195,42 @@ def test_web_answer_plus_marks_failed_extractions(monkeypatch):
     assert [source["extracted_status"] for source in payload["sources"]] == ["failed", "failed"]
     assert any("quota exceeded" in warning for warning in payload["warnings"])
     assert payload["confidence"] == "medium"
+
+
+def test_web_answer_plus_empty_result_is_explicit_and_query_scoped(monkeypatch):
+    monkeypatch.setattr(wsp, "_run_search", lambda **kwargs: {"provider": "brave", "results": []})
+
+    payload = wsp._compose_answer_payload(query="obscure impossible thing")
+
+    assert payload["answer"] == "No usable sources for: obscure impossible thing"
+    assert payload["confidence"] == "low"
+    assert any("Only 0 citation-ready sources" in warning for warning in payload["warnings"])
+
+
+def test_web_answer_plus_skips_extraction_when_global_budget_is_exhausted(monkeypatch):
+    calls = {"extract": 0}
+
+    class FakeClock:
+        def __init__(self):
+            self.calls = 0
+
+        def __call__(self):
+            self.calls += 1
+            return 0.0 if self.calls == 1 else 25.0
+
+    monkeypatch.setattr(wsp.time, "monotonic", FakeClock())
+    monkeypatch.setattr(wsp, "_run_search", lambda **kwargs: {
+        "provider": "brave",
+        "results": [{"title": "A", "url": "https://example.com/a", "snippet": "Snippet A"}],
+    })
+
+    def fake_extract(**kwargs):
+        calls["extract"] += 1
+        return {"provider": "linkup", "results": []}
+
+    monkeypatch.setattr(wsp, "_run_extract", fake_extract)
+
+    payload = wsp._compose_answer_payload(query="current thing", sources=1, max_extracts=1)
+
+    assert calls["extract"] == 0
+    assert any("wall-clock budget exhausted" in warning for warning in payload["warnings"])
