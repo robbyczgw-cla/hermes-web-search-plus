@@ -22,8 +22,9 @@ provides_tools:
 provides_hooks:
   - on_session_start
 onboarding:
-  setup_command: "hermes web-search-plus setup"
-  note: "At least one provider key is required; any configured key enables the plugin."
+  setup_command: "python ~/.hermes/plugins/web-search-plus/setup.py setup"
+  status_command: "python ~/.hermes/plugins/web-search-plus/setup.py status"
+  note: "At least one provider key is required; any configured key enables the plugin. This standalone setup script avoids relying on unreleased Hermes core plugin-CLI support."
   recommended_env:
     - name: TAVILY_API_KEY
       description: "Tavily — recommended starter for search/research (1k free/month)"

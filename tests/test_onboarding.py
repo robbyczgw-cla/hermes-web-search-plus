@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -63,7 +65,8 @@ def test_setup_guidance_points_unconfigured_users_to_one_simple_path():
     assert "web-search-plus is installed but no provider keys are configured" in text
     assert "Recommended starter" in text
     assert "TAVILY_API_KEY" in text
-    assert "hermes web-search-plus setup" in text
+    assert "python ~/.hermes/plugins/web-search-plus/setup.py setup" in text
+    assert "hermes web-search-plus setup" not in text
 
 
 def test_env_upsert_writes_selected_provider_keys_without_leaking_values(tmp_path):
@@ -92,11 +95,25 @@ def test_on_session_start_hint_is_one_shot_when_unconfigured(tmp_path):
     assert configured is None
 
 
-def test_register_exposes_cli_and_session_onboarding_surfaces():
+def test_standalone_setup_script_lists_providers_without_hermes_core_cli():
+    script = Path(__file__).resolve().parents[1] / "setup.py"
+
+    result = subprocess.run(
+        [sys.executable, str(script), "list", "--json"],
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    assert '"provider": "tavily"' in result.stdout
+    assert '"provider": "brave"' in result.stdout
+
+
+def test_register_exposes_core_independent_session_onboarding_surfaces():
     ctx = FakeCtx()
 
     wsp.register(ctx)
 
-    assert "web-search-plus" in ctx.cli_commands
+    assert "web-search-plus" not in ctx.cli_commands
     assert "web-search-plus-setup" in ctx.commands
     assert "on_session_start" in ctx.hooks

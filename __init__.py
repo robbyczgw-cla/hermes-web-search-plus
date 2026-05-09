@@ -232,7 +232,7 @@ def _render_setup_guidance(env: Optional[Mapping[str, str]] = None) -> str:
 
     lines = [
         "web-search-plus is installed but no provider keys are configured.",
-        "Run `hermes web-search-plus setup` to configure a starter provider.",
+        "Run `python ~/.hermes/plugins/web-search-plus/setup.py setup` to configure a starter provider.",
         "",
         "Recommended starter providers:",
     ]
@@ -296,7 +296,7 @@ def _unconfigured_session_hint(
         logger.debug("web-search-plus onboarding state write failed: %s", exc)
     return {
         "action": "hint",
-        "message": "web-search-plus loaded but no provider keys are configured. Run `hermes web-search-plus setup`.",
+        "message": "web-search-plus loaded but no provider keys are configured. Run `python ~/.hermes/plugins/web-search-plus/setup.py setup`.",
     }
 
 
@@ -1051,15 +1051,6 @@ def register(ctx: Any) -> None:
         description="Cited web answers from search plus extraction",
         emoji="🧭",
     )
-
-    if hasattr(ctx, "register_cli_command"):
-        ctx.register_cli_command(
-            name="web-search-plus",
-            help="Configure and inspect Web Search Plus providers",
-            setup_fn=_web_search_plus_cli_setup,
-            handler_fn=_web_search_plus_cli_command,
-            description="Provider onboarding for the multi-provider web-search-plus plugin.",
-        )
 
     if hasattr(ctx, "register_command"):
         ctx.register_command(
