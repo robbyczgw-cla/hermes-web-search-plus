@@ -338,7 +338,12 @@ def _web_search_plus_cli_command(args: Any) -> None:
             if getattr(args, "open", False):
                 webbrowser.open(item["signup_url"])
             prompt = f"{item['display_name']} key ({item['env']}, leave blank to skip): "
-            value = getpass.getpass(prompt).strip()
+            try:
+                value = getpass.getpass(prompt).strip()
+            except EOFError:
+                # Non-interactive stdin (CI, scripted smoke tests) should behave like
+                # pressing Enter for the remaining prompts, not crash the setup helper.
+                value = ""
             if value:
                 values[item["env"]] = value
         if not values:

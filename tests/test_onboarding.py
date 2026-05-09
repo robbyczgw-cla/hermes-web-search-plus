@@ -109,6 +109,17 @@ def test_standalone_setup_script_lists_providers_without_hermes_core_cli():
     assert '"provider": "brave"' in result.stdout
 
 
+def test_setup_command_treats_eof_as_blank_input(monkeypatch, capsys):
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup"])
+    monkeypatch.setattr(wsp.getpass, "getpass", lambda _prompt: (_ for _ in ()).throw(EOFError()))
+
+    args.func(args)
+
+    assert "No keys entered; nothing changed." in capsys.readouterr().out
+
+
 def test_register_exposes_core_independent_session_onboarding_surfaces():
     ctx = FakeCtx()
 
