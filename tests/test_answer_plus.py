@@ -157,6 +157,57 @@ def test_web_answer_plus_json_output_uses_quick_defaults_and_extracts_top_source
     assert calls["extract"][0]["provider"] == "linkup"
 
 
+def test_web_answer_plus_handler_modes_and_output_shapes(monkeypatch):
+    monkeypatch.setenv("LINKUP_API_KEY", "lk-test")
+    calls = {"search": [], "extract": []}
+
+    def fake_search(**kwargs):
+        calls["search"].append(kwargs)
+        return {
+            "provider": "brave",
+            "results": [
+                {"title": f"Source {i}", "url": f"https://example.com/{i}", "snippet": f"Snippet {i}", "date": "2026-05-09"}
+                for i in range(kwargs["count"])
+            ],
+        }
+
+    def fake_extract(**kwargs):
+        calls["extract"].append(kwargs)
+        return {
+            "provider": kwargs["provider"],
+            "results": [
+                {"url": url, "title": url, "content": f"Extracted {url}"}
+                for url in kwargs["urls"]
+            ],
+        }
+
+    monkeypatch.setattr(wsp, "_run_search", fake_search)
+    monkeypatch.setattr(wsp, "_run_extract", fake_extract)
+    ctx = FakeCtx()
+    wsp.register(ctx)
+    handler = ctx.tools["web_answer_plus"]["handler"]
+
+    quick = wsp.json.loads(handler({"query": "quick topic", "mode": "quick", "output": "json"}))
+    deep = wsp.json.loads(handler({"query": "deep topic", "mode": "deep", "output": "json"}))
+    sources_only = handler({"query": "source topic", "output": "sources", "sources": 2, "max_extracts": 1})
+    brief = handler({"query": "brief topic", "output": "brief", "freshness": "none", "language": "de", "country": "AT"})
+
+    assert quick["mode"] == "quick"
+    assert deep["mode"] == "deep"
+    assert calls["search"][0]["mode"] == "normal"
+    assert calls["search"][0]["count"] == 3
+    assert calls["search"][1]["mode"] == "research"
+    assert calls["search"][1]["count"] == 6
+    assert calls["search"][3]["language"] == "de"
+    assert calls["search"][3]["country"] == "AT"
+    assert calls["extract"][0]["provider"] == "linkup"
+    assert len(calls["extract"][0]["urls"]) == 2
+    assert len(calls["extract"][1]["urls"]) == 2
+    assert sources_only.startswith("- [Source 0")
+    assert "**Answer**" in brief
+    assert "**Freshness:** none" in brief
+
+
 def test_web_answer_plus_caps_extracts_and_reports_cost(monkeypatch):
     monkeypatch.setenv("LINKUP_API_KEY", "lk-test")
     calls = {"extract": []}
@@ -189,6 +240,27 @@ def test_web_answer_plus_caps_extracts_and_reports_cost(monkeypatch):
         "approx_eur": 0.005,
     }
     assert any("max_extracts capped" in warning for warning in payload["warnings"])
+
+
+def test_web_answer_plus_reports_actual_fallback_extractor_cost_model(monkeypatch):
+    monkeypatch.delenv("LINKUP_API_KEY", raising=False)
+    monkeypatch.setenv("TAVILY_API_KEY", "tvly-test")
+    monkeypatch.setattr(wsp, "_run_search", lambda **kwargs: {
+        "provider": "brave",
+        "results": [{"title": "A", "url": "https://example.com/a", "snippet": "Snippet A"}],
+    })
+    monkeypatch.setattr(wsp, "_run_extract", lambda **kwargs: {
+        "provider": "tavily",
+        "results": [{"url": "https://example.com/a", "title": "A", "content": "Extracted A"}],
+    })
+
+    payload = wsp._compose_answer_payload(query="fallback extractor topic", sources=1, max_extracts=1)
+
+    assert payload["cost_estimate"] == {
+        "extract_provider": "tavily",
+        "extracts_requested": 1,
+        "approx_eur": None,
+    }
 
 
 def test_web_answer_plus_marks_failed_extractions(monkeypatch):

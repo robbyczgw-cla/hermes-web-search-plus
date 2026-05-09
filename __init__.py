@@ -369,7 +369,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
         selected = set(getattr(args, "providers", None) or [])
         catalog = [item for item in _PROVIDER_CATALOG if item["provider"] in selected] if selected else [item for item in _PROVIDER_CATALOG if item.get("recommended")]
         if not catalog:
-            raise SystemExit("No matching providers. Run `hermes web-search-plus list`.")
+            raise SystemExit("No matching providers. Run `python ~/.hermes/plugins/web-search-plus/setup.py list`.")
         values: Dict[str, str] = {}
         for item in catalog:
             if getattr(args, "open", False):
@@ -920,10 +920,14 @@ def _compose_answer_payload(
         "extracts_requested": len(urls_to_extract),
         "freshness_applied": freshness_info["applied"],
     }
+    actual_extract_provider = (extract_data.get("provider") or extract_provider) if urls_to_extract else None
     cost_estimate = {
-        "extract_provider": extract_provider if urls_to_extract else None,
+        "extract_provider": actual_extract_provider,
         "extracts_requested": len(urls_to_extract),
-        "approx_eur": round(len(urls_to_extract) * 0.001, 4),
+        # Linkup's public pricing is roughly usage/credit based and cheap enough
+        # to show a tiny estimate. Other providers use different credit models, so
+        # pretending every extractor costs the same would be worse than omission.
+        "approx_eur": round(len(urls_to_extract) * 0.001, 4) if actual_extract_provider == "linkup" else None,
     }
     return {
         "query": query,
