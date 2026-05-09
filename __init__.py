@@ -9,12 +9,15 @@ __version__ = "1.8.0"
 
 import argparse
 import getpass
+import html
 import json
 import logging
 import os
 import re
+import signal
 import subprocess
 import sys
+import threading
 import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
@@ -675,6 +678,78 @@ def _normalize_answer_sources(results: List[Dict[str, Any]], provider: Optional[
     return sources
 
 
+def _clean_answer_evidence(text: str, max_chars: int = 380) -> str:
+    """Turn raw extracted page text into a short readable evidence sentence."""
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", text or "")
+    text = re.sub(r"\[[^\]]*\]\(\s*\)", " ", text)
+    text = re.sub(r"\[[^\]]*\]\((?:#|javascript:|data:)[^)]*\)", " ", text)
+    text = re.sub(r"data:image/[^\s)]+", " ", text)
+    noisy_phrases = [
+        "Skip to content",
+        "Skip to main content",
+        "You signed in with another tab or window",
+        "Reload to refresh your session",
+        "You signed out in another tab or window",
+        "You switched accounts on another tab or window",
+    ]
+    for phrase in noisy_phrases:
+        text = text.replace(phrase, " ")
+    text = re.sub(r"#+\s*", "", text)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = html.unescape(text)
+    text = re.sub(r"\s+", " ", text).strip(" -—|\n\t")
+    if len(text) <= max_chars:
+        return text
+    cut = text[:max_chars].rsplit(" ", 1)[0].strip()
+    return cut + "…"
+
+
+def _build_source_backed_answer(query: str, sources: List[Dict[str, Any]], extract_data: Dict[str, Any], extract_count: int) -> str:
+    """Build a user-readable answer-shaped brief without pretending to do LLM synthesis."""
+    if not sources:
+        return "No usable sources were found."
+
+    extracted_results = extract_data.get("results", []) or []
+    lines = [f"Source-backed brief for: {query}", ""]
+    for idx, src in enumerate(sources[:max(1, extract_count)], 1):
+        extracted = next((r for r in extracted_results if r.get("url") == src["url"]), {})
+        raw_text = extracted.get("content") or extracted.get("raw_content") or src.get("snippet") or ""
+        evidence = _clean_answer_evidence(raw_text)
+        if not evidence:
+            evidence = _clean_answer_evidence(src.get("snippet", "")) or "No readable snippet available."
+        lines.append(f"- [{idx}] {src['title']} — {evidence}")
+
+    if len(sources) > extract_count:
+        lines.append("")
+        lines.append(f"Also found {len(sources) - extract_count} additional citation-ready source(s) below.")
+    return "\n".join(lines).strip()
+
+
+class _ExtractionTimeout(Exception):
+    pass
+
+
+def _run_extract_with_timeout(timeout_seconds: int, **kwargs) -> Dict[str, Any]:
+    """Run extraction with a best-effort local timeout for answer-mode UX."""
+    if threading.current_thread() is not threading.main_thread() or not hasattr(signal, "SIGALRM"):
+        return _run_extract(**kwargs)
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+
+    def _handle_timeout(signum, frame):  # noqa: ARG001
+        raise _ExtractionTimeout(f"Extract timed out after {timeout_seconds}s")
+
+    signal.signal(signal.SIGALRM, _handle_timeout)
+    signal.alarm(timeout_seconds)
+    try:
+        return _run_extract(**kwargs)
+    except _ExtractionTimeout as exc:
+        return {"provider": kwargs.get("provider"), "error": str(exc), "results": []}
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous_handler)
+
+
 def _compose_answer_payload(
     query: str,
     mode: str = "quick",
@@ -691,7 +766,7 @@ def _compose_answer_payload(
     requested_extract_count = max_extracts if max_extracts is not None else 2
     extract_cap = 5
     extract_count = min(requested_extract_count, extract_cap, source_count)
-    counterpoints = include_counterpoints if include_counterpoints is not None else mode == "deep"
+    counterpoints = bool(include_counterpoints)
     warnings: List[str] = []
     if requested_extract_count > extract_cap:
         warnings.append(f"max_extracts capped at {extract_cap} to protect provider budget.")
@@ -715,7 +790,12 @@ def _compose_answer_payload(
     urls_to_extract = [s["url"] for s in normalized[:extract_count]]
     extract_data: Dict[str, Any] = {"results": []}
     if urls_to_extract:
-        extract_data = _run_extract(urls=urls_to_extract, provider="linkup", output_format="markdown")
+        extract_data = _run_extract_with_timeout(
+            timeout_seconds=12 if mode == "quick" else 25,
+            urls=urls_to_extract,
+            provider="linkup",
+            output_format="markdown",
+        )
         extracted_by_url = {r.get("url"): r for r in extract_data.get("results", [])}
         extract_error = extract_data.get("error")
         if extract_error:
@@ -736,18 +816,7 @@ def _compose_answer_payload(
             else:
                 src["extracted_status"] = "failed"
 
-    evidence_parts = []
-    for idx, src in enumerate(normalized[:extract_count], 1):
-        extracted = next((r for r in extract_data.get("results", []) if r.get("url") == src["url"]), {})
-        text = (extracted.get("content") or extracted.get("raw_content") or src.get("snippet") or "").strip()
-        if text:
-            evidence_parts.append(f"[{idx}] {src['title']}: {text[:700]}")
-    if evidence_parts:
-        answer = "\n\n".join(evidence_parts)
-    elif normalized:
-        answer = "\n\n".join(f"[{i}] {s['title']}: {s.get('snippet', '')}" for i, s in enumerate(normalized, 1))
-    else:
-        answer = "No usable sources were found."
+    answer = _build_source_backed_answer(query, normalized, extract_data, extract_count)
 
     if len(normalized) < source_count:
         warnings.append(f"Only {len(normalized)} citation-ready sources found for requested {source_count}.")

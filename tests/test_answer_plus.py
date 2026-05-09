@@ -61,6 +61,18 @@ def test_normalize_answer_sources_creates_citation_ready_records():
     ]
 
 
+def test_answer_evidence_cleaner_strips_common_scrape_noise():
+    raw = "# Title [Reload]() Skip to content ![logo](data:image/svg+xml;base64,abc) Tom &amp; Jerry <strong>bold</strong>"
+
+    cleaned = wsp._clean_answer_evidence(raw)
+
+    assert "Reload" not in cleaned
+    assert "Skip to content" not in cleaned
+    assert "data:image" not in cleaned
+    assert "Tom & Jerry" in cleaned
+    assert "bold" in cleaned
+
+
 def test_web_answer_plus_tool_registered_with_simple_user_facing_schema():
     ctx = FakeCtx()
 
@@ -120,7 +132,9 @@ def test_web_answer_plus_json_output_uses_quick_defaults_and_extracts_top_source
     assert payload["confidence_reason"]["sources"] == 3
     assert len(payload["sources"]) == 3
     assert payload["sources"][0]["citation"].startswith("[Fresh Source (news.example, 2026-05-08)]")
-    assert "Detailed extracted source A" in payload["answer"]
+    assert payload["answer"].startswith("Source-backed brief")
+    assert "- [1] Fresh Source — Detailed extracted source A." in payload["answer"]
+    assert not payload["answer"].lstrip().startswith("[1]")
     assert payload["cost_estimate"]["extracts_requested"] == 2
     assert calls["search"][0]["count"] == 3
     assert calls["search"][0]["time_range"] == "week"
