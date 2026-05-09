@@ -39,10 +39,11 @@ Most web-search tools fail in one of two boring ways: they hard-code a single pr
 # 1) Install and enable the Hermes plugin
 hermes plugins install robbyczgw-cla/hermes-web-search-plus --enable
 
-# 2) Configure provider keys with the standalone setup helper
-python ~/.hermes/plugins/web-search-plus/setup.py setup
+# 2) Configure provider keys with the standalone setup wizard
+python ~/.hermes/plugins/web-search-plus/setup.py status
+python ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter
 
-# Recommended starter set:
+# Starter preset:
 # TAVILY_API_KEY=...   # search/research
 # LINKUP_API_KEY=...   # extraction + fuller cited answers
 # BRAVE_API_KEY=...    # broad independent web search
@@ -64,6 +65,29 @@ Notes:
 
 ---
 
+## CLI setup
+
+The setup wizard is intentionally nicer than “paste keys and pray”:
+
+```bash
+python ~/.hermes/plugins/web-search-plus/setup.py status
+python ~/.hermes/plugins/web-search-plus/setup.py list
+python ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter --open
+python ~/.hermes/plugins/web-search-plus/setup.py setup brave linkup --env-path ~/.hermes/.env
+```
+
+Presets:
+
+- `starter` — Tavily + Linkup + Brave; best first-run setup.
+- `lean` — Tavily + Linkup; cheapest useful search + extraction pairing.
+- `search` — Tavily + Brave + Serper; broad search coverage.
+- `extract` — Linkup + Firecrawl + Tavily; extraction-heavy setup.
+- `all` — prompt for every supported provider.
+
+The CLI never prints secret values. It writes keys into the active Hermes `.env` file, then reminds you to restart Hermes or run `/reset` so the tools re-register.
+
+---
+
 ## Capability model
 
 | Capability | Unlocks | Configure at least one of |
@@ -72,7 +96,7 @@ Notes:
 | Extraction | `web_extract_plus`, fuller `web_answer_plus` citations | Linkup, Firecrawl, Tavily, Exa, or You.com |
 | Best starter | Search + extraction + broad fallback | Tavily + Linkup + optional Brave |
 
-`setup.py status` reports this directly:
+`setup.py status --plain` reports this directly:
 
 ```text
 web-search-plus is configured. Providers: Linkup, Brave Search

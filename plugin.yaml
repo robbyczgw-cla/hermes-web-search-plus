@@ -22,7 +22,7 @@ provides_tools:
 provides_hooks:
   - on_session_start
 onboarding:
-  setup_command: "python ~/.hermes/plugins/web-search-plus/setup.py setup"
+  setup_command: "python ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter"
   status_command: "python ~/.hermes/plugins/web-search-plus/setup.py status"
   note: "No single provider key is globally required. Add at least one search-capable provider for web_search_plus/web_answer_plus; add Linkup or another extraction-capable provider for web_extract_plus and fuller cited answers. This standalone setup script avoids relying on unreleased Hermes core plugin-CLI support."
   recommended_env:

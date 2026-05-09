@@ -138,7 +138,44 @@ def test_setup_command_treats_eof_as_blank_input(monkeypatch, capsys):
 
     args.func(args)
 
-    assert "No keys entered; nothing changed." in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "Setup plan:" in out
+    assert "No keys entered; nothing changed." in out
+
+
+def test_status_dashboard_is_secret_safe_and_actionable():
+    text = wsp._render_setup_guidance(env={"BRAVE_API_KEY": "super-secret"}, fancy=True)
+
+    assert "web-search-plus" in text
+    assert "✓ search" in text
+    assert "• extraction" in text
+    assert "super-secret" not in text
+    assert "setup.py setup --preset starter" in text
+
+
+def test_setup_presets_choose_expected_providers():
+    starter = {item["provider"] for item in wsp._providers_for_preset("starter")}
+    lean = {item["provider"] for item in wsp._providers_for_preset("lean")}
+    extract = {item["provider"] for item in wsp._providers_for_preset("extract")}
+
+    assert starter == {"tavily", "linkup", "brave"}
+    assert lean == {"tavily", "linkup"}
+    assert extract == {"linkup", "firecrawl", "tavily"}
+
+
+def test_setup_dry_run_prints_plan_without_prompting(monkeypatch, capsys):
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "--preset", "lean", "--dry-run"])
+    monkeypatch.setattr(wsp.getpass, "getpass", lambda _prompt: (_ for _ in ()).throw(AssertionError("should not prompt")))
+
+    args.func(args)
+
+    out = capsys.readouterr().out
+    assert "Setup plan:" in out
+    assert "Tavily" in out
+    assert "Linkup" in out
+    assert "Dry run only" in out
 
 
 def test_register_exposes_core_independent_session_onboarding_surfaces():

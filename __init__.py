@@ -242,9 +242,33 @@ def _setup_state_path() -> Path:
     return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "state" / "web-search-plus-onboarding.json"
 
 
-def _render_setup_guidance(env: Optional[Mapping[str, str]] = None) -> str:
+def _supports_color() -> bool:
+    """Return whether ANSI color should be used for the standalone CLI."""
+    if os.environ.get("NO_COLOR"):
+        return False
+    if os.environ.get("FORCE_COLOR"):
+        return True
+    return bool(getattr(sys.stdout, "isatty", lambda: False)())
+
+
+def _style(text: str, code: str, *, color: Optional[bool] = None) -> str:
+    if color is None:
+        color = _supports_color()
+    return f"\033[{code}m{text}\033[0m" if color else text
+
+
+def _capability_badge(enabled: bool, label: str, *, color: Optional[bool] = None) -> str:
+    mark = "✓" if enabled else "•"
+    rendered = f"{mark} {label}"
+    return _style(rendered, "32;1" if enabled else "2", color=color)
+
+
+def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bool = False) -> str:
     """Return concise user-facing onboarding guidance."""
     status = _provider_config_status(env)
+    if fancy:
+        return _render_status_dashboard(status)
+
     if status["configured"]:
         configured = [
             meta["display_name"]
@@ -280,6 +304,81 @@ def _render_setup_guidance(env: Optional[Mapping[str, str]] = None) -> str:
                 f"Free tier: {item['free_tier']}. Signup: {item['signup_url']}"
             )
     return "\n".join(lines)
+
+
+def _render_status_dashboard(status: Optional[Dict[str, Any]] = None, *, color: Optional[bool] = None) -> str:
+    """Render a compact, premium-feeling status dashboard for humans."""
+    status = status or _provider_config_status()
+    if color is None:
+        color = _supports_color()
+    configured = [
+        meta["display_name"]
+        for meta in status["providers"].values()
+        if meta["configured"]
+    ]
+    title = _style("web-search-plus", "36;1", color=color)
+    subtitle = "provider setup"
+    lines = [
+        f"╭─ {title} {subtitle} " + "─" * 28,
+        "│ " + "  ".join([
+            _capability_badge(status["search_configured"], "search", color=color),
+            _capability_badge(status["extract_configured"], "extraction", color=color),
+            _capability_badge(status["answer_configured"], "answers", color=color),
+        ]),
+        f"│ Providers: {status['configured_count']}/{status['total']} configured",
+    ]
+    if configured:
+        lines.append("│ Active: " + ", ".join(configured))
+    else:
+        lines.append("│ Active: none yet — add one search provider to unlock the tools")
+    if status["search_configured"] and not status["extract_configured"]:
+        lines.append("│ Tip: add Linkup for cleaner citations and web_extract_plus.")
+    elif not status["search_configured"]:
+        lines.append("│ Starter: Tavily + Linkup + Brave is the best first setup.")
+    lines.extend([
+        "╰─ Next commands",
+        "   python ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter",
+        "   python ~/.hermes/plugins/web-search-plus/setup.py list",
+        "   python ~/.hermes/plugins/web-search-plus/search.py --query \"Hermes Agent latest release\" --quality-report",
+    ])
+    return "\n".join(lines)
+
+
+def _render_provider_catalog(*, json_output: bool = False, color: Optional[bool] = None) -> str:
+    """Render provider metadata for either scripts or humans."""
+    catalog = _get_provider_catalog()
+    if json_output:
+        return json.dumps(catalog, indent=2)
+    if color is None:
+        color = _supports_color()
+    lines = [_style("Providers", "36;1", color=color)]
+    for item in catalog:
+        star = _style("★", "33;1", color=color) if item.get("recommended") else " "
+        caps = ", ".join(item.get("capabilities", []))
+        lines.append(f"{star} {item['provider']:<10} {item['display_name']}")
+        lines.append(f"    env: {item['env']}  caps: {caps}")
+        lines.append(f"    {item['description']}")
+        lines.append(f"    free: {item['free_tier']}  signup: {item['signup_url']}")
+    lines.append("\n★ recommended starter providers")
+    return "\n".join(lines)
+
+
+def _providers_for_preset(preset: str) -> List[Dict[str, Any]]:
+    """Return provider catalog entries for a named setup preset."""
+    preset = preset.lower().strip()
+    if preset == "starter":
+        names = {"tavily", "linkup", "brave"}
+    elif preset == "lean":
+        names = {"tavily", "linkup"}
+    elif preset == "search":
+        names = {"tavily", "brave", "serper"}
+    elif preset == "extract":
+        names = {"linkup", "firecrawl", "tavily"}
+    elif preset == "all":
+        names = {item["provider"] for item in _PROVIDER_CATALOG}
+    else:
+        raise SystemExit(f"Unknown preset: {preset}. Choose starter, lean, search, extract, or all.")
+    return [item for item in _PROVIDER_CATALOG if item["provider"] in names]
 
 
 def _upsert_env_values(env_path: Path, values: Mapping[str, str]) -> Dict[str, List[str]]:
@@ -338,13 +437,22 @@ def _unconfigured_session_hint(
 
 
 def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
+    parser.description = "Configure web-search-plus provider keys with a tiny, secret-safe wizard."
+    parser.epilog = (
+        "Presets: starter=Tavily+Linkup+Brave, lean=Tavily+Linkup, "
+        "search=Tavily+Brave+Serper, extract=Linkup+Firecrawl+Tavily."
+    )
     subs = parser.add_subparsers(dest="web_search_plus_command")
-    subs.add_parser("status", help="Show configured providers without printing secrets")
-    setup = subs.add_parser("setup", help="Interactively configure provider API keys")
-    setup.add_argument("providers", nargs="*", help="Provider names to configure (default: recommended starters)")
+    status = subs.add_parser("status", help="Show a setup dashboard without printing secrets")
+    status.add_argument("--plain", action="store_true", help="Print compact legacy text instead of the dashboard")
+    setup = subs.add_parser("setup", help="Run the provider-key setup wizard")
+    setup.add_argument("providers", nargs="*", help="Provider names to configure (overrides --preset)")
+    setup.add_argument("--preset", default="starter", help="starter, lean, search, extract, or all (default: starter)")
     setup.add_argument("--open", action="store_true", help="Open signup URLs in a browser before prompting")
     setup.add_argument("--env-path", help="Override Hermes .env path")
-    list_cmd = subs.add_parser("list", help="List supported providers and signup URLs")
+    setup.add_argument("--show-values", action="store_true", help="Use visible input instead of hidden secret prompts")
+    setup.add_argument("--dry-run", action="store_true", help="Show the setup plan without writing .env")
+    list_cmd = subs.add_parser("list", help="List supported providers, capabilities, and signup URLs")
     list_cmd.add_argument("--json", action="store_true", help="Print provider catalog as JSON")
     parser.set_defaults(func=_web_search_plus_cli_command)
 
@@ -352,31 +460,42 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
 def _web_search_plus_cli_command(args: Any) -> None:
     command = getattr(args, "web_search_plus_command", None) or "status"
     if command == "list":
-        catalog = _get_provider_catalog()
-        if getattr(args, "json", False):
-            print(json.dumps(catalog, indent=2))
-            return
-        for item in catalog:
-            star = "*" if item.get("recommended") else " "
-            print(f"{star} {item['provider']}: {item['display_name']} — {item['env']} — {item['signup_url']}")
+        print(_render_provider_catalog(json_output=getattr(args, "json", False)))
         return
 
     if command == "status":
-        print(_render_setup_guidance())
+        print(_render_setup_guidance(fancy=not getattr(args, "plain", False)))
         return
 
     if command == "setup":
         selected = set(getattr(args, "providers", None) or [])
-        catalog = [item for item in _PROVIDER_CATALOG if item["provider"] in selected] if selected else [item for item in _PROVIDER_CATALOG if item.get("recommended")]
+        catalog = [item for item in _PROVIDER_CATALOG if item["provider"] in selected] if selected else _providers_for_preset(getattr(args, "preset", "starter"))
         if not catalog:
             raise SystemExit("No matching providers. Run `python ~/.hermes/plugins/web-search-plus/setup.py list`.")
+
+        env_path = Path(getattr(args, "env_path", None) or _get_hermes_env_path())
+        print(_render_status_dashboard())
+        print("\nSetup plan:")
+        for item in catalog:
+            rec = " recommended" if item.get("recommended") else ""
+            caps = ", ".join(item.get("capabilities", []))
+            print(f"  • {item['display_name']} ({item['provider']}) — {item['env']} — {caps}{rec}")
+            print(f"    {item['signup_url']}")
+        print(f"\nTarget env file: {env_path}")
+        if getattr(args, "dry_run", False):
+            print("Dry run only; no keys written.")
+            return
+
         values: Dict[str, str] = {}
         for item in catalog:
             if getattr(args, "open", False):
                 webbrowser.open(item["signup_url"])
-            prompt = f"{item['display_name']} key ({item['env']}, leave blank to skip): "
+            prompt = f"{item['display_name']} key ({item['env']}, Enter to skip): "
             try:
-                value = getpass.getpass(prompt).strip()
+                if getattr(args, "show_values", False):
+                    value = input(prompt).strip()
+                else:
+                    value = getpass.getpass(prompt).strip()
             except EOFError:
                 # Non-interactive stdin (CI, scripted smoke tests) should behave like
                 # pressing Enter for the remaining prompts, not crash the setup helper.
@@ -386,11 +505,11 @@ def _web_search_plus_cli_command(args: Any) -> None:
         if not values:
             print("No keys entered; nothing changed.")
             return
-        env_path = Path(getattr(args, "env_path", None) or _get_hermes_env_path())
         result = _upsert_env_values(env_path, values)
         changed = sorted(result["updated"] + result["added"])
-        print(f"Configured {len(changed)} provider key(s) in {env_path}: " + ", ".join(changed))
-        print("Restart Hermes or run /reset so tools re-register with the new credentials.")
+        print(f"\n✓ Configured {len(changed)} provider key(s) in {env_path}: " + ", ".join(changed))
+        print("✓ Secrets were not printed.")
+        print("Next: restart Hermes or run /reset so tools re-register with the new credentials.")
         return
 
     raise SystemExit(f"Unknown web-search-plus command: {command}")
