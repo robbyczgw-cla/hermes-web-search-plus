@@ -19,6 +19,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
@@ -718,10 +719,22 @@ def _format_extract_results(data: dict) -> str:
     return "\n".join(lines).strip()
 
 
+_ANSWER_DETECTOR_MAX_CHARS = 1000
+_ANSWER_LATIN_CONFIDENCE_THRESHOLD = 2
+_ANSWER_TRADITIONAL_CHINESE_MARKERS = "臺灣體評價氣訊網龍門開關學國買賣與專業"
+
 _ANSWER_LANGUAGE_PROFILES = {
     "de": {
         "terms": ["der", "die", "das", "und", "für", "was", "wie", "preis", "günstig", "vergleich", "österreich", "deutschland", "schweiz", "nachrichten", "definieren"],
         "diacritics": "äöüß",
+    },
+    "nl": {
+        "terms": ["de", "het", "een", "wat", "hoe", "zijn", "voor", "prijs", "prijzen", "goedkoop", "vergelijk", "beste", "nederland", "belgië", "nieuws", "laatste", "deze week"],
+        "diacritics": "ëïéèá",
+    },
+    "pl": {
+        "terms": ["co", "jak", "dla", "cena", "najlepsza", "najlepsze", "tani", "porównanie", "polska", "polsce", "wiadomości", "najnowsze", "tygodniu"],
+        "diacritics": "ąćęłńóśźż",
     },
     "es": {
         "terms": ["el", "la", "los", "las", "qué", "que", "cómo", "como", "tiempo", "precio", "barato", "comparación", "alternativas", "españa", "méxico", "noticias"],
@@ -746,13 +759,18 @@ _ANSWER_LANGUAGE_PROFILES = {
 }
 
 _ANSWER_INTENT_TERMS = {
-    "weather": ["weather", "forecast", "wetter", "tiempo", "météo", "meteo", "tempo"],
-    "news": ["news", "latest", "updates", "nachrichten", "neueste", "noticias", "nouvelles", "notizie", "notícias"],
-    "define": ["define", "definition", "what is", "was ist", "definieren", "definición", "définition", "definizione", "definição"],
-    "shopping": ["price", "cheap", "buy", "review", "preis", "günstig", "vergleich", "precio", "barato", "preço", "preços", "pas cher", "prezzo"],
-    "time": ["time in", "uhrzeit", "hora en", "heure à", "ora a"],
-    "calc": ["calculate", "berechne", "calcular", "calculer", "calcola"],
+    "weather": ["weather", "forecast", "wetter", "tiempo", "météo", "meteo", "tempo", "pogoda", "weer"],
+    "news": ["news", "latest", "updates", "nachrichten", "neueste", "noticias", "nouvelles", "notizie", "notícias", "nieuws", "laatste", "wiadomości", "najnowsze", "最新", "消息"],
+    "define": ["define", "definition", "what is", "was ist", "definieren", "definición", "définition", "definizione", "definição", "definitie", "definicja"],
+    "shopping": ["price", "cheap", "buy", "review", "preis", "günstig", "vergleich", "precio", "barato", "preço", "preços", "pas cher", "prezzo", "prijs", "prijzen", "goedkoop", "cena", "tani", "評測", "評價"],
+    "time": ["time in", "uhrzeit", "hora en", "heure à", "ora a", "tijd in", "czas w"],
+    "calc": ["calculate", "berechne", "calcular", "calculer", "calcola", "bereken", "oblicz"],
 }
+
+
+def _normalize_answer_detector_input(query: str) -> str:
+    """Normalize and cap detector input before regex work."""
+    return unicodedata.normalize("NFKC", query or "")[:_ANSWER_DETECTOR_MAX_CHARS]
 
 
 def _detect_answer_script(query: str) -> str:
@@ -764,12 +782,12 @@ def _detect_answer_script(query: str) -> str:
     if re.search(r"[\u3040-\u30ff]", query):
         return "Jpan"
     if re.search(r"[\u4e00-\u9fff]", query):
-        return "Hans"
+        return "Hant" if any(marker in query for marker in _ANSWER_TRADITIONAL_CHINESE_MARKERS) else "Hans"
     return "Latn"
 
 
 def _detect_answer_intent(query: str) -> str:
-    q = query.lower()[:1000]
+    q = _normalize_answer_detector_input(query).lower()
     for intent, terms in _ANSWER_INTENT_TERMS.items():
         if any(term in q for term in terms):
             return intent
@@ -782,13 +800,14 @@ def _detect_answer_freshness(query: str, requested: str = "auto") -> Dict[str, s
     if requested != "auto":
         return {"requested": requested, "applied": "none" if requested == "none" else requested, "reason": "explicit freshness requested"}
 
-    q = query.lower()[:1000]
-    day_terms = ["today", "right now", "breaking", "heute", "gerade", "aktuell", "now", "hoje", "hoy", "oggi", "aujourd'hui"]
+    q = _normalize_answer_detector_input(query).lower()
+    day_terms = ["today", "right now", "breaking", "heute", "gerade", "aktuell", "hoje", "hoy", "oggi", "aujourd'hui", "vandaag", "dzisiaj", "今日"]
     week_terms = [
         "latest", "this week", "past week", "recent", "news", "updates", "neueste", "diese woche", "nachrichten",
         "noticias", "esta semana", "últimas", "dernières", "cette semaine", "nouvelles", "ultime", "questa settimana", "notizie", "notícias",
+        "laatste", "nieuws", "deze week", "najnowsze", "wiadomości", "tym tygodniu", "最新", "消息",
     ]
-    month_terms = ["this month", "past month", "dieser monat", "letzter monat", "este mes", "ce mois", "questo mese", "este mês"]
+    month_terms = ["this month", "past month", "dieser monat", "letzter monat", "este mes", "ce mois", "questo mese", "este mês", "deze maand", "ten miesiąc"]
     if any(term in q for term in day_terms):
         return {"requested": requested, "applied": "day", "reason": "query looked time-sensitive"}
     if any(term in q for term in week_terms) or re.search(r"\b20[2-9][0-9]\b", q):
@@ -800,7 +819,7 @@ def _detect_answer_freshness(query: str, requested: str = "auto") -> Dict[str, s
 
 def _detect_answer_locale(query: str, language: str = "auto", country: str = "auto") -> Dict[str, str]:
     """Small locale detector for web_answer_plus. Deliberately conservative."""
-    sample = query[:1000]
+    sample = _normalize_answer_detector_input(query)
     q = sample.lower()
     script = _detect_answer_script(sample)
     detected_language = None if language == "auto" else language.lower()
@@ -814,7 +833,7 @@ def _detect_answer_locale(query: str, language: str = "auto", country: str = "au
             detected_language, confidence = "ru", "medium"
         elif script == "Jpan":
             detected_language, confidence = "ja", "medium"
-        elif script == "Hans":
+        elif script in {"Hans", "Hant"}:
             detected_language, confidence = "zh", "medium"
 
     if not detected_language and script == "Latn":
@@ -824,7 +843,7 @@ def _detect_answer_locale(query: str, language: str = "auto", country: str = "au
             accent_score = sum(2 for char in profile["diacritics"] if char in q)
             scores[code] = term_score + accent_score
         best_language, best_score = max(scores.items(), key=lambda item: item[1])
-        if best_score >= 2 or (best_language != "en" and best_score >= 1 and any(ch in q for ch in _ANSWER_LANGUAGE_PROFILES[best_language]["diacritics"])):
+        if best_score >= _ANSWER_LATIN_CONFIDENCE_THRESHOLD or (best_language != "en" and best_score >= 1 and any(ch in q for ch in _ANSWER_LANGUAGE_PROFILES[best_language]["diacritics"])):
             detected_language = best_language
             confidence = "high" if best_score >= 4 else "medium"
         else:
@@ -843,6 +862,9 @@ def _detect_answer_locale(query: str, language: str = "auto", country: str = "au
             "IT": ["italia", "italy", "roma", "milano"],
             "BR": ["brasil", "brazil", "são paulo"],
             "PT": ["portugal", "lisboa"],
+            "NL": ["nederland", "netherlands", "amsterdam"],
+            "PL": ["polska", "polsce", "poland", "warszawa"],
+            "TW": ["台灣", "臺灣", "taiwan"],
             "JP": ["日本", "japan"],
         }
         for code, terms in country_signals.items():
@@ -850,7 +872,7 @@ def _detect_answer_locale(query: str, language: str = "auto", country: str = "au
                 detected_country = code
                 break
     if not detected_country:
-        detected_country = {"de": "DE", "fr": "FR", "es": "ES", "it": "IT", "pt": "BR", "ja": "JP"}.get(detected_language, "US") if script == "Latn" else "US"
+        detected_country = {"de": "DE", "fr": "FR", "es": "ES", "it": "IT", "pt": "BR", "nl": "NL", "pl": "PL", "ja": "JP", "zh": "CN"}.get(detected_language, "US") if script == "Latn" else "US"
 
     return {
         "language": detected_language,

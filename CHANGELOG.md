@@ -12,11 +12,11 @@
 - Provider-key wording is capability-based: no single key is globally required; search keys enable search/answer, extraction-capable keys enable URL extraction and fuller cited answers.
 - Answer defaults stay budget-safe: quick mode uses 3 sources and up to 2 extracts; deep mode uses broader search with extraction hard-capped at 5 URLs.
 - `web_answer_plus` prefers Linkup for extraction, falls back to the normal extraction chain when another extract provider is configured, and degrades to snippet-backed answers with an explicit warning when no extraction provider exists.
-- `web_answer_plus` now has a lightweight in-process locale layer for EN/DE/ES/FR/IT/PT, script hints for non-Latin queries, localized freshness terms, and intent hints without adding external detector dependencies or logging raw queries.
+- `web_answer_plus` now has a lightweight in-process locale layer for EN/DE/ES/FR/IT/PT/NL/PL, script hints for non-Latin queries including Hans/Hant Chinese, localized freshness terms, and intent hints without adding external detector dependencies or logging raw queries.
 
 ### 🧪 Tests
-- Added regression coverage for answer defaults, freshness detection, citation normalization, locale hints, multilingual locale/intent detection, output shapes, quick/deep mode selection, fallback extractor cost metadata, extraction status, cost guards, provider catalog, full-provider default setup, optional presets, setup dashboard rendering, dry-run setup behavior, empty-key tool gating, and onboarding hints.
-- Test suite: 84/84 unit tests passing locally.
+- Added regression coverage for answer defaults, freshness detection, citation normalization, locale hints, multilingual locale/intent detection, Dutch/Polish locale detection, Traditional Chinese script hints, detector input normalization/capping, output shapes, quick/deep mode selection, fallback extractor cost metadata, extraction status, cost guards, provider catalog, full-provider default setup, optional presets, setup dashboard rendering, dry-run setup behavior, empty-key tool gating, and onboarding hints.
+- Test suite: 89/89 unit tests passing locally.
 
 ## [v1.7.1] — 2026-05-06
 

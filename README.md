@@ -138,8 +138,8 @@ Defaults are intentionally conservative:
 
 - `quick` mode asks for 3 sources and extracts up to 2 URLs.
 - `deep` mode asks for 6 sources and uses research mode, with extraction still hard-capped at 5 URLs.
-- `freshness="auto"` applies recency filters only when the query looks current/news/date-sensitive, including common DE/ES/FR/IT/PT news terms.
-- `language="auto"` uses lightweight in-process script/language hints for EN, DE, ES, FR, IT, and PT; unsupported scripts stay conservative and never call an external detector.
+- `freshness="auto"` applies recency filters only when the query looks current/news/date-sensitive, including common DE/ES/FR/IT/PT/NL/PL and Chinese news terms.
+- `language="auto"` uses lightweight in-process script/language hints for EN, DE, ES, FR, IT, PT, NL, and PL, plus coarse script hints for Arab/Cyrl/Jpan/Hans/Hant without external detector calls.
 - Linkup is preferred for extraction; other extraction providers are used through the normal fallback chain.
 - If no extraction provider is configured, answers are snippet-backed and carry an explicit warning.
 
@@ -152,7 +152,7 @@ Parameters:
 | `sources` | integer | quick `3`, deep `6` | Citation-ready sources to return, max 10 |
 | `freshness` | string | `"auto"` | `auto`, `none`, `day`, `week`, `month`, `year` |
 | `output` | string | `"answer"` | `answer`, `brief`, `sources`, or `json` |
-| `language` | string | `"auto"` | Optional language code such as `de`, `en`, `es`, `fr`, `it`, `pt` |
+| `language` | string | `"auto"` | Optional language code such as `de`, `en`, `es`, `fr`, `it`, `pt`, `nl`, `pl` |
 | `country` | string | `"auto"` | Optional country/region code such as `AT`, `DE`, `US` |
 | `max_extracts` | integer | `2` | Advanced cost guard; hard-capped at 5 |
 

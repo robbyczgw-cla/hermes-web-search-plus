@@ -42,6 +42,8 @@ KNOWN_LOCALE_QUERIES = [
     ("quelle est la définition de DAC audio", "fr", "FR", "define"),
     ("ultime notizie hi-fi questa settimana Italia", "it", "IT", "news"),
     ("melhores preços de amplificadores no Brasil", "pt", "BR", "shopping"),
+    ("wat is de beste prijs voor luidsprekers in Nederland", "nl", "NL", "shopping"),
+    ("najlepsza cena wzmacniacza w Polsce", "pl", "PL", "shopping"),
 ]
 
 
@@ -75,11 +77,53 @@ def test_detect_locale_identifies_unsupported_scripts_without_guessing_country()
     assert locale["intent_hint"] == "general"
 
 
+def test_detect_locale_distinguishes_traditional_chinese_script():
+    locale = wsp._detect_answer_locale("最新 DAC 評測 台灣", "auto", "auto")
+
+    assert locale["language"] == "zh"
+    assert locale["country"] == "TW"
+    assert locale["script"] == "Hant"
+    assert locale["intent_hint"] == "news"
+
+
+def test_detect_locale_does_not_treat_shared_tai_character_as_traditional():
+    locale = wsp._detect_answer_locale("台风预警 最新消息", "auto", "auto")
+
+    assert locale["language"] == "zh"
+    assert locale["script"] == "Hans"
+
+
+def test_detect_locale_handles_empty_punctuation_and_idempotence():
+    for query in ["", "   ", "?! -- ..."]:
+        locale = wsp._detect_answer_locale(query, "auto", "auto")
+        assert locale["language"] == "en"
+        assert locale["country"] == "US"
+        assert locale["script"] == "Latn"
+        assert locale["language_confidence"] == "low"
+
+    query = "wat zijn de laatste prijzen in Nederland"
+    assert wsp._detect_answer_locale(query, "auto", "auto") == wsp._detect_answer_locale(query, "auto", "auto")
+
+
+def test_detect_locale_caps_input_before_matching_tail_terms():
+    late_polish_marker = "x" * 1000 + " Polska cena"
+    early_polish_marker = "Polska cena " + "x" * 1000
+
+    assert wsp._detect_answer_locale(late_polish_marker, "auto", "auto")["language"] == "en"
+    assert wsp._detect_answer_locale(early_polish_marker, "auto", "auto")["language"] == "pl"
+
+
 def test_detect_freshness_understands_romance_news_terms():
     assert wsp._detect_answer_freshness("noticias de esta semana sobre DACs", "auto")["applied"] == "week"
     assert wsp._detect_answer_freshness("dernières nouvelles hi-fi cette semaine", "auto")["applied"] == "week"
     assert wsp._detect_answer_freshness("ultime notizie hi-fi questa settimana", "auto")["applied"] == "week"
     assert wsp._detect_answer_freshness("notícias de hoje sobre amplificadores", "auto")["applied"] == "day"
+
+
+def test_detect_freshness_understands_dutch_polish_and_traditional_chinese_terms():
+    assert wsp._detect_answer_freshness("laatste nieuws over DACs deze week", "auto")["applied"] == "week"
+    assert wsp._detect_answer_freshness("najnowsze wiadomości o wzmacniaczach w tym tygodniu", "auto")["applied"] == "week"
+    assert wsp._detect_answer_freshness("今日 DAC 最新消息", "auto")["applied"] == "day"
 
 
 def test_normalize_answer_sources_creates_citation_ready_records():
