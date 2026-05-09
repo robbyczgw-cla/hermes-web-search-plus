@@ -18,4 +18,22 @@ optional_env:
 provides_tools:
   - web_search_plus
   - web_extract_plus
-provides_hooks: []
+  - web_answer_plus
+provides_hooks:
+  - on_session_start
+onboarding:
+  setup_command: "hermes web-search-plus setup"
+  note: "At least one provider key is required; any configured key enables the plugin."
+  recommended_env:
+    - name: TAVILY_API_KEY
+      description: "Tavily — recommended starter for search/research (1k free/month)"
+      url: "https://tavily.com"
+      secret: true
+    - name: LINKUP_API_KEY
+      description: "Linkup — cheap extraction and citations (€5 free monthly credits)"
+      url: "https://www.linkup.so"
+      secret: true
+    - name: BRAVE_API_KEY
+      description: "Brave Search — independent general web index ($5 free monthly credits)"
+      url: "https://api.search.brave.com/app/keys"
+      secret: true

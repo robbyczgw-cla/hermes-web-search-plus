@@ -7,13 +7,17 @@ from __future__ import annotations
 
 __version__ = "1.7.1"
 
+import argparse
+import getpass
 import json
+import logging
 import os
 import re
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 from urllib.parse import urlparse
 
 _SEARCH_SCRIPT = Path(__file__).parent / "search.py"
@@ -39,6 +43,120 @@ _EXTRACT_PROVIDER_ENV_KEYS = [
     "YOU_API_KEY",
 ]
 
+logger = logging.getLogger(__name__)
+_PROVIDER_CATALOG = [
+    {
+        "provider": "tavily",
+        "env": "TAVILY_API_KEY",
+        "display_name": "Tavily",
+        "description": "Recommended starter for research/news-style search.",
+        "free_tier": "1,000 free searches/month",
+        "signup_url": "https://tavily.com",
+        "capabilities": ["search", "extract", "research"],
+        "recommended": True,
+    },
+    {
+        "provider": "linkup",
+        "env": "LINKUP_API_KEY",
+        "display_name": "Linkup",
+        "description": "Best starter for cheap clean extraction and citation-grounded retrieval.",
+        "free_tier": "€5 free monthly credits (~5,000 standard extracts)",
+        "signup_url": "https://www.linkup.so",
+        "capabilities": ["search", "extract", "citations"],
+        "recommended": True,
+    },
+    {
+        "provider": "brave",
+        "env": "BRAVE_API_KEY",
+        "display_name": "Brave Search",
+        "description": "Independent general web index; useful for fresh and local web results.",
+        "free_tier": "$5 free monthly credits",
+        "signup_url": "https://api.search.brave.com/app/keys",
+        "capabilities": ["search", "news", "local"],
+        "recommended": True,
+    },
+    {
+        "provider": "exa",
+        "env": "EXA_API_KEY",
+        "display_name": "Exa",
+        "description": "Semantic discovery, alternatives, docs, academic and long-form discovery.",
+        "free_tier": "1,000 free searches/month",
+        "signup_url": "https://dashboard.exa.ai/api-keys",
+        "capabilities": ["search", "extract", "semantic"],
+        "recommended": False,
+    },
+    {
+        "provider": "firecrawl",
+        "env": "FIRECRAWL_API_KEY",
+        "display_name": "Firecrawl",
+        "description": "Robust scraping/extraction fallback, especially for JS-heavy pages.",
+        "free_tier": "500 one-time credits",
+        "signup_url": "https://www.firecrawl.dev/app/api-keys",
+        "capabilities": ["search", "extract", "js"],
+        "recommended": False,
+    },
+    {
+        "provider": "serper",
+        "env": "SERPER_API_KEY",
+        "display_name": "Serper",
+        "description": "Google-like SERP results for facts, shopping, local and news queries.",
+        "free_tier": "2,500 one-time credits",
+        "signup_url": "https://serper.dev/api-key",
+        "capabilities": ["search", "news", "shopping", "local"],
+        "recommended": False,
+    },
+    {
+        "provider": "querit",
+        "env": "QUERIT_API_KEY",
+        "display_name": "Querit",
+        "description": "Multilingual and real-time search candidate.",
+        "free_tier": "1,000 free searches/month",
+        "signup_url": "https://querit.com",
+        "capabilities": ["search", "multilingual"],
+        "recommended": False,
+    },
+    {
+        "provider": "perplexity",
+        "env": "PERPLEXITY_API_KEY",
+        "display_name": "Perplexity",
+        "description": "Direct answer-style search when configured directly.",
+        "free_tier": "API key required",
+        "signup_url": "https://www.perplexity.ai/settings/api",
+        "capabilities": ["search", "answer"],
+        "recommended": False,
+    },
+    {
+        "provider": "kilo-perplexity",
+        "env": "KILOCODE_API_KEY",
+        "display_name": "Kilo Code Perplexity bridge",
+        "description": "Perplexity-compatible access through Kilo Code when configured.",
+        "free_tier": "Depends on Kilo account",
+        "signup_url": "https://kilo.ai",
+        "capabilities": ["search", "answer"],
+        "recommended": False,
+    },
+    {
+        "provider": "you",
+        "env": "YOU_API_KEY",
+        "display_name": "You.com",
+        "description": "LLM-ready real-time snippets and extraction when available.",
+        "free_tier": "Limited/API key required",
+        "signup_url": "https://api.you.com",
+        "capabilities": ["search", "extract"],
+        "recommended": False,
+    },
+    {
+        "provider": "searxng",
+        "env": "SEARXNG_INSTANCE_URL",
+        "display_name": "SearXNG",
+        "description": "Self-hosted/privacy-preserving metasearch instance URL.",
+        "free_tier": "Free if self-hosted",
+        "signup_url": "https://docs.searxng.org/admin/installation.html",
+        "capabilities": ["search", "self-hosted"],
+        "recommended": False,
+    },
+]
+
 
 def _load_plugin_env() -> None:
     """Load the plugin's .env file into os.environ if keys aren't already set."""
@@ -57,6 +175,195 @@ def _load_plugin_env() -> None:
 
 # Load plugin .env on import
 _load_plugin_env()
+
+
+def _get_provider_catalog() -> List[Dict[str, Any]]:
+    """Return provider onboarding metadata without exposing secrets."""
+    return [dict(item) for item in _PROVIDER_CATALOG]
+
+
+def _provider_config_status(env: Optional[Mapping[str, str]] = None) -> Dict[str, Any]:
+    """Describe which providers are configured; any one provider is enough."""
+    env = env if env is not None else os.environ
+    providers: Dict[str, Dict[str, Any]] = {}
+    configured_count = 0
+    for item in _PROVIDER_CATALOG:
+        key = item["env"]
+        configured = bool((env.get(key) or "").strip())
+        configured_count += int(configured)
+        providers[item["provider"]] = {
+            "env": key,
+            "display_name": item["display_name"],
+            "configured": configured,
+            "recommended": item.get("recommended", False),
+            "capabilities": item.get("capabilities", []),
+        }
+    return {
+        "configured": configured_count > 0,
+        "configured_count": configured_count,
+        "total": len(_PROVIDER_CATALOG),
+        "providers": providers,
+    }
+
+
+def _get_hermes_env_path() -> Path:
+    """Return Hermes' profile-aware .env path when available."""
+    try:
+        from hermes_constants import get_hermes_home  # type: ignore
+        return Path(get_hermes_home()) / ".env"
+    except Exception:
+        return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / ".env"
+
+
+def _setup_state_path() -> Path:
+    return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / "state" / "web-search-plus-onboarding.json"
+
+
+def _render_setup_guidance(env: Optional[Mapping[str, str]] = None) -> str:
+    """Return concise user-facing onboarding guidance."""
+    status = _provider_config_status(env)
+    if status["configured"]:
+        configured = [
+            meta["display_name"]
+            for meta in status["providers"].values()
+            if meta["configured"]
+        ]
+        return "web-search-plus is configured. Providers: " + ", ".join(configured)
+
+    lines = [
+        "web-search-plus is installed but no provider keys are configured.",
+        "Run `hermes web-search-plus setup` to configure a starter provider.",
+        "",
+        "Recommended starter providers:",
+    ]
+    for item in _PROVIDER_CATALOG:
+        if item.get("recommended"):
+            lines.append(
+                f"- {item['display_name']} ({item['env']}): {item['description']} "
+                f"Free tier: {item['free_tier']}. Signup: {item['signup_url']}"
+            )
+    return "\n".join(lines)
+
+
+def _upsert_env_values(env_path: Path, values: Mapping[str, str]) -> Dict[str, List[str]]:
+    """Insert/update env values in a .env file. Caller owns secret prompting."""
+    env_path.parent.mkdir(parents=True, exist_ok=True)
+    existing_lines = env_path.read_text().splitlines() if env_path.exists() else []
+    keys = set(values)
+    seen = set()
+    added: List[str] = []
+    updated: List[str] = []
+    output: List[str] = []
+
+    for line in existing_lines:
+        if "=" not in line or line.lstrip().startswith("#"):
+            output.append(line)
+            continue
+        key, _, _old = line.partition("=")
+        clean_key = key.strip()
+        if clean_key in keys:
+            output.append(f"{clean_key}={values[clean_key]}")
+            updated.append(clean_key)
+            seen.add(clean_key)
+        else:
+            output.append(line)
+
+    for key, value in values.items():
+        if key not in seen:
+            output.append(f"{key}={value}")
+            added.append(key)
+
+    env_path.write_text("\n".join(output).rstrip() + "\n")
+    return {"updated": updated, "added": added}
+
+
+def _unconfigured_session_hint(
+    env: Optional[Mapping[str, str]] = None,
+    state_path: Optional[Path] = None,
+) -> Optional[Dict[str, str]]:
+    """Return a one-shot unconfigured hint payload, recording acknowledgement in state."""
+    if _provider_config_status(env)["configured"]:
+        return None
+    state_path = state_path or _setup_state_path()
+    try:
+        if state_path.exists():
+            data = json.loads(state_path.read_text() or "{}")
+            if data.get("unconfigured_hint_shown"):
+                return None
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps({"unconfigured_hint_shown": True}, indent=2) + "\n")
+    except Exception as exc:
+        logger.debug("web-search-plus onboarding state write failed: %s", exc)
+    return {
+        "action": "hint",
+        "message": "web-search-plus loaded but no provider keys are configured. Run `hermes web-search-plus setup`.",
+    }
+
+
+def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
+    subs = parser.add_subparsers(dest="web_search_plus_command")
+    subs.add_parser("status", help="Show configured providers without printing secrets")
+    setup = subs.add_parser("setup", help="Interactively configure provider API keys")
+    setup.add_argument("providers", nargs="*", help="Provider names to configure (default: recommended starters)")
+    setup.add_argument("--open", action="store_true", help="Open signup URLs in a browser before prompting")
+    setup.add_argument("--env-path", help="Override Hermes .env path")
+    list_cmd = subs.add_parser("list", help="List supported providers and signup URLs")
+    list_cmd.add_argument("--json", action="store_true", help="Print provider catalog as JSON")
+    parser.set_defaults(func=_web_search_plus_cli_command)
+
+
+def _web_search_plus_cli_command(args: Any) -> None:
+    command = getattr(args, "web_search_plus_command", None) or "status"
+    if command == "list":
+        catalog = _get_provider_catalog()
+        if getattr(args, "json", False):
+            print(json.dumps(catalog, indent=2))
+            return
+        for item in catalog:
+            star = "*" if item.get("recommended") else " "
+            print(f"{star} {item['provider']}: {item['display_name']} — {item['env']} — {item['signup_url']}")
+        return
+
+    if command == "status":
+        print(_render_setup_guidance())
+        return
+
+    if command == "setup":
+        selected = set(getattr(args, "providers", None) or [])
+        catalog = [item for item in _PROVIDER_CATALOG if item["provider"] in selected] if selected else [item for item in _PROVIDER_CATALOG if item.get("recommended")]
+        if not catalog:
+            raise SystemExit("No matching providers. Run `hermes web-search-plus list`.")
+        values: Dict[str, str] = {}
+        for item in catalog:
+            if getattr(args, "open", False):
+                webbrowser.open(item["signup_url"])
+            prompt = f"{item['display_name']} key ({item['env']}, leave blank to skip): "
+            value = getpass.getpass(prompt).strip()
+            if value:
+                values[item["env"]] = value
+        if not values:
+            print("No keys entered; nothing changed.")
+            return
+        env_path = Path(getattr(args, "env_path", None) or _get_hermes_env_path())
+        result = _upsert_env_values(env_path, values)
+        changed = sorted(result["updated"] + result["added"])
+        print(f"Configured {len(changed)} provider key(s) in {env_path}: " + ", ".join(changed))
+        print("Restart Hermes or run /reset so tools re-register with the new credentials.")
+        return
+
+    raise SystemExit(f"Unknown web-search-plus command: {command}")
+
+
+def _web_search_plus_slash_setup(raw_args: str = "") -> str:
+    """In-session lightweight status/help command."""
+    return _render_setup_guidance()
+
+
+def _on_session_start(**kwargs: Any) -> Optional[Dict[str, str]]:
+    hint = _unconfigured_session_hint()
+    if hint:
+        logger.info(hint["message"])
+    return hint
 
 
 def _run_search(
@@ -744,3 +1051,23 @@ def register(ctx: Any) -> None:
         description="Cited web answers from search plus extraction",
         emoji="🧭",
     )
+
+    if hasattr(ctx, "register_cli_command"):
+        ctx.register_cli_command(
+            name="web-search-plus",
+            help="Configure and inspect Web Search Plus providers",
+            setup_fn=_web_search_plus_cli_setup,
+            handler_fn=_web_search_plus_cli_command,
+            description="Provider onboarding for the multi-provider web-search-plus plugin.",
+        )
+
+    if hasattr(ctx, "register_command"):
+        ctx.register_command(
+            name="web-search-plus-setup",
+            handler=_web_search_plus_slash_setup,
+            description="Show Web Search Plus provider setup status and starter-key guidance.",
+            args_hint="",
+        )
+
+    if hasattr(ctx, "register_hook"):
+        ctx.register_hook("on_session_start", _on_session_start)
