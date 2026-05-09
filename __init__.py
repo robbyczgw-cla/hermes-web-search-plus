@@ -9,10 +9,12 @@ __version__ = "1.7.1"
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 _SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 _TOOLSET_NAME = "web-search-plus"
@@ -68,6 +70,8 @@ def _run_search(
     mode: str = "normal",
     quality_report: bool = False,
     research_time_budget: float = 55.0,
+    language: Optional[str] = None,
+    country: Optional[str] = None,
 ) -> dict:
     """Call search.py subprocess and return parsed JSON result."""
     cmd = [
@@ -90,6 +94,10 @@ def _run_search(
         cmd += ["--mode", mode, "--research-time-budget", str(research_time_budget)]
     if quality_report:
         cmd.append("--quality-report")
+    if language and language != "auto":
+        cmd += ["--language", language]
+    if country and country != "auto":
+        cmd += ["--country", country]
 
     env = os.environ.copy()
 
@@ -240,8 +248,254 @@ def _format_extract_results(data: dict) -> str:
     return "\n".join(lines).strip()
 
 
+def _detect_answer_freshness(query: str, requested: str = "auto") -> Dict[str, str]:
+    """Resolve answer freshness from an explicit value or lightweight query signals."""
+    requested = requested or "auto"
+    if requested != "auto":
+        return {"requested": requested, "applied": "none" if requested == "none" else requested, "reason": "explicit freshness requested"}
+
+    q = query.lower()
+    day_terms = ["today", "right now", "breaking", "heute", "gerade", "aktuell", "now"]
+    week_terms = ["latest", "this week", "past week", "recent", "news", "updates", "neueste", "diese woche", "nachrichten"]
+    month_terms = ["this month", "past month", "dieser monat", "letzter monat"]
+    if any(term in q for term in day_terms):
+        return {"requested": requested, "applied": "day", "reason": "query looked time-sensitive"}
+    if any(term in q for term in week_terms) or re.search(r"\b20[2-9][0-9]\b", q):
+        return {"requested": requested, "applied": "week", "reason": "query looked time-sensitive"}
+    if any(term in q for term in month_terms):
+        return {"requested": requested, "applied": "month", "reason": "query looked time-sensitive"}
+    return {"requested": requested, "applied": "none", "reason": "no freshness signals detected"}
+
+
+def _detect_answer_locale(query: str, language: str = "auto", country: str = "auto") -> Dict[str, str]:
+    """Small locale detector for web_answer_plus. Deliberately conservative."""
+    q = query.lower()
+    detected_language = None if language == "auto" else language
+    detected_country = None if country == "auto" else country.upper()
+    confidence = "explicit" if detected_language else "low"
+
+    if not detected_language:
+        language_signals = [
+            ("fr", ["meilleur", "meilleurs", "pas cher", "comparaison", "avis", "france"]),
+            ("es", ["precio", "barato", "comparación", "alternativas", "españa", "méxico"]),
+            ("it", ["prezzo", "migliori", "confronto", "italia"]),
+            ("pt", ["preço", "melhores", "comparação", "brasil", "portugal"]),
+            ("de", ["preis", "günstig", "vergleich", "österreich", "deutschland", "schweiz"]),
+        ]
+        for code, terms in language_signals:
+            if any(term in q for term in terms):
+                detected_language = code
+                confidence = "medium"
+                break
+    if not detected_language:
+        if re.search(r"[\u3040-\u30ff]", query):
+            detected_language, confidence = "ja", "medium"
+        elif re.search(r"[\u4e00-\u9fff]", query):
+            detected_language, confidence = "zh", "medium"
+        elif re.search(r"[\u0600-\u06ff]", query):
+            detected_language, confidence = "ar", "medium"
+        elif re.search(r"[\u0400-\u04ff]", query):
+            detected_language, confidence = "ru", "medium"
+        else:
+            detected_language, confidence = "en", "low"
+
+    if not detected_country:
+        country_signals = {
+            "AT": ["österreich", "austria", "graz", "wien", "vienna"],
+            "DE": ["deutschland", "germany", "berlin", "münchen"],
+            "FR": ["france", "paris"],
+            "ES": ["españa", "spain", "madrid"],
+            "MX": ["méxico", "mexico"],
+            "IT": ["italia", "italy"],
+            "BR": ["brasil", "brazil"],
+            "JP": ["日本", "japan"],
+        }
+        for code, terms in country_signals.items():
+            if any(term in q for term in terms):
+                detected_country = code
+                break
+    if not detected_country:
+        detected_country = {"de": "DE", "fr": "FR", "es": "ES", "it": "IT", "pt": "BR", "ja": "JP"}.get(detected_language, "US")
+
+    return {"language": detected_language, "country": detected_country, "language_confidence": confidence}
+
+
+def _source_type_for_url(url: str) -> str:
+    host = urlparse(url).netloc.lower()
+    if any(part in host for part in ("docs.", "developer.", "github.com", "readthedocs", "developer.mozilla")):
+        return "docs"
+    if any(part in host for part in ("reddit.com", "forum", "community", "discourse")):
+        return "forum"
+    if any(part in host for part in ("news", "reuters", "apnews", "bbc", "orf.at", "nytimes")):
+        return "news"
+    if any(part in host for part in ("shop", "amazon", "geizhals", "idealo")):
+        return "shopping"
+    return "web"
+
+
+def _normalize_answer_sources(results: List[Dict[str, Any]], provider: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    """Normalize heterogeneous provider results into citation-ready source records."""
+    sources: List[Dict[str, Any]] = []
+    seen = set()
+    for item in results:
+        url = item.get("url") or item.get("link") or ""
+        if not url or url in seen:
+            continue
+        seen.add(url)
+        title = item.get("title") or url
+        domain = urlparse(url).netloc.lower()
+        published = item.get("date") or item.get("published_date") or item.get("publishedDate")
+        date_label = f", {published}" if published else ""
+        sources.append({
+            "title": title,
+            "domain": domain,
+            "url": url,
+            "published_date": published,
+            "source_type": _source_type_for_url(url),
+            "provider": item.get("provider", provider),
+            "extracted_status": item.get("extracted_status", "not_requested"),
+            "used_in_answer": True,
+            "citation": f"[{title} ({domain}{date_label})]({url})",
+            "snippet": item.get("snippet") or item.get("description") or item.get("content") or "",
+        })
+        if limit and len(sources) >= limit:
+            break
+    return sources
+
+
+def _compose_answer_payload(
+    query: str,
+    mode: str = "quick",
+    sources: Optional[int] = None,
+    freshness: str = "auto",
+    language: str = "auto",
+    country: str = "auto",
+    include_counterpoints: Optional[bool] = None,
+    max_extracts: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Search, extract a few top sources, and return a citation-ready answer payload."""
+    mode = mode if mode in {"quick", "deep"} else "quick"
+    source_count = sources or (6 if mode == "deep" else 3)
+    requested_extract_count = max_extracts if max_extracts is not None else 2
+    extract_cap = 5
+    extract_count = min(requested_extract_count, extract_cap, source_count)
+    counterpoints = include_counterpoints if include_counterpoints is not None else mode == "deep"
+    warnings: List[str] = []
+    if requested_extract_count > extract_cap:
+        warnings.append(f"max_extracts capped at {extract_cap} to protect provider budget.")
+    freshness_info = _detect_answer_freshness(query, freshness)
+    locale = _detect_answer_locale(query, language, country)
+
+    search_data = _run_search(
+        query=query,
+        provider="auto",
+        count=source_count,
+        time_range=None if freshness_info["applied"] == "none" else freshness_info["applied"],
+        mode="research" if mode == "deep" else "normal",
+        quality_report=True,
+        research_time_budget=55.0 if mode == "deep" else 20.0,
+        language=locale["language"],
+        country=locale["country"],
+    )
+    results = search_data.get("results", [])[:source_count]
+    normalized = _normalize_answer_sources(results, provider=search_data.get("provider"), limit=source_count)
+
+    urls_to_extract = [s["url"] for s in normalized[:extract_count]]
+    extract_data: Dict[str, Any] = {"results": []}
+    if urls_to_extract:
+        extract_data = _run_extract(urls=urls_to_extract, provider="linkup", output_format="markdown")
+        extracted_by_url = {r.get("url"): r for r in extract_data.get("results", [])}
+        extract_error = extract_data.get("error")
+        if extract_error:
+            warnings.append(f"Extraction failed: {extract_error}")
+        for src in normalized:
+            if src["url"] not in urls_to_extract:
+                continue
+            if extract_error:
+                src["extracted_status"] = "failed"
+                continue
+            if src["url"] in extracted_by_url:
+                extracted = extracted_by_url[src["url"]]
+                if extracted.get("error"):
+                    src["extracted_status"] = "failed"
+                    warnings.append(f"Extraction failed for {src['domain']}: {extracted['error']}")
+                else:
+                    src["extracted_status"] = "full" if (extracted.get("content") or extracted.get("raw_content")) else "partial"
+            else:
+                src["extracted_status"] = "failed"
+
+    evidence_parts = []
+    for idx, src in enumerate(normalized[:extract_count], 1):
+        extracted = next((r for r in extract_data.get("results", []) if r.get("url") == src["url"]), {})
+        text = (extracted.get("content") or extracted.get("raw_content") or src.get("snippet") or "").strip()
+        if text:
+            evidence_parts.append(f"[{idx}] {src['title']}: {text[:700]}")
+    if evidence_parts:
+        answer = "\n\n".join(evidence_parts)
+    elif normalized:
+        answer = "\n\n".join(f"[{i}] {s['title']}: {s.get('snippet', '')}" for i, s in enumerate(normalized, 1))
+    else:
+        answer = "No usable sources were found."
+
+    if len(normalized) < source_count:
+        warnings.append(f"Only {len(normalized)} citation-ready sources found for requested {source_count}.")
+    extracted_count = sum(1 for s in normalized if s["extracted_status"] in {"full", "partial"})
+    if urls_to_extract and extracted_count < len(urls_to_extract):
+        warnings.append(f"Only {extracted_count} of {len(urls_to_extract)} selected sources had extractable content.")
+    if counterpoints:
+        warnings.append("Counterpoint search is not implemented in this MVP yet.")
+
+    confidence = "high" if len(normalized) >= 4 and extracted_count >= 3 else "medium" if normalized else "low"
+    confidence_reason = {
+        "sources": len(normalized),
+        "requested_sources": source_count,
+        "extracts_succeeded": extracted_count,
+        "extracts_requested": len(urls_to_extract),
+        "freshness_applied": freshness_info["applied"],
+    }
+    cost_estimate = {
+        "extract_provider": "linkup" if urls_to_extract else None,
+        "extracts_requested": len(urls_to_extract),
+        "approx_eur": round(len(urls_to_extract) * 0.001, 4),
+    }
+    return {
+        "query": query,
+        "mode": mode,
+        "answer": answer,
+        "confidence": confidence,
+        "confidence_reason": confidence_reason,
+        "freshness": freshness_info,
+        "locale": locale,
+        "sources": normalized,
+        "warnings": warnings,
+        "cost_estimate": cost_estimate,
+        "search": {"provider": search_data.get("provider"), "routing": search_data.get("routing", {})},
+        "extraction": {"provider": extract_data.get("provider"), "requested_urls": urls_to_extract},
+    }
+
+
+def _format_answer_payload(payload: Dict[str, Any], output: str = "answer") -> str:
+    if output == "json":
+        return json.dumps(payload, ensure_ascii=False, indent=2)
+    if output == "sources":
+        return "\n".join(f"- {s['citation']} — {s['source_type']}" for s in payload.get("sources", []))
+    answer = payload.get("answer", "")
+    if output == "brief":
+        answer = answer[:900]
+    lines = ["**Answer**", answer, "", "**Sources**"]
+    lines.extend(f"- {s['citation']} — {s['source_type']}" for s in payload.get("sources", []))
+    lines.extend([
+        "",
+        f"**Confidence:** {payload.get('confidence', 'unknown')}",
+        f"**Freshness:** {payload.get('freshness', {}).get('applied', 'none')} ({payload.get('freshness', {}).get('reason', '')})",
+    ])
+    if payload.get("warnings"):
+        lines.append("**Warnings:** " + "; ".join(payload["warnings"]))
+    return "\n".join(lines).strip()
+
+
 def register(ctx: Any) -> None:
-    """Register web_search_plus tool with Hermes plugin system."""
+    """Register web-search-plus tools with Hermes plugin system."""
 
     schema = {
         "name": "web_search_plus",
@@ -426,4 +680,67 @@ def register(ctx: Any) -> None:
         requires_env=[],
         description="Multi-provider URL extraction",
         emoji="📄",
+    )
+
+    answer_schema = {
+        "name": "web_answer_plus",
+        "description": (
+            "User-facing cited web answer tool. Searches, deduplicates, extracts top sources, "
+            "and returns a concise answer with citation-ready sources. Keep the interface simple: "
+            "choose quick or deep, source count, freshness, output shape, and optional locale."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Question or research query to answer from the web."},
+                "mode": {"type": "string", "enum": ["quick", "deep"], "default": "quick", "description": "quick = fast answer from a few sources; deep = broader research-mode answer."},
+                "sources": {"type": "integer", "default": 3, "minimum": 1, "maximum": 10, "description": "Number of citation-ready sources to return. Default quick=3; deep usually uses 6."},
+                "freshness": {"type": "string", "enum": ["auto", "none", "day", "week", "month", "year"], "default": "auto", "description": "Recency filter. auto detects current/news/latest/date-sensitive queries."},
+                "output": {"type": "string", "enum": ["answer", "brief", "sources", "json"], "default": "answer", "description": "Return markdown answer, short brief, sources-only list, or structured JSON."},
+                "language": {"type": "string", "default": "auto", "description": "BCP-47-ish language code such as de/en/es/fr, or auto."},
+                "country": {"type": "string", "default": "auto", "description": "Country/region code such as AT/DE/US/FR, or auto."},
+                "include_counterpoints": {"type": "boolean", "default": False, "description": "Request counterpoint coverage. MVP records this as a warning until implemented."},
+                "max_extracts": {"type": "integer", "minimum": 0, "maximum": 5, "description": "Advanced: number of top URLs to extract. Defaults to 2 and hard-caps at 5 for cost safety."},
+            },
+            "required": ["query"],
+        },
+    }
+
+    def answer_handler(args_or_query, mode: str = "quick", sources: Optional[int] = None,
+                       freshness: str = "auto", output: str = "answer", language: str = "auto",
+                       country: str = "auto", include_counterpoints: Optional[bool] = None,
+                       max_extracts: Optional[int] = None, **kwargs) -> str:
+        if isinstance(args_or_query, dict):
+            query = args_or_query.get("query", "")
+            mode = args_or_query.get("mode", mode)
+            sources = args_or_query.get("sources", sources)
+            freshness = args_or_query.get("freshness", freshness)
+            output = args_or_query.get("output", output)
+            language = args_or_query.get("language", language)
+            country = args_or_query.get("country", country)
+            include_counterpoints = args_or_query.get("include_counterpoints", include_counterpoints)
+            max_extracts = args_or_query.get("max_extracts", max_extracts)
+        else:
+            query = args_or_query
+        payload = _compose_answer_payload(
+            query=query,
+            mode=mode,
+            sources=sources,
+            freshness=freshness,
+            language=language,
+            country=country,
+            include_counterpoints=include_counterpoints,
+            max_extracts=max_extracts,
+        )
+        return _format_answer_payload(payload, output=output)
+
+    ctx.register_tool(
+        name="web_answer_plus",
+        toolset=_TOOLSET_NAME,
+        schema=answer_schema,
+        handler=answer_handler,
+        check_fn=check_fn,
+        requires_env=[],
+        description="Cited web answers from search plus extraction",
+        emoji="🧭",
     )

@@ -1,0 +1,183 @@
+from __future__ import annotations
+
+import importlib.util
+from pathlib import Path
+
+
+PLUGIN_PATH = Path(__file__).resolve().parents[1] / "__init__.py"
+spec = importlib.util.spec_from_file_location("wsp_plugin_under_test", PLUGIN_PATH)
+wsp = importlib.util.module_from_spec(spec)
+assert spec.loader is not None
+spec.loader.exec_module(wsp)
+
+
+class FakeCtx:
+    def __init__(self):
+        self.tools = {}
+
+    def register_tool(self, **kwargs):
+        self.tools[kwargs["name"]] = kwargs
+
+
+def test_detect_freshness_auto_maps_current_query_to_week():
+    freshness = wsp._detect_answer_freshness("latest rsETH backing status this week", "auto")
+
+    assert freshness["applied"] == "week"
+    assert freshness["requested"] == "auto"
+    assert "time-sensitive" in freshness["reason"]
+
+
+def test_detect_locale_handles_common_non_english_eu_queries():
+    locale = wsp._detect_answer_locale("meilleurs amplis hi-fi pas cher France", "auto", "auto")
+
+    assert locale["language"] == "fr"
+    assert locale["country"] == "FR"
+    assert locale["language_confidence"] in {"medium", "high"}
+
+
+def test_normalize_answer_sources_creates_citation_ready_records():
+    sources = wsp._normalize_answer_sources([
+        {
+            "title": "Example Release Notes",
+            "url": "https://docs.example.com/releases/v1",
+            "snippet": "Release text",
+            "date": "2026-05-08",
+        }
+    ])
+
+    assert sources == [
+        {
+            "title": "Example Release Notes",
+            "domain": "docs.example.com",
+            "url": "https://docs.example.com/releases/v1",
+            "published_date": "2026-05-08",
+            "source_type": "docs",
+            "provider": None,
+            "extracted_status": "not_requested",
+            "used_in_answer": True,
+            "citation": "[Example Release Notes (docs.example.com, 2026-05-08)](https://docs.example.com/releases/v1)",
+            "snippet": "Release text",
+        }
+    ]
+
+
+def test_web_answer_plus_tool_registered_with_simple_user_facing_schema():
+    ctx = FakeCtx()
+
+    wsp.register(ctx)
+
+    schema = ctx.tools["web_answer_plus"]["schema"]
+    props = schema["parameters"]["properties"]
+    assert props["mode"]["enum"] == ["quick", "deep"]
+    assert props["freshness"]["default"] == "auto"
+    assert props["language"]["default"] == "auto"
+    assert props["country"]["default"] == "auto"
+    assert props["sources"]["default"] == 3
+    assert props["max_extracts"]["maximum"] == 5
+    assert "provider" not in props
+
+
+def test_web_answer_plus_json_output_uses_quick_defaults_and_extracts_top_sources(monkeypatch):
+    calls = {"search": [], "extract": []}
+
+    def fake_search(**kwargs):
+        calls["search"].append(kwargs)
+        return {
+            "provider": "brave",
+            "results": [
+                {"title": "Fresh Source", "url": "https://news.example/a", "snippet": "Fresh rsETH backing update", "date": "2026-05-08"},
+                {"title": "Official Docs", "url": "https://docs.example/b", "snippet": "Official reserve note", "date": "2026-05-07"},
+                {"title": "Forum Thread", "url": "https://forum.example/c", "snippet": "Community discussion"},
+            ],
+            "routing": {"provider": "brave"},
+        }
+
+    def fake_extract(**kwargs):
+        calls["extract"].append(kwargs)
+        return {
+            "provider": "linkup",
+            "results": [
+                {"url": "https://news.example/a", "title": "Fresh Source", "content": "Detailed extracted source A."},
+                {"url": "https://docs.example/b", "title": "Official Docs", "content": "Detailed extracted source B."},
+            ],
+        }
+
+    monkeypatch.setattr(wsp, "_run_search", fake_search)
+    monkeypatch.setattr(wsp, "_run_extract", fake_extract)
+    ctx = FakeCtx()
+    wsp.register(ctx)
+
+    raw = ctx.tools["web_answer_plus"]["handler"]({
+        "query": "latest rsETH backing status",
+        "output": "json",
+    })
+    payload = wsp.json.loads(raw)
+
+    assert payload["query"] == "latest rsETH backing status"
+    assert payload["mode"] == "quick"
+    assert payload["freshness"]["applied"] == "week"
+    assert payload["confidence"] in {"medium", "high"}
+    assert payload["confidence_reason"]["sources"] == 3
+    assert len(payload["sources"]) == 3
+    assert payload["sources"][0]["citation"].startswith("[Fresh Source (news.example, 2026-05-08)]")
+    assert "Detailed extracted source A" in payload["answer"]
+    assert payload["cost_estimate"]["extracts_requested"] == 2
+    assert calls["search"][0]["count"] == 3
+    assert calls["search"][0]["time_range"] == "week"
+    assert calls["search"][0]["language"] == "en"
+    assert calls["extract"][0]["urls"] == ["https://news.example/a", "https://docs.example/b"]
+    assert calls["extract"][0]["provider"] == "linkup"
+
+
+def test_web_answer_plus_caps_extracts_and_reports_cost(monkeypatch):
+    calls = {"extract": []}
+
+    monkeypatch.setattr(wsp, "_run_search", lambda **kwargs: {
+        "provider": "brave",
+        "results": [
+            {"title": f"Source {i}", "url": f"https://example.com/{i}", "snippet": "Snippet"}
+            for i in range(10)
+        ],
+    })
+
+    def fake_extract(**kwargs):
+        calls["extract"].append(kwargs)
+        return {"provider": "linkup", "results": []}
+
+    monkeypatch.setattr(wsp, "_run_extract", fake_extract)
+
+    payload = wsp._compose_answer_payload(
+        query="deep topic",
+        mode="deep",
+        sources=10,
+        max_extracts=9,
+    )
+
+    assert len(calls["extract"][0]["urls"]) == 5
+    assert payload["cost_estimate"] == {
+        "extract_provider": "linkup",
+        "extracts_requested": 5,
+        "approx_eur": 0.005,
+    }
+    assert any("max_extracts capped" in warning for warning in payload["warnings"])
+
+
+def test_web_answer_plus_marks_failed_extractions(monkeypatch):
+    monkeypatch.setattr(wsp, "_run_search", lambda **kwargs: {
+        "provider": "brave",
+        "results": [
+            {"title": "A", "url": "https://example.com/a", "snippet": "Snippet A"},
+            {"title": "B", "url": "https://example.com/b", "snippet": "Snippet B"},
+        ],
+    })
+    monkeypatch.setattr(wsp, "_run_extract", lambda **kwargs: {
+        "provider": "linkup",
+        "error": "quota exceeded",
+        "results": [],
+    })
+
+    payload = wsp._compose_answer_payload(query="current thing", sources=2, max_extracts=2)
+
+    assert [source["extracted_status"] for source in payload["sources"]] == ["failed", "failed"]
+    assert any("quota exceeded" in warning for warning in payload["warnings"])
+    assert payload["confidence"] == "medium"
