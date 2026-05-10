@@ -15,7 +15,7 @@ Smart Routing uses multi-signal analysis:
 
 Usage:
     python3 search.py --query "..."                    # Auto-route based on query
-    python3 search.py --provider [serper|brave|tavily|linkup|querit|exa|firecrawl|perplexity|kilo-perplexity|you|searxng|auto] --query "..." [options]
+    python3 search.py --provider [serper|serpbase|brave|tavily|linkup|querit|exa|firecrawl|perplexity|kilo-perplexity|you|searxng|auto] --query "..." [options]
 
 Examples:
     python3 search.py -q "iPhone 16 Pro price"              # → Serper (shopping intent)
@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode, urlparse
+from urllib.parse import quote, urlencode, urlparse, parse_qsl, urlunparse
 
 
 # =============================================================================
@@ -289,8 +289,11 @@ DEFAULT_CONFIG = {
     "auto_routing": {
         "enabled": True,
         "fallback_provider": "serper",
-        "provider_priority": ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng"],
+        # Low-trust / experimental providers can stay configured for explicit use
+        # without being selected automatically.
+        "provider_priority": ["tavily", "linkup", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"],
         "disabled_providers": [],
+        "auto_allow": {"serpbase": False, "querit": False},
         "confidence_threshold": 0.3,  # Below this, note low confidence
     },
     "serper": {
@@ -342,6 +345,13 @@ DEFAULT_CONFIG = {
         "country": "us",
         "safesearch": "moderate"
     },
+    "serpbase": {
+        "api_url": "https://api.serpbase.dev/google/search",
+        "country": "us",
+        "language": "en",
+        "page": 1,
+        "timeout": 30,
+    },
     "searxng": {
         "instance_url": None,  # Required - user must set their own instance
         "safesearch": 0,  # 0=off, 1=moderate, 2=strict
@@ -355,7 +365,7 @@ def _deepcopy_default_config() -> Dict[str, Any]:
     return json.loads(json.dumps(DEFAULT_CONFIG))
 
 
-_ROUTING_PROVIDER_NAMES = {"tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng"}
+_ROUTING_PROVIDER_NAMES = {"tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "serpbase", "you", "searxng"}
 
 
 def _normalize_routing_provider_config(provider: str) -> str:
@@ -405,6 +415,17 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
             auto["disabled_providers"] = _normalize_routing_provider_list_config(disabled)
         else:
             auto["disabled_providers"] = []
+    if "auto_allow" in auto:
+        raw_allow = auto.get("auto_allow") or {}
+        if not isinstance(raw_allow, dict):
+            raise ValueError("auto_allow must be an object mapping provider names to booleans")
+        normalized_allow = {}
+        for raw_provider, allowed in raw_allow.items():
+            provider = _normalize_routing_provider_config(str(raw_provider))
+            normalized_allow[provider] = bool(allowed)
+        auto["auto_allow"] = normalized_allow
+    else:
+        auto["auto_allow"] = dict(DEFAULT_CONFIG["auto_routing"].get("auto_allow", {}))
     if "confidence_threshold" in auto:
         threshold = float(auto["confidence_threshold"])
         if threshold < 0.0 or threshold > 1.0:
@@ -489,6 +510,7 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
         return os.environ.get("KILOCODE_API_KEY")
     key_map = {
         "serper": "SERPER_API_KEY",
+        "serpbase": "SERPBASE_API_KEY",
         "brave": "BRAVE_API_KEY",
         "tavily": "TAVILY_API_KEY",
         "querit": "QUERIT_API_KEY",
@@ -610,6 +632,7 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
     if not key:
         env_var = {
             "serper": "SERPER_API_KEY",
+            "serpbase": "SERPBASE_API_KEY",
             "brave": "BRAVE_API_KEY",
             "tavily": "TAVILY_API_KEY",
             "querit": "QUERIT_API_KEY",
@@ -623,6 +646,7 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
         
         urls = {
             "serper": "https://serper.dev",
+            "serpbase": "https://www.serpbase.dev",
             "brave": "https://brave.com/search/api/",
             "tavily": "https://tavily.com",
             "querit": "https://querit.ai",
@@ -1333,6 +1357,7 @@ class QueryAnalyzer:
         # Map intents to providers with final scores
         provider_scores = {
             "serper": shopping_score + local_news_score + (recency_score * 0.35),
+            "serpbase": (shopping_score * 0.8) + (local_news_score * 0.8) + (recency_score * 0.25),
             "brave": shopping_score + local_news_score + (recency_score * 0.35),
             "tavily": research_score + (complexity["complexity_score"] if not complexity["is_complex"] else 0) + (0.2 * recency_score),
             "querit": (research_score * 0.65) + (rag_score * 0.35) + (recency_score * 0.45),
@@ -1348,6 +1373,7 @@ class QueryAnalyzer:
         # Build match details per provider
         provider_matches = {
             "serper": shopping_matches + local_news_matches,
+            "serpbase": shopping_matches + local_news_matches,
             "brave": shopping_matches + local_news_matches,
             "tavily": research_matches,
             "querit": research_matches,
@@ -1382,9 +1408,15 @@ class QueryAnalyzer:
         
         # Filter to available providers
         disabled = set(self.auto_config.get("disabled_providers", []))
+        # Filter to configured providers that are eligible for automatic routing.
+        # Providers with auto_allow=false remain available for explicit calls.
+        auto_excluded = [
+            p for p in scores
+            if get_api_key(p, self.config) and p not in disabled and not _provider_auto_allowed(p, self.auto_config)
+        ]
         available = {
             p: s for p, s in scores.items()
-            if p not in disabled and get_api_key(p, self.config)
+            if p not in disabled and _provider_auto_allowed(p, self.auto_config) and get_api_key(p, self.config)
         }
         
         if not available:
@@ -1398,13 +1430,14 @@ class QueryAnalyzer:
                 "scores": scores,
                 "top_signals": [],
                 "analysis": analysis,
+                "auto_allow_excluded": auto_excluded,
             }
         
         # Find the winner
         max_score = max(available.values())
         
         # Handle ties using deterministic per-query distribution
-        priority = self.auto_config.get("provider_priority", ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng"])
+        priority = self.auto_config.get("provider_priority", ["tavily", "linkup", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"])
         winners = [p for p, s in available.items() if s == max_score]
         
         if len(winners) > 1:
@@ -1474,6 +1507,7 @@ class QueryAnalyzer:
                 for s in top_signals
             ],
             "below_threshold": confidence < threshold,
+            "auto_allow_excluded": auto_excluded,
             "analysis_summary": {
                 "query_length": len(query.split()),
                 "is_complex": analysis["complexity"]["is_complex"],
@@ -1530,11 +1564,13 @@ def explain_routing(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
             "confidence_level": routing["confidence_level"],
             "reason": routing["reason"],
             "exa_depth": routing.get("exa_depth", "normal"),
+            "auto_allow_excluded": routing.get("auto_allow_excluded", []),
         },
         "scores": routing["scores"],
         "top_signals": routing["top_signals"],
         "intent_breakdown": {
             "shopping_signals": len(analysis["provider_matches"]["serper"]),
+            "serpbase_signals": len(analysis["provider_matches"].get("serpbase", [])),
             "brave_signals": len(analysis["provider_matches"]["brave"]),
             "research_signals": len(analysis["provider_matches"]["tavily"]),
             "querit_signals": len(analysis["provider_matches"]["querit"]),
@@ -1562,12 +1598,24 @@ def explain_routing(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
             if matches
         },
         "available_providers": [
-            p for p in ["serper", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "you", "searxng"]
-            if get_api_key(p, config) and p not in config.get("auto_routing", {}).get("disabled_providers", [])
+            p for p in ["serper", "serpbase", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "you", "searxng"]
+            if get_api_key(p, config) and p not in config.get("auto_routing", {}).get("disabled_providers", []) and _provider_auto_allowed(p, config.get("auto_routing", {}))
         ]
     }
 
 
+
+
+def _provider_auto_allowed(provider: str, auto_config: Dict[str, Any]) -> bool:
+    """Return whether a configured provider may be selected by auto-routing/fallback.
+
+    Explicit provider calls still work; this gate only prevents low-trust or
+    experimental providers from receiving user queries automatically.
+    """
+    auto_allow = auto_config.get("auto_allow", {}) if isinstance(auto_config, dict) else {}
+    if not isinstance(auto_allow, dict):
+        return True
+    return bool(auto_allow.get(provider, True))
 
 
 class ProviderConfigError(Exception):
@@ -2119,6 +2167,101 @@ def search_serper(
         "answer": answer,
         "knowledge_graph": data.get("knowledgeGraph"),
         "related_searches": [r.get("query") for r in data.get("relatedSearches", [])]
+    }
+
+
+# =============================================================================
+# SerpBase (Google SERP API)
+# =============================================================================
+
+def _strip_tracking_params(url: str) -> str:
+    """Remove common SERP tracking params while preserving the canonical target URL."""
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    tracking_prefixes = ("utm_",)
+    tracking_names = {"srsltid", "gclid", "fbclid", "mc_cid", "mc_eid"}
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.lower() not in tracking_names and not key.lower().startswith(tracking_prefixes)
+    ]
+    return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
+
+
+def _serpbase_related_search_query(item: Any) -> Optional[str]:
+    if isinstance(item, dict):
+        return item.get("query") or item.get("title")
+    if isinstance(item, str):
+        return item
+    return None
+
+
+def search_serpbase(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    country: str = "us",
+    language: str = "en",
+    page: int = 1,
+    api_url: str = "https://api.serpbase.dev/google/search",
+    timeout: int = 30,
+) -> dict:
+    """Search using SerpBase's Google Search endpoint.
+
+    SerpBase returns HTTP 200 for some business failures, so `status == 0` is
+    required before parsing results.
+    """
+    body = {
+        "q": query,
+        "hl": language,
+        "gl": country,
+        "page": page,
+    }
+    headers = {
+        "X-API-Key": api_key,
+        "Content-Type": "application/json",
+    }
+
+    data = make_request(api_url, headers, body, timeout=timeout)
+    status = data.get("status", 0)
+    if status != 0:
+        message = data.get("message") or data.get("error") or data.get("msg") or "business status failure"
+        transient = status in {1029, 1502, 1503, 1504}
+        raise ProviderRequestError(f"SerpBase error {status}: {message}", transient=transient)
+
+    results = []
+    for i, item in enumerate(data.get("organic", [])[:max_results]):
+        results.append({
+            "title": item.get("title", ""),
+            "url": _strip_tracking_params(item.get("link", "") or item.get("url", "")),
+            "snippet": item.get("snippet", ""),
+            "score": round(1.0 - i * 0.1, 2),
+            "rank": item.get("rank") or item.get("position") or i + 1,
+            "display_link": item.get("display_link") or item.get("displayed_link"),
+        })
+
+    related_searches = [
+        value for value in (_serpbase_related_search_query(item) for item in data.get("related_searches", [])) if value
+    ]
+    answer = ""
+    if data.get("answer_box"):
+        answer_box = data.get("answer_box") or {}
+        answer = answer_box.get("answer") or answer_box.get("snippet") or ""
+    elif data.get("knowledge_graph"):
+        kg = data.get("knowledge_graph") or {}
+        answer = kg.get("description") or kg.get("subtitle") or ""
+    elif results:
+        answer = results[0]["snippet"]
+
+    return {
+        "provider": "serpbase",
+        "query": query,
+        "results": results,
+        "answer": answer,
+        "knowledge_graph": data.get("knowledge_graph"),
+        "related_searches": related_searches,
+        "session_id": data.get("session_id"),
     }
 
 
@@ -3492,7 +3635,7 @@ Full docs: See README.md and SKILL.md
     # Common arguments
     parser.add_argument(
         "--provider", "-p", 
-        choices=["serper", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "you", "searxng", "auto"],
+        choices=["serper", "serpbase", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "you", "searxng", "auto"],
         help="Search provider (auto=intelligent routing)"
     )
     parser.add_argument(
@@ -3531,6 +3674,11 @@ Full docs: See README.md and SKILL.md
         "--auto", "-a",
         action="store_true",
         help="Use intelligent auto-routing (default when no provider specified)"
+    )
+    parser.add_argument(
+        "--allow-fallback",
+        action="store_true",
+        help="Allow explicit --provider calls to fall back to other configured providers on failure. Auto-routing already uses fallback."
     )
     parser.add_argument(
         "--explain-routing",
@@ -3803,6 +3951,7 @@ Full docs: See README.md and SKILL.md
                 "reason": routing["reason"],
                 "top_signals": routing["top_signals"],
                 "scores": routing["scores"],
+                "auto_allow_excluded": routing.get("auto_allow_excluded", []),
             }
         else:
             provider = "exa"
@@ -3819,23 +3968,27 @@ Full docs: See README.md and SKILL.md
     
     # Build provider fallback list
     auto_config = config.get("auto_routing", {})
-    provider_priority = auto_config.get("provider_priority", ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng"])
+    provider_priority = auto_config.get("provider_priority", ["tavily", "linkup", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"])
     disabled_providers = auto_config.get("disabled_providers", [])
 
     # Start with the selected provider, then try others in priority order.
+    # Explicit provider calls are strict by default: requested provider must be
+    # the actual provider. Use --allow-fallback to opt into legacy fallback.
     # Fixed-provider mode is intentionally strict: if auto-routing is disabled
     # and the saved default was selected via provider=auto, do not silently
     # fall back to other providers. Users who want fallback should keep
     # auto-routing enabled and tune priority/fallback instead.
+    explicit_provider_mode = args.provider not in (None, "auto")
     fixed_provider_mode = (
         auto_config.get("enabled", True) is False
         and provider == config.get("default_provider")
         and (args.provider == "auto" or (args.provider is None and not args.similar_url))
     )
+    strict_provider_mode = fixed_provider_mode or (explicit_provider_mode and not args.allow_fallback)
     providers_to_try = [provider] if provider else []
-    if not fixed_provider_mode:
+    if not strict_provider_mode:
         for p in provider_priority:
-            if p not in providers_to_try and p not in disabled_providers and get_api_key(p, config):
+            if p not in providers_to_try and p not in disabled_providers and _provider_auto_allowed(p, auto_config) and get_api_key(p, config):
                 providers_to_try.append(p)
 
     # Skip providers currently in cooldown
@@ -3864,6 +4017,18 @@ Full docs: See README.md and SKILL.md
                 search_type=args.search_type,
                 time_range=args.time_range,
                 include_images=args.images,
+            )
+        elif prov == "serpbase":
+            serpbase_config = config.get("serpbase", {})
+            return search_serpbase(
+                query=args.query,
+                api_key=key,
+                max_results=args.max_results,
+                country=serpbase_config.get("country", args.country),
+                language=serpbase_config.get("language", args.language),
+                page=int(serpbase_config.get("page", 1)),
+                api_url=serpbase_config.get("api_url", "https://api.serpbase.dev/google/search"),
+                timeout=int(serpbase_config.get("timeout", 30)),
             )
         elif prov == "brave":
             brave_config = config.get("brave", {})
@@ -4019,14 +4184,14 @@ Full docs: See README.md and SKILL.md
     if args.mode == "research":
         available_research_providers = {
             p for p in providers_to_try
-            if p not in disabled_providers and get_api_key(p, config) and not provider_in_cooldown(p)[0]
+            if p not in disabled_providers and _provider_auto_allowed(p, auto_config) and get_api_key(p, config) and not provider_in_cooldown(p)[0]
         }
         if provider and get_api_key(provider, config) and not provider_in_cooldown(provider)[0]:
             available_research_providers.add(provider)
         if args.research_providers:
             research_providers = [
                 p for p in args.research_providers
-                if p not in disabled_providers and get_api_key(p, config) and not provider_in_cooldown(p)[0]
+                if p not in disabled_providers and _provider_auto_allowed(p, auto_config) and get_api_key(p, config) and not provider_in_cooldown(p)[0]
             ]
         else:
             research_providers = select_research_providers(

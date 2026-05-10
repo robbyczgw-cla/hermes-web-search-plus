@@ -214,7 +214,7 @@ def test_setup_dry_run_uses_target_env_path_for_dashboard(tmp_path, monkeypatch,
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "Providers: 1/11 configured" in out
+    assert "Providers: 1/12 configured" in out
     assert "Active: Tavily" in out
     assert "Brave Search" not in out.split("Setup plan:", 1)[0]
 
@@ -230,7 +230,7 @@ def test_status_uses_target_env_path_for_dashboard(tmp_path, monkeypatch, capsys
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "Providers: 1/11 configured" in out
+    assert "Providers: 1/12 configured" in out
     assert "Active: Linkup" in out
     assert "Brave Search" not in out
 
@@ -332,6 +332,46 @@ def test_config_disable_and_enable_provider_updates_disabled_list(tmp_path):
 
     data = json.loads(config_path.read_text())
     assert "brave" not in data["auto_routing"]["disabled_providers"]
+
+
+def test_config_set_auto_allow_updates_provider_gate(tmp_path):
+    config_path = tmp_path / "config.json"
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    deny = parser.parse_args(["config", "set-auto-allow", "serpbase", "off", "--config-path", str(config_path)])
+    deny.func(deny)
+    allow = parser.parse_args(["config", "set-auto-allow", "serpbase", "on", "--config-path", str(config_path)])
+    allow.func(allow)
+
+    data = json.loads(config_path.read_text())
+    assert data["auto_routing"]["auto_allow"]["serpbase"] is True
+    assert data["auto_routing"]["auto_allow"]["querit"] is False
+
+
+def test_default_behavior_config_blocks_low_trust_auto_providers():
+    config = wsp._default_behavior_config()
+
+    assert config["auto_routing"]["provider_priority"][-2:] == ["serpbase", "querit"]
+    assert config["auto_routing"]["auto_allow"]["serpbase"] is False
+    assert config["auto_routing"]["auto_allow"]["querit"] is False
+
+
+def test_setup_dry_run_can_auto_deny_provider(tmp_path, capsys):
+    env_path = tmp_path / ".env"
+    config_path = tmp_path / "config.json"
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args([
+        "setup", "--preset", "starter", "--dry-run", "--env-path", str(env_path), "--config-path", str(config_path),
+        "--auto-deny", "serpbase,querit"
+    ])
+
+    args.func(args)
+
+    out = capsys.readouterr().out
+    assert "auto-allow false: querit, serpbase" in out
+    assert not env_path.exists()
+    assert not config_path.exists()
 
 
 def test_config_rejects_unknown_provider_without_writing(tmp_path):

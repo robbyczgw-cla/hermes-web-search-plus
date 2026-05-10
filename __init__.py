@@ -30,6 +30,7 @@ _SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 _TOOLSET_NAME = "web-search-plus"
 _PROVIDER_ENV_KEYS = [
     "SERPER_API_KEY",
+    "SERPBASE_API_KEY",
     "BRAVE_API_KEY",
     "TAVILY_API_KEY",
     "EXA_API_KEY",
@@ -108,6 +109,16 @@ _PROVIDER_CATALOG = [
         "description": "Google-like SERP results for facts, shopping, local and news queries.",
         "free_tier": "2,500 one-time credits",
         "signup_url": "https://serper.dev/api-key",
+        "capabilities": ["search", "news", "shopping", "local"],
+        "recommended": False,
+    },
+    {
+        "provider": "serpbase",
+        "env": "SERPBASE_API_KEY",
+        "display_name": "SerpBase",
+        "description": "Cheap Google-like SERP fallback; explicit/fallback-only by default.",
+        "free_tier": "100 free searches, paid packs available",
+        "signup_url": "https://www.serpbase.dev",
         "capabilities": ["search", "news", "shopping", "local"],
         "recommended": False,
     },
@@ -257,8 +268,9 @@ def _get_hermes_env_path() -> Path:
 
 
 _SETUP_PROVIDER_NAMES = {item["provider"] for item in _PROVIDER_CATALOG}
-_DEFAULT_PROVIDER_PRIORITY = ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng"]
-_ROUTING_PROVIDER_NAMES = set(_DEFAULT_PROVIDER_PRIORITY) | {"kilo-perplexity"}
+_DEFAULT_PROVIDER_PRIORITY = ["tavily", "linkup", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"]
+_DEFAULT_AUTO_ALLOW = {"serpbase": False, "querit": False}
+_ROUTING_PROVIDER_NAMES = set(_DEFAULT_PROVIDER_PRIORITY)
 
 
 def _get_plugin_config_path() -> Path:
@@ -278,6 +290,7 @@ def _default_behavior_config() -> Dict[str, Any]:
             "fallback_provider": "serper",
             "provider_priority": list(_DEFAULT_PROVIDER_PRIORITY),
             "disabled_providers": [],
+            "auto_allow": dict(_DEFAULT_AUTO_ALLOW),
             "confidence_threshold": 0.3,
         },
     }
@@ -347,6 +360,14 @@ def _merge_behavior_config(user_config: Mapping[str, Any]) -> Dict[str, Any]:
             auto["disabled_providers"] = _normalize_provider_csv(disabled, routing=True) if disabled.strip() else []
         else:
             auto["disabled_providers"] = _normalize_provider_csv(",".join(str(p) for p in disabled), routing=True) if disabled else []
+    if "auto_allow" in auto_user:
+        raw_allow = auto_user.get("auto_allow") or {}
+        if not isinstance(raw_allow, Mapping):
+            raise SystemExit("auto_allow must be an object mapping provider names to booleans")
+        normalized_allow = dict(_DEFAULT_AUTO_ALLOW)
+        for raw_provider, allowed in raw_allow.items():
+            normalized_allow[_normalize_routing_provider(str(raw_provider))] = bool(allowed)
+        auto["auto_allow"] = normalized_allow
     if "confidence_threshold" in auto_user:
         threshold = float(auto_user["confidence_threshold"])
         if threshold < 0.0 or threshold > 1.0:
@@ -429,6 +450,9 @@ def _routing_summary(config: Mapping[str, Any]) -> str:
         f"  fallback provider: {auto.get('fallback_provider', 'serper')}",
         "  priority: " + ", ".join(auto.get("provider_priority", _DEFAULT_PROVIDER_PRIORITY)),
         "  disabled: " + (", ".join(auto.get("disabled_providers", [])) or "none"),
+        "  auto-allow false: " + (
+            ", ".join(p for p, allowed in sorted((auto.get("auto_allow") or {}).items()) if allowed is False) or "none"
+        ),
         f"  confidence threshold: {auto.get('confidence_threshold', 0.3)}",
     ]
     return "\n".join(lines)
@@ -660,6 +684,8 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     setup.add_argument("--default-provider", help="Provider to use when routing is fixed/off")
     setup.add_argument("--provider-priority", help="Comma-separated auto-routing priority")
     setup.add_argument("--disable-providers", help="Comma-separated providers to exclude from auto-routing")
+    setup.add_argument("--auto-allow", help="Comma-separated providers allowed in auto-routing")
+    setup.add_argument("--auto-deny", help="Comma-separated providers blocked from auto-routing but still usable explicitly")
     setup.add_argument("--fallback-provider", help="Fallback provider when no route is available")
     setup.add_argument("--confidence-threshold", type=float, help="Auto-routing confidence threshold 0.0-1.0")
 
@@ -695,6 +721,11 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     enable.add_argument("provider")
     enable.add_argument("--config-path")
     enable.add_argument("--dry-run", action="store_true")
+    allow_auto = config_subs.add_parser("set-auto-allow", help="Allow or block a provider from automatic routing/fallback")
+    allow_auto.add_argument("provider")
+    allow_auto.add_argument("mode", choices=["on", "off", "true", "false", "yes", "no"])
+    allow_auto.add_argument("--config-path")
+    allow_auto.add_argument("--dry-run", action="store_true")
     threshold = config_subs.add_parser("set-threshold", help="Set routing confidence threshold")
     threshold.add_argument("value", type=float)
     threshold.add_argument("--config-path")
@@ -718,6 +749,14 @@ def _apply_setup_routing_args(config: Dict[str, Any], args: Any) -> Dict[str, An
         auto["provider_priority"] = _normalize_provider_csv(getattr(args, "provider_priority"), routing=True)
     if getattr(args, "disable_providers", None):
         auto["disabled_providers"] = _normalize_provider_csv(getattr(args, "disable_providers"), routing=True)
+    auto_allow = dict(auto.get("auto_allow") or _DEFAULT_AUTO_ALLOW)
+    if getattr(args, "auto_allow", None):
+        for provider in _normalize_provider_csv(getattr(args, "auto_allow"), routing=True):
+            auto_allow[provider] = True
+    if getattr(args, "auto_deny", None):
+        for provider in _normalize_provider_csv(getattr(args, "auto_deny"), routing=True):
+            auto_allow[provider] = False
+    auto["auto_allow"] = auto_allow
     if getattr(args, "fallback_provider", None):
         auto["fallback_provider"] = _normalize_routing_provider(getattr(args, "fallback_provider"))
     if getattr(args, "confidence_threshold", None) is not None:
@@ -763,6 +802,12 @@ def _handle_config_command(args: Any) -> None:
     elif subcommand == "enable":
         provider = _normalize_routing_provider(getattr(args, "provider"))
         config["auto_routing"]["disabled_providers"] = [p for p in config["auto_routing"].get("disabled_providers", []) if p != provider]
+    elif subcommand == "set-auto-allow":
+        provider = _normalize_routing_provider(getattr(args, "provider"))
+        mode = str(getattr(args, "mode")).lower()
+        auto_allow = dict(config["auto_routing"].get("auto_allow") or _DEFAULT_AUTO_ALLOW)
+        auto_allow[provider] = mode in {"on", "true", "yes"}
+        config["auto_routing"]["auto_allow"] = auto_allow
     elif subcommand == "set-threshold":
         value = float(getattr(args, "value"))
         if value < 0.0 or value > 1.0:
@@ -1448,12 +1493,12 @@ def register(ctx: Any) -> None:
             "Multi-provider web search with intelligent auto-routing. "
             "Automatically selects the best provider based on query intent: "
             "Serper for shopping/news/facts, Tavily for research/analysis, "
-            "Exa for semantic discovery, Querit for multilingual/real-time, "
+            "Exa for semantic discovery, "
             "Brave for general web search, "
             "Linkup for source-backed grounding/citations, "
             "Firecrawl for web search plus optional scrape-ready results, "
             "Perplexity for direct answers, You.com for real-time snippets, "
-            "and SearXNG for privacy-focused/self-hosted search. "
+            "SearXNG for privacy-focused/self-hosted search, and SerpBase/Querit only when explicitly enabled or forced. "
             "Set depth='deep' for Exa multi-source synthesis, 'deep-reasoning' for complex cross-document analysis. "
             "Override with provider param if needed."
         ),
@@ -1466,7 +1511,7 @@ def register(ctx: Any) -> None:
                 },
                 "provider": {
                     "type": "string",
-                    "enum": ["auto", "serper", "brave", "tavily", "exa", "querit", "linkup", "firecrawl", "perplexity", "kilo-perplexity", "you", "searxng"],
+                    "enum": ["auto", "serper", "serpbase", "brave", "tavily", "exa", "querit", "linkup", "firecrawl", "perplexity", "kilo-perplexity", "you", "searxng"],
                     "description": "Search provider. Use 'auto' for intelligent routing (default). Brave and Serper share generic web-search intents and ties are distributed deterministically per query.",
                     "default": "auto",
                 },

@@ -5,6 +5,7 @@ author: robbyczgw-cla
 requires_env: []
 optional_env:
   - SERPER_API_KEY
+  - SERPBASE_API_KEY
   - BRAVE_API_KEY
   - TAVILY_API_KEY
   - EXA_API_KEY
@@ -31,6 +32,7 @@ onboarding:
     priority: "python ~/.hermes/plugins/web-search-plus/setup.py config set-priority tavily,linkup,brave,serper"
     fallback: "python ~/.hermes/plugins/web-search-plus/setup.py config set-fallback tavily"
     disable_provider: "python ~/.hermes/plugins/web-search-plus/setup.py config disable perplexity"
+    block_auto_provider: "python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase off"
     reset: "python ~/.hermes/plugins/web-search-plus/setup.py config reset --yes"
   config_file: "~/.hermes/plugins/config.json"
   env_override: "WEB_SEARCH_PLUS_CONFIG"
