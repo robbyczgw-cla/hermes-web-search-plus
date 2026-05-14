@@ -235,7 +235,7 @@ Parameters:
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `query` | string | **required** | Search query |
-| `provider` | string | `"auto"` | `auto`, `serper`, `brave`, `tavily`, `exa`, `querit`, `linkup`, `firecrawl`, `perplexity`, `you`, `searxng` |
+| `provider` | string | `"auto"` | `auto`, `serper`, `brave`, `tavily`, `exa`, `querit`, `linkup`, `firecrawl`, `perplexity`, `kilo-perplexity`, `you`, `searxng` |
 | `depth` | string | `"normal"` | Exa only: `normal`, `deep`, `deep-reasoning` |
 | `count` | integer | `5` | Results, 1–20 |
 | `time_range` | string | — | `day`, `week`, `month`, `year` |
@@ -283,7 +283,8 @@ Parameters:
 | Querit | ✅ | — | Multilingual and real-time queries |
 | Linkup | ✅ | ✅ | Source-backed grounding, citations, RAG-ready retrieval |
 | Firecrawl | ✅ | ✅ | Web search with scrape-ready result content |
-| Perplexity | ✅ | — | Direct answer-style search |
+| Perplexity | ✅ | — | Native Perplexity direct answer-style search |
+| Kilo Perplexity | ✅ | — | Perplexity through Kilo gateway (`kilo-perplexity`) |
 | You.com | ✅ | ✅ | LLM-ready real-time snippets and content |
 | SearXNG | ✅ | — | Privacy-focused self-hosted metasearch |
 
@@ -308,7 +309,7 @@ PERPLEXITY_API_KEY=***    # https://perplexity.ai/settings/api
 YOU_API_KEY=***           # https://api.you.com — search + extraction
 SEARXNG_INSTANCE_URL=https://your-instance.example.com
 
-# Advanced alternate credential path for the perplexity provider via Kilo Gateway
+# Kilo gateway alternate provider (`provider="kilo-perplexity"`)
 KILOCODE_API_KEY=***
 ```
 

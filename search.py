@@ -3,7 +3,7 @@
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
 Version: 1.9.2
 Supports search providers: Serper (Google), Brave Search, Tavily, Querit,
-Linkup, Exa, Firecrawl, Perplexity, You.com, SearXNG.
+Linkup, Exa, Firecrawl, Perplexity, Kilo Perplexity, You.com, SearXNG.
 Supports extract providers: Firecrawl, Linkup, Tavily, Exa, You.com.
 
 Smart Routing uses multi-signal analysis:
@@ -15,7 +15,7 @@ Smart Routing uses multi-signal analysis:
 
 Usage:
     python3 search.py --query "..."                    # Auto-route based on query
-    python3 search.py --provider [serper|brave|tavily|linkup|querit|exa|firecrawl|perplexity|you|searxng|auto] --query "..." [options]
+    python3 search.py --provider [serper|brave|tavily|linkup|querit|exa|firecrawl|perplexity|kilo-perplexity|you|searxng|auto] --query "..." [options]
 
 Examples:
     python3 search.py -q "iPhone 16 Pro price"              # → Serper (shopping intent)
@@ -289,7 +289,7 @@ DEFAULT_CONFIG = {
     "auto_routing": {
         "enabled": True,
         "fallback_provider": "serper",
-        "provider_priority": ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "brave", "serper", "you", "searxng"],
+        "provider_priority": ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng"],
         "disabled_providers": [],
         "confidence_threshold": 0.3,  # Below this, note low confidence
     },
@@ -324,6 +324,10 @@ DEFAULT_CONFIG = {
         "verbosity": "standard"
     },
     "perplexity": {
+        "api_url": "https://api.perplexity.ai/chat/completions",
+        "model": "sonar-pro"
+    },
+    "kilo-perplexity": {
         "api_url": "https://api.kilo.ai/api/gateway/chat/completions",
         "model": "perplexity/sonar-pro"
     },
@@ -351,13 +355,13 @@ def _deepcopy_default_config() -> Dict[str, Any]:
     return json.loads(json.dumps(DEFAULT_CONFIG))
 
 
-_ROUTING_PROVIDER_NAMES = {"tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "brave", "serper", "you", "searxng"}
+_ROUTING_PROVIDER_NAMES = {"tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng"}
 
 
 def _normalize_routing_provider_config(provider: str) -> str:
     normalized = (provider or "").strip().lower()
-    if normalized in {"kilo-perplexity", "kilo_perplexity"}:
-        normalized = "perplexity"
+    if normalized == "kilo_perplexity":
+        normalized = "kilo-perplexity"
     if normalized not in _ROUTING_PROVIDER_NAMES:
         raise ValueError(f"unknown routing provider: {provider}")
     return normalized
@@ -480,7 +484,9 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
     
     # Then check environment
     if provider == "perplexity":
-        return os.environ.get("PERPLEXITY_API_KEY") or os.environ.get("KILOCODE_API_KEY")
+        return os.environ.get("PERPLEXITY_API_KEY")
+    if provider == "kilo-perplexity":
+        return os.environ.get("KILOCODE_API_KEY")
     key_map = {
         "serper": "SERPER_API_KEY",
         "brave": "BRAVE_API_KEY",
@@ -610,7 +616,8 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
             "linkup": "LINKUP_API_KEY",
             "exa": "EXA_API_KEY",
             "you": "YOU_API_KEY",
-            "perplexity": "KILOCODE_API_KEY",
+            "perplexity": "PERPLEXITY_API_KEY",
+            "kilo-perplexity": "KILOCODE_API_KEY",
             "firecrawl": "FIRECRAWL_API_KEY"
         }[provider]
         
@@ -622,7 +629,8 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
             "linkup": "https://app.linkup.so",
             "exa": "https://exa.ai",
             "you": "https://api.you.com",
-            "perplexity": "https://api.kilo.ai",
+            "perplexity": "https://www.perplexity.ai/settings/api",
+            "kilo-perplexity": "https://api.kilo.ai",
             "firecrawl": "https://www.firecrawl.dev/app/api-keys"
         }
         
@@ -1331,6 +1339,7 @@ class QueryAnalyzer:
             "linkup": linkup_source_score + (rag_score * 0.7) + (research_score * 0.45) + (recency_score * 0.35),
             "exa": discovery_score + (1.0 if re.search(r"\b(similar|alternatives?|examples?)\b", query, re.IGNORECASE) else 0.0) + (exa_deep_score * 0.5) + (exa_deep_reasoning_score * 0.5),
             "perplexity": direct_answer_score + (local_news_score * 0.4) + (recency_score * 0.55),
+            "kilo-perplexity": direct_answer_score + (local_news_score * 0.4) + (recency_score * 0.55),
             "you": rag_score + (recency_score * 0.25),  # You.com good for real-time + RAG
             "searxng": privacy_score,  # SearXNG for privacy/multi-source queries
             "firecrawl": discovery_score + (research_score * 0.35) + (recency_score * 0.25),
@@ -1345,6 +1354,7 @@ class QueryAnalyzer:
             "linkup": linkup_source_matches + rag_matches + research_matches,
             "exa": discovery_matches + exa_deep_matches + exa_deep_reasoning_matches,
             "perplexity": direct_answer_matches,
+            "kilo-perplexity": direct_answer_matches,
             "you": rag_matches,
             "searxng": privacy_matches,
             "firecrawl": discovery_matches + research_matches,
@@ -1394,7 +1404,7 @@ class QueryAnalyzer:
         max_score = max(available.values())
         
         # Handle ties using deterministic per-query distribution
-        priority = self.auto_config.get("provider_priority", ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "brave", "serper", "you", "searxng"])
+        priority = self.auto_config.get("provider_priority", ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng"])
         winners = [p for p, s in available.items() if s == max_score]
         
         if len(winners) > 1:
@@ -1552,7 +1562,7 @@ def explain_routing(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
             if matches
         },
         "available_providers": [
-            p for p in ["serper", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "you", "searxng"]
+            p for p in ["serper", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "you", "searxng"]
             if get_api_key(p, config) and p not in config.get("auto_routing", {}).get("disabled_providers", [])
         ]
     }
@@ -3032,27 +3042,29 @@ def search_exa(
 
 
 # =============================================================================
-# Perplexity via Kilo Gateway (Synthesized Direct Answers)
+# Perplexity-compatible Direct Answers
 # =============================================================================
 
 def search_perplexity(
     query: str,
     api_key: str,
     max_results: int = 5,
-    model: str = "perplexity/sonar-pro",
-    api_url: str = "https://api.kilo.ai/api/gateway/chat/completions",
+    model: str = "sonar-pro",
+    api_url: str = "https://api.perplexity.ai/chat/completions",
     freshness: Optional[str] = None,
+    provider_name: str = "perplexity",
 ) -> dict:
-    """Search/answer using Perplexity Sonar Pro via Kilo Gateway.
+    """Search/answer using the native Perplexity API or a compatible gateway.
 
     Args:
         query: Search query
-        api_key: Kilo Gateway API key
+        api_key: Provider API key
         max_results: Maximum results to return
-        model: Perplexity model to use
-        api_url: Kilo Gateway endpoint
+        model: Perplexity-compatible model to use
+        api_url: Chat completions endpoint
         freshness: Filter by recency — 'day', 'week', 'month', 'year' (maps to
                    Perplexity's search_recency_filter parameter)
+        provider_name: Result provider label (perplexity or kilo-perplexity)
     """
     # Map generic freshness values to Perplexity's search_recency_filter
     recency_map = {"day": "day", "pd": "day", "week": "week", "pw": "week", "month": "month", "pm": "month", "year": "year", "py": "year"}
@@ -3121,7 +3133,7 @@ def search_perplexity(
         })
 
     return {
-        "provider": "perplexity",
+        "provider": provider_name,
         "query": query,
         "results": results,
         "images": [],
@@ -3480,7 +3492,7 @@ Full docs: See README.md and SKILL.md
     # Common arguments
     parser.add_argument(
         "--provider", "-p", 
-        choices=["serper", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "you", "searxng", "auto"],
+        choices=["serper", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "you", "searxng", "auto"],
         help="Search provider (auto=intelligent routing)"
     )
     parser.add_argument(
@@ -3807,7 +3819,7 @@ Full docs: See README.md and SKILL.md
     
     # Build provider fallback list
     auto_config = config.get("auto_routing", {})
-    provider_priority = auto_config.get("provider_priority", ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "brave", "serper", "you", "searxng"])
+    provider_priority = auto_config.get("provider_priority", ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng"])
     disabled_providers = auto_config.get("disabled_providers", [])
 
     # Start with the selected provider, then try others in priority order.
@@ -3938,15 +3950,17 @@ Full docs: See README.md and SKILL.md
                 api_url=firecrawl_config.get("api_url", "https://api.firecrawl.dev/v2/search"),
                 timeout_ms=int(firecrawl_config.get("timeout", 30000)),
             )
-        elif prov == "perplexity":
-            perplexity_config = config.get("perplexity", {})
+        elif prov in {"perplexity", "kilo-perplexity"}:
+            perplexity_config = config.get(prov, {})
+            defaults = DEFAULT_CONFIG.get(prov, {})
             return search_perplexity(
                 query=args.query,
                 api_key=key,
                 max_results=args.max_results,
-                model=perplexity_config.get("model", "perplexity/sonar-pro"),
-                api_url=perplexity_config.get("api_url", "https://api.kilo.ai/api/gateway/chat/completions"),
+                model=perplexity_config.get("model", defaults.get("model", "sonar-pro")),
+                api_url=perplexity_config.get("api_url", defaults.get("api_url", "https://api.perplexity.ai/chat/completions")),
                 freshness=getattr(args, "freshness", None),
+                provider_name=prov,
             )
         elif prov == "you":
             return search_you(

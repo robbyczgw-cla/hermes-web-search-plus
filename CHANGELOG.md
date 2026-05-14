@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### 🐛 Fixed
+- `perplexity` now uses the native Perplexity API endpoint (`https://api.perplexity.ai/chat/completions`), `PERPLEXITY_API_KEY`, and `sonar-pro` model instead of the Kilo gateway defaults.
+- `kilo-perplexity` is preserved as a distinct routing provider using `KILOCODE_API_KEY`, the Kilo gateway endpoint, and `perplexity/sonar-pro`.
+
+### 🧪 Tests
+- Added regression coverage for native Perplexity defaults, distinct Kilo Perplexity routing, separate environment keys, and onboarding/runtime config normalization.
+
 ## [v1.9.2] — 2026-05-10
 
 ### 🔧 Changed

@@ -498,7 +498,7 @@ def test_no_secret_leaks_across_status_and_config_commands(tmp_path, capsys):
 
 
 
-def test_config_routing_provider_alias_maps_kilo_perplexity_to_perplexity(tmp_path):
+def test_config_routing_provider_alias_maps_kilo_perplexity_to_distinct_provider(tmp_path):
     config_path = tmp_path / "config.json"
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
@@ -507,10 +507,10 @@ def test_config_routing_provider_alias_maps_kilo_perplexity_to_perplexity(tmp_pa
     args.func(args)
 
     data = json.loads(config_path.read_text())
-    assert data["default_provider"] == "perplexity"
+    assert data["default_provider"] == "kilo-perplexity"
 
 
-def test_config_routing_provider_alias_maps_kilo_underscore_perplexity_to_perplexity(tmp_path):
+def test_config_routing_provider_alias_maps_kilo_underscore_perplexity_to_distinct_provider(tmp_path):
     config_path = tmp_path / "config.json"
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
@@ -519,7 +519,7 @@ def test_config_routing_provider_alias_maps_kilo_underscore_perplexity_to_perple
     args.func(args)
 
     data = json.loads(config_path.read_text())
-    assert data["default_provider"] == "perplexity"
+    assert data["default_provider"] == "kilo-perplexity"
 
 
 def test_config_priority_rejects_non_routing_catalog_provider(tmp_path):
@@ -642,8 +642,8 @@ def test_search_load_config_normalizes_kilo_perplexity_alias(tmp_path, monkeypat
 
     config = search.load_config()
 
-    assert config["default_provider"] == "perplexity"
-    assert config["auto_routing"]["provider_priority"] == ["perplexity"]
+    assert config["default_provider"] == "kilo-perplexity"
+    assert config["auto_routing"]["provider_priority"] == ["kilo-perplexity"]
     assert not list(tmp_path.glob("config.json.broken-*"))
 
 
@@ -654,7 +654,7 @@ def test_search_load_config_normalizes_kilo_underscore_perplexity_alias(tmp_path
 
     config = search.load_config()
 
-    assert config["default_provider"] == "perplexity"
-    assert config["auto_routing"]["provider_priority"] == ["perplexity"]
-    assert config["auto_routing"]["fallback_provider"] == "perplexity"
+    assert config["default_provider"] == "kilo-perplexity"
+    assert config["auto_routing"]["provider_priority"] == ["kilo-perplexity"]
+    assert config["auto_routing"]["fallback_provider"] == "kilo-perplexity"
     assert not list(tmp_path.glob("config.json.broken-*"))

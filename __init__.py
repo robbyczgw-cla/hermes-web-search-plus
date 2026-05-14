@@ -257,8 +257,8 @@ def _get_hermes_env_path() -> Path:
 
 
 _SETUP_PROVIDER_NAMES = {item["provider"] for item in _PROVIDER_CATALOG}
-_DEFAULT_PROVIDER_PRIORITY = ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "brave", "serper", "you", "searxng"]
-_ROUTING_PROVIDER_NAMES = set(_DEFAULT_PROVIDER_PRIORITY)
+_DEFAULT_PROVIDER_PRIORITY = ["tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng"]
+_ROUTING_PROVIDER_NAMES = set(_DEFAULT_PROVIDER_PRIORITY) | {"kilo-perplexity"}
 
 
 def _get_plugin_config_path() -> Path:
@@ -296,8 +296,8 @@ def _normalize_provider_name(provider: str) -> str:
 def _normalize_routing_provider(provider: str) -> str:
     """Normalize a provider that search.py can actually route to."""
     normalized = (provider or "").strip().lower()
-    if normalized in {"kilo-perplexity", "kilo_perplexity"}:
-        normalized = "perplexity"
+    if normalized == "kilo_perplexity":
+        normalized = "kilo-perplexity"
     if normalized not in _ROUTING_PROVIDER_NAMES:
         valid = ", ".join(sorted(_ROUTING_PROVIDER_NAMES))
         print(f"Unknown routing provider: {provider}. Valid routing providers: {valid}", file=sys.stderr)
@@ -1466,7 +1466,7 @@ def register(ctx: Any) -> None:
                 },
                 "provider": {
                     "type": "string",
-                    "enum": ["auto", "serper", "brave", "tavily", "exa", "querit", "linkup", "firecrawl", "perplexity", "you", "searxng"],
+                    "enum": ["auto", "serper", "brave", "tavily", "exa", "querit", "linkup", "firecrawl", "perplexity", "kilo-perplexity", "you", "searxng"],
                     "description": "Search provider. Use 'auto' for intelligent routing (default). Brave and Serper share generic web-search intents and ties are distributed deterministically per query.",
                     "default": "auto",
                 },
