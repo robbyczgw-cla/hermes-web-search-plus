@@ -7,8 +7,9 @@
 - Added onboarding/config support for `auto_allow`, including `setup.py config set-auto-allow <provider> on|off` so experimental or fallback providers can remain explicit-only.
 
 ### 🔧 Changed
-- SerpBase defaults to `auto_allow=false`: configured keys unlock explicit calls, but auto-routing/fallback will not select it unless users opt in.
+- SerpBase defaults to `auto_allow=false`: configured keys unlock explicit calls, but auto-routing/fallback will not select it unless users opt in. See [Architecture: Auto-allow gate](docs/ARCHITECTURE.md#auto-allow-gate).
 - README provider, API-key, and routing docs now cover SerpBase activation and auto-allow behavior.
+- Added detailed user documentation, FAQ, and architecture/trust-boundary docs under `docs/`.
 
 ### 🧪 Tests
 - Added regression coverage for SerpBase response normalization, explicit provider calls, missing-key handling, onboarding metadata, and auto-routing exclusion.

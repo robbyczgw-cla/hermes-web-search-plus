@@ -73,6 +73,14 @@ Notes:
 
 ---
 
+## Documentation
+
+- [User Guide](docs/USER_GUIDE.md) — detailed setup, provider tuning, routing, extraction, answer beta, reliability, and cost controls.
+- [FAQ](docs/FAQ.md) — common setup, SerpBase auto-allow, provider selection, cache, quota, and troubleshooting questions.
+- [Architecture](docs/ARCHITECTURE.md) — plugin boundary, routing engine, auto-allow gate, cache/cooldown state, data flow, and provider-extension notes.
+
+---
+
 ## CLI setup
 
 The setup wizard is intentionally nicer than “paste keys and pray”:
