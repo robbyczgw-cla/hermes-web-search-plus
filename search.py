@@ -1372,46 +1372,50 @@ class QueryAnalyzer:
         def boost(provider: str, value: float) -> None:
             provider_scores[provider] = provider_scores.get(provider, 0.0) + value
 
+        def boost_many(items: List[Tuple[str, float]]) -> None:
+            for provider, value in items:
+                boost(provider, value)
+
         answer_mode = False
 
         # Script/language-aware current queries: You performed best as the safe fast default,
         # with Exa/Firecrawl/Linkup useful by script. Keep this modest so strong class rules win.
         if language_hint not in {"en", "de"}:
             if language_hint == "zh":
-                boost("exa", 7.0); boost("you", 6.0); boost("firecrawl", 4.0); boost("linkup", 3.0); boost("serper", 2.5)
+                boost_many([("exa", 7.0), ("you", 6.0), ("firecrawl", 4.0), ("linkup", 3.0), ("serper", 2.5)])
             elif language_hint == "ar":
-                boost("you", 8.0); boost("linkup", 5.0); boost("serper", 4.0); boost("firecrawl", 2.0)
+                boost_many([("you", 8.0), ("linkup", 5.0), ("serper", 4.0), ("firecrawl", 2.0)])
             else:
-                boost("you", 8.0); boost("exa", 5.0); boost("firecrawl", 4.0); boost("linkup", 3.0); boost("tavily", 2.0)
+                boost_many([("you", 8.0), ("exa", 5.0), ("firecrawl", 4.0), ("linkup", 3.0), ("tavily", 2.0)])
             boost("you", min(recency_score, 3.0))
 
         if routing_class == "shopping_at":
-            boost("serper", 8.0); boost("firecrawl", 6.0); boost("linkup", 4.0); boost("you", 2.0); boost("exa", -2.0)
+            boost_many([("serper", 8.0), ("firecrawl", 6.0), ("linkup", 4.0), ("you", 2.0), ("exa", -2.0)])
         elif routing_class == "local_at":
-            boost("firecrawl", 8.0); boost("serper", 6.0); boost("linkup", 4.0); boost("you", 2.0)
+            boost_many([("firecrawl", 8.0), ("serper", 6.0), ("linkup", 4.0), ("you", 2.0)])
         elif routing_class == "official_regulatory":
-            boost("exa", 8.0); boost("firecrawl", 6.0); boost("serper", 5.0); boost("you", 3.0)
+            boost_many([("exa", 8.0), ("firecrawl", 6.0), ("serper", 5.0), ("you", 3.0)])
         elif routing_class == "sports_current":
-            boost("you", 8.0); boost("serper", 6.0); boost("linkup", 5.0); boost("tavily", 2.0)
+            boost_many([("you", 8.0), ("serper", 6.0), ("linkup", 5.0), ("tavily", 2.0)])
         elif routing_class == "github_docs":
-            boost("exa", 10.0); boost("you", 6.0); boost("firecrawl", 5.0); boost("serper", 4.0)
+            boost_many([("exa", 10.0), ("you", 6.0), ("firecrawl", 5.0), ("serper", 4.0)])
         elif routing_class == "docs_api":
-            boost("serper", 6.0); boost("exa", 5.0); boost("you", 4.0); boost("firecrawl", 3.0); boost("tavily", 3.0)
+            boost_many([("serper", 6.0), ("exa", 5.0), ("you", 4.0), ("firecrawl", 3.0), ("tavily", 3.0)])
         elif routing_class == "academic_arxiv":
-            boost("exa", 12.0); boost("serper", 3.0); boost("linkup", 2.0); boost("you", 1.5)
+            boost_many([("exa", 12.0), ("serper", 3.0), ("linkup", 2.0), ("you", 1.5)])
         elif routing_class == "oss_discovery":
-            boost("exa", 8.0); boost("firecrawl", 5.0); boost("tavily", 4.0); boost("you", 3.0)
+            boost_many([("exa", 8.0), ("firecrawl", 5.0), ("tavily", 4.0), ("you", 3.0)])
         elif routing_class == "reddit_community":
-            boost("serper", 10.0); boost("firecrawl", 8.0); boost("tavily", 6.0); boost("exa", -20.0)
+            boost_many([("serper", 10.0), ("firecrawl", 8.0), ("tavily", 6.0), ("exa", -20.0)])
         elif routing_class == "cve_security":
-            boost("serper", 10.0); boost("exa", 8.0); boost("linkup", 5.0); boost("you", 2.0); boost("firecrawl", -20.0)
+            boost_many([("serper", 10.0), ("exa", 8.0), ("linkup", 5.0), ("you", 2.0), ("firecrawl", -20.0)])
         elif routing_class == "finance_ir":
-            boost("exa", 7.0); boost("you", 6.0); boost("firecrawl", 5.0); boost("serper", 4.0)
+            boost_many([("exa", 7.0), ("you", 6.0), ("firecrawl", 5.0), ("serper", 4.0)])
         elif routing_class == "weather_local":
-            boost("serper", 8.0); boost("firecrawl", 6.0); boost("you", 2.0)
+            boost_many([("serper", 8.0), ("firecrawl", 6.0), ("you", 2.0)])
         elif routing_class == "answer_synthesis":
             answer_mode = True
-            boost("you", 16.0); boost("tavily", 4.0); boost("linkup", 3.0); boost("exa", 2.0)
+            boost_many([("you", 16.0), ("tavily", 4.0), ("linkup", 3.0), ("exa", 2.0)])
 
         return answer_mode
     
