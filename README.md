@@ -14,7 +14,7 @@
   <img alt="Hermes Plugin" src="https://img.shields.io/badge/Hermes-plugin-a78bfa.svg">
 </p>
 
-**Web search, extraction, and optional cited answers for Hermes — bring any one of 10 provider options and the plugin unlocks the tools your keys can actually support.** `web_extract_plus(provider="auto")` defaults to Firecrawl-first extraction for robust scraping; Linkup remains the cheap/citation-friendly answer-extraction path when available.
+**Web search, extraction, and optional cited answers for Hermes — bring any one of 12 provider options and the plugin unlocks the tools your keys can actually support.** `web_extract_plus(provider="auto")` defaults to Firecrawl-first extraction for robust scraping; Linkup remains the cheap/citation-friendly answer-extraction path when available.
 
 `web-search-plus` adds three Hermes tools:
 
@@ -116,6 +116,8 @@ python ~/.hermes/plugins/web-search-plus/setup.py config set-priority tavily,lin
 python ~/.hermes/plugins/web-search-plus/setup.py config set-fallback tavily
 python ~/.hermes/plugins/web-search-plus/setup.py config disable perplexity
 python ~/.hermes/plugins/web-search-plus/setup.py config enable perplexity
+python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase off
+python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase on
 python ~/.hermes/plugins/web-search-plus/setup.py config set-threshold 0.45
 
 # Preview changes without touching disk
@@ -127,6 +129,7 @@ Notes:
 - `set-default <provider>` disables auto-routing and makes `--provider auto` resolve to that provider.
 - `set-routing on` restores query-based routing while keeping the saved default for later.
 - `set-priority` accepts comma-separated provider names, normalizes case/whitespace, and ignores duplicates with a warning.
+- `set-auto-allow <provider> off` keeps a configured provider available for explicit calls while preventing auto-routing/fallback from selecting it. SerpBase and Querit default to `off` here.
 - `setup.py --config-path /path/to/config.json` points the helper at a custom config; `WEB_SEARCH_PLUS_CONFIG=/path/to/config.json` points `search.py` at the same file.
 - `config reset --yes` backs up the existing file before writing fresh defaults.
 
@@ -136,7 +139,7 @@ Notes:
 
 | Capability | Unlocks | Configure at least one of |
 |---|---|---|
-| Search | `web_search_plus`, snippet-backed `web_answer_plus` | Brave, Serper, Tavily, Exa, Querit, Linkup, Firecrawl, Perplexity, You.com, or SearXNG |
+| Search | `web_search_plus`, snippet-backed `web_answer_plus` | Brave, Serper, SerpBase, Tavily, Exa, Querit, Linkup, Firecrawl, Perplexity, Kilo Perplexity, You.com, or SearXNG |
 | Extraction | `web_extract_plus`, fuller `web_answer_plus` citations | Linkup, Firecrawl, Tavily, Exa, or You.com |
 | Best starter | Search + extraction + broad fallback | Tavily + Linkup + optional Brave |
 
@@ -235,7 +238,7 @@ Parameters:
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `query` | string | **required** | Search query |
-| `provider` | string | `"auto"` | `auto`, `serper`, `brave`, `tavily`, `exa`, `querit`, `linkup`, `firecrawl`, `perplexity`, `kilo-perplexity`, `you`, `searxng` |
+| `provider` | string | `"auto"` | `auto`, `serper`, `serpbase`, `brave`, `tavily`, `exa`, `querit`, `linkup`, `firecrawl`, `perplexity`, `kilo-perplexity`, `you`, `searxng` |
 | `depth` | string | `"normal"` | Exa only: `normal`, `deep`, `deep-reasoning` |
 | `count` | integer | `5` | Results, 1–20 |
 | `time_range` | string | — | `day`, `week`, `month`, `year` |
@@ -278,6 +281,7 @@ Parameters:
 |---|---:|---:|---|
 | Brave | ✅ | — | General-purpose independent web index |
 | Serper | ✅ | — | Google-like SERP, news, shopping, local facts |
+| SerpBase | ✅ | — | Cheap Google-like SERP fallback; explicit/fallback-only by default |
 | Tavily | ✅ | ✅ | Long-form research and content-heavy queries |
 | Exa | ✅ | ✅ | Semantic discovery and similarity search |
 | Querit | ✅ | — | Multilingual and real-time queries |
@@ -288,7 +292,7 @@ Parameters:
 | You.com | ✅ | ✅ | LLM-ready real-time snippets and content |
 | SearXNG | ✅ | — | Privacy-focused self-hosted metasearch |
 
-Auto-routing is rule-based on query signals such as recency, product intent, research language, and semantic-discovery patterns. Brave and Serper share generic web-search intents; when they tie, deterministic per-query tie-breaking keeps the same query reproducible while distributing ties across both providers.
+Auto-routing is rule-based on query signals such as recency, product intent, research language, and semantic-discovery patterns. Brave and Serper share generic web-search intents; when they tie, deterministic per-query tie-breaking keeps the same query reproducible while distributing ties across both providers. SerpBase is intentionally `auto_allow=false` by default: configure `SERPBASE_API_KEY` to call `provider="serpbase"` explicitly, or opt it into automatic routing with `setup.py config set-auto-allow serpbase on`.
 
 ---
 
@@ -299,6 +303,7 @@ All provider keys are optional at install time. Configure only what you use:
 ```bash
 # Search-capable providers
 SERPER_API_KEY=***        # https://serper.dev
+SERPBASE_API_KEY=***      # https://www.serpbase.dev — explicit/fallback-only Google-like SERP search
 BRAVE_API_KEY=***         # https://brave.com/search/api/
 TAVILY_API_KEY=***        # https://tavily.com — search + extraction
 EXA_API_KEY=***           # https://exa.ai — search + extraction

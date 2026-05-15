@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### ✨ Added
+- Added SerpBase as a search provider using `SERPBASE_API_KEY`, available via `provider="serpbase"`.
+- Added onboarding/config support for `auto_allow`, including `setup.py config set-auto-allow <provider> on|off` so experimental or fallback providers can remain explicit-only.
+
+### 🔧 Changed
+- SerpBase defaults to `auto_allow=false`: configured keys unlock explicit calls, but auto-routing/fallback will not select it unless users opt in.
+- README provider, API-key, and routing docs now cover SerpBase activation and auto-allow behavior.
+
+### 🧪 Tests
+- Added regression coverage for SerpBase response normalization, explicit provider calls, missing-key handling, onboarding metadata, and auto-routing exclusion.
+
 ## [v1.9.3] — 2026-05-14
 
 ### 🐛 Fixed
