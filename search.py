@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 1.9.3
-Supports search providers: Serper (Google), Brave Search, Tavily, Querit,
-Linkup, Exa, Firecrawl, Perplexity, Kilo Perplexity, You.com, SearXNG.
+Version: 2.0.0
+Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
+Brave Search, SerpBase, Querit, Perplexity, Kilo Perplexity, SearXNG.
 Supports extract providers: Firecrawl, Linkup, Tavily, Exa, You.com.
 
 Smart Routing uses multi-signal analysis:
+  - Routing v2 language/script and query-class detection
   - Query intent classification (shopping, research, discovery)
   - Linguistic pattern detection (how much vs how does)
   - Product/brand recognition
@@ -15,12 +16,12 @@ Smart Routing uses multi-signal analysis:
 
 Usage:
     python3 search.py --query "..."                    # Auto-route based on query
-    python3 search.py --provider [serper|serpbase|brave|tavily|linkup|querit|exa|firecrawl|perplexity|kilo-perplexity|you|searxng|auto] --query "..." [options]
+    python3 search.py --provider [you|serper|exa|firecrawl|tavily|linkup|brave|serpbase|querit|perplexity|kilo-perplexity|searxng|auto] --query "..." [options]
 
 Examples:
-    python3 search.py -q "iPhone 16 Pro price"              # → Serper (shopping intent)
-    python3 search.py -q "how does quantum entanglement work"  # → Tavily (research intent)
-    python3 search.py -q "startups similar to Notion"       # → Exa (discovery intent)
+    python3 search.py -q "東京 AI ニュース 今日"              # → You.com (multilingual current)
+    python3 search.py -q "arXiv 2024 LLM scaling laws"      # → Exa (academic discovery)
+    python3 search.py -q "latest OpenSSH CVE mitigation"    # → Serper (security/current)
 """
 
 import argparse
@@ -39,6 +40,8 @@ from typing import Optional, List, Dict, Any, Tuple
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlparse, parse_qsl, urlunparse
+
+ROUTING_POLICY = "routing-v2"
 
 
 # =============================================================================
@@ -1567,6 +1570,7 @@ class QueryAnalyzer:
                 "confidence": 0.0,
                 "confidence_level": "low",
                 "reason": "no_available_providers",
+                "routing_policy": ROUTING_POLICY,
                 "scores": scores,
                 "top_signals": [],
                 "analysis": analysis,
@@ -1640,6 +1644,7 @@ class QueryAnalyzer:
             "confidence": confidence,
             "confidence_level": "high" if confidence >= 0.7 else "medium" if confidence >= 0.4 else "low",
             "reason": reason,
+            "routing_policy": ROUTING_POLICY,
             "exa_depth": exa_depth,
             "scores": {p: round(s, 2) for p, s in available.items()},
             "winning_score": round(max_score, 2),
@@ -1707,6 +1712,7 @@ def explain_routing(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
             "confidence": routing["confidence"],
             "confidence_level": routing["confidence_level"],
             "reason": routing["reason"],
+            "routing_policy": routing.get("routing_policy", ROUTING_POLICY),
             "exa_depth": routing.get("exa_depth", "normal"),
             "auto_allow_excluded": routing.get("auto_allow_excluded", []),
             "answer_mode_recommended": routing.get("answer_mode_recommended", False),
@@ -1969,6 +1975,10 @@ def build_quality_report(
         "query": query,
         "selected_provider": routing_info.get("provider") or result.get("provider"),
         "routing_reason": routing_info.get("reason"),
+        "routing_policy": routing_info.get("routing_policy", ROUTING_POLICY),
+        "routing_class": routing_info.get("analysis_summary", {}).get("routing_class"),
+        "language_hint": routing_info.get("analysis_summary", {}).get("language_hint"),
+        "answer_mode_recommended": routing_info.get("answer_mode_recommended", False),
         "confidence": confidence_level,
         "confidence_score": routing_info.get("confidence"),
         "providers_considered": providers_considered,
@@ -4096,9 +4106,12 @@ Full docs: See README.md and SKILL.md
                 "confidence": routing["confidence"],
                 "confidence_level": routing["confidence_level"],
                 "reason": routing["reason"],
+                "routing_policy": routing.get("routing_policy", ROUTING_POLICY),
                 "top_signals": routing["top_signals"],
                 "scores": routing["scores"],
                 "auto_allow_excluded": routing.get("auto_allow_excluded", []),
+                "answer_mode_recommended": routing.get("answer_mode_recommended", False),
+                "analysis_summary": routing.get("analysis_summary", {}),
             }
         else:
             provider = "exa"
@@ -4108,10 +4121,11 @@ Full docs: See README.md and SKILL.md
                 "confidence": 1.0,
                 "confidence_level": "high",
                 "reason": "similar_url_specified",
+                "routing_policy": ROUTING_POLICY,
             }
     else:
         provider = args.provider or "serper"
-        routing_info = {"auto_routed": False, "provider": provider}
+        routing_info = {"auto_routed": False, "provider": provider, "routing_policy": ROUTING_POLICY}
     
     # Build provider fallback list
     auto_config = config.get("auto_routing", {})

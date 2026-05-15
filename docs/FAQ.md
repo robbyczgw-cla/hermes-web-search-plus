@@ -33,13 +33,13 @@ For the exact flow, see [Architecture](ARCHITECTURE.md#routing-engine).
 Per call:
 
 ```python
-web_search_plus(query="Hermes Agent docs", provider="brave")
+web_search_plus(query="Hermes Agent docs", provider="you")
 ```
 
 Persistently:
 
 ```bash
-python ~/.hermes/plugins/web-search-plus/setup.py config set-default brave
+python ~/.hermes/plugins/web-search-plus/setup.py config set-default you
 ```
 
 Re-enable auto-routing later:
@@ -78,7 +78,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py status
 Also verify that the key was written to the environment file Hermes actually uses. The setup helper supports explicit targeting:
 
 ```bash
-python ~/.hermes/plugins/web-search-plus/setup.py setup brave --env-path ~/.hermes/.env
+python ~/.hermes/plugins/web-search-plus/setup.py setup you --env-path ~/.hermes/.env
 ```
 
 ## How do I cap spend?
@@ -112,8 +112,8 @@ Different SERP APIs can have different freshness, ranking, localization, persona
 Yes. Configure one search-capable provider and pin it if you want predictable behavior:
 
 ```bash
-python ~/.hermes/plugins/web-search-plus/setup.py setup brave
-python ~/.hermes/plugins/web-search-plus/setup.py config set-default brave
+python ~/.hermes/plugins/web-search-plus/setup.py setup you
+python ~/.hermes/plugins/web-search-plus/setup.py config set-default you
 ```
 
 Extraction requires an extraction-capable provider such as Linkup, Firecrawl, Tavily, Exa, or You.com.

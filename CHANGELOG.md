@@ -1,15 +1,20 @@
 # Changelog
 
-## [Unreleased]
+## [v2.0.0] — 2026-05-15
 
-### 🔧 Changed
-- Docs now list SerpBase and Querit last in general provider lists because both default to `auto_allow=false`.
-- Auto-routing now uses the vNext-lite provider policy from the 25-query qualitative benchmark: You.com, Serper, Exa, Firecrawl, Tavily, and Linkup form the default search pool, while Brave, SerpBase, Querit, native Perplexity, and Kilo Perplexity default to explicit/guarded use.
-- Added class-aware routing boosts for multilingual current queries, AT/local shopping, GitHub/docs, package/API docs, arXiv/academic queries, Reddit/community searches, CVE/security advisories, official/regulatory queries, finance/IR, weather/local factual lookups, and answer/synthesis prompts.
+### 🚀 Major: Routing v2
+- Replaced naive provider-priority auto-routing with benchmarked, class-aware Routing v2 based on the 25-query provider matrix plus Hermi/Andy qualitative review.
+- You.com, Serper, Exa, Firecrawl, Tavily, and Linkup now form the conservative default search pool.
+- Brave, SerpBase, Querit, native Perplexity, and Kilo Perplexity default to explicit/guarded use via `auto_allow=false`; existing configs inherit these guarded defaults unless users explicitly opt providers back in.
+- Added class-aware routing boosts for multilingual current queries, AT/local shopping, GitHub/docs, package/API docs, arXiv/academic queries, Reddit/community searches, CVE/security advisories, official/regulatory queries, finance/IR, weather/local factual lookups, OSS discovery, and answer/synthesis prompts.
 - Search auto-routing now flags answer/synthesis prompts with `answer_mode_recommended` instead of selecting slow answer-only providers such as Kilo Perplexity.
+- Routing diagnostics now expose `language_hint`, `routing_class`, and `routing_policy`.
+
+### 📚 Docs
+- Updated README, User Guide, FAQ, and Architecture docs for Routing v2 defaults, guarded providers, setup presets, and migration behavior.
 
 ### 🧪 Tests
-- Added routing-vNext-lite regression coverage for default auto-allow gates, multilingual Japanese/Arabic routing to You.com, arXiv routing to Exa, Reddit/site queries away from Exa, CVE/security routing away from Firecrawl, and answer-mode recommendations.
+- Added Routing v2 regression coverage for default auto-allow gates, legacy auto-allow migration, multilingual Japanese/Arabic routing to You.com, arXiv routing to Exa, Reddit/site queries away from Exa, Reddit-company finance queries, CVE/security routing away from Firecrawl, answer-mode recommendations, and sports-table false positives.
 
 ## [v1.10.0] — 2026-05-15
 

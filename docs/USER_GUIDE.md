@@ -51,18 +51,18 @@ Useful commands:
 python ~/.hermes/plugins/web-search-plus/setup.py list
 python ~/.hermes/plugins/web-search-plus/setup.py status --json
 python ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter
-python ~/.hermes/plugins/web-search-plus/setup.py setup brave linkup --env-path ~/.hermes/.env
+python ~/.hermes/plugins/web-search-plus/setup.py setup you linkup --env-path ~/.hermes/.env
 ```
 
 Presets:
 
-- `starter`: Tavily + Linkup + Brave. Best default for new users.
-- `lean`: Tavily + Linkup. Cheap useful search plus extraction.
-- `search`: Tavily + Brave + Serper. Broad search coverage.
+- `starter`: You.com + Serper + Linkup. Best Routing v2 first-run setup.
+- `lean`: You.com + Linkup. Small fast search plus extraction.
+- `search`: You.com + Serper + Exa + Firecrawl + Tavily + Linkup. Full default Routing v2 pool.
 - `extract`: Firecrawl + Linkup + Exa + Tavily. Extraction-heavy setup.
 - `all`: prompt for every supported provider.
 
-Search-capable providers include Brave, Serper, Tavily, Exa, Linkup, Firecrawl, Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, and Querit. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, and You.com.
+Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Brave, Perplexity, Kilo Perplexity, SearXNG, SerpBase, and Querit. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, and You.com.
 
 ## Routing preferences
 
@@ -82,7 +82,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py config show --json
 Pin a fixed provider:
 
 ```bash
-python ~/.hermes/plugins/web-search-plus/setup.py config set-default brave
+python ~/.hermes/plugins/web-search-plus/setup.py config set-default you
 ```
 
 Turn query-based auto-routing back on:
@@ -94,8 +94,8 @@ python ~/.hermes/plugins/web-search-plus/setup.py config set-routing on
 Tune automatic routing and fallback:
 
 ```bash
-python ~/.hermes/plugins/web-search-plus/setup.py config set-priority tavily,linkup,exa,firecrawl,perplexity,kilo-perplexity,brave,serper,you,searxng
-python ~/.hermes/plugins/web-search-plus/setup.py config set-fallback tavily
+python ~/.hermes/plugins/web-search-plus/setup.py config set-priority you,serper,exa,firecrawl,tavily,linkup
+python ~/.hermes/plugins/web-search-plus/setup.py config set-fallback serper
 python ~/.hermes/plugins/web-search-plus/setup.py config disable perplexity
 python ~/.hermes/plugins/web-search-plus/setup.py config enable perplexity
 python ~/.hermes/plugins/web-search-plus/setup.py config set-threshold 0.45
@@ -104,7 +104,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py config set-threshold 0.45
 Preview config changes without writing:
 
 ```bash
-python ~/.hermes/plugins/web-search-plus/setup.py config set-default brave --dry-run
+python ~/.hermes/plugins/web-search-plus/setup.py config set-default you --dry-run
 ```
 
 ### Routing debug walkthrough
@@ -141,7 +141,7 @@ Example pattern:
 }
 ```
 
-Read that as: SerpBase has a key but is explicit-only, Brave is temporarily cooled down, and Serper won among eligible providers. If you want SerpBase to participate in automatic routing, opt in with `set-auto-allow serpbase on`; if you want Brave retried immediately, wait for cooldown or clear local provider health state in your cache directory.
+Read that as: guarded providers can have keys but remain explicit-only for `provider="auto"`, and the router selected the best eligible provider. If you want SerpBase, Brave, Querit, Perplexity, or Kilo Perplexity to participate in automatic routing, opt in with `set-auto-allow <provider> on`; if a provider is cooled down, wait or clear local provider health state in your cache directory.
 
 ## Explicit opt-in providers: guarded providers
 

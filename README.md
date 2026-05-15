@@ -14,7 +14,7 @@
   <img alt="Hermes Plugin" src="https://img.shields.io/badge/Hermes-plugin-a78bfa.svg">
 </p>
 
-**Web search, extraction, and optional cited answers for Hermes — bring any one of 12 provider options and the plugin unlocks the tools your keys can actually support.** `web_extract_plus(provider="auto")` defaults to Firecrawl-first extraction for robust scraping; Linkup remains the cheap/citation-friendly answer-extraction path when available.
+**Web search, extraction, and optional cited answers for Hermes — now with Routing v2: benchmarked, class-aware auto-routing across the providers your keys can actually support.** `web_extract_plus(provider="auto")` defaults to Firecrawl-first extraction for robust scraping; Linkup remains the cheap/citation-friendly answer-extraction path when available.
 
 `web-search-plus` adds three Hermes tools:
 
@@ -34,7 +34,7 @@ Most web-search tools fail in one of two boring ways: they hard-code a single pr
 
 - **No global required key.** Configure one search-capable provider and search/answers work.
 - **Extraction is additive.** Add Linkup, Firecrawl, Tavily, Exa, or You.com for fuller cited answers and URL extraction.
-- **Fallbacks are explicit.** Provider failures go on cooldown; missing extraction keys produce snippet-backed answers with warnings instead of fake confidence.
+- **Routing v2 is conservative.** You.com, Serper, Exa, Firecrawl, Tavily, and Linkup form the default search pool; Brave, SerpBase, Querit, and Perplexity/Kilo stay explicit/guarded unless opted in.
 - **Costs stay bounded.** Research and answer modes cap provider work and keep partial results when extraction fails.
 
 ---
@@ -52,9 +52,9 @@ python ~/.hermes/plugins/web-search-plus/setup.py setup
 # Bare setup prompts every supported provider; press Enter to skip what you do not have.
 # Fast starter preset if you want the short path:
 # python ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter
-# TAVILY_API_KEY=...   # search/research
+# YOU_API_KEY=...      # fast Routing v2 core provider
+# SERPER_API_KEY=...   # reliable Google-like fallback
 # LINKUP_API_KEY=...   # extraction + fuller cited answers
-# BRAVE_API_KEY=...    # broad independent web search
 
 # 3) Restart/reload Hermes so plugin tools are registered
 # CLI: exit and start `hermes` again, or use /reset in-session
@@ -90,15 +90,15 @@ python ~/.hermes/plugins/web-search-plus/setup.py status
 python ~/.hermes/plugins/web-search-plus/setup.py list
 python ~/.hermes/plugins/web-search-plus/setup.py setup
 python ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter --open
-python ~/.hermes/plugins/web-search-plus/setup.py setup brave linkup --env-path ~/.hermes/.env
+python ~/.hermes/plugins/web-search-plus/setup.py setup you linkup --env-path ~/.hermes/.env
 ```
 
 Presets:
 
 - default / `all` — prompt every supported provider; Enter skips missing keys.
-- `starter` — Tavily + Linkup + Brave; best first-run setup.
-- `lean` — Tavily + Linkup; cheapest useful search + extraction pairing.
-- `search` — Tavily + Brave + Serper; broad search coverage.
+- `starter` — You.com + Serper + Linkup; best Routing v2 first-run setup.
+- `lean` — You.com + Linkup; small fast search + extraction pairing.
+- `search` — You.com + Serper + Exa + Firecrawl + Tavily + Linkup; full default Routing v2 pool.
 - `extract` — Firecrawl + Linkup + Exa + Tavily; extraction-heavy setup.
 - `all` — prompt for every supported provider.
 
@@ -114,14 +114,14 @@ python ~/.hermes/plugins/web-search-plus/setup.py status --json
 python ~/.hermes/plugins/web-search-plus/setup.py config show --json
 
 # Prefer one fixed provider instead of auto-routing
-python ~/.hermes/plugins/web-search-plus/setup.py config set-default brave
+python ~/.hermes/plugins/web-search-plus/setup.py config set-default you
 
 # Turn auto-routing back on
 python ~/.hermes/plugins/web-search-plus/setup.py config set-routing on
 
 # Tune auto-routing order and fallback
-python ~/.hermes/plugins/web-search-plus/setup.py config set-priority tavily,linkup,brave,serper
-python ~/.hermes/plugins/web-search-plus/setup.py config set-fallback tavily
+python ~/.hermes/plugins/web-search-plus/setup.py config set-priority you,serper,exa,firecrawl,tavily,linkup
+python ~/.hermes/plugins/web-search-plus/setup.py config set-fallback serper
 python ~/.hermes/plugins/web-search-plus/setup.py config disable perplexity
 python ~/.hermes/plugins/web-search-plus/setup.py config enable perplexity
 python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase off
@@ -129,7 +129,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase
 python ~/.hermes/plugins/web-search-plus/setup.py config set-threshold 0.45
 
 # Preview changes without touching disk
-python ~/.hermes/plugins/web-search-plus/setup.py config set-default brave --dry-run
+python ~/.hermes/plugins/web-search-plus/setup.py config set-default you --dry-run
 ```
 
 Notes:
@@ -137,7 +137,7 @@ Notes:
 - `set-default <provider>` disables auto-routing and makes `--provider auto` resolve to that provider.
 - `set-routing on` restores query-based routing while keeping the saved default for later.
 - `set-priority` accepts comma-separated provider names, normalizes case/whitespace, and ignores duplicates with a warning.
-- `set-auto-allow <provider> off` keeps a configured provider available for explicit calls while preventing auto-routing/fallback from selecting it. SerpBase and Querit default to `off` here.
+- `set-auto-allow <provider> off` keeps a configured provider available for explicit calls while preventing auto-routing/fallback from selecting it. Brave, SerpBase, Querit, Perplexity, and Kilo Perplexity default to `off` here.
 - `setup.py --config-path /path/to/config.json` points the helper at a custom config; `WEB_SEARCH_PLUS_CONFIG=/path/to/config.json` points `search.py` at the same file.
 - `config reset --yes` backs up the existing file before writing fresh defaults.
 
@@ -149,12 +149,12 @@ Notes:
 |---|---|---|
 | Search | `web_search_plus`, snippet-backed `web_answer_plus` | Brave, Serper, Tavily, Exa, Linkup, Firecrawl, Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, or Querit |
 | Extraction | `web_extract_plus`, fuller `web_answer_plus` citations | Linkup, Firecrawl, Tavily, Exa, or You.com |
-| Best starter | Search + extraction + broad fallback | Tavily + Linkup + optional Brave |
+| Best starter | Search + extraction + reliable fallback | You.com + Serper + Linkup |
 
 `setup.py status --plain` reports this directly:
 
 ```text
-web-search-plus is configured. Providers: Linkup, Brave Search
+web-search-plus is configured. Providers: You.com, Serper, Linkup
 Capabilities: search=yes, extraction=yes, answer=yes
 ```
 
@@ -228,8 +228,8 @@ Use this when the agent needs search results and routing metadata.
 web_search_plus(query="Graz weather today")
 # → auto-routed current-info search
 
-web_search_plus(query="Singapore CPI latest", provider="brave")
-# → force Brave Search
+web_search_plus(query="Singapore CPI latest", provider="you")
+# → force You.com search
 
 web_search_plus(query="alternatives to Notion", provider="exa")
 # → semantic discovery
@@ -287,20 +287,20 @@ Parameters:
 
 | Provider | Search | Extract | Best for |
 |---|---:|---:|---|
-| Brave | ✅ | — | General-purpose independent web index |
-| Serper | ✅ | — | Google-like SERP, news, shopping, local facts |
+| You.com | ✅ | ✅ | Fast Routing v2 core for current, multilingual, LLM-ready search |
+| Serper | ✅ | — | Reliable Google-like fallback for facts, shopping, local, and news |
+| Exa | ✅ | ✅ | Semantic discovery, docs, GitHub, academic/arXiv |
+| Firecrawl | ✅ | ✅ | Source-first web search with scrape-ready result content |
 | Tavily | ✅ | ✅ | Long-form research and content-heavy queries |
-| Exa | ✅ | ✅ | Semantic discovery and similarity search |
 | Linkup | ✅ | ✅ | Source-backed grounding, citations, RAG-ready retrieval |
-| Firecrawl | ✅ | ✅ | Web search with scrape-ready result content |
-| Perplexity | ✅ | — | Native Perplexity direct answer-style search |
-| Kilo Perplexity | ✅ | — | Perplexity through Kilo gateway (`kilo-perplexity`) |
-| You.com | ✅ | ✅ | LLM-ready real-time snippets and content |
+| Perplexity | ✅ | — | Native direct-answer style search; explicit/answer-mode guarded by default (`auto_allow=false`) |
+| Kilo Perplexity | ✅ | — | Perplexity through Kilo gateway; explicit/answer-mode guarded by default (`auto_allow=false`) |
+| Brave | ✅ | — | Independent web index; explicit/guarded by default (`auto_allow=false`) |
 | SearXNG | ✅ | — | Privacy-focused self-hosted metasearch |
 | SerpBase | ✅ | — | Cheap Google-like SERP fallback; explicit/fallback-only by default (`auto_allow=false`) |
 | Querit | ✅ | — | Multilingual and real-time queries; explicit/fallback-only by default (`auto_allow=false`) |
 
-Auto-routing is rule-based on query signals such as recency, product intent, research language, and semantic-discovery patterns. Brave and Serper share generic web-search intents; when they tie, deterministic per-query tie-breaking keeps the same query reproducible while distributing ties across both providers. SerpBase and Querit are intentionally listed last because both default to `auto_allow=false`: configure their keys to call them explicitly, or opt them into automatic routing with `setup.py config set-auto-allow <provider> on`.
+Routing v2 is benchmarked and class-aware. It detects language/script hints and query classes such as multilingual current news, AT shopping/local, docs/API, GitHub, academic/arXiv, Reddit/community, CVE/security, official/regulatory, finance/IR, weather/local, OSS discovery, and answer/synthesis. You.com, Serper, Exa, Firecrawl, Tavily, and Linkup are the conservative default auto-search pool. Brave, SerpBase, Querit, Perplexity, and Kilo Perplexity default to `auto_allow=false`: configure their keys to call them explicitly, or opt them into automatic routing with `setup.py config set-auto-allow <provider> on`.
 
 ---
 

@@ -84,7 +84,7 @@ High-level flow:
 
 1. Analyze query text for signals: current-info intent, product/local intent, research language, direct-answer intent, semantic-discovery intent, privacy intent, complexity, recency, language/script hints, and benchmark-derived query classes.
 2. Score known providers for those signals.
-3. Apply conservative vNext-lite boosts and penalties for classes such as multilingual current queries, AT/local shopping, GitHub/docs, package/API docs, arXiv/academic, Reddit/community, CVE/security, official/regulatory, finance/IR, weather/local factual, and answer/synthesis.
+3. Apply conservative Routing v2 boosts and penalties for classes such as multilingual current queries, AT/local shopping, GitHub/docs, package/API docs, arXiv/academic, Reddit/community, CVE/security, official/regulatory, finance/IR, weather/local factual, and answer/synthesis.
 4. Remove providers that do not have a key or required local config.
 5. Remove providers listed in `disabled_providers`.
 6. Remove providers with `auto_allow=false` from automatic routing.

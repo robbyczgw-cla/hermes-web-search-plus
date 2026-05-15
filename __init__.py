@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v1.9.3
+web-search-plus — Hermes Plugin v2.0.0
 Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "1.10.0"
+__version__ = "2.0.0"
 
 import argparse
 import getpass
@@ -56,7 +56,7 @@ _PROVIDER_CATALOG = [
         "provider": "tavily",
         "env": "TAVILY_API_KEY",
         "display_name": "Tavily",
-        "description": "Recommended starter for research/news-style search.",
+        "description": "Research/tutorial provider in the Routing v2 default pool.",
         "free_tier": "1,000 free searches/month",
         "signup_url": "https://tavily.com",
         "capabilities": ["search", "extract", "research"],
@@ -76,11 +76,11 @@ _PROVIDER_CATALOG = [
         "provider": "brave",
         "env": "BRAVE_API_KEY",
         "display_name": "Brave Search",
-        "description": "Independent general web index; useful for fresh and local web results.",
+        "description": "Independent general web index; explicit/guarded by default after Routing v2 reliability testing.",
         "free_tier": "$5 free monthly credits",
         "signup_url": "https://api.search.brave.com/app/keys",
         "capabilities": ["search", "news", "local"],
-        "recommended": True,
+        "recommended": False,
     },
     {
         "provider": "exa",
@@ -157,11 +157,11 @@ _PROVIDER_CATALOG = [
         "provider": "you",
         "env": "YOU_API_KEY",
         "display_name": "You.com",
-        "description": "LLM-ready real-time snippets and extraction when available.",
+        "description": "Fast Routing v2 core provider for current, multilingual, and LLM-ready search.",
         "free_tier": "Limited/API key required",
         "signup_url": "https://api.you.com",
         "capabilities": ["search", "extract"],
-        "recommended": False,
+        "recommended": True,
     },
     {
         "provider": "searxng",
@@ -269,8 +269,8 @@ def _get_hermes_env_path() -> Path:
 
 
 _SETUP_PROVIDER_NAMES = {item["provider"] for item in _PROVIDER_CATALOG}
-_DEFAULT_PROVIDER_PRIORITY = ["tavily", "linkup", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"]
-_DEFAULT_AUTO_ALLOW = {"serpbase": False, "querit": False}
+_DEFAULT_PROVIDER_PRIORITY = ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"]
+_DEFAULT_AUTO_ALLOW = {"serpbase": False, "querit": False, "brave": False, "kilo-perplexity": False, "perplexity": False}
 _ROUTING_PROVIDER_NAMES = set(_DEFAULT_PROVIDER_PRIORITY)
 
 
@@ -558,7 +558,7 @@ def _render_status_dashboard(status: Optional[Dict[str, Any]] = None, *, color: 
     if status["search_configured"] and not status["extract_configured"]:
         lines.append("│ Tip: add Linkup for cleaner citations and web_extract_plus.")
     elif not status["search_configured"]:
-        lines.append("│ Starter: Tavily + Linkup + Brave is the best first setup.")
+        lines.append("│ Starter: You + Serper + Linkup is the best first setup.")
     lines.extend([
         "╰─ Next commands",
         "   python ~/.hermes/plugins/web-search-plus/setup.py setup",
@@ -591,11 +591,11 @@ def _providers_for_preset(preset: str) -> List[Dict[str, Any]]:
     """Return provider catalog entries for a named setup preset."""
     preset = preset.lower().strip()
     if preset == "starter":
-        names = {"tavily", "linkup", "brave"}
+        names = {"you", "serper", "linkup"}
     elif preset == "lean":
-        names = {"tavily", "linkup"}
+        names = {"you", "linkup"}
     elif preset == "search":
-        names = {"tavily", "brave", "serper"}
+        names = {"you", "serper", "exa", "firecrawl", "tavily", "linkup"}
     elif preset == "extract":
         names = {"linkup", "firecrawl", "tavily"}
     elif preset == "all":
@@ -663,8 +663,8 @@ def _unconfigured_session_hint(
 def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     parser.description = "Configure web-search-plus provider keys with a tiny, secret-safe wizard."
     parser.epilog = (
-        "Default setup prompts every provider. Presets: starter=Tavily+Linkup+Brave, lean=Tavily+Linkup, "
-        "search=Tavily+Brave+Serper, extract=Linkup+Firecrawl+Tavily."
+        "Default setup prompts every provider. Presets: starter=You+Serper+Linkup, lean=You+Linkup, "
+        "search=You+Serper+Exa+Firecrawl+Tavily+Linkup, extract=Linkup+Firecrawl+Tavily."
     )
     subs = parser.add_subparsers(dest="web_search_plus_command")
     status = subs.add_parser("status", help="Show a setup dashboard without printing secrets")

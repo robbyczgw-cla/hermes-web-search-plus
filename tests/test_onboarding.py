@@ -180,8 +180,8 @@ def test_setup_presets_choose_expected_providers():
     extract = {item["provider"] for item in wsp._providers_for_preset("extract")}
     all_providers = {item["provider"] for item in wsp._providers_for_preset("all")}
 
-    assert starter == {"tavily", "linkup", "brave"}
-    assert lean == {"tavily", "linkup"}
+    assert starter == {"you", "serper", "linkup"}
+    assert lean == {"you", "linkup"}
     assert extract == {"linkup", "firecrawl", "tavily"}
     assert all_providers == {item["provider"] for item in wsp._get_provider_catalog()}
 
@@ -209,7 +209,7 @@ def test_setup_dry_run_prints_plan_without_prompting(monkeypatch, capsys):
 
     out = capsys.readouterr().out
     assert "Setup plan:" in out
-    assert "Tavily" in out
+    assert "You.com" in out
     assert "Linkup" in out
     assert "Dry run only" in out
 
@@ -217,7 +217,7 @@ def test_setup_dry_run_prints_plan_without_prompting(monkeypatch, capsys):
 def test_setup_dry_run_uses_target_env_path_for_dashboard(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("BRAVE_API_KEY", "live-env-should-not-count")
     env_path = tmp_path / ".env"
-    env_path.write_text("TAVILY_API_KEY=x\n")
+    env_path.write_text("YOU_API_KEY=x\n")
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["setup", "--preset", "starter", "--dry-run", "--env-path", str(env_path)])
@@ -226,7 +226,7 @@ def test_setup_dry_run_uses_target_env_path_for_dashboard(tmp_path, monkeypatch,
 
     out = capsys.readouterr().out
     assert "Providers: 1/12 configured" in out
-    assert "Active: Tavily" in out
+    assert "Active: You.com" in out
     assert "Brave Search" not in out.split("Setup plan:", 1)[0]
 
 
@@ -362,9 +362,12 @@ def test_config_set_auto_allow_updates_provider_gate(tmp_path):
 def test_default_behavior_config_blocks_low_trust_auto_providers():
     config = wsp._default_behavior_config()
 
-    assert config["auto_routing"]["provider_priority"][-2:] == ["serpbase", "querit"]
+    assert config["auto_routing"]["provider_priority"][:6] == ["you", "serper", "exa", "firecrawl", "tavily", "linkup"]
     assert config["auto_routing"]["auto_allow"]["serpbase"] is False
     assert config["auto_routing"]["auto_allow"]["querit"] is False
+    assert config["auto_routing"]["auto_allow"]["brave"] is False
+    assert config["auto_routing"]["auto_allow"]["kilo-perplexity"] is False
+    assert config["auto_routing"]["auto_allow"]["perplexity"] is False
 
 
 def test_setup_dry_run_can_auto_deny_provider(tmp_path, capsys):
@@ -380,7 +383,7 @@ def test_setup_dry_run_can_auto_deny_provider(tmp_path, capsys):
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "auto-allow false: querit, serpbase" in out
+    assert "auto-allow false: brave, kilo-perplexity, perplexity, querit, serpbase" in out
     assert not env_path.exists()
     assert not config_path.exists()
 

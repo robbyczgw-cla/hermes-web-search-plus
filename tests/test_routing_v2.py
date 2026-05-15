@@ -61,6 +61,7 @@ def test_multilingual_current_japanese_routes_to_you_not_brave_or_serper():
     routing = _route("東京 AI ニュース 今日 2026 企業 発表")
 
     assert routing["provider"] == "you"
+    assert routing["routing_policy"] == "routing-v2"
     assert routing["analysis_summary"]["language_hint"] == "ja"
     assert "brave" in routing["auto_allow_excluded"]
 

@@ -1,5 +1,5 @@
 name: web-search-plus
-version: "1.10.0"
+version: "2.0.0"
 description: "Multi-provider web search, URL extraction, cited answers, quality reports, and opt-in research mode"
 author: robbyczgw-cla
 requires_env: []
@@ -27,26 +27,26 @@ onboarding:
   status_command: "python ~/.hermes/plugins/web-search-plus/setup.py status"
   routing_status_command: "python ~/.hermes/plugins/web-search-plus/setup.py config show"
   routing_config_commands:
-    fixed_provider: "python ~/.hermes/plugins/web-search-plus/setup.py config set-default brave"
+    fixed_provider: "python ~/.hermes/plugins/web-search-plus/setup.py config set-default you"
     auto_routing: "python ~/.hermes/plugins/web-search-plus/setup.py config set-routing on"
-    priority: "python ~/.hermes/plugins/web-search-plus/setup.py config set-priority tavily,linkup,brave,serper"
-    fallback: "python ~/.hermes/plugins/web-search-plus/setup.py config set-fallback tavily"
+    priority: "python ~/.hermes/plugins/web-search-plus/setup.py config set-priority you,serper,exa,firecrawl,tavily,linkup"
+    fallback: "python ~/.hermes/plugins/web-search-plus/setup.py config set-fallback serper"
     disable_provider: "python ~/.hermes/plugins/web-search-plus/setup.py config disable perplexity"
-    block_auto_provider: "python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase off"
+    block_auto_provider: "python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow brave off"
     reset: "python ~/.hermes/plugins/web-search-plus/setup.py config reset --yes"
   config_file: "~/.hermes/plugins/config.json"
   env_override: "WEB_SEARCH_PLUS_CONFIG"
   note: "No single provider key is globally required. Add at least one search-capable provider for web_search_plus/web_answer_plus; add Linkup or another extraction-capable provider for web_extract_plus and fuller cited answers. Setup keys live in .env; routing preferences live in config.json and can choose fixed-provider mode or tuned auto-routing without relying on unreleased Hermes core plugin-CLI support."
   recommended_env:
-    - name: TAVILY_API_KEY
-      description: "Tavily — recommended starter for search/research (1k free/month)"
-      url: "https://tavily.com"
+    - name: YOU_API_KEY
+      description: "You.com — fast Routing v2 core provider"
+      url: "https://api.you.com"
+      secret: true
+    - name: SERPER_API_KEY
+      description: "Serper — reliable Google-like fallback for search/news/shopping/local"
+      url: "https://serper.dev/api-key"
       secret: true
     - name: LINKUP_API_KEY
       description: "Linkup — cheap extraction and citations (€5 free monthly credits)"
       url: "https://www.linkup.so"
-      secret: true
-    - name: BRAVE_API_KEY
-      description: "Brave Search — independent general web index ($5 free monthly credits)"
-      url: "https://api.search.brave.com/app/keys"
       secret: true
