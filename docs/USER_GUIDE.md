@@ -64,6 +64,16 @@ Presets:
 
 Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Brave, Perplexity, Kilo Perplexity, SearXNG, SerpBase, and Querit. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, and You.com.
 
+### Migration note for v2.0.0
+
+Routing v2 changes the default `provider="auto"` behavior. Existing configs keep explicit user choices, but missing `auto_allow` entries inherit the new guarded defaults: Brave, SerpBase, Querit, native Perplexity, and Kilo Perplexity stay explicit-only until you opt them into automatic routing.
+
+```bash
+python ~/.hermes/plugins/web-search-plus/setup.py config show --json
+python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase on
+python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase off
+```
+
 ## Routing preferences
 
 Secrets and behavior are intentionally separate:
@@ -131,6 +141,8 @@ Example pattern:
   "routing": {
     "provider": "serper",
     "reason": "moderate_confidence_match",
+    "routing_policy": "routing-v2",
+    "routing_class": "shopping_at",
     "auto_allow_excluded": ["serpbase"]
   },
   "quality_report": {
