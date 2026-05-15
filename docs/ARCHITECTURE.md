@@ -40,9 +40,9 @@ Each provider adapter normalizes provider-specific request and response details 
 
 Provider capability classes:
 
-- Search-only: Brave, Serper, Perplexity, Kilo Perplexity, SearXNG, SerpBase, Querit. SerpBase and Querit are listed last because they default to `auto_allow=false` and are explicit/fallback-only unless users opt in.
-- Search and extraction: Tavily, Exa, Linkup, Firecrawl, You.com.
-- Answer-style search: Perplexity and Kilo Perplexity return direct-answer style search results, but are still exposed through the search interface.
+- Search-only: Brave, Serper, Perplexity, Kilo Perplexity, SearXNG, SerpBase, Querit. Brave, Perplexity/Kilo Perplexity, SerpBase, and Querit default to `auto_allow=false` and are explicit/guarded unless users opt in.
+- Search and extraction: You.com, Firecrawl, Tavily, Exa, Linkup.
+- Answer-style search: Perplexity and Kilo Perplexity return direct-answer style search results, but default auto-routing treats them as answer/research-mode providers rather than fast search providers.
 
 Provider pricing, freshness, ranking, localization, and vertical support are controlled by the providers. The plugin normalizes responses; it does not make providers equivalent.
 
@@ -60,9 +60,15 @@ Default routing config includes:
   "auto_routing": {
     "enabled": true,
     "fallback_provider": "serper",
-    "provider_priority": ["tavily", "linkup", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"],
+    "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"],
     "disabled_providers": [],
-    "auto_allow": {"serpbase": false, "querit": false},
+    "auto_allow": {
+      "serpbase": false,
+      "querit": false,
+      "brave": false,
+      "kilo-perplexity": false,
+      "perplexity": false
+    },
     "confidence_threshold": 0.3
   }
 }
@@ -76,15 +82,16 @@ Routing is rule-based. It is not ML and it is not magic.
 
 High-level flow:
 
-1. Analyze query text for signals: current-info intent, product/local intent, research language, direct-answer intent, semantic-discovery intent, privacy intent, complexity, and recency.
+1. Analyze query text for signals: current-info intent, product/local intent, research language, direct-answer intent, semantic-discovery intent, privacy intent, complexity, recency, language/script hints, and benchmark-derived query classes.
 2. Score known providers for those signals.
-3. Remove providers that do not have a key or required local config.
-4. Remove providers listed in `disabled_providers`.
-5. Remove providers with `auto_allow=false` from automatic routing.
-6. Choose the highest-scoring remaining provider.
-7. Break ties deterministically using query text and `provider_priority`.
-8. Execute the provider call with retry/cooldown handling.
-9. Return quality diagnostics if requested.
+3. Apply conservative vNext-lite boosts and penalties for classes such as multilingual current queries, AT/local shopping, GitHub/docs, package/API docs, arXiv/academic, Reddit/community, CVE/security, official/regulatory, finance/IR, weather/local factual, and answer/synthesis.
+4. Remove providers that do not have a key or required local config.
+5. Remove providers listed in `disabled_providers`.
+6. Remove providers with `auto_allow=false` from automatic routing.
+7. Choose the highest-scoring remaining provider.
+8. Break ties deterministically using query text and `provider_priority`.
+9. Execute the provider call with retry/cooldown handling.
+10. Return quality diagnostics if requested.
 
 When no provider is eligible, the router reports `no_available_providers` and falls back to the configured fallback provider path. If that provider has no key, the call fails visibly instead of inventing results.
 
@@ -97,7 +104,10 @@ Example:
 ```json
 "auto_allow": {
   "serpbase": false,
-  "querit": false
+  "querit": false,
+  "brave": false,
+  "kilo-perplexity": false,
+  "perplexity": false
 }
 ```
 
@@ -120,7 +130,7 @@ Opt out:
 python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase off
 ```
 
-The gate exists for providers where silent automatic use could surprise users because of pricing, maturity, coverage, terms, or result style. SerpBase is documented as an explicit-opt-in provider, not as a broken or disabled provider.
+The gate exists for providers where silent automatic use could surprise users because of pricing, maturity, reliability, coverage, terms, latency, or result style. Guarded providers are documented as explicit-opt-in providers, not as broken or disabled providers.
 
 ## Fallback and failure semantics
 

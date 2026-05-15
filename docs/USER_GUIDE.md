@@ -143,18 +143,18 @@ Example pattern:
 
 Read that as: SerpBase has a key but is explicit-only, Brave is temporarily cooled down, and Serper won among eligible providers. If you want SerpBase to participate in automatic routing, opt in with `set-auto-allow serpbase on`; if you want Brave retried immediately, wait for cooldown or clear local provider health state in your cache directory.
 
-## Explicit opt-in providers: SerpBase and Querit
+## Explicit opt-in providers: guarded providers
 
 Some providers can be configured for explicit use without being selected automatically. That is what `auto_allow` controls.
 
-SerpBase and Querit default to `auto_allow=false`. Setting their keys makes explicit calls work:
+Brave, SerpBase, Querit, native Perplexity, and Kilo Perplexity default to `auto_allow=false`. Setting their keys makes explicit calls work:
 
 ```python
 web_search_plus(query="best DAC reviews", provider="serpbase")
 web_search_plus(query="aktuelle KI-News Deutschland", provider="querit")
 ```
 
-That does not make either provider eligible for automatic routing or fallback until you opt in:
+That does not make any guarded provider eligible for automatic routing or fallback until you opt in:
 
 ```bash
 python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase on
@@ -185,7 +185,7 @@ web_search_plus(query="turntable reviews under 1000", mode="research", research_
 
 Important parameters:
 
-- `provider`: `auto`, or a concrete provider such as `brave`, `serper`, `tavily`, `linkup`, `exa`, `perplexity`, `kilo-perplexity`, `you`, `searxng`, `serpbase`, or `querit`. SerpBase and Querit are listed last because they default to `auto_allow=false`.
+- `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `perplexity`, `kilo-perplexity`, `searxng`, `serpbase`, or `querit`. Brave, Perplexity/Kilo Perplexity, SerpBase, and Querit are available for explicit calls but default to `auto_allow=false`.
 - `count`: result count, from 1 to 20.
 - `time_range`: `day`, `week`, `month`, or `year` where supported.
 - `include_domains` / `exclude_domains`: provider-dependent domain filters.

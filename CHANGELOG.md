@@ -4,6 +4,12 @@
 
 ### 🔧 Changed
 - Docs now list SerpBase and Querit last in general provider lists because both default to `auto_allow=false`.
+- Auto-routing now uses the vNext-lite provider policy from the 25-query qualitative benchmark: You.com, Serper, Exa, Firecrawl, Tavily, and Linkup form the default search pool, while Brave, SerpBase, Querit, native Perplexity, and Kilo Perplexity default to explicit/guarded use.
+- Added class-aware routing boosts for multilingual current queries, AT/local shopping, GitHub/docs, package/API docs, arXiv/academic queries, Reddit/community searches, CVE/security advisories, official/regulatory queries, finance/IR, weather/local factual lookups, and answer/synthesis prompts.
+- Search auto-routing now flags answer/synthesis prompts with `answer_mode_recommended` instead of selecting slow answer-only providers such as Kilo Perplexity.
+
+### 🧪 Tests
+- Added routing-vNext-lite regression coverage for default auto-allow gates, multilingual Japanese/Arabic routing to You.com, arXiv routing to Exa, Reddit/site queries away from Exa, CVE/security routing away from Firecrawl, and answer-mode recommendations.
 
 ## [v1.10.0] — 2026-05-15
 
