@@ -3,7 +3,7 @@
 ## [v2.0.0] — 2026-05-15
 
 ### 🚀 Major: Routing v2
-- Replaced naive provider-priority auto-routing with benchmarked, class-aware Routing v2 based on the 25-query provider matrix plus Hermi/Andy qualitative review.
+- Replaced naive provider-priority auto-routing with benchmarked, class-aware Routing v2 based on the 25-query provider matrix and qualitative provider review.
 - You.com, Serper, Exa, Firecrawl, Tavily, and Linkup now form the conservative default search pool.
 - Brave, SerpBase, Querit, native Perplexity, and Kilo Perplexity default to explicit/guarded use via `auto_allow=false`; existing configs inherit these guarded defaults unless users explicitly opt providers back in.
 - Added class-aware routing boosts for multilingual current queries, AT/local shopping, GitHub/docs, package/API docs, arXiv/academic queries, Reddit/community searches, CVE/security advisories, official/regulatory queries, finance/IR, weather/local factual lookups, OSS discovery, and answer/synthesis prompts.
