@@ -55,6 +55,17 @@ def test_provider_catalog_has_recommended_starter_metadata():
     assert "search" in by_provider["brave"]["capabilities"]
 
 
+def test_serpbase_catalog_distinguishes_wsp_and_upstream_capabilities():
+    catalog = wsp._get_provider_catalog()
+    by_provider = {item["provider"]: item for item in catalog}
+    serpbase = by_provider["serpbase"]
+
+    assert serpbase["capabilities"] == ["search"]
+    assert "news" not in serpbase["capabilities"]
+    assert "maps_search" in serpbase["upstream_capabilities"]
+    assert "WSP exposes search only" in serpbase["description"]
+
+
 def test_provider_status_detects_capability_tiers_without_requiring_all(monkeypatch):
     env = {"TAVILY_API_KEY": "tvly-test", "LINKUP_API_KEY": ""}
 

@@ -116,10 +116,11 @@ _PROVIDER_CATALOG = [
         "provider": "serpbase",
         "env": "SERPBASE_API_KEY",
         "display_name": "SerpBase",
-        "description": "Cheap Google-like SERP fallback; explicit/fallback-only by default.",
+        "description": "Cheap Google-like SERP fallback; WSP exposes search only, explicit/fallback-only by default.",
         "free_tier": "100 free searches, paid packs available",
         "signup_url": "https://www.serpbase.dev",
-        "capabilities": ["search", "news", "shopping", "local"],
+        "capabilities": ["search"],
+        "upstream_capabilities": ["images", "news", "videos", "maps_search", "maps_detail"],
         "recommended": False,
     },
     {
