@@ -38,17 +38,109 @@ def test_legacy_auto_allow_config_inherits_new_guarded_provider_defaults():
     assert validated["auto_routing"]["auto_allow"]["perplexity"] is False
 
 
-def test_answer_synthesis_overrides_docs_keywords():
+def test_briefing_synthesis_overrides_docs_keywords():
     routing = _route("was sind die Unterschiede zwischen Python und Node.js")
 
-    assert routing["analysis_summary"]["routing_class"] == "answer_synthesis"
-    assert routing["answer_mode_recommended"] is True
+    assert routing["analysis_summary"]["routing_class"] == "briefing_synthesis"
+    assert "answer_mode_recommended" not in routing
+
+
+def test_official_vendor_release_routes_to_you_before_generic_serp():
+    routing = _route("latest official Mistral AI model release announcement")
+
+    assert routing["analysis_summary"]["routing_class"] == "official_vendor_release"
+    assert routing["provider"] == "you"
+
+
+def test_official_docs_routes_to_exa():
+    routing = _route("Claude Code hooks official docs")
+
+    assert routing["analysis_summary"]["routing_class"] == "official_docs"
+    assert routing["provider"] == "exa"
+
+
+def test_finance_earnings_official_prefers_linkup_when_auto_allowed():
+    config = search._deepcopy_default_config()
+    config["auto_routing"]["auto_allow"]["linkup"] = True
+    with mock.patch.object(search, "get_api_key", return_value="test-key"):
+        routing = search.QueryAnalyzer(config).route("NVIDIA Q1 FY2027 earnings official investor relations guidance")
+
+    assert routing["analysis_summary"]["routing_class"] == "finance_earnings_official"
+    assert routing["provider"] == "linkup"
+
+
+def test_policy_pdf_prefers_source_grounding_provider_when_available():
+    routing = _route("EU AI Act General-Purpose AI Code of Practice official PDF")
+
+    assert routing["analysis_summary"]["routing_class"] == "policy_pdf"
+    assert routing["provider"] == "linkup"
+
+
+def test_community_forum_reviews_demotes_exa():
+    routing = _route("best IEM under 300 euro erfahrungen forum measurements")
+
+    assert routing["analysis_summary"]["routing_class"] == "community_forum"
+    assert routing["provider"] in {"firecrawl", "serper", "you", "tavily"}
+    assert routing["provider"] != "exa"
+
+
+def test_shopping_geo_signals_win_over_generic_review_terms():
+    routing = _route("Sony WH-1000XM5 review Geizhals Österreich")
+
+    assert routing["analysis_summary"]["routing_class"] == "shopping_reviews_local"
+    assert routing["provider"] == "serper"
+
+
+def test_generic_library_docs_stay_docs_api_not_official_docs():
+    routing = _route("pydantic BaseModel docs")
+
+    assert routing["analysis_summary"]["routing_class"] == "docs_api"
+
+
+def test_plain_pdf_conversion_is_not_policy_pdf():
+    routing = _route("convert pdf to docx offline tool")
+
+    assert routing["analysis_summary"]["routing_class"] != "policy_pdf"
+
+
+def test_result_reranker_promotes_canonical_vendor_and_demotes_aggregators():
+    results = [
+        {"title": "Mistral AI Now Summit teaser", "url": "https://youtube.com/watch?v=abc"},
+        {"title": "Mistral 3 guide", "url": "https://aizolo.com/blog/mistral-ai-models-2026/"},
+        {"title": "Introducing Mistral 3", "url": "https://mistral.ai/news/mistral-3"},
+    ]
+
+    reranked, metadata = search.rerank_results_for_intent(
+        "latest official Mistral AI model release announcement",
+        "official_vendor_release",
+        results,
+    )
+
+    assert reranked[0]["url"] == "https://mistral.ai/news/mistral-3"
+    assert metadata["reranked"] is True
+
+
+def test_result_reranker_promotes_policy_authority_over_mirrors():
+    results = [
+        {"title": "AI RMF mirror", "url": "https://ai.universityofcalifornia.edu/_files/riskmanagementgenerativeai.pdf"},
+        {"title": "NIST AI RMF", "url": "https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf"},
+    ]
+
+    reranked, _ = search.rerank_results_for_intent("NIST AI RMF official PDF", "policy_pdf", results)
+
+    assert reranked[0]["url"].startswith("https://nvlpubs.nist.gov/")
+
+
+def test_domain_rule_does_not_substring_match_middle_of_domain():
+    assert search._domain_matches_rule("docs.python.org", "docs.") is True
+    assert search._domain_matches_rule("notdocs.com", "docs.") is False
+    assert search._domain_matches_rule("mirror.com", "ir.") is False
 
 
 def test_reddit_company_finance_query_is_not_community_query():
     routing = _route("Reddit IPO earnings revenue investor relations")
 
-    assert routing["analysis_summary"]["routing_class"] == "finance_ir"
+    assert routing["analysis_summary"]["routing_class"] == "finance_earnings_official"
 
 
 def test_plain_database_table_query_is_not_sports_current():
@@ -94,12 +186,12 @@ def test_cve_security_does_not_route_to_firecrawl():
 
     assert routing["provider"] in {"serper", "exa", "linkup"}
     assert routing["provider"] != "firecrawl"
-    assert routing["analysis_summary"]["routing_class"] == "cve_security"
+    assert routing["analysis_summary"]["routing_class"] == "security_advisory"
 
 
-def test_answer_synthesis_recommends_answer_mode_without_auto_selecting_kilo():
+def test_synthesis_query_routes_to_you_without_auto_selecting_kilo():
     routing = _route("Was sind die wichtigsten Unterschiede zwischen Exa Tavily und You.com für Agenten Suche")
 
     assert routing["provider"] == "you"
-    assert routing["answer_mode_recommended"] is True
+    assert "answer_mode_recommended" not in routing
     assert "kilo-perplexity" in routing["auto_allow_excluded"]

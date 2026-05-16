@@ -153,13 +153,13 @@ class ExtractPlusCoreTests(unittest.TestCase):
         self.assertEqual(body["urls"], ["https://example.com"])
         self.assertEqual(body["formats"], ["markdown", "html", "metadata"])
 
-    def test_extract_plus_auto_prefers_firecrawl_when_available(self):
-        with mock.patch.dict(os.environ, {"FIRECRAWL_API_KEY": "fc-test", "LINKUP_API_KEY": "linkup-test"}, clear=False):
-            with mock.patch("search.extract_firecrawl", return_value={"provider": "firecrawl", "results": []}) as mock_firecrawl:
+    def test_extract_plus_auto_prefers_tavily_when_available(self):
+        with mock.patch.dict(os.environ, {"TAVILY_API_KEY": "tvly-test", "FIRECRAWL_API_KEY": "fc-test", "LINKUP_API_KEY": "linkup-test"}, clear=False):
+            with mock.patch("search.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
                 result = search.extract_plus(["https://example.com"], provider="auto")
 
-        self.assertEqual(result["provider"], "firecrawl")
-        mock_firecrawl.assert_called_once()
+        self.assertEqual(result["provider"], "tavily")
+        mock_tavily.assert_called_once()
 
     def test_extract_plus_auto_uses_exa_when_only_exa_is_available(self):
         with mock.patch.dict(os.environ, {"EXA_API_KEY": "exa-test"}, clear=True):
@@ -169,18 +169,18 @@ class ExtractPlusCoreTests(unittest.TestCase):
         self.assertEqual(result["provider"], "exa")
         mock_exa.assert_called_once()
 
-    def test_extract_provider_priority_keeps_exa_before_tavily(self):
-        self.assertEqual(search.EXTRACT_PROVIDER_PRIORITY, ["firecrawl", "linkup", "exa", "tavily", "you"])
+    def test_extract_provider_priority_prefers_fast_clean_extractors(self):
+        self.assertEqual(search.EXTRACT_PROVIDER_PRIORITY, ["tavily", "exa", "linkup", "firecrawl", "you"])
 
-    def test_extract_plus_auto_prefers_exa_over_tavily_when_primary_keys_absent(self):
+    def test_extract_plus_auto_prefers_tavily_over_exa(self):
         with mock.patch.dict(os.environ, {"EXA_API_KEY": "exa-test", "TAVILY_API_KEY": "tvly-test"}, clear=True):
             with mock.patch("search.extract_exa", return_value={"provider": "exa", "results": []}) as mock_exa:
                 with mock.patch("search.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
                     result = search.extract_plus(["https://example.com"], provider="auto")
 
-        self.assertEqual(result["provider"], "exa")
-        mock_exa.assert_called_once()
-        mock_tavily.assert_not_called()
+        self.assertEqual(result["provider"], "tavily")
+        mock_tavily.assert_called_once()
+        mock_exa.assert_not_called()
 
     def test_extract_firecrawl_include_images_parses_markdown_and_og_image(self):
         fake_response = {
@@ -278,17 +278,17 @@ class ExtractPlusCoreTests(unittest.TestCase):
 
     def test_extract_plus_skips_provider_in_cooldown(self):
         def fake_cooldown(provider):
-            return (provider == "firecrawl", 42 if provider == "firecrawl" else 0)
+            return (provider == "tavily", 42 if provider == "tavily" else 0)
 
-        with mock.patch.dict(os.environ, {"FIRECRAWL_API_KEY": "fc-test", "LINKUP_API_KEY": "linkup-test"}, clear=True):
+        with mock.patch.dict(os.environ, {"TAVILY_API_KEY": "tvly-test", "LINKUP_API_KEY": "linkup-test"}, clear=True):
             with mock.patch("search.provider_in_cooldown", side_effect=fake_cooldown):
-                with mock.patch("search.extract_firecrawl") as mock_firecrawl:
+                with mock.patch("search.extract_tavily") as mock_tavily:
                     with mock.patch("search.extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback"}]}):
-                        result = search.extract_plus(["https://example.com"], provider="firecrawl")
+                        result = search.extract_plus(["https://example.com"], provider="auto")
 
         self.assertEqual(result["provider"], "linkup")
-        mock_firecrawl.assert_not_called()
-        self.assertEqual(result["routing"]["cooldown_skips"], [{"provider": "firecrawl", "cooldown_remaining_seconds": 42}])
+        mock_tavily.assert_not_called()
+        self.assertEqual(result["routing"]["cooldown_skips"], [{"provider": "tavily", "cooldown_remaining_seconds": 42}])
 
 
 class ExtractPlusPluginTests(unittest.TestCase):

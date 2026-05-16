@@ -1,5 +1,17 @@
 # Changelog
 
+## [v2.1.0] — 2026-05-16
+
+### 🔥 Removed
+- Removed `web_answer_plus` from the registered Hermes tool surface and plugin manifest. The plugin now keeps one job: search plus extraction, without a separate answer-synthesis layer.
+- Removed runtime answer-mode metadata (`answer_mode_recommended`) and onboarding answer capability reporting.
+
+### 🔧 Changed
+- `web_extract_plus(provider="auto")` now uses the benchmark-backed extraction fallback order Tavily → Exa → Linkup → Firecrawl → You.com. Tavily becomes the fast reliable default head; Firecrawl remains the robust scraper safety net rather than the first call.
+
+### 📚 Docs
+- Updated README, User Guide, FAQ, Architecture, and plugin manifest to describe the two-tool surface: `web_search_plus` and `web_extract_plus`.
+
 ## [v2.0.0] — 2026-05-15
 
 ### 🚀 Major: Routing v2

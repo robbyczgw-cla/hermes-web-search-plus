@@ -1,30 +1,25 @@
 """
-web-search-plus — Hermes Plugin v2.0.0
+web-search-plus — Hermes Plugin v2.1.0
 Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 
 import argparse
 import getpass
-import html
 import json
 import logging
 import os
-import re
-import signal
 import shutil
 import subprocess
 import tempfile
 import sys
-import threading
 import time
 import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
-from urllib.parse import urlparse
 
 _SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 _TOOLSET_NAME = "web-search-plus"
@@ -217,11 +212,9 @@ def _read_env_file(path: Path) -> Dict[str, str]:
 def _provider_config_status(env: Optional[Mapping[str, str]] = None) -> Dict[str, Any]:
     """Describe configured providers by capability tier.
 
-    No single provider key is globally required. Search, extraction, and answer
-    quality are capability-based: one search provider enables search/snippet
-    answers; one extraction-capable provider enables URL extraction and fuller
-    cited answers. `web_extract_plus(provider="auto")` defaults to Firecrawl first
-    for robust scraping; Linkup remains preferred for answer extraction when available.
+    No single provider key is globally required. Search and extraction are
+    capability-based: one search provider enables web_search_plus; one
+    extraction-capable provider enables web_extract_plus.
     """
     env = env if env is not None else os.environ
     providers: Dict[str, Dict[str, Any]] = {}
@@ -248,7 +241,6 @@ def _provider_config_status(env: Optional[Mapping[str, str]] = None) -> Dict[str
         "configured": configured_count > 0,
         "search_configured": configured_search_count > 0,
         "extract_configured": configured_extract_count > 0,
-        "answer_configured": configured_search_count > 0,
         "configured_count": configured_count,
         "configured_search_count": configured_search_count,
         "configured_extract_count": configured_extract_count,
@@ -503,20 +495,18 @@ def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bo
         lines.append(
             "Capabilities: "
             f"search={'yes' if status['search_configured'] else 'no'}, "
-            f"extraction={'yes' if status['extract_configured'] else 'no'}, "
-            f"answer={'yes' if status['answer_configured'] else 'no'}"
+            f"extraction={'yes' if status['extract_configured'] else 'no'}"
         )
         if status["search_configured"] and not status["extract_configured"]:
             lines.append(
-                "Tip: add LINKUP_API_KEY (preferred) or another extraction key "
-                "for fuller web_answer_plus citations and web_extract_plus."
+                "Tip: add LINKUP_API_KEY or another extraction key for web_extract_plus."
             )
         return "\n".join(lines)
 
     lines = [
         "web-search-plus is installed but no provider keys are configured.",
-        "No single key is mandatory, but at least one search-capable provider is needed for web_search_plus/web_answer_plus.",
-        "Add LINKUP_API_KEY or another extraction-capable provider for web_extract_plus and fuller cited answers.",
+        "No single key is mandatory, but at least one search-capable provider is needed for web_search_plus.",
+        "Add LINKUP_API_KEY or another extraction-capable provider for web_extract_plus.",
         "Run `python ~/.hermes/plugins/web-search-plus/setup.py setup` to walk through every supported provider, or add `--preset starter` for the short path.",
         "",
         "Recommended starter providers:",
@@ -547,7 +537,6 @@ def _render_status_dashboard(status: Optional[Dict[str, Any]] = None, *, color: 
         "│ " + "  ".join([
             _capability_badge(status["search_configured"], "search", color=color),
             _capability_badge(status["extract_configured"], "extraction", color=color),
-            _capability_badge(status["answer_configured"], "answers", color=color),
         ]),
         f"│ Providers: {status['configured_count']}/{status['total']} configured",
     ]
@@ -556,7 +545,7 @@ def _render_status_dashboard(status: Optional[Dict[str, Any]] = None, *, color: 
     else:
         lines.append("│ Active: none yet — add one search provider to unlock the tools")
     if status["search_configured"] and not status["extract_configured"]:
-        lines.append("│ Tip: add Linkup for cleaner citations and web_extract_plus.")
+        lines.append("│ Tip: add Linkup for clean web_extract_plus markdown.")
     elif not status["search_configured"]:
         lines.append("│ Starter: You + Serper + Linkup is the best first setup.")
     lines.extend([
@@ -1118,373 +1107,6 @@ def _format_extract_results(data: dict) -> str:
     return "\n".join(lines).strip()
 
 
-def _detect_answer_freshness(query: str, requested: str = "auto") -> Dict[str, str]:
-    """Resolve answer freshness from an explicit value or lightweight query signals."""
-    requested = requested or "auto"
-    if requested != "auto":
-        return {"requested": requested, "applied": "none" if requested == "none" else requested, "reason": "explicit freshness requested"}
-
-    q = query.lower()
-    day_terms = ["today", "right now", "breaking", "heute", "gerade", "aktuell", "now"]
-    week_terms = ["latest", "this week", "past week", "recent", "news", "updates", "neueste", "diese woche", "nachrichten"]
-    month_terms = ["this month", "past month", "dieser monat", "letzter monat"]
-    if any(term in q for term in day_terms):
-        return {"requested": requested, "applied": "day", "reason": "query looked time-sensitive"}
-    if any(term in q for term in week_terms) or re.search(r"\b20[2-9][0-9]\b", q):
-        return {"requested": requested, "applied": "week", "reason": "query looked time-sensitive"}
-    if any(term in q for term in month_terms):
-        return {"requested": requested, "applied": "month", "reason": "query looked time-sensitive"}
-    return {"requested": requested, "applied": "none", "reason": "no freshness signals detected"}
-
-
-def _detect_answer_locale(query: str, language: str = "auto", country: str = "auto") -> Dict[str, str]:
-    """Small locale detector for web_answer_plus. Deliberately conservative."""
-    q = query.lower()
-    detected_language = None if language == "auto" else language
-    detected_country = None if country == "auto" else country.upper()
-    confidence = "explicit" if detected_language else "low"
-
-    if not detected_language:
-        language_signals = [
-            ("fr", ["meilleur", "meilleurs", "pas cher", "comparaison", "avis", "france"]),
-            ("es", ["precio", "barato", "comparación", "alternativas", "españa", "méxico"]),
-            ("it", ["prezzo", "migliori", "confronto", "italia"]),
-            ("pt", ["preço", "melhores", "comparação", "brasil", "portugal"]),
-            ("de", ["preis", "günstig", "vergleich", "österreich", "deutschland", "schweiz"]),
-        ]
-        for code, terms in language_signals:
-            if any(term in q for term in terms):
-                detected_language = code
-                confidence = "medium"
-                break
-    if not detected_language:
-        if re.search(r"[\u3040-\u30ff]", query):
-            detected_language, confidence = "ja", "medium"
-        elif re.search(r"[\u4e00-\u9fff]", query):
-            detected_language, confidence = "zh", "medium"
-        elif re.search(r"[\u0600-\u06ff]", query):
-            detected_language, confidence = "ar", "medium"
-        elif re.search(r"[\u0400-\u04ff]", query):
-            detected_language, confidence = "ru", "medium"
-        else:
-            detected_language, confidence = "en", "low"
-
-    if not detected_country:
-        country_signals = {
-            "AT": ["österreich", "austria", "graz", "wien", "vienna"],
-            "DE": ["deutschland", "germany", "berlin", "münchen"],
-            "FR": ["france", "paris"],
-            "ES": ["españa", "spain", "madrid"],
-            "MX": ["méxico", "mexico"],
-            "IT": ["italia", "italy"],
-            "BR": ["brasil", "brazil"],
-            "JP": ["日本", "japan"],
-        }
-        for code, terms in country_signals.items():
-            if any(term in q for term in terms):
-                detected_country = code
-                break
-    if not detected_country:
-        detected_country = {"de": "DE", "fr": "FR", "es": "ES", "it": "IT", "pt": "BR", "ja": "JP"}.get(detected_language, "US")
-
-    return {"language": detected_language, "country": detected_country, "language_confidence": confidence}
-
-
-def _source_type_for_url(url: str) -> str:
-    host = urlparse(url).netloc.lower()
-    if any(part in host for part in ("docs.", "developer.", "github.com", "readthedocs", "developer.mozilla")):
-        return "docs"
-    if any(part in host for part in ("reddit.com", "forum", "community", "discourse")):
-        return "forum"
-    if any(part in host for part in ("news", "reuters", "apnews", "bbc", "orf.at", "nytimes")):
-        return "news"
-    if any(part in host for part in ("shop", "amazon", "geizhals", "idealo")):
-        return "shopping"
-    return "web"
-
-
-def _normalize_answer_sources(results: List[Dict[str, Any]], provider: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-    """Normalize heterogeneous provider results into citation-ready source records."""
-    sources: List[Dict[str, Any]] = []
-    seen = set()
-    for item in results:
-        url = item.get("url") or item.get("link") or ""
-        if not url or url in seen:
-            continue
-        seen.add(url)
-        title = item.get("title") or url
-        domain = urlparse(url).netloc.lower()
-        published = item.get("date") or item.get("published_date") or item.get("publishedDate")
-        date_label = f", {published}" if published else ""
-        sources.append({
-            "title": title,
-            "domain": domain,
-            "url": url,
-            "published_date": published,
-            "source_type": _source_type_for_url(url),
-            "provider": item.get("provider", provider),
-            "extracted_status": item.get("extracted_status", "not_requested"),
-            "used_in_answer": True,
-            "citation": f"[{title} ({domain}{date_label})]({url})",
-            "snippet": item.get("snippet") or item.get("description") or item.get("content") or "",
-        })
-        if limit and len(sources) >= limit:
-            break
-    return sources
-
-
-def _clean_answer_evidence(text: str, max_chars: int = 380) -> str:
-    """Turn raw extracted page text into a short readable evidence sentence."""
-    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", " ", text or "")
-    text = re.sub(r"\[[^\]]*\]\(\s*\)", " ", text)
-    text = re.sub(r"\[[^\]]*\]\((?:#|javascript:|data:)[^)]*\)", " ", text)
-    text = re.sub(r"data:image/[^\s)]+", " ", text)
-    noisy_phrases = [
-        "Skip to content",
-        "Skip to main content",
-        "You signed in with another tab or window",
-        "Reload to refresh your session",
-        "You signed out in another tab or window",
-        "You switched accounts on another tab or window",
-    ]
-    for phrase in noisy_phrases:
-        text = text.replace(phrase, " ")
-    text = re.sub(r"#+\s*", "", text)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = html.unescape(text)
-    text = re.sub(r"\s+", " ", text).strip(" -—|\n\t")
-    if len(text) <= max_chars:
-        return text
-    cut = text[:max_chars].rsplit(" ", 1)[0].strip()
-    return cut + "…"
-
-
-def _build_source_backed_answer(
-    query: str,
-    sources: List[Dict[str, Any]],
-    extract_data: Dict[str, Any],
-    extract_count: int,
-    max_chars: int = 6000,
-) -> str:
-    """Build a user-readable answer-shaped brief without pretending to do LLM synthesis."""
-    if not sources:
-        return f"No usable sources for: {query}"
-
-    extracted_results = extract_data.get("results", []) or []
-    usable_extracted = [r for r in extracted_results if not r.get("error") and (r.get("content") or r.get("raw_content"))]
-    lines = [f"Source-backed brief for: {query}", "", f"Based on {len(usable_extracted)} of {min(len(sources), extract_count)} selected source(s) with {len(sources)} citation-ready source(s) found.", ""]
-    for idx, src in enumerate(sources[:max(1, extract_count)], 1):
-        extracted = next((r for r in extracted_results if r.get("url") == src["url"]), {})
-        raw_text = extracted.get("content") or extracted.get("raw_content") or src.get("snippet") or ""
-        evidence = _clean_answer_evidence(raw_text)
-        if not evidence:
-            evidence = _clean_answer_evidence(src.get("snippet", "")) or "No readable snippet available."
-        lines.append(f"- [{idx}] {src['title']} — {evidence}")
-
-    if len(sources) > extract_count:
-        lines.append("")
-        lines.append(f"Also found {len(sources) - extract_count} additional citation-ready source(s) below.")
-    text = "\n".join(lines).strip()
-    if len(text) <= max_chars:
-        return text
-    cut = text[:max_chars].rsplit("\n", 1)[0].strip()
-    return cut + "\n…"
-
-
-class _ExtractionTimeout(Exception):
-    pass
-
-
-def _run_extract_with_timeout(timeout_seconds: int, **kwargs) -> Dict[str, Any]:
-    """Run extraction with a best-effort local timeout for answer-mode UX."""
-    kwargs.setdefault("subprocess_timeout", max(1, int(timeout_seconds)))
-    if threading.current_thread() is not threading.main_thread() or not hasattr(signal, "SIGALRM"):
-        return _run_extract(**kwargs)
-
-    previous_handler = signal.getsignal(signal.SIGALRM)
-
-    def _handle_timeout(signum, frame):  # noqa: ARG001
-        raise _ExtractionTimeout(f"Extract timed out after {timeout_seconds}s")
-
-    signal.signal(signal.SIGALRM, _handle_timeout)
-    signal.alarm(timeout_seconds)
-    try:
-        return _run_extract(**kwargs)
-    except _ExtractionTimeout as exc:
-        return {"provider": kwargs.get("provider"), "error": str(exc), "results": []}
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, previous_handler)
-
-
-def _preferred_answer_extract_provider(env: Optional[Mapping[str, str]] = None) -> Optional[str]:
-    """Choose an extraction provider for web_answer_plus.
-
-    Linkup is preferred because it is cheap and citation-friendly. If Linkup is
-    not configured, fall back to the normal extraction provider chain when any
-    extraction-capable key is present. If no extraction provider is configured,
-    answer mode degrades honestly to search snippets.
-    """
-    env = env if env is not None else os.environ
-    if (env.get("LINKUP_API_KEY") or "").strip():
-        return "linkup"
-    if any((env.get(k) or "").strip() for k in _EXTRACT_PROVIDER_ENV_KEYS):
-        return "auto"
-    return None
-
-
-def _compose_answer_payload(
-    query: str,
-    mode: str = "quick",
-    sources: Optional[int] = None,
-    freshness: str = "none",
-    language: str = "auto",
-    country: str = "auto",
-    include_counterpoints: Optional[bool] = None,
-    max_extracts: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Search, extract a few top sources, and return a citation-ready answer payload."""
-    mode = mode if mode in {"quick", "deep"} else "quick"
-    source_count = sources or (6 if mode == "deep" else 3)
-    requested_extract_count = max_extracts if max_extracts is not None else 2
-    extract_cap = 5
-    extract_count = min(requested_extract_count, extract_cap, source_count)
-    counterpoints = bool(include_counterpoints)
-    warnings: List[str] = []
-    global_budget_seconds = 35.0 if mode == "deep" else 20.0
-    started_at = time.monotonic()
-
-    def remaining_budget_seconds() -> float:
-        return max(0.0, global_budget_seconds - (time.monotonic() - started_at))
-
-    if requested_extract_count > extract_cap:
-        warnings.append(f"max_extracts capped at {extract_cap} to protect provider budget.")
-    freshness_info = _detect_answer_freshness(query, freshness)
-    locale = _detect_answer_locale(query, language, country)
-
-    search_data = _run_search(
-        query=query,
-        provider="auto",
-        count=source_count,
-        time_range=None if freshness_info["applied"] == "none" else freshness_info["applied"],
-        mode="research" if mode == "deep" else "normal",
-        quality_report=True,
-        research_time_budget=min(55.0 if mode == "deep" else 20.0, remaining_budget_seconds()),
-        language=locale["language"],
-        country=locale["country"],
-        subprocess_timeout=max(1, int(remaining_budget_seconds())),
-    )
-    results = search_data.get("results", [])[:source_count]
-    normalized = _normalize_answer_sources(results, provider=search_data.get("provider"), limit=source_count)
-
-    if search_data.get("error"):
-        warnings.append(f"Search issue: {search_data['error']}")
-
-    urls_to_extract = [s["url"] for s in normalized[:extract_count]]
-    extract_data: Dict[str, Any] = {"results": []}
-    extract_provider = _preferred_answer_extract_provider()
-    if urls_to_extract and not extract_provider:
-        warnings.append(
-            "Extraction skipped: no extraction-capable provider configured. "
-            "Add LINKUP_API_KEY (preferred), FIRECRAWL_API_KEY, TAVILY_API_KEY, EXA_API_KEY, or YOU_API_KEY for fuller cited answers."
-        )
-        extract_data = {"provider": None, "results": [], "error": "no extraction-capable provider configured"}
-    elif urls_to_extract:
-        remaining = remaining_budget_seconds()
-        if remaining < 1.0:
-            warnings.append("Extraction skipped: answer wall-clock budget exhausted after search.")
-            extract_data = {"provider": extract_provider, "results": [], "error": "answer wall-clock budget exhausted"}
-        else:
-            extract_data = _run_extract_with_timeout(
-                timeout_seconds=max(1, int(min(12 if mode == "quick" else 25, remaining))),
-                urls=urls_to_extract,
-                provider=extract_provider,
-                output_format="markdown",
-            )
-        extracted_by_url = {r.get("url"): r for r in extract_data.get("results", [])}
-        extract_error = extract_data.get("error")
-        if extract_error:
-            warnings.append(f"Extraction failed: {extract_error}")
-        for src in normalized:
-            if src["url"] not in urls_to_extract:
-                continue
-            if extract_error:
-                src["extracted_status"] = "failed"
-                continue
-            if src["url"] in extracted_by_url:
-                extracted = extracted_by_url[src["url"]]
-                if extracted.get("error"):
-                    src["extracted_status"] = "failed"
-                    warnings.append(f"Extraction failed for {src['domain']}: {extracted['error']}")
-                else:
-                    src["extracted_status"] = "full" if (extracted.get("content") or extracted.get("raw_content")) else "partial"
-            else:
-                src["extracted_status"] = "failed"
-
-    answer = _build_source_backed_answer(query, normalized, extract_data, extract_count)
-
-    if len(normalized) < source_count:
-        warnings.append(f"Only {len(normalized)} citation-ready sources found for requested {source_count}.")
-    extracted_count = sum(1 for s in normalized if s["extracted_status"] in {"full", "partial"})
-    if urls_to_extract and extracted_count < len(urls_to_extract):
-        warnings.append(f"Only {extracted_count} of {len(urls_to_extract)} selected sources had extractable content.")
-    if counterpoints:
-        warnings.append("Counterpoint search is not implemented in this MVP yet.")
-
-    confidence = "high" if len(normalized) >= 4 and extracted_count >= 3 else "medium" if normalized else "low"
-    confidence_reason = {
-        "sources": len(normalized),
-        "requested_sources": source_count,
-        "extracts_succeeded": extracted_count,
-        "extracts_requested": len(urls_to_extract),
-        "freshness_applied": freshness_info["applied"],
-    }
-    actual_extract_provider = (extract_data.get("provider") or extract_provider) if urls_to_extract else None
-    cost_estimate = {
-        "extract_provider": actual_extract_provider,
-        "extracts_requested": len(urls_to_extract),
-        # Linkup's public pricing is roughly usage/credit based and cheap enough
-        # to show a tiny estimate. Other providers use different credit models, so
-        # pretending every extractor costs the same would be worse than omission.
-        "approx_eur": round(len(urls_to_extract) * 0.001, 4) if actual_extract_provider == "linkup" else None,
-    }
-    return {
-        "query": query,
-        "mode": mode,
-        "answer": answer,
-        "confidence": confidence,
-        "confidence_reason": confidence_reason,
-        "freshness": freshness_info,
-        "locale": locale,
-        "sources": normalized,
-        "warnings": warnings,
-        "cost_estimate": cost_estimate,
-        "budget": {"wall_clock_seconds": global_budget_seconds, "elapsed_seconds": round(time.monotonic() - started_at, 3)},
-        "search": {"provider": search_data.get("provider"), "routing": search_data.get("routing", {})},
-        "extraction": {"provider": extract_data.get("provider"), "requested_urls": urls_to_extract},
-    }
-
-
-def _format_answer_payload(payload: Dict[str, Any], output: str = "answer") -> str:
-    if output == "json":
-        return json.dumps(payload, ensure_ascii=False, indent=2)
-    if output == "sources":
-        return "\n".join(f"- {s['citation']} — {s['source_type']}" for s in payload.get("sources", []))
-    answer = payload.get("answer", "")
-    if output == "brief":
-        answer = answer[:900]
-    lines = ["**Answer**", answer, "", "**Sources**"]
-    lines.extend(f"- {s['citation']} — {s['source_type']}" for s in payload.get("sources", []))
-    lines.extend([
-        "",
-        f"**Confidence:** {payload.get('confidence', 'unknown')}",
-        f"**Freshness:** {payload.get('freshness', {}).get('applied', 'none')} ({payload.get('freshness', {}).get('reason', '')})",
-    ])
-    if payload.get("warnings"):
-        lines.append("**Warnings:** " + "; ".join(payload["warnings"]))
-    return "\n".join(lines).strip()
-
-
 def register(ctx: Any) -> None:
     """Register web-search-plus tools with Hermes plugin system."""
 
@@ -1621,8 +1243,8 @@ def register(ctx: Any) -> None:
     extract_schema = {
         "name": "web_extract_plus",
         "description": (
-            "Multi-provider URL content extraction. Use Firecrawl for robust scraping, "
-            "Linkup for clean markdown fetches with monthly free credits, Tavily for extraction, Exa Contents, or You.com Contents."
+            "Multi-provider URL content extraction. Auto tries Tavily, Exa, Linkup, "
+            "Firecrawl, then You.com; force a provider for robust scraping, clean markdown, or explicit fallback tests."
         ),
         "parameters": {
             "type": "object",
@@ -1671,69 +1293,6 @@ def register(ctx: Any) -> None:
         requires_env=[],
         description="Multi-provider URL extraction",
         emoji="📄",
-    )
-
-    answer_schema = {
-        "name": "web_answer_plus",
-        "description": (
-            "Optional beta answer-synthesis layer. Use only when the user explicitly asks for a "
-            "written answer, summary, or cited synthesis; prefer web_search_plus for current events, "
-            "sports lineups, schedules, scores, standings, prices, weather, and raw source discovery."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "Question or research query to answer from the web."},
-                "mode": {"type": "string", "enum": ["quick", "deep"], "default": "quick", "description": "quick = fast answer from a few sources; deep = broader research-mode answer."},
-                "sources": {"type": "integer", "default": 3, "minimum": 1, "maximum": 10, "description": "Number of citation-ready sources to return. Default quick=3; deep usually uses 6."},
-                "freshness": {"type": "string", "enum": ["auto", "none", "day", "week", "month", "year"], "default": "none", "description": "Optional recency filter. Default none avoids over-triggering on words like current/aktuell; set auto/day/week/month/year explicitly when needed."},
-                "output": {"type": "string", "enum": ["answer", "brief", "sources", "json"], "default": "answer", "description": "Return markdown answer, short brief, sources-only list, or structured JSON."},
-                "language": {"type": "string", "default": "auto", "description": "BCP-47-ish language code such as de/en/es/fr, or auto."},
-                "country": {"type": "string", "default": "auto", "description": "Country/region code such as AT/DE/US/FR, or auto."},
-                "include_counterpoints": {"type": "boolean", "default": False, "description": "Request counterpoint coverage. MVP records this as a warning until implemented."},
-                "max_extracts": {"type": "integer", "minimum": 0, "maximum": 5, "description": "Advanced: number of top URLs to extract. Defaults to 2 and hard-caps at 5 for cost safety."},
-            },
-            "required": ["query"],
-        },
-    }
-
-    def answer_handler(args_or_query, mode: str = "quick", sources: Optional[int] = None,
-                       freshness: str = "none", output: str = "answer", language: str = "auto",
-                       country: str = "auto", include_counterpoints: Optional[bool] = None,
-                       max_extracts: Optional[int] = None, **kwargs) -> str:
-        if isinstance(args_or_query, dict):
-            query = args_or_query.get("query", "")
-            mode = args_or_query.get("mode", mode)
-            sources = args_or_query.get("sources", sources)
-            freshness = args_or_query.get("freshness", freshness)
-            output = args_or_query.get("output", output)
-            language = args_or_query.get("language", language)
-            country = args_or_query.get("country", country)
-            include_counterpoints = args_or_query.get("include_counterpoints", include_counterpoints)
-            max_extracts = args_or_query.get("max_extracts", max_extracts)
-        else:
-            query = args_or_query
-        payload = _compose_answer_payload(
-            query=query,
-            mode=mode,
-            sources=sources,
-            freshness=freshness,
-            language=language,
-            country=country,
-            include_counterpoints=include_counterpoints,
-            max_extracts=max_extracts,
-        )
-        return _format_answer_payload(payload, output=output)
-
-    ctx.register_tool(
-        name="web_answer_plus",
-        toolset=_TOOLSET_NAME,
-        schema=answer_schema,
-        handler=answer_handler,
-        check_fn=check_fn,
-        requires_env=[],
-        description="Cited web answers from search plus extraction",
-        emoji="🧭",
     )
 
     if hasattr(ctx, "register_command"):

@@ -20,19 +20,16 @@ The plugin does not run a separate hosted backend. It does not add an analytics 
 
 - `plugin.yaml`: plugin manifest, optional environment variables, onboarding commands, and tool declarations.
 - `__init__.py`: Hermes plugin entrypoint, tool schemas, setup/onboarding helpers, and wrapper functions exposed to Hermes.
-- `search.py`: provider adapters, routing, caching, cooldowns, extraction, answer support, and CLI.
+- `search.py`: provider adapters, routing, caching, cooldowns, extraction, and CLI.
 - `setup.py`: thin standalone CLI entrypoint that loads setup helpers from `__init__.py`.
-- `tests/`: unit and regression coverage for providers, onboarding, routing, extraction, answer behavior, and docs-sensitive configuration.
+- `tests/`: unit and regression coverage for providers, onboarding, routing, extraction, and docs-sensitive configuration.
 
 ## Tool surface
 
-The plugin exposes three tools:
+The plugin exposes two tools:
 
 - `web_search_plus`: routed or forced-provider search.
 - `web_extract_plus`: URL extraction through extraction-capable providers.
-- `web_answer_plus`: beta synthesis layer that searches, selects sources, optionally extracts content, and returns an answer shape with warnings and source metadata.
-
-`web_answer_plus` is not a replacement for `web_search_plus`. It exists for explicit answer/synthesis requests.
 
 ## Provider abstraction
 
@@ -42,7 +39,7 @@ Provider capability classes:
 
 - Search-only: Brave, Serper, Perplexity, Kilo Perplexity, SearXNG, SerpBase, Querit. Brave, Perplexity/Kilo Perplexity, SerpBase, and Querit default to `auto_allow=false` and are explicit/guarded unless users opt in.
 - Search and extraction: You.com, Firecrawl, Tavily, Exa, Linkup.
-- Answer-style search: Perplexity and Kilo Perplexity return direct-answer style search results, but default auto-routing treats them as answer/research-mode providers rather than fast search providers.
+- Answer-style search: Perplexity and Kilo Perplexity return direct-answer style search results, but default auto-routing treats them as guarded providers rather than fast search providers.
 
 Provider pricing, freshness, ranking, localization, and vertical support are controlled by the providers. The plugin normalizes responses; it does not make providers equivalent.
 
@@ -84,7 +81,7 @@ High-level flow:
 
 1. Analyze query text for signals: current-info intent, product/local intent, research language, direct-answer intent, semantic-discovery intent, privacy intent, complexity, recency, language/script hints, and benchmark-derived query classes.
 2. Score known providers for those signals.
-3. Apply conservative Routing v2 boosts and penalties for classes such as multilingual current queries, AT/local shopping, GitHub/docs, package/API docs, arXiv/academic, Reddit/community, CVE/security, official/regulatory, finance/IR, weather/local factual, and answer/synthesis.
+3. Apply conservative Routing v2 boosts and penalties for classes such as multilingual current queries, AT/local shopping, GitHub/docs, package/API docs, arXiv/academic, Reddit/community, CVE/security, official/regulatory, finance/IR, weather/local factual, and briefing/synthesis.
 4. Remove providers that do not have a key or required local config.
 5. Remove providers listed in `disabled_providers`.
 6. Remove providers with `auto_allow=false` from automatic routing.
@@ -143,7 +140,7 @@ The plugin favors partial truth over fake certainty.
 - Cooldowns step through 1 minute, 5 minutes, 25 minutes, and 1 hour.
 - Cooldown state is local and stored in `provider_health.json` under the cache directory.
 - Research mode keeps partial provider results when later extraction or provider calls fail.
-- Answer mode returns warnings for missing extraction, empty extraction, budget exhaustion, and source limitations.
+
 
 A provider outage should produce skipped-provider metadata or a structured error, not a confident hallucination.
 
@@ -166,7 +163,6 @@ The plugin has cost guards, not provider billing control.
 
 - `count` limits requested search result count.
 - Research mode has a best-effort `research_time_budget` checked between provider and extraction steps.
-- `web_answer_plus` limits extraction with `max_extracts`, hard-capped at 5.
 - Extraction provider order is bounded and explicit.
 - `disabled_providers`, `set-default`, and `auto_allow` let users control which providers can receive traffic.
 
@@ -210,7 +206,7 @@ Data sent to providers depends on the tool:
 
 - `web_search_plus`: sends the query and provider-specific search parameters.
 - `web_extract_plus`: sends URLs and extraction options.
-- `web_answer_plus`: sends queries to search providers, may send selected URLs to extraction providers, then returns synthesized output to Hermes.
+
 
 The plugin does not promise “no data leaves your machine.” A more accurate statement is: data only goes to providers you configure or explicitly select, plus local cache/state files written by the plugin.
 
@@ -249,7 +245,7 @@ Use precise wording:
 - “capability-based provider setup”
 - “best-effort routing diagnostics”
 - “explicit opt-in for automatic use of gated providers”
-- “bounded research and answer extraction fanout”
+- “bounded research and extraction fanout”
 - “local cache and cooldown state”
 
 Avoid claims like “always best,” “private,” “real-time guaranteed,” “unlimited,” or “verified citations.” Those are marketing confetti. Pretty, useless, and gets everywhere.

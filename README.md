@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/assets/web-search-plus-github-hero.jpg" alt="Hermes Web Search Plus feature overview showing search, extraction, answer beta, onboarding, and supported providers" width="100%">
+  <img src="docs/assets/web-search-plus-github-hero.jpg" alt="Hermes Web Search Plus feature overview showing search, extraction, onboarding, and supported providers" width="100%">
 </p>
 
 <p align="center">
@@ -14,17 +14,14 @@
   <img alt="Hermes Plugin" src="https://img.shields.io/badge/Hermes-plugin-a78bfa.svg">
 </p>
 
-**Web search, extraction, and optional cited answers for Hermes — now with Routing v2: benchmarked, class-aware auto-routing across the providers your keys can actually support.** `web_extract_plus(provider="auto")` defaults to Firecrawl-first extraction for robust scraping; Linkup remains the cheap/citation-friendly answer-extraction path when available.
+**Web search and URL extraction for Hermes — now with Routing v2: benchmarked, class-aware auto-routing across the providers your keys can actually support.** `web_extract_plus(provider="auto")` defaults to Tavily-first extraction for fast, reliable fetches; Exa, Linkup, Firecrawl, and You.com remain fallback paths when available.
 
-`web-search-plus` adds three Hermes tools:
+`web-search-plus` adds two Hermes tools:
 
 - `web_search_plus` — routed multi-provider web search with quality diagnostics
-- `web_answer_plus` — optional beta answer-synthesis layer for explicit summaries/cited answers
 - `web_extract_plus` — clean URL extraction via provider backends
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
-
-> 🧪 **Beta note:** `web_answer_plus` is optional. It is a synthesis layer on top of search, not a replacement for `web_search_plus`. For current events, sports lineups, schedules, scores, prices, weather, or when you mainly need source discovery, start with `web_search_plus`. Use `web_answer_plus` when the user explicitly asks for a written answer, summary, or cited synthesis.
 
 ---
 
@@ -32,10 +29,10 @@
 
 Most web-search tools fail in one of two boring ways: they hard-code a single provider, or they pretend every user has every API key. This plugin is capability-based instead:
 
-- **No global required key.** Configure one search-capable provider and search/answers work.
-- **Extraction is additive.** Add Linkup, Firecrawl, Tavily, Exa, or You.com for fuller cited answers and URL extraction.
+- **No global required key.** Configure one search-capable provider and search works.
+- **Extraction is additive.** Add Linkup, Firecrawl, Tavily, Exa, or You.com for URL extraction.
 - **Routing v2 is conservative.** You.com, Serper, Exa, Firecrawl, Tavily, and Linkup form the default search pool; Brave, SerpBase, Querit, and Perplexity/Kilo stay explicit/guarded unless opted in.
-- **Costs stay bounded.** Research and answer modes cap provider work and keep partial results when extraction fails.
+- **Costs stay bounded.** Research mode caps provider work and keeps partial results when extraction fails.
 
 ---
 
@@ -54,7 +51,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py setup
 # python ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter
 # YOU_API_KEY=...      # fast Routing v2 core provider
 # SERPER_API_KEY=...   # reliable Google-like fallback
-# LINKUP_API_KEY=...   # extraction + fuller cited answers
+# LINKUP_API_KEY=...   # clean extraction
 
 # 3) Restart/reload Hermes so plugin tools are registered
 # CLI: exit and start `hermes` again, or use /reset in-session
@@ -75,7 +72,7 @@ Notes:
 
 ## Documentation
 
-- [User Guide](docs/USER_GUIDE.md) — detailed setup, provider tuning, routing, extraction, answer beta, reliability, and cost controls.
+- [User Guide](docs/USER_GUIDE.md) — detailed setup, provider tuning, routing, extraction, reliability, and cost controls.
 - [FAQ](docs/FAQ.md) — common setup, SerpBase auto-allow, provider selection, cache, quota, and troubleshooting questions.
 - [Architecture](docs/ARCHITECTURE.md) — plugin boundary, routing engine, auto-allow gate, cache/cooldown state, data flow, and provider-extension notes.
 
@@ -147,78 +144,20 @@ Notes:
 
 | Capability | Unlocks | Configure at least one of |
 |---|---|---|
-| Search | `web_search_plus`, snippet-backed `web_answer_plus` | Brave, Serper, Tavily, Exa, Linkup, Firecrawl, Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, or Querit |
-| Extraction | `web_extract_plus`, fuller `web_answer_plus` citations | Linkup, Firecrawl, Tavily, Exa, or You.com |
+| Search | `web_search_plus` | Brave, Serper, Tavily, Exa, Linkup, Firecrawl, Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, or Querit |
+| Extraction | `web_extract_plus` | Linkup, Firecrawl, Tavily, Exa, or You.com |
 | Best starter | Search + extraction + reliable fallback | You.com + Serper + Linkup |
 
 `setup.py status --plain` reports this directly:
 
 ```text
 web-search-plus is configured. Providers: You.com, Serper, Linkup
-Capabilities: search=yes, extraction=yes, answer=yes
+Capabilities: search=yes, extraction=yes
 ```
 
 ---
 
 ## Tool overview
-
-### `web_answer_plus`
-
-Optional beta tool for when the user explicitly wants a written answer, summary, or cited synthesis. It is slower and more source-ranking-sensitive than `web_search_plus`, so do not treat it as the default search path.
-
-Use `web_search_plus` first when the query is about:
-
-- current events, breaking news, live facts, sports lineups, schedules, scores, or standings
-- weather, prices, shopping availability, or quick factual lookup
-- raw source discovery, provider comparison, or cases where the source list matters more than prose
-
-Use `web_answer_plus` when the user asks for:
-
-- a concise answer with sources
-- a research brief or summary
-- citation-ready source notes from a few selected pages
-
-```python
-web_answer_plus(query="Summarize what changed in Hermes Agent this week", output="brief")
-# → beta synthesis: answer + sources from selected results
-
-web_answer_plus(
-    query="Compare DAC amps under 500 EUR in Austria from review sources",
-    mode="deep",
-    sources=6,
-    country="AT",
-)
-# → broader research-mode synthesis with Austrian locale hint
-
-web_answer_plus(query="OpenAI latest model announcements", freshness="week", output="brief")
-# → explicit recent-answer request; freshness is opt-in
-
-web_answer_plus(query="Sources about Linkup extraction pricing", output="sources")
-# → sources-only list
-```
-
-Defaults are intentionally conservative:
-
-- `quick` mode asks for 3 sources and extracts up to 2 URLs.
-- `deep` mode asks for 6 sources and uses research mode, with extraction still hard-capped at 5 URLs.
-- `freshness="none"` is the default to avoid over-triggering recency on words like “current” or “aktuell”. Set `freshness="auto"`, `day`, `week`, `month`, or `year` explicitly when recency should shape search.
-- `web_answer_plus` still prefers Linkup for answer extraction when available; direct `web_extract_plus(provider="auto")` uses the extraction chain below.
-- If no extraction provider is configured, answers are snippet-backed and carry an explicit warning.
-
-A real failure case from dogfooding: `Österreich Startelf WM 2026 Qualifikation aktuelle Aufstellung` is better handled by `web_search_plus`; answer synthesis can drift toward schedule or wrong-sport sources if recency is pushed too hard.
-
-Parameters:
-
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `query` | string | **required** | Question or research query to answer from the web |
-| `mode` | string | `"quick"` | `quick` or `deep` |
-| `sources` | integer | quick `3`, deep `6` | Citation-ready sources to return, max 10 |
-| `freshness` | string | `"none"` | `none`, `auto`, `day`, `week`, `month`, `year` |
-| `output` | string | `"answer"` | `answer`, `brief`, `sources`, or `json` |
-| `language` | string | `"auto"` | Optional language code such as `de`, `en`, `es`, `fr` |
-| `country` | string | `"auto"` | Optional country/region code such as `AT`, `DE`, `US` |
-| `max_extracts` | integer | `2` | Advanced cost guard; hard-capped at 5 |
 
 ### `web_search_plus`
 
@@ -268,7 +207,7 @@ web_extract_plus(urls=["https://docs.linkup.so"], provider="linkup", render_js=F
 # → Linkup fetch endpoint
 ```
 
-Auto extraction currently tries Firecrawl, then Linkup, Exa, Tavily, and You.com when keys are available. Firecrawl is the default robust scraper; Linkup is the cheap/citation-friendly fallback; Exa is preferred before Tavily for academic/research-style pages.
+Auto extraction currently tries Tavily, then Exa, Linkup, Firecrawl, and You.com when keys are available. Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form/RAG fallback; Firecrawl remains the robust scraper safety net; You.com is the final fallback.
 
 Parameters:
 
@@ -293,14 +232,14 @@ Parameters:
 | Firecrawl | ✅ | ✅ | Source-first web search with scrape-ready result content |
 | Tavily | ✅ | ✅ | Long-form research and content-heavy queries |
 | Linkup | ✅ | ✅ | Source-backed grounding, citations, RAG-ready retrieval |
-| Perplexity | ✅ | — | Native direct-answer style search; explicit/answer-mode guarded by default (`auto_allow=false`) |
-| Kilo Perplexity | ✅ | — | Perplexity through Kilo gateway; explicit/answer-mode guarded by default (`auto_allow=false`) |
+| Perplexity | ✅ | — | Native synthesized search; explicit/research-style guarded by default (`auto_allow=false`) |
+| Kilo Perplexity | ✅ | — | Perplexity through Kilo gateway; explicit/research-style guarded by default (`auto_allow=false`) |
 | Brave | ✅ | — | Independent web index; explicit/guarded by default (`auto_allow=false`) |
 | SearXNG | ✅ | — | Privacy-focused self-hosted metasearch |
 | SerpBase | ✅ | — | Cheap Google-like SERP fallback; explicit/fallback-only by default (`auto_allow=false`) |
 | Querit | ✅ | — | Multilingual and real-time queries; explicit/fallback-only by default (`auto_allow=false`) |
 
-Routing v2 is benchmarked and class-aware. It detects language/script hints and query classes such as multilingual current news, AT shopping/local, docs/API, GitHub, academic/arXiv, Reddit/community, CVE/security, official/regulatory, finance/IR, weather/local, OSS discovery, and answer/synthesis. You.com, Serper, Exa, Firecrawl, Tavily, and Linkup are the conservative default auto-search pool. Brave, SerpBase, Querit, Perplexity, and Kilo Perplexity default to `auto_allow=false`: configure their keys to call them explicitly, or opt them into automatic routing with `setup.py config set-auto-allow <provider> on`.
+Routing v2 is benchmarked and class-aware. It detects language/script hints and query classes such as multilingual current news, AT shopping/local, docs/API, GitHub, academic/arXiv, Reddit/community, CVE/security, official/regulatory, finance/IR, weather/local, OSS discovery, and briefing/synthesis-style searches. You.com, Serper, Exa, Firecrawl, Tavily, and Linkup are the conservative default auto-search pool. Brave, SerpBase, Querit, Perplexity, and Kilo Perplexity default to `auto_allow=false`: configure their keys to call them explicitly, or opt them into automatic routing with `setup.py config set-auto-allow <provider> on`.
 
 ---
 
@@ -332,7 +271,6 @@ KILOCODE_API_KEY=***
 
 - **Provider cooldowns:** failed providers are skipped for 1 hour before retry.
 - **Research budget:** `mode="research"` checks the wall-clock budget between provider calls and extraction steps.
-- **Answer extraction cap:** `web_answer_plus` never extracts more than 5 URLs per call.
 - **Partial results:** search results already collected are preserved if extraction fails or times out.
 - **Truthful warnings:** missing extraction keys, quota failures, empty results, and budget exhaustion appear in response metadata.
 

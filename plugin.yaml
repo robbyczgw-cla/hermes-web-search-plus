@@ -1,6 +1,6 @@
 name: web-search-plus
-version: "2.0.0"
-description: "Multi-provider web search, URL extraction, cited answers, quality reports, and opt-in research mode"
+version: "2.1.0"
+description: "Multi-provider web search, URL extraction, quality reports, and opt-in research mode"
 author: robbyczgw-cla
 requires_env: []
 optional_env:
@@ -19,7 +19,6 @@ optional_env:
 provides_tools:
   - web_search_plus
   - web_extract_plus
-  - web_answer_plus
 provides_hooks:
   - on_session_start
 onboarding:
@@ -36,7 +35,7 @@ onboarding:
     reset: "python ~/.hermes/plugins/web-search-plus/setup.py config reset --yes"
   config_file: "~/.hermes/plugins/config.json"
   env_override: "WEB_SEARCH_PLUS_CONFIG"
-  note: "No single provider key is globally required. Add at least one search-capable provider for web_search_plus/web_answer_plus; add Linkup or another extraction-capable provider for web_extract_plus and fuller cited answers. Setup keys live in .env; routing preferences live in config.json and can choose fixed-provider mode or tuned auto-routing without relying on unreleased Hermes core plugin-CLI support."
+  note: "No single provider key is globally required. Add at least one search-capable provider for web_search_plus; add Linkup or another extraction-capable provider for web_extract_plus. Setup keys live in .env; routing preferences live in config.json and can choose fixed-provider mode or tuned auto-routing without relying on unreleased Hermes core plugin-CLI support."
   recommended_env:
     - name: YOU_API_KEY
       description: "You.com — fast Routing v2 core provider"
@@ -47,6 +46,6 @@ onboarding:
       url: "https://serper.dev/api-key"
       secret: true
     - name: LINKUP_API_KEY
-      description: "Linkup — cheap extraction and citations (€5 free monthly credits)"
+      description: "Linkup — cheap clean extraction (€5 free monthly credits)"
       url: "https://www.linkup.so"
       secret: true

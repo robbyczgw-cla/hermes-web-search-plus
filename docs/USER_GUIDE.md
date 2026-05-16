@@ -1,16 +1,15 @@
 # web-search-plus User Guide
 
-This guide is the long-form operating manual for `web-search-plus`. If you only need the first install, start with the [README Quick Start](../README.md#quick-start). Come back here when you want to tune providers, routing, fallback, extraction, or answer synthesis without guessing.
+This guide is the long-form operating manual for `web-search-plus`. If you only need the first install, start with the [README Quick Start](../README.md#quick-start). Come back here when you want to tune providers, routing, fallback, or extraction without guessing.
 
 ## What this plugin does
 
-`web-search-plus` adds three Hermes tools:
+`web-search-plus` adds two Hermes tools:
 
 - `web_search_plus` for routed multi-provider web search.
 - `web_extract_plus` for clean URL extraction.
-- `web_answer_plus` for optional beta cited-answer synthesis on top of search and extraction.
 
-The plugin is capability-based. You do not need every provider key. One search-capable key is enough for search and snippet-backed answers; one extraction-capable key unlocks URL extraction and fuller cited answers.
+The plugin is capability-based. You do not need every provider key. One search-capable key is enough for search; one extraction-capable key unlocks URL extraction.
 
 ## Installation and first-run checks
 
@@ -213,37 +212,7 @@ web_extract_plus(urls=["https://example.com"], provider="firecrawl")
 web_extract_plus(urls=["https://docs.linkup.so"], provider="linkup", render_js=False)
 ```
 
-Auto extraction currently tries Firecrawl, Linkup, Exa, Tavily, and You.com when keys are available. Firecrawl is the robust default scraper; Linkup is the cheap/citation-friendly fallback; Exa is tried before Tavily for research-style pages.
-
-## Using `web_answer_plus` beta
-
-`web_answer_plus` is an answer-synthesis layer. Use it only when the user explicitly asks for a written answer, summary, or cited brief.
-
-Good fits:
-
-- “Summarize these sources.”
-- “Give me a cited brief.”
-- “Compare the positions from a few articles.”
-
-Bad fits:
-
-- weather, prices, sports lineups, schedules, scores, or standings
-- raw source discovery
-- anything latency-sensitive where result lists matter more than prose
-
-Examples:
-
-```python
-web_answer_plus(query="Summarize what changed in Hermes Agent this week", output="brief")
-web_answer_plus(query="Compare DAC amps under 500 EUR in Austria", mode="deep", sources=6, country="AT")
-web_answer_plus(query="OpenAI latest model announcements", freshness="week", output="brief")
-```
-
-Defaults are conservative:
-
-- `quick` uses 3 sources and extracts up to 2 URLs.
-- `deep` uses 6 sources and research mode, with extraction capped at 5 URLs.
-- `freshness="none"` avoids over-triggering recency. Set `freshness="auto"`, `day`, `week`, `month`, or `year` explicitly when recency matters.
+Auto extraction currently tries Tavily, Exa, Linkup, Firecrawl, and You.com when keys are available. Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form fallback; Firecrawl remains the robust scraper safety net.
 
 ## Reliability and cost controls
 
@@ -255,7 +224,6 @@ The plugin is designed to fail visibly rather than invent confidence.
 - Transient provider errors are retried with short backoff.
 - Repeated provider failures put that provider on cooldown, stepping from 1 minute to 5 minutes to 25 minutes to 1 hour.
 - Research mode checks `research_time_budget` between provider calls and extraction steps; it is best-effort, not a provider-side billing limit.
-- `web_answer_plus` caps extraction count with `max_extracts`, hard-capped at 5.
 - Missing extraction keys, empty results, quota failures, and budget exhaustion are returned as warnings or metadata where possible.
 
 The plugin cannot normalize or guarantee provider pricing. Provider APIs own their own billing, rate limits, index freshness, and terms.

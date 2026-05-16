@@ -90,18 +90,11 @@ Useful controls:
 - `count` limits search result count.
 - `mode="normal"` avoids multi-provider research fanout.
 - `research_time_budget` limits research-mode wall-clock work between steps.
-- `web_answer_plus(max_extracts=...)` limits extraction count and is hard-capped at 5.
 - `setup.py config set-default <provider>` pins search to one provider.
 - `setup.py config disable <provider>` removes a provider from auto-routing.
 - `setup.py config set-auto-allow <provider> off` keeps a provider explicit-only.
 
 These are plugin-side controls, not a billing guarantee. Providers own their own pricing and rate limits.
-
-## Is `web_answer_plus` production-ready?
-
-It is beta. It is useful for concise cited summaries, but it is not the default path for live facts. Prefer `web_search_plus` for current events, sports, prices, weather, schedules, standings, and source discovery.
-
-Citations are best-effort source references from selected search/extraction results. They are not legal, medical, financial, or academic verification.
 
 ## Why do SerpBase results differ from Google?
 

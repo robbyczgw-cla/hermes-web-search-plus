@@ -74,7 +74,7 @@ def test_provider_status_detects_capability_tiers_without_requiring_all(monkeypa
     assert status["configured"] is True
     assert status["search_configured"] is True
     assert status["extract_configured"] is True
-    assert status["answer_configured"] is True
+    assert "answer_configured" not in status
     assert status["configured_count"] == 1
     assert status["configured_search_count"] == 1
     assert status["configured_extract_count"] == 1
@@ -90,7 +90,6 @@ def test_provider_status_allows_search_only_with_extraction_hint():
 
     assert status["search_configured"] is True
     assert status["extract_configured"] is False
-    assert status["answer_configured"] is True
     assert "extraction=no" in text
     assert "add LINKUP_API_KEY" in text
 
@@ -264,12 +263,11 @@ def test_tool_check_functions_treat_missing_or_empty_keys_as_unconfigured(monkey
     wsp.register(ctx)
 
     assert ctx.tools["web_search_plus"]["check_fn"]() is False
-    assert ctx.tools["web_answer_plus"]["check_fn"]() is False
+    assert "web_answer_plus" not in ctx.tools
     assert ctx.tools["web_extract_plus"]["check_fn"]() is False
 
     monkeypatch.setenv("BRAVE_API_KEY", "brave-test")
     assert ctx.tools["web_search_plus"]["check_fn"]() is True
-    assert ctx.tools["web_answer_plus"]["check_fn"]() is True
     assert ctx.tools["web_extract_plus"]["check_fn"]() is False
 
     monkeypatch.setenv("LINKUP_API_KEY", "linkup-test")
