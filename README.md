@@ -262,10 +262,56 @@ QUERIT_API_KEY=***        # https://querit.ai — explicit/fallback-only by defa
 KILOCODE_API_KEY=***
 ```
 
+### Multi-key failover (high-availability setup)
+
+For production environments where search continuity is critical, you can configure
+multiple API keys per provider. When a key is rate-limited (HTTP 429/432) or
+rejected (401/403), the plugin automatically tries the next key in sequence.
+Keys in cooldown are skipped with exponential backoff (1m → 5m → 25m → 1h).
+
+All single-key configurations continue to work exactly as before — multi-key
+is purely additive.
+
+**Environment variable approaches** (pick one per provider):
+
+```bash
+# Approach A: numbered suffixes (recommended)
+TAVILY_API_KEY=tvly-primary-key
+TAVILY_API_KEY_2=tvly-secondary-key
+TAVILY_API_KEY_3=tvly-tertiary-key
+
+# Approach B: comma-separated in a single variable
+TAVILY_API_KEY=tvly-key1,tvly-key2,tvly-key3
+```
+
+**config.json approach:**
+
+```json
+{
+  "tavily": {
+    "api_keys": ["tvly-key1", "tvly-key2", "tvly-key3"]
+  },
+  "serper": {
+    "api_key": "single-key-still-works"
+  }
+}
+```
+
+Priority order for key resolution:
+1. `config.json` → `api_keys` array (in order)
+2. `config.json` → `api_key` single value
+3. Environment → `PROVIDER_API_KEY` (supports comma-separated)
+4. Environment → `PROVIDER_API_KEY_2`, `_3`, ... `_10`
+
+Key health state is tracked in `.cache/key_health.json` (analogous to the
+existing `provider_health.json`). Successful requests reset key cooldowns.
+
 ---
 
 ## Reliability and cost controls
 
+- **Multi-key failover:** configure multiple keys per provider; exhausted keys are
+  automatically rotated out with cooldown backoff.
 - **Provider cooldowns:** failed providers are skipped for 1 hour before retry.
 - **Research budget:** `mode="research"` checks the wall-clock budget between provider calls and extraction steps.
 - **Partial results:** search results already collected are preserved if extraction fails or times out.

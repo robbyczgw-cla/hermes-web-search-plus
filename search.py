@@ -493,30 +493,53 @@ def load_config() -> Dict[str, Any]:
     return config
 
 
-def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
-    """Get API key for provider from config.json or environment.
-    
-    Priority: config.json > .env > environment variable
-    
-    Note: SearXNG doesn't require an API key, but returns instance_url if configured.
+def get_api_keys(provider: str, config: Dict[str, Any] = None) -> List[str]:
+    """Get all available API keys for a provider from config.json or environment.
+
+    Supports multiple keys per provider for failover:
+    - config.json: "tavily": {"api_keys": ["key1", "key2", "key3"]}
+    - config.json: "tavily": {"api_key": "key1"}  (single key, backward compatible)
+    - Environment: TAVILY_API_KEY (primary)
+    - Environment: TAVILY_API_KEY_2, TAVILY_API_KEY_3, ... (additional)
+    - Environment: TAVILY_API_KEY="key1,key2,key3" (comma-separated)
+
+    Returns a list of keys in priority order. Empty list if none configured.
     """
-    # Special case: SearXNG uses instance_url instead of API key
-    if provider == "searxng":
-        return get_searxng_instance_url(config)
-    
+    keys = []
+
     # Check config.json first
     if config:
         provider_config = config.get(provider, {})
         if isinstance(provider_config, dict):
-            key = provider_config.get("api_key") or provider_config.get("apiKey")
-            if key:
-                return key
-    
-    # Then check environment
-    if provider == "perplexity":
-        return os.environ.get("PERPLEXITY_API_KEY")
-    if provider == "kilo-perplexity":
-        return os.environ.get("KILOCODE_API_KEY")
+            # New multi-key config
+            api_keys = provider_config.get("api_keys")
+            if api_keys and isinstance(api_keys, list):
+                keys.extend([k.strip() for k in api_keys if k and k.strip()])
+            # Single key config (backward compatible)
+            single_key = provider_config.get("api_key") or provider_config.get("apiKey")
+            if single_key and single_key.strip():
+                keys.append(single_key.strip())
+
+    # Then check environment variables
+    env_key_names = _get_env_key_names(provider)
+    for env_name in env_key_names:
+        env_val = os.environ.get(env_name, "")
+        if not env_val:
+            continue
+        # Support comma-separated keys in a single env var
+        for key in env_val.split(","):
+            key = key.strip()
+            if key and key not in keys:
+                keys.append(key)
+
+    return keys
+
+
+def _get_env_key_names(provider: str) -> List[str]:
+    """Get the list of environment variable names to check for a provider's keys.
+
+    Returns the primary name first, then numbered variants (_2, _3, ...).
+    """
     key_map = {
         "serper": "SERPER_API_KEY",
         "serpbase": "SERPBASE_API_KEY",
@@ -527,8 +550,34 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
         "exa": "EXA_API_KEY",
         "you": "YOU_API_KEY",
         "firecrawl": "FIRECRAWL_API_KEY",
+        "perplexity": "PERPLEXITY_API_KEY",
+        "kilo-perplexity": "KILOCODE_API_KEY",
     }
-    return os.environ.get(key_map.get(provider, ""))
+    primary = key_map.get(provider, "")
+    if not primary:
+        return []
+    # Return primary + numbered variants up to _10
+    names = [primary]
+    for i in range(2, 11):
+        names.append(f"{primary}_{i}")
+    return names
+
+
+def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
+    """Get API key for provider from config.json or environment.
+
+    Priority: config.json > .env > environment variable
+
+    Note: SearXNG doesn't require an API key, but returns instance_url if configured.
+
+    Backward compatible: returns the first (primary) key, or None if not configured.
+    """
+    # Special case: SearXNG uses instance_url instead of API key
+    if provider == "searxng":
+        return get_searxng_instance_url(config)
+
+    keys = get_api_keys(provider, config)
+    return keys[0] if keys else None
 
 
 def _validate_searxng_url(url: str) -> str:
@@ -1867,6 +1916,74 @@ def reset_provider_health(provider: str) -> None:
     if provider in state:
         state.pop(provider, None)
         _save_provider_health(state)
+
+
+# =============================================================================
+# Multi-Key Rotation — Per-Key Health Tracking
+# =============================================================================
+
+KEY_HEALTH_FILE = CACHE_DIR / "key_health.json"
+KEY_COOLDOWN_STEPS_SECONDS = [60, 300, 1500, 3600]  # 1m -> 5m -> 25m -> 1h cap
+KEY_RATE_LIMIT_CODES = {429, 432}
+
+
+def _load_key_health() -> Dict[str, Any]:
+    if not KEY_HEALTH_FILE.exists():
+        return {}
+    try:
+        with open(KEY_HEALTH_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, dict) else {}
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+def _save_key_health(state: Dict[str, Any]) -> None:
+    _ensure_parent(KEY_HEALTH_FILE)
+    with open(KEY_HEALTH_FILE, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def _key_health_id(provider: str, key: str) -> str:
+    """Build a stable health-tracking ID for a specific key without storing the full key."""
+    digest = hashlib.sha256(f"{provider}:{key}".encode("utf-8")).hexdigest()[:16]
+    return f"{provider}:{digest}"
+
+
+def key_in_cooldown(provider: str, key: str) -> Tuple[bool, int]:
+    kid = _key_health_id(provider, key)
+    state = _load_key_health()
+    kstate = state.get(kid, {})
+    cooldown_until = int(kstate.get("cooldown_until", 0) or 0)
+    remaining = cooldown_until - int(time.time())
+    return (remaining > 0, max(0, remaining))
+
+
+def mark_key_failure(provider: str, key: str, error_message: str) -> Dict[str, Any]:
+    kid = _key_health_id(provider, key)
+    state = _load_key_health()
+    now = int(time.time())
+    kstate = state.get(kid, {})
+    fail_count = int(kstate.get("failure_count", 0)) + 1
+    cooldown_seconds = KEY_COOLDOWN_STEPS_SECONDS[min(fail_count - 1, len(KEY_COOLDOWN_STEPS_SECONDS) - 1)]
+    state[kid] = {
+        "provider": provider,
+        "failure_count": fail_count,
+        "cooldown_until": now + cooldown_seconds,
+        "cooldown_seconds": cooldown_seconds,
+        "last_error": error_message,
+        "last_failure_at": now,
+    }
+    _save_key_health(state)
+    return state[kid]
+
+
+def reset_key_health(provider: str, key: str) -> None:
+    kid = _key_health_id(provider, key)
+    state = _load_key_health()
+    if kid in state:
+        state.pop(kid, None)
+        _save_key_health(state)
 
 
 def _title_from_url(url: str) -> str:
@@ -4263,9 +4380,71 @@ Full docs: See README.md and SKILL.md
     if not eligible_providers:
         eligible_providers = providers_to_try[:1]
 
-    # Helper function to execute search for a provider
+    # Helper function to execute search for a provider with multi-key failover
     def execute_search(prov: str) -> Dict[str, Any]:
-        key = validate_api_key(prov, config)
+        keys = get_api_keys(prov, config) if prov != "searxng" else [validate_api_key(prov, config)]
+        if not keys or not keys[0]:
+            raise ProviderConfigError(json.dumps({
+                "error": f"No API key configured for {prov}",
+                "provider": prov,
+            }))
+
+        key_errors = []
+        for key_idx, key in enumerate(keys):
+            # Skip keys currently in cooldown
+            in_cd, remaining = key_in_cooldown(prov, key)
+            if in_cd:
+                key_errors.append({
+                    "key_index": key_idx,
+                    "skipped": True,
+                    "reason": f"key in cooldown ({remaining}s remaining)",
+                })
+                continue
+
+            try:
+                result = _execute_search_with_key(prov, key)
+                # Success: reset key health
+                reset_key_health(prov, key)
+                return result
+            except ProviderRequestError as e:
+                error_msg = str(e)
+                status_code = e.status_code
+                # Rate-limit or quota exhaustion: mark key and try next
+                if status_code in KEY_RATE_LIMIT_CODES:
+                    cooldown_info = mark_key_failure(prov, key, error_msg)
+                    key_errors.append({
+                        "key_index": key_idx,
+                        "status_code": status_code,
+                        "error": error_msg,
+                        "cooldown_seconds": cooldown_info.get("cooldown_seconds"),
+                    })
+                    continue
+                # Auth errors (401/403): key is invalid, mark and try next
+                if status_code in {401, 403}:
+                    cooldown_info = mark_key_failure(prov, key, error_msg)
+                    key_errors.append({
+                        "key_index": key_idx,
+                        "status_code": status_code,
+                        "error": error_msg,
+                        "cooldown_seconds": cooldown_info.get("cooldown_seconds"),
+                    })
+                    continue
+                # Non-transient error: don't try other keys
+                raise
+            except Exception as e:
+                # Unexpected error: don't try other keys
+                raise
+
+        # All keys exhausted: raise with details
+        error_detail = {
+            "error": f"All {len(keys)} key(s) exhausted for {prov}",
+            "provider": prov,
+            "key_errors": key_errors,
+        }
+        raise ProviderConfigError(json.dumps(error_detail))
+
+    def _execute_search_with_key(prov: str, key: str) -> Dict[str, Any]:
+        """Execute a search for a provider using a specific API key."""
         if prov == "serper":
             return search_serper(
                 query=args.query,
