@@ -61,7 +61,7 @@ Presets:
 - `extract`: Firecrawl + Linkup + Exa + Tavily. Extraction-heavy setup.
 - `all`: prompt for every supported provider.
 
-Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Brave, Perplexity, Kilo Perplexity, SearXNG, SerpBase, and Querit. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, Parallel, and You.com.
+Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, Perplexity, Kilo Perplexity, SearXNG, SerpBase, and Querit. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, Parallel, and You.com.
 
 ### Migration note for v2.0.0
 

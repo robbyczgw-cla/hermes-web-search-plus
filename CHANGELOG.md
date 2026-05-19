@@ -6,8 +6,11 @@
 - Removed `web_answer_plus` from the registered Hermes tool surface and plugin manifest. The plugin now keeps one job: search plus extraction, without a separate answer-synthesis layer.
 - Removed runtime answer-mode metadata (`answer_mode_recommended`) and onboarding answer capability reporting.
 
+### ✨ Added
+- Added Parallel as the 13th search provider and 6th extraction provider using `PARALLEL_API_KEY`. Parallel is available for explicit calls and remains guarded from auto-routing by default via `auto_allow=false`.
+
 ### 🔧 Changed
-- `web_extract_plus(provider="auto")` now uses the benchmark-backed extraction fallback order Tavily → Exa → Linkup → Firecrawl → You.com. Tavily becomes the fast reliable default head; Firecrawl remains the robust scraper safety net rather than the first call.
+- `web_extract_plus(provider="auto")` now uses the benchmark-backed extraction fallback order Tavily → Exa → Linkup → Parallel → Firecrawl → You.com. Tavily becomes the fast reliable default head; Parallel provides a fast excerpt-rich docs fallback; Firecrawl remains the robust scraper safety net rather than the first call.
 
 ### 📚 Docs
 - Updated README, User Guide, FAQ, Architecture, and plugin manifest to describe the two-tool surface: `web_search_plus` and `web_extract_plus`.
