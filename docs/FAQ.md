@@ -24,7 +24,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase
 
 If Routing v2 is enabled, the query analyzer scores providers by query signals such as current-info intent, product/local intent, research language, direct-answer intent, semantic-discovery intent, privacy intent, language/script hints, and class-specific benchmark rules. The router then filters out unavailable, disabled, or `auto_allow=false` providers and chooses the best eligible provider. Ties are deterministic per query.
 
-The default auto-search pool is conservative: You.com, Serper, Exa, Firecrawl, Tavily, and Linkup. Brave, SerpBase, Querit, native Perplexity, and Kilo Perplexity default to explicit/guarded use; Kilo Perplexity is intended for answer/research mode rather than fast search auto-routing.
+The default auto-search pool is conservative: You.com, Serper, Exa, Firecrawl, Tavily, and Linkup. Brave, SerpBase, Querit, Parallel, native Perplexity, and Kilo Perplexity default to explicit/guarded use; Kilo Perplexity is intended for answer/research mode rather than fast search auto-routing.
 
 For the exact flow, see [Architecture](ARCHITECTURE.md#routing-engine).
 
@@ -109,7 +109,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py setup you
 python ~/.hermes/plugins/web-search-plus/setup.py config set-default you
 ```
 
-Extraction requires an extraction-capable provider such as Linkup, Firecrawl, Tavily, Exa, or You.com.
+Extraction requires an extraction-capable provider such as Linkup, Firecrawl, Tavily, Exa, Parallel, or You.com.
 
 ## Can I run fully offline?
 

@@ -57,12 +57,13 @@ Default routing config includes:
   "auto_routing": {
     "enabled": true,
     "fallback_provider": "serper",
-    "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"],
+    "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"],
     "disabled_providers": [],
     "auto_allow": {
       "serpbase": false,
       "querit": false,
       "brave": false,
+      "parallel": false,
       "kilo-perplexity": false,
       "perplexity": false
     },
@@ -101,6 +102,7 @@ Example:
 ```json
 "auto_allow": {
   "serpbase": false,
+  "parallel": false,
   "querit": false,
   "brave": false,
   "kilo-perplexity": false,
@@ -111,9 +113,10 @@ Example:
 With this config:
 
 - `provider="serpbase"` can work when `SERPBASE_API_KEY` is present.
-- `provider="auto"` will not select SerpBase.
-- fallback lists will not silently choose SerpBase.
-- `quality_report` can surface SerpBase under `auto_allow_excluded`.
+- `provider="parallel"` can work when `PARALLEL_API_KEY` is present.
+- `provider="auto"` will not select guarded providers such as SerpBase or Parallel unless opted in.
+- fallback lists will not silently choose guarded providers.
+- `quality_report` can surface guarded providers under `auto_allow_excluded`.
 
 Opt in:
 

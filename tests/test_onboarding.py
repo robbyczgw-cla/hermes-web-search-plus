@@ -224,7 +224,7 @@ def test_setup_dry_run_uses_target_env_path_for_dashboard(tmp_path, monkeypatch,
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "Providers: 1/12 configured" in out
+    assert "Providers: 1/13 configured" in out
     assert "Active: You.com" in out
     assert "Brave Search" not in out.split("Setup plan:", 1)[0]
 
@@ -240,7 +240,7 @@ def test_status_uses_target_env_path_for_dashboard(tmp_path, monkeypatch, capsys
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "Providers: 1/12 configured" in out
+    assert "Providers: 1/13 configured" in out
     assert "Active: Linkup" in out
     assert "Brave Search" not in out
 
@@ -327,6 +327,7 @@ def test_config_set_priority_normalizes_and_dedupes_providers(tmp_path, capsys):
 
     data = json.loads(config_path.read_text())
     assert data["auto_routing"]["provider_priority"][:3] == ["tavily", "brave", "linkup"]
+    assert "parallel" in data["auto_routing"]["provider_priority"]
     assert "duplicate provider ignored: tavily" in capsys.readouterr().err
 
 
@@ -364,6 +365,7 @@ def test_default_behavior_config_blocks_low_trust_auto_providers():
     assert config["auto_routing"]["auto_allow"]["serpbase"] is False
     assert config["auto_routing"]["auto_allow"]["querit"] is False
     assert config["auto_routing"]["auto_allow"]["brave"] is False
+    assert config["auto_routing"]["auto_allow"]["parallel"] is False
     assert config["auto_routing"]["auto_allow"]["kilo-perplexity"] is False
     assert config["auto_routing"]["auto_allow"]["perplexity"] is False
 
@@ -381,7 +383,7 @@ def test_setup_dry_run_can_auto_deny_provider(tmp_path, capsys):
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "auto-allow false: brave, kilo-perplexity, perplexity, querit, serpbase" in out
+    assert "auto-allow false: brave, kilo-perplexity, parallel, perplexity, querit, serpbase" in out
     assert not env_path.exists()
     assert not config_path.exists()
 

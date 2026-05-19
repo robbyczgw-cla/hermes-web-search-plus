@@ -170,7 +170,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
         mock_exa.assert_called_once()
 
     def test_extract_provider_priority_prefers_fast_clean_extractors(self):
-        self.assertEqual(search.EXTRACT_PROVIDER_PRIORITY, ["tavily", "exa", "linkup", "firecrawl", "you"])
+        self.assertEqual(search.EXTRACT_PROVIDER_PRIORITY, ["tavily", "exa", "linkup", "parallel", "firecrawl", "you"])
 
     def test_extract_plus_auto_prefers_tavily_over_exa(self):
         with mock.patch.dict(os.environ, {"EXA_API_KEY": "exa-test", "TAVILY_API_KEY": "tvly-test"}, clear=True):

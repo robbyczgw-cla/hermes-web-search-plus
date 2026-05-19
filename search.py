@@ -3,8 +3,8 @@
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
 Version: 2.1.0
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
-Brave Search, SerpBase, Querit, Perplexity, Kilo Perplexity, SearXNG.
-Supports extract providers: Firecrawl, Linkup, Tavily, Exa, You.com.
+Brave Search, SerpBase, Querit, Parallel, Perplexity, Kilo Perplexity, SearXNG.
+Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com.
 
 Smart Routing uses multi-signal analysis:
   - Routing v2 language/script and query-class detection
@@ -294,7 +294,7 @@ DEFAULT_CONFIG = {
         "fallback_provider": "serper",
         # Low-trust / experimental providers can stay configured for explicit use
         # without being selected automatically.
-        "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"],
+        "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"],
         "disabled_providers": [],
         "auto_allow": {
             "serpbase": False,
@@ -302,6 +302,7 @@ DEFAULT_CONFIG = {
             "brave": False,
             "kilo-perplexity": False,
             "perplexity": False,
+            "parallel": False,
         },
         "confidence_threshold": 0.3,  # Below this, note low confidence
     },
@@ -339,6 +340,15 @@ DEFAULT_CONFIG = {
         "api_url": "https://api.perplexity.ai/chat/completions",
         "model": "sonar-pro"
     },
+    "parallel": {
+        "api_url": "https://api.parallel.ai/v1/search",
+        "extract_url": "https://api.parallel.ai/v1/extract",
+        "timeout": 45,
+        "extract_timeout": 60,
+        "client_model": None,
+        "max_chars_total": 12000,
+        "max_chars_per_result": 6000
+    },
     "kilo-perplexity": {
         "api_url": "https://api.kilo.ai/api/gateway/chat/completions",
         "model": "perplexity/sonar-pro"
@@ -374,7 +384,7 @@ def _deepcopy_default_config() -> Dict[str, Any]:
     return json.loads(json.dumps(DEFAULT_CONFIG))
 
 
-_ROUTING_PROVIDER_NAMES = {"tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "serpbase", "you", "searxng"}
+_ROUTING_PROVIDER_NAMES = {"tavily", "linkup", "querit", "exa", "firecrawl", "parallel", "perplexity", "kilo-perplexity", "brave", "serper", "serpbase", "you", "searxng"}
 
 
 def _normalize_routing_provider_config(provider: str) -> str:
@@ -408,6 +418,23 @@ def _normalize_routing_provider_list_config(value: Any) -> List[str]:
     return providers
 
 
+def _append_missing_default_providers(providers: List[str]) -> List[str]:
+    """Preserve user ordering while adding newly introduced default providers.
+
+    Existing config.json files often pin provider_priority from an older plugin
+    version. Without this migration, newly added explicit/guarded providers can
+    be valid but invisible to fallback/auto-allow configuration until users
+    manually reset config.
+    """
+    seen = set(providers)
+    merged = list(providers)
+    for provider in DEFAULT_CONFIG["auto_routing"].get("provider_priority", []):
+        if provider not in seen:
+            seen.add(provider)
+            merged.append(provider)
+    return merged
+
+
 def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     auto = config.get("auto_routing", {})
     if not isinstance(auto, dict):
@@ -417,7 +444,8 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     if auto.get("fallback_provider"):
         auto["fallback_provider"] = _normalize_routing_provider_config(str(auto["fallback_provider"]))
     if auto.get("provider_priority"):
-        auto["provider_priority"] = _normalize_routing_provider_list_config(auto["provider_priority"])
+        priority = _normalize_routing_provider_list_config(auto["provider_priority"])
+        auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
     if "disabled_providers" in auto:
         disabled = auto.get("disabled_providers") or []
         if disabled:
@@ -526,6 +554,7 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
         "linkup": "LINKUP_API_KEY",
         "exa": "EXA_API_KEY",
         "you": "YOU_API_KEY",
+        "parallel": "PARALLEL_API_KEY",
         "firecrawl": "FIRECRAWL_API_KEY",
     }
     return os.environ.get(key_map.get(provider, ""))
@@ -662,6 +691,7 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
             "linkup": "https://app.linkup.so",
             "exa": "https://exa.ai",
             "you": "https://api.you.com",
+            "parallel": "https://platform.parallel.ai",
             "perplexity": "https://www.perplexity.ai/settings/api",
             "kilo-perplexity": "https://api.kilo.ai",
             "firecrawl": "https://www.firecrawl.dev/app/api-keys"
@@ -3182,7 +3212,69 @@ def extract_you(
     return {"provider": "you", "results": results}
 
 
-EXTRACT_PROVIDER_PRIORITY = ["tavily", "exa", "linkup", "firecrawl", "you"]
+def extract_parallel(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://api.parallel.ai/v1/extract",
+    timeout: int = 60,
+    client_model: Optional[str] = None,
+    max_chars_total: int = 12000,
+    max_chars_per_result: int = 6000,
+) -> dict:
+    """Extract URL content using Parallel Extract.
+
+    Parallel returns excerpts by default; request full_content explicitly and
+    normalize it into the common markdown/content shape. HTML/raw-image options
+    are accepted for tool compatibility but ignored when unsupported upstream.
+    """
+    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
+    body: Dict[str, Any] = {
+        "urls": urls,
+        "max_chars_total": max_chars_total,
+        "advanced_settings": {
+            "full_content": {"max_chars_per_result": max_chars_per_result}
+        },
+    }
+    if client_model:
+        body["client_model"] = client_model
+
+    data = make_request(api_url, headers, body, timeout=timeout)
+    results: List[Dict[str, Any]] = []
+    for item in data.get("results", []) or []:
+        url = item.get("url") or ""
+        excerpts = item.get("excerpts") or []
+        excerpt_text = "\n\n".join(
+            (ex.get("text") or ex.get("content") or "") if isinstance(ex, dict) else str(ex)
+            for ex in excerpts
+        ).strip()
+        content = item.get("full_content") or item.get("markdown") or item.get("content") or excerpt_text
+        results.append(_normalize_extract_result(
+            "parallel",
+            url,
+            title=item.get("title", ""),
+            content=content,
+            raw_content=content,
+            excerpts=excerpts or None,
+            metadata={k: v for k, v in item.items() if k not in {"url", "title", "full_content", "markdown", "content", "excerpts"}},
+        ))
+    for failed in data.get("errors", []) or []:
+        failed_url = failed.get("url", "") if isinstance(failed, dict) else ""
+        results.append(_normalize_extract_result("parallel", failed_url, error=str(failed)))
+    return {
+        "provider": "parallel",
+        "results": results,
+        "metadata": {
+            "search_id": data.get("search_id"),
+            "session_id": data.get("session_id"),
+        },
+    }
+
+
+EXTRACT_PROVIDER_PRIORITY = ["tavily", "exa", "linkup", "parallel", "firecrawl", "you"]
 
 
 def extract_plus(
@@ -3236,6 +3328,16 @@ def extract_plus(
                 if prov == "exa":
                     exa = config.get("exa", {})
                     return extract_exa(urls, key, output_format, include_images, include_raw_html, render_js, api_url=exa.get("contents_url", "https://api.exa.ai/contents"), timeout=int(exa.get("timeout", 30)))
+                if prov == "parallel":
+                    parallel = config.get("parallel", {})
+                    return extract_parallel(
+                        urls, key, output_format, include_images, include_raw_html, render_js,
+                        api_url=parallel.get("extract_url", "https://api.parallel.ai/v1/extract"),
+                        timeout=int(parallel.get("extract_timeout", parallel.get("timeout", 60))),
+                        client_model=parallel.get("client_model"),
+                        max_chars_total=int(parallel.get("max_chars_total", 12000)),
+                        max_chars_per_result=int(parallel.get("max_chars_per_result", 6000)),
+                    )
                 you = config.get("you", {})
                 return extract_you(urls, key, output_format, include_images, include_raw_html, render_js, api_url=you.get("contents_url", "https://ydc-index.io/v1/contents"), timeout=int(you.get("timeout", 30)))
 
@@ -3437,6 +3539,77 @@ def search_exa(
         "results": results,
         "images": [],
         "answer": answer,
+    }
+
+
+# =============================================================================
+# Parallel (LLM-ready web search)
+# =============================================================================
+
+def search_parallel(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    include_domains: Optional[List[str]] = None,
+    exclude_domains: Optional[List[str]] = None,
+    api_url: str = "https://api.parallel.ai/v1/search",
+    timeout: int = 45,
+    client_model: Optional[str] = None,
+) -> dict:
+    """Search using Parallel's web search API.
+
+    Parallel returns source URLs plus long LLM-ready excerpts. Its API does not
+    currently accept a generic max_results parameter, so results are trimmed
+    locally to the requested count.
+    """
+    search_query = query
+    if include_domains:
+        search_query += " " + " ".join(f"site:{domain}" for domain in include_domains)
+    if exclude_domains:
+        search_query += " " + " ".join(f"-site:{domain}" for domain in exclude_domains)
+
+    body: Dict[str, Any] = {
+        "objective": query,
+        "search_queries": [search_query],
+    }
+    if client_model:
+        body["client_model"] = client_model
+
+    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
+    data = make_request(api_url, headers, body, timeout=timeout)
+
+    raw_results = data.get("results") or []
+    results = []
+    for i, item in enumerate(raw_results[:max_results]):
+        excerpts = item.get("excerpts") or []
+        snippet_parts = []
+        for excerpt in excerpts:
+            if isinstance(excerpt, dict):
+                snippet_parts.append(excerpt.get("text") or excerpt.get("content") or "")
+            elif isinstance(excerpt, str):
+                snippet_parts.append(excerpt)
+        snippet = "\n\n".join(part for part in snippet_parts if part).strip()
+        results.append({
+            "title": item.get("title") or _title_from_url(item.get("url", "")),
+            "url": item.get("url", ""),
+            "snippet": snippet,
+            "score": round(1.0 - i * 0.05, 3),
+            "publish_date": item.get("publish_date"),
+            "excerpts": excerpts,
+        })
+
+    answer = " ".join(r.get("snippet", "") for r in results[:3])[:1200]
+    return {
+        "provider": "parallel",
+        "query": query,
+        "results": results,
+        "images": [],
+        "answer": answer,
+        "metadata": {
+            "search_id": data.get("search_id"),
+            "session_id": data.get("session_id"),
+            "result_count_raw": len(raw_results),
+        },
     }
 
 
@@ -3891,7 +4064,7 @@ Full docs: See README.md and SKILL.md
     # Common arguments
     parser.add_argument(
         "--provider", "-p", 
-        choices=["serper", "serpbase", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "perplexity", "kilo-perplexity", "you", "searxng", "auto"],
+        choices=["serper", "serpbase", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "parallel", "perplexity", "kilo-perplexity", "you", "searxng", "auto"],
         help="Search provider (auto=intelligent routing)"
     )
     parser.add_argument(
@@ -4227,7 +4400,7 @@ Full docs: See README.md and SKILL.md
     
     # Build provider fallback list
     auto_config = config.get("auto_routing", {})
-    provider_priority = auto_config.get("provider_priority", ["tavily", "linkup", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"])
+    provider_priority = auto_config.get("provider_priority", ["tavily", "linkup", "parallel", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"])
     disabled_providers = auto_config.get("disabled_providers", [])
 
     # Start with the selected provider, then try others in priority order.
@@ -4373,6 +4546,18 @@ Full docs: See README.md and SKILL.md
                 ignore_invalid_urls=firecrawl_config.get("ignore_invalid_urls", False),
                 api_url=firecrawl_config.get("api_url", "https://api.firecrawl.dev/v2/search"),
                 timeout_ms=int(firecrawl_config.get("timeout", 30000)),
+            )
+        elif prov == "parallel":
+            parallel_config = config.get("parallel", {})
+            return search_parallel(
+                query=args.query,
+                api_key=key,
+                max_results=args.max_results,
+                include_domains=args.include_domains,
+                exclude_domains=args.exclude_domains,
+                api_url=parallel_config.get("api_url", "https://api.parallel.ai/v1/search"),
+                timeout=int(parallel_config.get("timeout", 45)),
+                client_model=parallel_config.get("client_model"),
             )
         elif prov in {"perplexity", "kilo-perplexity"}:
             perplexity_config = config.get(prov, {})

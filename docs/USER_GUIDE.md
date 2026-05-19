@@ -61,7 +61,7 @@ Presets:
 - `extract`: Firecrawl + Linkup + Exa + Tavily. Extraction-heavy setup.
 - `all`: prompt for every supported provider.
 
-Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Brave, Perplexity, Kilo Perplexity, SearXNG, SerpBase, and Querit. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, and You.com.
+Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Brave, Perplexity, Kilo Perplexity, SearXNG, SerpBase, and Querit. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, Parallel, and You.com.
 
 ### Migration note for v2.0.0
 
@@ -196,7 +196,7 @@ web_search_plus(query="turntable reviews under 1000", mode="research", research_
 
 Important parameters:
 
-- `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `perplexity`, `kilo-perplexity`, `searxng`, `serpbase`, or `querit`. Brave, Perplexity/Kilo Perplexity, SerpBase, and Querit are available for explicit calls but default to `auto_allow=false`.
+- `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `perplexity`, `kilo-perplexity`, `searxng`, `serpbase`, or `querit`. Brave, Parallel, Perplexity/Kilo Perplexity, SerpBase, and Querit are available for explicit calls but default to `auto_allow=false`.
 - `count`: result count, from 1 to 20.
 - `time_range`: `day`, `week`, `month`, or `year` where supported.
 - `include_domains` / `exclude_domains`: provider-dependent domain filters.
@@ -212,7 +212,7 @@ web_extract_plus(urls=["https://example.com"], provider="firecrawl")
 web_extract_plus(urls=["https://docs.linkup.so"], provider="linkup", render_js=False)
 ```
 
-Auto extraction currently tries Tavily, Exa, Linkup, Firecrawl, and You.com when keys are available. Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form fallback; Firecrawl remains the robust scraper safety net.
+Auto extraction currently tries Tavily, Exa, Linkup, Firecrawl, Parallel, and You.com when keys are available. Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form fallback; Firecrawl remains the robust scraper safety net.
 
 ## Reliability and cost controls
 

@@ -35,6 +35,7 @@ _PROVIDER_ENV_KEYS = [
     "PERPLEXITY_API_KEY",
     "KILOCODE_API_KEY",
     "YOU_API_KEY",
+    "PARALLEL_API_KEY",
     "SEARXNG_INSTANCE_URL",
 ]
 _EXTRACT_PROVIDER_ENV_KEYS = [
@@ -43,6 +44,7 @@ _EXTRACT_PROVIDER_ENV_KEYS = [
     "TAVILY_API_KEY",
     "EXA_API_KEY",
     "YOU_API_KEY",
+    "PARALLEL_API_KEY",
 ]
 
 logger = logging.getLogger(__name__)
@@ -126,6 +128,16 @@ _PROVIDER_CATALOG = [
         "free_tier": "1,000 free searches/month",
         "signup_url": "https://querit.com",
         "capabilities": ["search", "multilingual"],
+        "recommended": False,
+    },
+    {
+        "provider": "parallel",
+        "env": "PARALLEL_API_KEY",
+        "display_name": "Parallel",
+        "description": "LLM-ready web search and fast URL extraction with long source excerpts.",
+        "free_tier": "API key required",
+        "signup_url": "https://platform.parallel.ai",
+        "capabilities": ["search", "extract", "citations"],
         "recommended": False,
     },
     {
@@ -261,8 +273,8 @@ def _get_hermes_env_path() -> Path:
 
 
 _SETUP_PROVIDER_NAMES = {item["provider"] for item in _PROVIDER_CATALOG}
-_DEFAULT_PROVIDER_PRIORITY = ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"]
-_DEFAULT_AUTO_ALLOW = {"serpbase": False, "querit": False, "brave": False, "kilo-perplexity": False, "perplexity": False}
+_DEFAULT_PROVIDER_PRIORITY = ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"]
+_DEFAULT_AUTO_ALLOW = {"serpbase": False, "querit": False, "brave": False, "parallel": False, "kilo-perplexity": False, "perplexity": False}
 _ROUTING_PROVIDER_NAMES = set(_DEFAULT_PROVIDER_PRIORITY)
 
 
@@ -328,6 +340,16 @@ def _normalize_provider_csv(value: str, *, routing: bool = True) -> List[str]:
     return providers
 
 
+def _append_missing_default_providers(providers: List[str]) -> List[str]:
+    seen = set(providers)
+    merged = list(providers)
+    for provider in _DEFAULT_PROVIDER_PRIORITY:
+        if provider not in seen:
+            seen.add(provider)
+            merged.append(provider)
+    return merged
+
+
 def _merge_behavior_config(user_config: Mapping[str, Any]) -> Dict[str, Any]:
     config = _default_behavior_config()
     if not isinstance(user_config, Mapping):
@@ -344,9 +366,10 @@ def _merge_behavior_config(user_config: Mapping[str, Any]) -> Dict[str, Any]:
         auto["fallback_provider"] = _normalize_routing_provider(str(auto_user["fallback_provider"]))
     if auto_user.get("provider_priority"):
         if isinstance(auto_user["provider_priority"], str):
-            auto["provider_priority"] = _normalize_provider_csv(auto_user["provider_priority"], routing=True)
+            priority = _normalize_provider_csv(auto_user["provider_priority"], routing=True)
         else:
-            auto["provider_priority"] = _normalize_provider_csv(",".join(str(p) for p in auto_user["provider_priority"]), routing=True)
+            priority = _normalize_provider_csv(",".join(str(p) for p in auto_user["provider_priority"]), routing=True)
+        auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
     if "disabled_providers" in auto_user:
         disabled = auto_user.get("disabled_providers") or []
         if isinstance(disabled, str):
@@ -1134,7 +1157,7 @@ def register(ctx: Any) -> None:
                 },
                 "provider": {
                     "type": "string",
-                    "enum": ["auto", "serper", "serpbase", "brave", "tavily", "exa", "querit", "linkup", "firecrawl", "perplexity", "kilo-perplexity", "you", "searxng"],
+                    "enum": ["auto", "serper", "serpbase", "brave", "tavily", "exa", "querit", "linkup", "firecrawl", "parallel", "perplexity", "kilo-perplexity", "you", "searxng"],
                     "description": "Search provider. Use 'auto' for intelligent routing (default). Brave and Serper share generic web-search intents and ties are distributed deterministically per query.",
                     "default": "auto",
                 },
@@ -1250,7 +1273,7 @@ def register(ctx: Any) -> None:
             "type": "object",
             "properties": {
                 "urls": {"type": "array", "items": {"type": "string"}, "description": "URLs to extract"},
-                "provider": {"type": "string", "enum": ["auto", "firecrawl", "linkup", "tavily", "exa", "you"], "default": "auto"},
+                "provider": {"type": "string", "enum": ["auto", "firecrawl", "linkup", "parallel", "tavily", "exa", "you"], "default": "auto"},
                 "format": {"type": "string", "enum": ["markdown", "html"], "default": "markdown"},
                 "include_images": {"type": "boolean", "default": False},
                 "include_raw_html": {"type": "boolean", "default": False},
