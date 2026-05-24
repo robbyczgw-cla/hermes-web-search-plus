@@ -23,4 +23,17 @@ jobs:
       - name: Tests
         run: python -m pytest tests/ -q
       - name: Compile
-        run: python -m py_compile search.py __init__.py
+        run: >-
+          python -m py_compile
+          search.py
+          __init__.py
+          http_client.py
+          cache.py
+          config.py
+          provider_health.py
+          quality.py
+          research.py
+          routing.py
+          providers.py
+          extract.py
+          scripts/golden_eval.py

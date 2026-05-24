@@ -98,6 +98,19 @@ def test_parallel_is_explicit_provider_but_blocked_from_auto_by_default():
         assert search.validate_api_key("parallel", config) == "parallel-test-key"
 
 
+def test_validate_api_key_parallel_missing_key_raises_provider_config_error():
+    config = search._deepcopy_default_config()
+    config["parallel"].pop("api_key", None)
+    with mock.patch.dict(os.environ, {}, clear=True):
+        try:
+            search.validate_api_key("parallel", config)
+        except search.ProviderConfigError as exc:
+            assert "PARALLEL_API_KEY" in str(exc)
+            assert "platform.parallel.ai" in str(exc)
+        else:
+            raise AssertionError("validate_api_key should fail cleanly when PARALLEL_API_KEY is missing")
+
+
 def test_existing_priority_config_appends_parallel_for_migration():
     config = search._deepcopy_default_config()
     config["auto_routing"]["provider_priority"] = ["tavily", "linkup", "serper"]

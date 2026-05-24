@@ -48,6 +48,7 @@ from cache import (
 )
 from config import (  # noqa: F401 - re-exported for backward-compatible tests/imports
     DEFAULT_CONFIG,
+    ProviderConfigError,
     _deepcopy_default_config,
     _validate_runtime_config,
     _validate_searxng_url,

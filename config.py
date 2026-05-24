@@ -430,6 +430,7 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
             "linkup": "LINKUP_API_KEY",
             "exa": "EXA_API_KEY",
             "you": "YOU_API_KEY",
+            "parallel": "PARALLEL_API_KEY",
             "perplexity": "PERPLEXITY_API_KEY",
             "kilo-perplexity": "KILOCODE_API_KEY",
             "firecrawl": "FIRECRAWL_API_KEY"
