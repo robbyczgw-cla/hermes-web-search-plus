@@ -59,7 +59,7 @@ class HttpContentEncodingTests(unittest.TestCase):
         compressed = gzip.compress(json.dumps(body).encode("utf-8"))
 
         with mock.patch(
-            "search.urlopen",
+            "http_client.urlopen",
             return_value=FakeResponse(compressed, {"Content-Encoding": "gzip"}),
         ):
             result = search.make_get_request(
@@ -74,7 +74,7 @@ class HttpContentEncodingTests(unittest.TestCase):
         compressed = gzip.compress(json.dumps(body).encode("utf-8"))
 
         with mock.patch(
-            "search.urlopen",
+            "http_client.urlopen",
             return_value=FakeResponse(compressed, {"Content-Encoding": "gzip"}),
         ):
             result = search.make_request(
