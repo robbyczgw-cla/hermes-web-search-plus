@@ -96,6 +96,7 @@ def search_serper(
         "results": results,
         "images": images,
         "answer": answer,
+        "metadata": {},
         "knowledge_graph": data.get("knowledgeGraph"),
         "related_searches": [r.get("query") for r in data.get("relatedSearches", [])]
     }
@@ -182,7 +183,11 @@ def search_serpbase(
         "provider": "serpbase",
         "query": query,
         "results": results,
+        "images": [],
         "answer": answer,
+        "metadata": {
+            "session_id": data.get("session_id"),
+        },
         "knowledge_graph": data.get("knowledge_graph"),
         "related_searches": related_searches,
         "session_id": data.get("session_id"),
@@ -257,6 +262,7 @@ def search_brave(
         "results": results,
         "images": [],
         "answer": answer,
+        "metadata": {},
         "mixed": data.get("mixed"),
     }
 
@@ -312,6 +318,7 @@ def search_tavily(
         "results": results,
         "images": data.get("images", []),
         "answer": data.get("answer", ""),
+        "metadata": {},
     }
 
 def _map_querit_time_range(time_range: Optional[str]) -> Optional[str]:
@@ -1041,6 +1048,7 @@ def search_exa(
         "results": results,
         "images": [],
         "answer": answer,
+        "metadata": {},
     }
 
 def search_parallel(
