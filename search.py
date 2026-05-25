@@ -40,6 +40,7 @@ from http_client import (  # noqa: F401 - re-exported for backward-compatible te
     make_request,
 )
 from cache import (
+    CACHE_DIR,
     DEFAULT_CACHE_TTL,
     cache_clear,
     cache_get,
@@ -430,13 +431,90 @@ def _sync_extract_dependencies() -> None:
 EXTRACT_PROVIDER_PRIORITY = _extract.EXTRACT_PROVIDER_PRIORITY
 
 
+PROVIDER_DOCTOR_CATALOG = {
+    "serper": {"env_var": "SERPER_API_KEY", "search_capable": True, "extract_capable": False},
+    "serpbase": {"env_var": "SERPBASE_API_KEY", "search_capable": True, "extract_capable": False},
+    "brave": {"env_var": "BRAVE_API_KEY", "search_capable": True, "extract_capable": False},
+    "tavily": {"env_var": "TAVILY_API_KEY", "search_capable": True, "extract_capable": True},
+    "querit": {"env_var": "QUERIT_API_KEY", "search_capable": True, "extract_capable": False},
+    "linkup": {"env_var": "LINKUP_API_KEY", "search_capable": True, "extract_capable": True},
+    "exa": {"env_var": "EXA_API_KEY", "search_capable": True, "extract_capable": True},
+    "firecrawl": {"env_var": "FIRECRAWL_API_KEY", "search_capable": True, "extract_capable": True},
+    "parallel": {"env_var": "PARALLEL_API_KEY", "search_capable": True, "extract_capable": True},
+    "perplexity": {"env_var": "PERPLEXITY_API_KEY", "search_capable": True, "extract_capable": False},
+    "kilo-perplexity": {"env_var": "KILOCODE_API_KEY", "search_capable": True, "extract_capable": False},
+    "you": {"env_var": "YOU_API_KEY", "search_capable": True, "extract_capable": True},
+    "searxng": {"env_var": "SEARXNG_INSTANCE_URL", "search_capable": True, "extract_capable": False},
+}
+
+
 def extract_plus(*args, **kwargs):
     _sync_extract_dependencies()
     return _extract.extract_plus(*args, **kwargs)
 
+
+def _build_doctor_report(config: Dict[str, Any], *, live: bool = False) -> Dict[str, Any]:
+    auto_config = config.get("auto_routing", {})
+    disabled = set(auto_config.get("disabled_providers", []) or [])
+    providers = []
+    for provider, spec in PROVIDER_DOCTOR_CATALOG.items():
+        in_cooldown, remaining = provider_in_cooldown(provider)
+        providers.append({
+            "provider": provider,
+            "env_var": spec["env_var"],
+            "search_capable": spec["search_capable"],
+            "extract_capable": spec["extract_capable"],
+            "key_present": bool(get_api_key(provider, config)),
+            "auto_allowed": _provider_auto_allowed(provider, auto_config),
+            "disabled": provider in disabled,
+            "cooldown": {"active": bool(in_cooldown), "remaining_seconds": int(remaining)},
+        })
+
+    usable = [p for p in providers if p["key_present"] and not p["disabled"]]
+    return {
+        "ok": bool(usable),
+        "mode": "live" if live else "offline",
+        "config": {
+            "auto_routing_enabled": auto_config.get("enabled", True),
+            "default_provider": config.get("default_provider"),
+            "fallback_provider": auto_config.get("fallback_provider"),
+            "disabled_providers": sorted(disabled),
+        },
+        "cache": {
+            "dir": str(CACHE_DIR),
+            "exists": CACHE_DIR.exists(),
+            "writable": os.access(CACHE_DIR if CACHE_DIR.exists() else CACHE_DIR.parent, os.W_OK),
+            "provider_health_file": str(CACHE_DIR / "provider_health.json"),
+        },
+        "providers": providers,
+    }
+
+
+def _format_doctor_text(report: Dict[str, Any]) -> str:
+    lines = ["Web Search Plus Doctor", f"Mode: {report['mode']}", f"OK: {report['ok']}", "", "Providers:"]
+    for provider in report["providers"]:
+        capabilities = []
+        if provider["search_capable"]:
+            capabilities.append("search")
+        if provider["extract_capable"]:
+            capabilities.append("extract")
+        cooldown = provider["cooldown"]
+        cooldown_text = f"cooldown {cooldown['remaining_seconds']}s" if cooldown["active"] else "no cooldown"
+        lines.append(
+            f"- {provider['provider']}: env={provider['env_var']} "
+            f"key={'yes' if provider['key_present'] else 'no'} "
+            f"capabilities={','.join(capabilities)} "
+            f"auto_allowed={'yes' if provider['auto_allowed'] else 'no'} "
+            f"disabled={'yes' if provider['disabled'] else 'no'} "
+            f"{cooldown_text}"
+        )
+    lines.extend(["", f"Cache: {report['cache']['dir']} (writable={report['cache']['writable']})"])
+    return "\n".join(lines)
+
+
 def main():
     config = load_config()
-    
+
     parser = argparse.ArgumentParser(
         description="Web Search Plus — Intelligent multi-provider search with smart auto-routing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -469,6 +547,16 @@ Full docs: See README.md and SKILL.md
         """,
     )
     
+    # Command arguments
+    parser.add_argument(
+        "command",
+        nargs="?",
+        choices=["doctor"],
+        help="Run a maintenance command such as 'doctor'",
+    )
+    parser.add_argument("--json", action="store_true", help="Emit JSON for maintenance commands")
+    parser.add_argument("--live", action="store_true", help="Allow doctor to run live provider smokes (reserved; offline by default)")
+
     # Common arguments
     parser.add_argument(
         "--provider", "-p", 
@@ -735,6 +823,15 @@ Full docs: See README.md and SKILL.md
     )
     
     args = parser.parse_args()
+
+    if args.command == "doctor":
+        report = _build_doctor_report(config, live=args.live)
+        if args.json or args.compact:
+            indent = None if args.compact else 2
+            print(json.dumps(report, indent=indent, ensure_ascii=False))
+        else:
+            print(_format_doctor_text(report))
+        return
     
     # Handle cache management commands first (before query validation)
     if args.clear_cache:
