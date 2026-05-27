@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -148,3 +150,55 @@ def test_doctor_reports_cooldown_errors_without_crashing(monkeypatch, tmp_path, 
     assert providers["serper"]["cooldown"] == {"active": False, "remaining_seconds": 0}
     assert providers["serper"]["error"]["type"] == "cooldown"
     assert "not-int" not in stdout
+
+
+def test_doctor_plain_text_sanitizes_provider_config_errors(monkeypatch, tmp_path, capsys):
+    _clear_provider_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"version": 1, "searxng": {"instance_url": "http://127.0.0.1:8888"}}))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
+    monkeypatch.delenv("SEARXNG_ALLOW_PRIVATE", raising=False)
+    monkeypatch.setattr(search, "provider_in_cooldown", lambda _provider: (False, 0))
+    monkeypatch.setattr(sys, "argv", ["search.py", "doctor"])
+
+    search.main()
+
+    stdout = capsys.readouterr().out
+    assert "Web Search Plus Doctor" in stdout
+    assert "searxng" in stdout
+    assert "127.0.0.1" not in stdout
+    assert "Provider configuration is invalid" not in stdout
+
+
+def test_doctor_cli_handles_real_corrupt_provider_health_file(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"version": 1}))
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    (cache_dir / "provider_health.json").write_text(json.dumps({"serper": {"cooldown_until": "not-int"}}))
+    env = os.environ.copy()
+    for name in PROVIDER_ENV_VARS:
+        env.pop(name, None)
+    env.update({
+        "WEB_SEARCH_PLUS_CONFIG": str(config_path),
+        "WSP_CACHE_DIR": str(cache_dir),
+        "SERPER_API_KEY": "very-sensitive-serper-secret",
+    })
+
+    result = subprocess.run(
+        [sys.executable, str(SEARCH_PATH), "doctor", "--json", "--compact"],
+        cwd=SEARCH_PATH.parent,
+        env=env,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    stdout = result.stdout
+    data = json.loads(stdout)
+    providers = {provider["provider"]: provider for provider in data["providers"]}
+    assert providers["serper"]["key_present"] is True
+    assert providers["serper"]["cooldown"] == {"active": False, "remaining_seconds": 0}
+    assert providers["serper"]["error"]["type"] == "cooldown"
+    assert "not-int" not in stdout
+    assert "very-sensitive" not in stdout
