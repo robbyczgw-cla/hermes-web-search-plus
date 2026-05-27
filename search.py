@@ -453,26 +453,65 @@ def extract_plus(*args, **kwargs):
     return _extract.extract_plus(*args, **kwargs)
 
 
+def _doctor_error(error_type: str, message: str) -> Dict[str, str]:
+    """Return a deliberately sanitized doctor error.
+
+    Doctor output is often pasted into issues/support chats. Keep it useful without
+    echoing private URLs, filesystem paths, tokens, or corrupt raw cache values.
+    """
+    safe_messages = {
+        "config": "Provider configuration is invalid; inspect local config/env for this provider.",
+        "cooldown": "Provider health cache has an invalid cooldown entry; reset provider health cache if it persists.",
+    }
+    return {"type": error_type, "message": safe_messages.get(error_type, "Provider diagnostic failed.")}
+
+
+def _doctor_provider_has_error_type(provider_report: Dict[str, Any], error_type: str) -> bool:
+    error = provider_report.get("error")
+    if isinstance(error, dict):
+        return error.get("type") == error_type
+    if isinstance(error, list):
+        return any(isinstance(item, dict) and item.get("type") == error_type for item in error)
+    return False
+
+
 def _build_doctor_report(config: Dict[str, Any], *, live: bool = False) -> Dict[str, Any]:
     auto_config = config.get("auto_routing", {})
     disabled = set(auto_config.get("disabled_providers", []) or [])
     providers = []
     for provider, spec in PROVIDER_DOCTOR_CATALOG.items():
-        in_cooldown, remaining = provider_in_cooldown(provider)
-        providers.append({
+        errors = []
+        try:
+            in_cooldown, remaining = provider_in_cooldown(provider)
+            cooldown = {"active": bool(in_cooldown), "remaining_seconds": int(remaining)}
+        except (TypeError, ValueError):
+            cooldown = {"active": False, "remaining_seconds": 0}
+            errors.append(_doctor_error("cooldown", "invalid provider health cache value"))
+
+        try:
+            key_present = bool(get_api_key(provider, config))
+        except (ProviderConfigError, ValueError):
+            key_present = False
+            errors.append(_doctor_error("config", "invalid provider configuration"))
+
+        provider_report = {
             "provider": provider,
             "env_var": spec["env_var"],
             "search_capable": spec["search_capable"],
             "extract_capable": spec["extract_capable"],
-            "key_present": bool(get_api_key(provider, config)),
+            "key_present": key_present,
             "auto_allowed": _provider_auto_allowed(provider, auto_config),
             "disabled": provider in disabled,
-            "cooldown": {"active": bool(in_cooldown), "remaining_seconds": int(remaining)},
-        })
+            "cooldown": cooldown,
+        }
+        if errors:
+            provider_report["error"] = errors[0] if len(errors) == 1 else errors
+        providers.append(provider_report)
 
     usable = [p for p in providers if p["key_present"] and not p["disabled"]]
+    config_errors = [p for p in providers if _doctor_provider_has_error_type(p, "config")]
     return {
-        "ok": bool(usable),
+        "ok": bool(usable) and not config_errors,
         "mode": "live" if live else "offline",
         "config": {
             "auto_routing_enabled": auto_config.get("enabled", True),

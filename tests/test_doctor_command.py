@@ -102,3 +102,49 @@ def test_doctor_plain_text_is_human_readable(monkeypatch, tmp_path, capsys):
     assert "serper" in stdout
     assert "SERPER_API_KEY" in stdout
     assert "very-sensitive" not in stdout
+
+
+def test_doctor_reports_provider_config_errors_without_crashing(monkeypatch, tmp_path, capsys):
+    _clear_provider_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"version": 1, "searxng": {"instance_url": "http://127.0.0.1:8888"}}))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
+    monkeypatch.delenv("SEARXNG_ALLOW_PRIVATE", raising=False)
+    monkeypatch.setattr(search, "provider_in_cooldown", lambda _provider: (False, 0))
+    monkeypatch.setattr(sys, "argv", ["search.py", "doctor", "--json"])
+
+    search.main()
+
+    data = json.loads(capsys.readouterr().out)
+    providers = {provider["provider"]: provider for provider in data["providers"]}
+    assert data["ok"] is False
+    assert providers["searxng"]["key_present"] is False
+    assert providers["searxng"]["error"]["type"] == "config"
+    assert "127.0.0.1" not in providers["searxng"]["error"]["message"]
+
+
+def test_doctor_reports_cooldown_errors_without_crashing(monkeypatch, tmp_path, capsys):
+    _clear_provider_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"version": 1}))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
+    monkeypatch.setenv("SERPER_API_KEY", "very-sensitive-serper-secret")
+
+    def broken_cooldown(provider):
+        if provider == "serper":
+            raise ValueError("invalid literal for int() with base 10: 'not-int'")
+        return False, 0
+
+    monkeypatch.setattr(search, "provider_in_cooldown", broken_cooldown)
+    monkeypatch.setattr(sys, "argv", ["search.py", "doctor", "--json"])
+
+    search.main()
+
+    stdout = capsys.readouterr().out
+    data = json.loads(stdout)
+    providers = {provider["provider"]: provider for provider in data["providers"]}
+    assert data["ok"] is True
+    assert providers["serper"]["key_present"] is True
+    assert providers["serper"]["cooldown"] == {"active": False, "remaining_seconds": 0}
+    assert providers["serper"]["error"]["type"] == "cooldown"
+    assert "not-int" not in stdout
