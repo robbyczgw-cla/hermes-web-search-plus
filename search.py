@@ -110,6 +110,36 @@ def _load_env_file():
 
 ROUTING_POLICY = "routing-v2"
 
+COMPATIBILITY_SHIM_DEPRECATION = {
+    "public_surface": [
+        "QueryAnalyzer",
+        "auto_route_provider",
+        "search_provider",
+        "extract_url_content",
+        "get_cached_result",
+        "cache_search_result",
+        "clear_cache",
+        "get_cache_stats",
+    ],
+    "internal_shims": [
+        "_sync_routing_dependencies",
+        "_sync_provider_dependencies",
+        "_sync_extract_dependencies",
+        "provider function wrappers",
+    ],
+    "removal_target": "after ProviderSpec registry stabilization and one documented minor release window",
+    "tracking_issue": "#34",
+    "policy": "Keep search.py imports working while tests/users migrate to module-level seams; do not remove wrappers in feature PRs.",
+}
+
+
+def get_compatibility_shim_policy() -> Dict[str, Any]:
+    """Return the documented compatibility-shim policy for tests and release notes."""
+    return {
+        key: value.copy() if isinstance(value, list) else value
+        for key, value in COMPATIBILITY_SHIM_DEPRECATION.items()
+    }
+
 
 def _sync_routing_dependencies() -> None:
     """Keep moved routing implementation compatible with search.py monkeypatches.
