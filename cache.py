@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -41,6 +42,23 @@ def _get_cache_path(cache_key: str) -> Path:
 def _ensure_cache_dir() -> None:
     """Create cache directory if it doesn't exist."""
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
+    """Write JSON through a temp file and atomic replace to avoid torn cache reads."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
 
 
 def cache_get(query: str, provider: str, max_results: int, ttl: int = DEFAULT_CACHE_TTL, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
@@ -104,8 +122,7 @@ def cache_put(query: str, provider: str, max_results: int, result: Dict[str, Any
     cached_result["_cache_params"] = params or {}
 
     try:
-        with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump(cached_result, f, ensure_ascii=False, indent=2)
+        _atomic_write_json(cache_path, cached_result)
     except IOError as e:
         # Non-fatal: log to stderr but don't fail
         print(json.dumps({"cache_write_error": str(e)}), file=sys.stderr)
