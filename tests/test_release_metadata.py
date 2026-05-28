@@ -28,3 +28,7 @@ def test_release_version_surfaces_are_in_sync():
     assert f'version: "{EXPECTED_VERSION}"' in plugin_yaml
     assert f"Version: {EXPECTED_VERSION}" in search_py
     assert re.search(rf"^## \[v{re.escape(EXPECTED_VERSION)}\] — \d{{4}}-\d{{2}}-\d{{2}}$", changelog, re.M)
+
+
+def test_runtime_requirements_stay_stdlib_only():
+    assert (ROOT / "requirements.txt").read_text().strip() == ""
