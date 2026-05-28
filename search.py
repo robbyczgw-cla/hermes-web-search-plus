@@ -68,6 +68,7 @@ from provider_health import (  # noqa: F401 - re-exported for backward-compatibl
 from quality import (  # noqa: F401 - re-exported for backward-compatible tests/imports
     _choose_tie_winner,
     _domain_matches_rule,
+    build_authority_signals,
     build_quality_report,
     deduplicate_results_across_providers,
     rerank_results_for_intent,

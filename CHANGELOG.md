@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### 🔧 Improved
+- Quality reports now expose transparent authority signals for canonical-source routing classes, including canonical domain hits, demoted domain hits, and whether the top result is a primary source.
+
 ## [v2.2.1] — 2026-05-25
 
 ### 🔧 Changed

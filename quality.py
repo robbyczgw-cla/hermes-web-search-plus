@@ -154,6 +154,28 @@ def rerank_results_for_intent(
     }
 
 
+def build_authority_signals(routing_class: str, results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Summarize primary-source authority signals for quality reports."""
+    rules = CANONICAL_DOMAIN_RULES.get(routing_class, {})
+    domains = [_result_domain(item.get("url", "")) for item in results if item.get("url")]
+    boosted_domains = []
+    demoted_domains = []
+    for domain in domains:
+        if any(_domain_matches_rule(domain, rule) for rule in rules.get("boost", [])):
+            boosted_domains.append(domain)
+        if any(_domain_matches_rule(domain, rule) for rule in rules.get("demote", [])):
+            demoted_domains.append(domain)
+
+    return {
+        "routing_class": routing_class,
+        "rules_applied": bool(rules),
+        "top_domain": domains[0] if domains else None,
+        "canonical_domain_hits": sorted(set(boosted_domains)),
+        "demoted_domain_hits": sorted(set(demoted_domains)),
+        "canonical_top_result": bool(domains and domains[0] in boosted_domains),
+    }
+
+
 def _snippet_text(item: Dict[str, Any]) -> str:
     return " ".join(
         str(item.get(k) or "")
@@ -210,12 +232,15 @@ def build_quality_report(
             "error": err.get("error"),
         })
 
+    routing_class = routing_info.get("analysis_summary", {}).get("routing_class")
+    authority_signals = build_authority_signals(routing_class, results) if routing_class else None
+
     return {
         "query": query,
         "selected_provider": routing_info.get("provider") or result.get("provider"),
         "routing_reason": routing_info.get("reason"),
         "routing_policy": routing_info.get("routing_policy", ROUTING_POLICY),
-        "routing_class": routing_info.get("analysis_summary", {}).get("routing_class"),
+        "routing_class": routing_class,
         "language_hint": routing_info.get("analysis_summary", {}).get("language_hint"),
 
         "confidence": confidence_level,
@@ -232,6 +257,7 @@ def build_quality_report(
         "extract_recommended": bool(extract_reasons),
         "extract_reasons": extract_reasons,
         "scores": routing_info.get("scores", {}),
+        "authority_signals": authority_signals,
     }
 
 

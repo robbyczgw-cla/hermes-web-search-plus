@@ -188,7 +188,7 @@ Parameters:
 | `time_range` | string | — | `day`, `week`, `month`, `year` |
 | `include_domains` | string[] | — | Restrict search to domains |
 | `exclude_domains` | string[] | — | Exclude domains |
-| `quality_report` | boolean | `false` | Include routing diagnostics, provider scores, result counts, and extraction recommendation |
+| `quality_report` | boolean | `false` | Include routing diagnostics, provider scores, result counts, authority signals, and extraction recommendation |
 | `mode` | string | `"normal"` | `normal` or opt-in `research` |
 | `research_time_budget` | number | `55.0` | Best-effort seconds budget for research mode |
 

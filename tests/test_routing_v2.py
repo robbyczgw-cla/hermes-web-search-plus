@@ -131,6 +131,34 @@ def test_result_reranker_promotes_policy_authority_over_mirrors():
     assert reranked[0]["url"].startswith("https://nvlpubs.nist.gov/")
 
 
+def test_quality_report_exposes_authority_signals_for_canonical_classes():
+    report = search.build_quality_report(
+        query="NIST AI RMF official PDF",
+        result={
+            "results": [
+                {"title": "NIST AI RMF", "url": "https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf"},
+                {"title": "AI RMF mirror", "url": "https://researchgate.net/publication/ai-rmf"},
+            ],
+            "metadata": {"dedup_count": 0},
+        },
+        routing_info={
+            "provider": "linkup",
+            "confidence_level": "high",
+            "analysis_summary": {"routing_class": "policy_pdf", "language_hint": "en"},
+        },
+        providers_considered=["linkup"],
+        eligible_providers=["linkup"],
+        cooldown_skips=[],
+        errors=[],
+    )
+
+    signals = report["authority_signals"]
+    assert signals["rules_applied"] is True
+    assert signals["canonical_top_result"] is True
+    assert "nvlpubs.nist.gov" in signals["canonical_domain_hits"]
+    assert "researchgate.net" in signals["demoted_domain_hits"]
+
+
 def test_domain_rule_does_not_substring_match_middle_of_domain():
     assert search._domain_matches_rule("docs.python.org", "docs.") is True
     assert search._domain_matches_rule("notdocs.com", "docs.") is False
