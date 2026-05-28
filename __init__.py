@@ -973,6 +973,8 @@ def _run_search(
         cmd += ["--exclude-domains"] + exclude_domains
     if mode != "normal":
         cmd += ["--mode", mode, "--research-time-budget", str(research_time_budget)]
+        if mode == "research":
+            subprocess_timeout = max(subprocess_timeout, int(research_time_budget) + 15)
     if quality_report:
         cmd.append("--quality-report")
     if language and language != "auto":

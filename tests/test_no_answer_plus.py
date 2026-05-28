@@ -39,3 +39,25 @@ def test_setup_guidance_does_not_advertise_answer_layer(monkeypatch):
     assert "web_answer_plus" not in guidance
     assert "cited answers" not in guidance.lower()
     assert "answer=" not in guidance
+
+
+def test_research_mode_subprocess_timeout_exceeds_requested_budget(monkeypatch):
+    seen = {}
+
+    def fake_run(cmd, capture_output, text, timeout, env):
+        seen["cmd"] = cmd
+        seen["timeout"] = timeout
+
+        class Result:
+            returncode = 0
+            stdout = '{"results": []}'
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(wsp.subprocess, "run", fake_run)
+
+    wsp._run_search("deep query", mode="research", research_time_budget=120)
+
+    assert "--research-time-budget" in seen["cmd"]
+    assert seen["timeout"] > 120
