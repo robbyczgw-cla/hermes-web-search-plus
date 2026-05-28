@@ -50,6 +50,7 @@ from cache import (
 from config import (  # noqa: F401 - re-exported for backward-compatible tests/imports
     DEFAULT_CONFIG,
     ProviderConfigError,
+    _clean_env_value,
     _deepcopy_default_config,
     _validate_runtime_config,
     _validate_searxng_url,
@@ -102,8 +103,8 @@ def _load_env_file():
                         line = line[7:]
                     key, _, value = line.partition("=")
                     key = key.strip()
-                    value = value.strip().strip('"').strip("'")
-                    if key and key not in os.environ:
+                    value = _clean_env_value(value)
+                    if key and value and key not in os.environ:
                         os.environ[key] = value
 
 
