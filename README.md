@@ -293,6 +293,12 @@ python3 search.py --query "Hermes Agent latest release" --provider auto --qualit
 python3 search.py --query "Hermes Agent latest release" --provider brave --max-results 2 --compact
 ```
 
+Golden snapshot quality checks are offline/replayable and safe for CI. They assert source-quality expectations such as canonical-domain presence, blocked mirror domains, duplicate counts, and extracted-content substance without making live provider calls:
+
+```bash
+python3 scripts/golden_eval.py --snapshot-fixtures tests/fixtures/golden_snapshots.json --out /tmp/golden-quality.jsonl
+```
+
 ---
 
 ## Project layout

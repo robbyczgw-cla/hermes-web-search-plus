@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### 🧪 Tests
+- Added offline golden snapshot quality checks for canonical source presence, blocked mirror domains, duplicate counts, and extracted-content substance without live provider calls.
+
 ## [v2.2.1] — 2026-05-25
 
 ### 🔧 Changed
