@@ -21,166 +21,22 @@ import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
+from provider_registry import (
+    DEFAULT_AUTO_ALLOW,
+    DEFAULT_PROVIDER_PRIORITY,
+    EXTRACT_PROVIDER_ENV_KEYS,
+    PROVIDER_ENV_KEYS,
+    PROVIDER_SPECS,
+    plugin_catalog,
+)
+
 _SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 _TOOLSET_NAME = "web-search-plus"
-_PROVIDER_ENV_KEYS = [
-    "SERPER_API_KEY",
-    "SERPBASE_API_KEY",
-    "BRAVE_API_KEY",
-    "TAVILY_API_KEY",
-    "EXA_API_KEY",
-    "QUERIT_API_KEY",
-    "LINKUP_API_KEY",
-    "FIRECRAWL_API_KEY",
-    "PERPLEXITY_API_KEY",
-    "KILOCODE_API_KEY",
-    "YOU_API_KEY",
-    "PARALLEL_API_KEY",
-    "SEARXNG_INSTANCE_URL",
-]
-_EXTRACT_PROVIDER_ENV_KEYS = [
-    "FIRECRAWL_API_KEY",
-    "LINKUP_API_KEY",
-    "TAVILY_API_KEY",
-    "EXA_API_KEY",
-    "YOU_API_KEY",
-    "PARALLEL_API_KEY",
-]
+_PROVIDER_ENV_KEYS = list(PROVIDER_ENV_KEYS)
+_EXTRACT_PROVIDER_ENV_KEYS = list(EXTRACT_PROVIDER_ENV_KEYS)
 
 logger = logging.getLogger(__name__)
-_PROVIDER_CATALOG = [
-    {
-        "provider": "tavily",
-        "env": "TAVILY_API_KEY",
-        "display_name": "Tavily",
-        "description": "Research/tutorial provider in the Routing v2 default pool.",
-        "free_tier": "1,000 free searches/month",
-        "signup_url": "https://tavily.com",
-        "capabilities": ["search", "extract", "research"],
-        "recommended": True,
-    },
-    {
-        "provider": "linkup",
-        "env": "LINKUP_API_KEY",
-        "display_name": "Linkup",
-        "description": "Best starter for cheap clean extraction and citation-grounded retrieval.",
-        "free_tier": "€5 free monthly credits (~5,000 standard extracts)",
-        "signup_url": "https://www.linkup.so",
-        "capabilities": ["search", "extract", "citations"],
-        "recommended": True,
-    },
-    {
-        "provider": "brave",
-        "env": "BRAVE_API_KEY",
-        "display_name": "Brave Search",
-        "description": "Independent general web index; explicit/guarded by default after Routing v2 reliability testing.",
-        "free_tier": "$5 free monthly credits",
-        "signup_url": "https://api.search.brave.com/app/keys",
-        "capabilities": ["search", "news", "local"],
-        "recommended": False,
-    },
-    {
-        "provider": "exa",
-        "env": "EXA_API_KEY",
-        "display_name": "Exa",
-        "description": "Semantic discovery, alternatives, docs, academic and long-form discovery.",
-        "free_tier": "1,000 free searches/month",
-        "signup_url": "https://dashboard.exa.ai/api-keys",
-        "capabilities": ["search", "extract", "semantic"],
-        "recommended": False,
-    },
-    {
-        "provider": "firecrawl",
-        "env": "FIRECRAWL_API_KEY",
-        "display_name": "Firecrawl",
-        "description": "Robust scraping/extraction fallback, especially for JS-heavy pages.",
-        "free_tier": "500 one-time credits",
-        "signup_url": "https://www.firecrawl.dev/app/api-keys",
-        "capabilities": ["search", "extract", "js"],
-        "recommended": False,
-    },
-    {
-        "provider": "serper",
-        "env": "SERPER_API_KEY",
-        "display_name": "Serper",
-        "description": "Google-like SERP results for facts, shopping, local and news queries.",
-        "free_tier": "2,500 one-time credits",
-        "signup_url": "https://serper.dev/api-key",
-        "capabilities": ["search", "news", "shopping", "local"],
-        "recommended": False,
-    },
-    {
-        "provider": "serpbase",
-        "env": "SERPBASE_API_KEY",
-        "display_name": "SerpBase",
-        "description": "Cheap Google-like SERP fallback; WSP exposes search only, explicit/fallback-only by default.",
-        "free_tier": "100 free searches, paid packs available",
-        "signup_url": "https://www.serpbase.dev",
-        "capabilities": ["search"],
-        "upstream_capabilities": ["images", "news", "videos", "maps_search", "maps_detail"],
-        "recommended": False,
-    },
-    {
-        "provider": "querit",
-        "env": "QUERIT_API_KEY",
-        "display_name": "Querit",
-        "description": "Multilingual and real-time search candidate.",
-        "free_tier": "1,000 free searches/month",
-        "signup_url": "https://querit.com",
-        "capabilities": ["search", "multilingual"],
-        "recommended": False,
-    },
-    {
-        "provider": "parallel",
-        "env": "PARALLEL_API_KEY",
-        "display_name": "Parallel",
-        "description": "LLM-ready web search and fast URL extraction with long source excerpts.",
-        "free_tier": "API key required",
-        "signup_url": "https://platform.parallel.ai",
-        "capabilities": ["search", "extract", "citations"],
-        "recommended": False,
-    },
-    {
-        "provider": "perplexity",
-        "env": "PERPLEXITY_API_KEY",
-        "display_name": "Perplexity",
-        "description": "Direct answer-style search when configured directly.",
-        "free_tier": "API key required",
-        "signup_url": "https://www.perplexity.ai/settings/api",
-        "capabilities": ["search", "answer"],
-        "recommended": False,
-    },
-    {
-        "provider": "kilo-perplexity",
-        "env": "KILOCODE_API_KEY",
-        "display_name": "Kilo Code Perplexity bridge",
-        "description": "Perplexity-compatible access through Kilo Code when configured.",
-        "free_tier": "Depends on Kilo account",
-        "signup_url": "https://kilo.ai",
-        "capabilities": ["search", "answer"],
-        "recommended": False,
-    },
-    {
-        "provider": "you",
-        "env": "YOU_API_KEY",
-        "display_name": "You.com",
-        "description": "Fast Routing v2 core provider for current, multilingual, and LLM-ready search.",
-        "free_tier": "Limited/API key required",
-        "signup_url": "https://api.you.com",
-        "capabilities": ["search", "extract"],
-        "recommended": True,
-    },
-    {
-        "provider": "searxng",
-        "env": "SEARXNG_INSTANCE_URL",
-        "display_name": "SearXNG",
-        "description": "Self-hosted/privacy-preserving metasearch instance URL.",
-        "free_tier": "Free if self-hosted",
-        "signup_url": "https://docs.searxng.org/admin/installation.html",
-        "capabilities": ["search", "self-hosted"],
-        "recommended": False,
-    },
-]
+_PROVIDER_CATALOG = plugin_catalog()
 
 
 def _load_plugin_env() -> None:
@@ -272,10 +128,10 @@ def _get_hermes_env_path() -> Path:
 
 
 
-_SETUP_PROVIDER_NAMES = {item["provider"] for item in _PROVIDER_CATALOG}
-_DEFAULT_PROVIDER_PRIORITY = ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"]
-_DEFAULT_AUTO_ALLOW = {"serpbase": False, "querit": False, "brave": False, "parallel": False, "kilo-perplexity": False, "perplexity": False}
-_ROUTING_PROVIDER_NAMES = set(_DEFAULT_PROVIDER_PRIORITY)
+_SETUP_PROVIDER_NAMES = set(PROVIDER_SPECS)
+_DEFAULT_PROVIDER_PRIORITY = list(DEFAULT_PROVIDER_PRIORITY)
+_DEFAULT_AUTO_ALLOW = dict(DEFAULT_AUTO_ALLOW)
+_ROUTING_PROVIDER_NAMES = set(PROVIDER_SPECS)
 
 
 def _get_plugin_config_path() -> Path:

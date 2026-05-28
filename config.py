@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS
+
 
 class ProviderConfigError(Exception):
     """Raised when a provider is missing or has an invalid API key/config."""
@@ -47,16 +49,9 @@ DEFAULT_CONFIG = {
         "fallback_provider": "serper",
         # Low-trust / experimental providers can stay configured for explicit use
         # without being selected automatically.
-        "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"],
+        "provider_priority": list(DEFAULT_PROVIDER_PRIORITY),
         "disabled_providers": [],
-        "auto_allow": {
-            "serpbase": False,
-            "querit": False,
-            "brave": False,
-            "kilo-perplexity": False,
-            "perplexity": False,
-            "parallel": False,
-        },
+        "auto_allow": dict(DEFAULT_AUTO_ALLOW),
         "confidence_threshold": 0.3,  # Below this, note low confidence
     },
     "serper": {
@@ -137,7 +132,7 @@ def _deepcopy_default_config() -> Dict[str, Any]:
     return json.loads(json.dumps(DEFAULT_CONFIG))
 
 
-_ROUTING_PROVIDER_NAMES = {"tavily", "linkup", "querit", "exa", "firecrawl", "parallel", "perplexity", "kilo-perplexity", "brave", "serper", "serpbase", "you", "searxng"}
+_ROUTING_PROVIDER_NAMES = set(PROVIDER_SPECS)
 
 
 def _normalize_routing_provider_config(provider: str) -> str:
@@ -294,23 +289,8 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
                 return key
 
     # Then check environment
-    if provider == "perplexity":
-        return os.environ.get("PERPLEXITY_API_KEY")
-    if provider == "kilo-perplexity":
-        return os.environ.get("KILOCODE_API_KEY")
-    key_map = {
-        "serper": "SERPER_API_KEY",
-        "serpbase": "SERPBASE_API_KEY",
-        "brave": "BRAVE_API_KEY",
-        "tavily": "TAVILY_API_KEY",
-        "querit": "QUERIT_API_KEY",
-        "linkup": "LINKUP_API_KEY",
-        "exa": "EXA_API_KEY",
-        "you": "YOU_API_KEY",
-        "parallel": "PARALLEL_API_KEY",
-        "firecrawl": "FIRECRAWL_API_KEY",
-    }
-    return os.environ.get(key_map.get(provider, ""))
+    spec = PROVIDER_SPECS.get(provider)
+    return os.environ.get(spec.env_var if spec else "")
 
 
 def _validate_searxng_url(url: str) -> str:
@@ -421,41 +401,14 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
         return key
 
     if not key:
-        env_var = {
-            "serper": "SERPER_API_KEY",
-            "serpbase": "SERPBASE_API_KEY",
-            "brave": "BRAVE_API_KEY",
-            "tavily": "TAVILY_API_KEY",
-            "querit": "QUERIT_API_KEY",
-            "linkup": "LINKUP_API_KEY",
-            "exa": "EXA_API_KEY",
-            "you": "YOU_API_KEY",
-            "parallel": "PARALLEL_API_KEY",
-            "perplexity": "PERPLEXITY_API_KEY",
-            "kilo-perplexity": "KILOCODE_API_KEY",
-            "firecrawl": "FIRECRAWL_API_KEY"
-        }[provider]
-
-        urls = {
-            "serper": "https://serper.dev",
-            "serpbase": "https://www.serpbase.dev",
-            "brave": "https://brave.com/search/api/",
-            "tavily": "https://tavily.com",
-            "querit": "https://querit.ai",
-            "linkup": "https://app.linkup.so",
-            "exa": "https://exa.ai",
-            "you": "https://api.you.com",
-            "parallel": "https://platform.parallel.ai",
-            "perplexity": "https://www.perplexity.ai/settings/api",
-            "kilo-perplexity": "https://api.kilo.ai",
-            "firecrawl": "https://www.firecrawl.dev/app/api-keys"
-        }
+        spec = PROVIDER_SPECS[provider]
+        env_var = spec.env_var
 
         error_msg = {
             "error": f"Missing API key for {provider}",
             "env_var": env_var,
             "how_to_fix": [
-                f"1. Get your API key from {urls[provider]}",
+                f"1. Get your API key from {spec.signup_url}",
                 f"2. Add to config.json: \"{provider}\": {{\"api_key\": \"your-key\"}}",
                 f"3. Or set environment variable: export {env_var}=\"your-key\"",
             ],

@@ -4,6 +4,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from config import DEFAULT_CONFIG, get_api_key
+from provider_registry import DEFAULT_PROVIDER_PRIORITY
 from quality import _choose_tie_winner
 
 
@@ -928,7 +929,7 @@ class QueryAnalyzer:
         max_score = max(available.values())
 
         # Handle ties using deterministic per-query distribution
-        priority = self.auto_config.get("provider_priority", ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"])
+        priority = self.auto_config.get("provider_priority", list(DEFAULT_PROVIDER_PRIORITY))
         winners = [p for p, s in available.items() if s == max_score]
 
         if len(winners) > 1:

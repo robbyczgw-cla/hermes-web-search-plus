@@ -17,9 +17,10 @@ from providers import (
     extract_tavily,
     extract_you,
 )
+from provider_registry import EXTRACT_PROVIDER_IDS
 
 
-EXTRACT_PROVIDER_PRIORITY = ["tavily", "exa", "linkup", "parallel", "firecrawl", "you"]
+EXTRACT_PROVIDER_PRIORITY = list(EXTRACT_PROVIDER_IDS)
 
 
 def extract_plus(

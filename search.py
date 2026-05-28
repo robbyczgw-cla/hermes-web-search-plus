@@ -73,6 +73,7 @@ from quality import (  # noqa: F401 - re-exported for backward-compatible tests/
     rerank_results_for_intent,
     select_research_providers,
 )
+from provider_registry import SEARCH_PROVIDER_IDS, doctor_catalog
 from research import run_research_mode
 import providers as _providers
 import routing as _routing
@@ -431,21 +432,7 @@ def _sync_extract_dependencies() -> None:
 EXTRACT_PROVIDER_PRIORITY = _extract.EXTRACT_PROVIDER_PRIORITY
 
 
-PROVIDER_DOCTOR_CATALOG = {
-    "serper": {"env_var": "SERPER_API_KEY", "search_capable": True, "extract_capable": False},
-    "serpbase": {"env_var": "SERPBASE_API_KEY", "search_capable": True, "extract_capable": False},
-    "brave": {"env_var": "BRAVE_API_KEY", "search_capable": True, "extract_capable": False},
-    "tavily": {"env_var": "TAVILY_API_KEY", "search_capable": True, "extract_capable": True},
-    "querit": {"env_var": "QUERIT_API_KEY", "search_capable": True, "extract_capable": False},
-    "linkup": {"env_var": "LINKUP_API_KEY", "search_capable": True, "extract_capable": True},
-    "exa": {"env_var": "EXA_API_KEY", "search_capable": True, "extract_capable": True},
-    "firecrawl": {"env_var": "FIRECRAWL_API_KEY", "search_capable": True, "extract_capable": True},
-    "parallel": {"env_var": "PARALLEL_API_KEY", "search_capable": True, "extract_capable": True},
-    "perplexity": {"env_var": "PERPLEXITY_API_KEY", "search_capable": True, "extract_capable": False},
-    "kilo-perplexity": {"env_var": "KILOCODE_API_KEY", "search_capable": True, "extract_capable": False},
-    "you": {"env_var": "YOU_API_KEY", "search_capable": True, "extract_capable": True},
-    "searxng": {"env_var": "SEARXNG_INSTANCE_URL", "search_capable": True, "extract_capable": False},
-}
+PROVIDER_DOCTOR_CATALOG = doctor_catalog()
 
 
 def extract_plus(*args, **kwargs):
@@ -551,6 +538,18 @@ def _format_doctor_text(report: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def build_parser_for_tests() -> argparse.ArgumentParser:
+    """Return a minimal parser exposing registry-backed provider choices for drift tests."""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument(
+        "--provider",
+        "-p",
+        choices=[*SEARCH_PROVIDER_IDS, "auto"],
+        help="Search provider (auto=intelligent routing)",
+    )
+    return parser
+
+
 def main():
     config = load_config()
 
@@ -599,7 +598,7 @@ Full docs: See README.md and SKILL.md
     # Common arguments
     parser.add_argument(
         "--provider", "-p", 
-        choices=["serper", "serpbase", "brave", "tavily", "linkup", "querit", "exa", "firecrawl", "parallel", "perplexity", "kilo-perplexity", "you", "searxng", "auto"],
+        choices=[*SEARCH_PROVIDER_IDS, "auto"],
         help="Search provider (auto=intelligent routing)"
     )
     parser.add_argument(
@@ -944,7 +943,7 @@ Full docs: See README.md and SKILL.md
     
     # Build provider fallback list
     auto_config = config.get("auto_routing", {})
-    provider_priority = auto_config.get("provider_priority", ["tavily", "linkup", "parallel", "exa", "firecrawl", "perplexity", "kilo-perplexity", "brave", "serper", "you", "searxng", "serpbase", "querit"])
+    provider_priority = auto_config.get("provider_priority", list(SEARCH_PROVIDER_IDS))
     disabled_providers = auto_config.get("disabled_providers", [])
 
     # Start with the selected provider, then try others in priority order.
