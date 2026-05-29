@@ -1,6 +1,6 @@
 # Changelog
 
-## [v2.3.0] — 2026-05-29
+## [Unreleased]
 
 ### ✨ Added
 - Added an opt-in **fusion** search mode (`mode="fusion"`) that queries 2-3 auto-allowed providers in parallel and merges their ranked results with Reciprocal Rank Fusion (RRF). Fusion rewards cross-provider agreement for better coverage and diversity than single-provider routing, while staying far cheaper and faster than research mode because it skips extraction.
