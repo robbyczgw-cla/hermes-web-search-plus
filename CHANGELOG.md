@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+### 📚 Docs
+- Documented the `search.py` compatibility-shim policy and removal path for the monolith-to-module split.
+
 ## [v2.2.1] — 2026-05-25
 
 ### 🔧 Changed

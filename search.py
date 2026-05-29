@@ -110,11 +110,41 @@ def _load_env_file():
 
 ROUTING_POLICY = "routing-v2"
 
+COMPATIBILITY_SHIM_DEPRECATION = {
+    "public_surface": [
+        "QueryAnalyzer",
+        "auto_route_provider",
+        "search_provider",
+        "extract_plus",
+        "get_cached_result",
+        "cache_search_result",
+        "clear_cache",
+        "get_cache_stats",
+    ],
+    "internal_shims": [
+        "_sync_routing_dependencies",
+        "_sync_provider_dependencies",
+        "_sync_extract_dependencies",
+        "provider function wrappers",
+    ],
+    "removal_target": "after ProviderSpec registry stabilization and one documented minor release window",
+    "tracking_issue": "#34",
+    "policy": "Keep search.py imports working while tests/users migrate to module-level seams; do not remove wrappers in feature PRs.",
+}
+
+
+def get_compatibility_shim_policy() -> Dict[str, Any]:
+    """Return the documented compatibility-shim policy for tests and release notes."""
+    return {
+        key: value.copy() if isinstance(value, list) else value
+        for key, value in COMPATIBILITY_SHIM_DEPRECATION.items()
+    }
+
 
 def _sync_routing_dependencies() -> None:
     """Keep moved routing implementation compatible with search.py monkeypatches.
 
-    TODO(v2.3): collapse once routing tests inject dependencies at routing.py.
+    Removal target: after ProviderSpec registry stabilization and one documented minor release window.
     """
     _routing.get_api_key = get_api_key
 
@@ -250,8 +280,7 @@ def _provider_auto_allowed(*args, **kwargs):
 def _sync_provider_dependencies() -> None:
     """Keep moved provider implementations compatible with search.py monkeypatches.
 
-    TODO(v2.3): remove these transitional shims after tests and callers patch
-    provider-module dependencies directly instead of search.py module globals.
+    Removal target: after ProviderSpec registry stabilization and one documented minor release window.
     """
     _providers.make_request = make_request
     _providers.make_get_request = make_get_request
@@ -413,7 +442,7 @@ def search_searxng(*args, **kwargs):
 def _sync_extract_dependencies() -> None:
     """Keep moved extract orchestrator compatible with search.py monkeypatches.
 
-    TODO(v2.3): remove once extract tests patch extract.py/provider modules directly.
+    Removal target: after ProviderSpec registry stabilization and one documented minor release window.
     """
     _extract.get_api_key = get_api_key
     _extract.load_config = load_config
