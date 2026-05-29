@@ -115,7 +115,7 @@ COMPATIBILITY_SHIM_DEPRECATION = {
         "QueryAnalyzer",
         "auto_route_provider",
         "search_provider",
-        "extract_url_content",
+        "extract_plus",
         "get_cached_result",
         "cache_search_result",
         "clear_cache",
@@ -144,7 +144,7 @@ def get_compatibility_shim_policy() -> Dict[str, Any]:
 def _sync_routing_dependencies() -> None:
     """Keep moved routing implementation compatible with search.py monkeypatches.
 
-    TODO(v2.3): collapse once routing tests inject dependencies at routing.py.
+    Removal target: after ProviderSpec registry stabilization and one documented minor release window.
     """
     _routing.get_api_key = get_api_key
 
@@ -280,8 +280,7 @@ def _provider_auto_allowed(*args, **kwargs):
 def _sync_provider_dependencies() -> None:
     """Keep moved provider implementations compatible with search.py monkeypatches.
 
-    TODO(v2.3): remove these transitional shims after tests and callers patch
-    provider-module dependencies directly instead of search.py module globals.
+    Removal target: after ProviderSpec registry stabilization and one documented minor release window.
     """
     _providers.make_request = make_request
     _providers.make_get_request = make_get_request
@@ -443,7 +442,7 @@ def search_searxng(*args, **kwargs):
 def _sync_extract_dependencies() -> None:
     """Keep moved extract orchestrator compatible with search.py monkeypatches.
 
-    TODO(v2.3): remove once extract tests patch extract.py/provider modules directly.
+    Removal target: after ProviderSpec registry stabilization and one documented minor release window.
     """
     _extract.get_api_key = get_api_key
     _extract.load_config = load_config

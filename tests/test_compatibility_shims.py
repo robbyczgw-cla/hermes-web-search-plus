@@ -14,8 +14,11 @@ def test_compatibility_shim_policy_documents_public_surface_and_removal_path():
 
     assert policy["tracking_issue"] == "#34"
     assert "ProviderSpec registry" in policy["removal_target"]
+    assert "one documented minor release window" in policy["removal_target"]
+    assert "v2.3" not in policy["removal_target"]
     assert "QueryAnalyzer" in policy["public_surface"]
-    assert "extract_url_content" in policy["public_surface"]
+    assert "extract_plus" in policy["public_surface"]
+    assert "extract_url_content" not in policy["public_surface"]
     assert "_sync_provider_dependencies" in policy["internal_shims"]
     assert "do not remove wrappers" in policy["policy"]
 
