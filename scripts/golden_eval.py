@@ -87,6 +87,31 @@ def _safe_domain(url: str) -> str:
         return ""
 
 
+def _normalized_result_url(url: str) -> str:
+    try:
+        parsed = urlparse(url or "")
+        netloc = parsed.netloc.lower()
+        if netloc.startswith("www."):
+            netloc = netloc[4:]
+        return f"{netloc}{parsed.path.rstrip('/')}"
+    except Exception:
+        return ""
+
+
+def _duplicate_url_count(results: List[Dict[str, Any]]) -> int:
+    seen = set()
+    duplicates = 0
+    for item in results:
+        normalized = _normalized_result_url(item.get("url", ""))
+        if not normalized:
+            continue
+        if normalized in seen:
+            duplicates += 1
+            continue
+        seen.add(normalized)
+    return duplicates
+
+
 def _json_from_stdout(stdout: str) -> Dict[str, Any]:
     try:
         parsed = json.loads(stdout or "{}")
@@ -116,8 +141,11 @@ def evaluate_snapshot_quality(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     domain_set = set(d for d in domains if d)
     top_domain = domains[0] if domains else ""
     combined_text = "\n".join(_result_text(item) for item in results)
-    content_chars = sum(len(str(item.get("content") or item.get("raw_content") or "")) for item in results)
-    duplicate_count = int((payload.get("quality_report") or {}).get("duplicate_count", payload.get("metadata", {}).get("dedup_count", 0)) or 0)
+    source_summaries = payload.get("source_summaries") or []
+    content_items = list(results) + list(source_summaries)
+    content_chars = sum(len(str(item.get("content") or item.get("raw_content") or "")) for item in content_items)
+    reported_duplicate_count = int((payload.get("quality_report") or {}).get("duplicate_count", payload.get("metadata", {}).get("dedup_count", 0)) or 0)
+    duplicate_count = max(reported_duplicate_count, _duplicate_url_count(results))
 
     failure_flags: List[str] = []
     min_results = expect.get("min_results")
