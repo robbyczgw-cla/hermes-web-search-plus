@@ -57,6 +57,64 @@ def deduplicate_results_across_providers(results_by_provider: List[Tuple[str, Di
                 return deduped, dedup_count
     return deduped, dedup_count
 
+
+def reciprocal_rank_fusion(
+    results_by_provider: List[Tuple[str, Dict[str, Any]]],
+    max_results: int,
+    k: int = 60,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """Merge ranked provider result lists with Reciprocal Rank Fusion (RRF).
+
+    Each result contributes ``1 / (k + rank)`` to its URL's score, summed across
+    providers. A URL that several providers rank highly therefore outranks any single
+    provider's lucky top hit, and we never have to trust absolute provider scores —
+    which live on wildly different scales between providers. ``k`` damps the weight of
+    deep ranks; 60 is the standard RRF constant.
+
+    Returns ``(fused_results, metadata)``. Each fused result keeps the richest snippet
+    seen for that URL and gains ``fusion_score`` plus a ``found_by`` provider list.
+    Results without a usable URL are skipped because they cannot be matched across
+    providers.
+    """
+    fused: Dict[str, Dict[str, Any]] = {}
+    for provider_name, data in results_by_provider:
+        for rank, item in enumerate(data.get("results", []) or []):
+            norm = normalize_result_url(item.get("url", ""))
+            if not norm:
+                continue
+            candidate = item.copy()
+            candidate.setdefault("provider", provider_name)
+            entry = fused.get(norm)
+            if entry is None:
+                entry = {"item": candidate, "score": 0.0, "found_by": [], "best_snippet_len": -1}
+                fused[norm] = entry
+            entry["score"] += 1.0 / (k + rank + 1)
+            if provider_name not in entry["found_by"]:
+                entry["found_by"].append(provider_name)
+            snippet_len = len(_snippet_text(item))
+            if snippet_len > entry["best_snippet_len"]:
+                entry["best_snippet_len"] = snippet_len
+                entry["item"] = candidate
+
+    ranked = sorted(fused.values(), key=lambda e: (-e["score"], -len(e["found_by"])))
+    results: List[Dict[str, Any]] = []
+    overlap_count = 0
+    for entry in ranked[:max_results]:
+        item = entry["item"].copy()
+        item["fusion_score"] = round(entry["score"], 6)
+        item["found_by"] = list(entry["found_by"])
+        if len(entry["found_by"]) > 1:
+            overlap_count += 1
+        results.append(item)
+    metadata = {
+        "fusion_method": "rrf",
+        "fusion_k": k,
+        "unique_results": len(fused),
+        "overlap_count": overlap_count,
+    }
+    return results, metadata
+
+
 def _choose_tie_winner(query: str, winners: List[str], priority: List[str]) -> str:
     """Break score ties deterministically per query.
 
@@ -245,6 +303,27 @@ def select_research_providers(
     preferred = [primary_provider, "linkup", "tavily", "exa", "firecrawl", "brave", "serper", "you", "querit"]
     ordered: List[str] = []
     for provider in preferred + provider_priority:
+        if provider and provider in available_providers and provider not in ordered:
+            ordered.append(provider)
+        if len(ordered) >= max_providers:
+            break
+    return ordered
+
+
+def select_fusion_providers(
+    primary_provider: str,
+    provider_priority: List[str],
+    available_providers: set,
+    max_providers: int = 3,
+) -> List[str]:
+    """Pick a compact provider set for fusion mode.
+
+    The router's chosen provider goes first (it best matches query intent), then we
+    fill from routing priority. Unlike research mode we do not bias toward
+    extraction-capable providers — fusion only needs ranked result lists to merge.
+    """
+    ordered: List[str] = []
+    for provider in [primary_provider] + list(provider_priority):
         if provider and provider in available_providers and provider not in ordered:
             ordered.append(provider)
         if len(ordered) >= max_providers:

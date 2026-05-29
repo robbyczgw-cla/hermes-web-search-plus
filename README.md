@@ -170,6 +170,9 @@ web_search_plus(query="Singapore CPI latest", provider="you")
 web_search_plus(query="alternatives to Notion", provider="exa")
 # → semantic discovery
 
+web_search_plus(query="state of the art retrieval augmented generation 2026", mode="fusion")
+# → query 2-3 providers in parallel, merge with Reciprocal Rank Fusion; cheap+fast, better coverage
+
 web_search_plus(query="compare recent reviews of turntables under 1000", mode="research", research_time_budget=45)
 # → opt-in multi-provider research; keeps partial results if extraction hits errors/budget
 
@@ -189,7 +192,7 @@ Parameters:
 | `include_domains` | string[] | — | Restrict search to domains |
 | `exclude_domains` | string[] | — | Exclude domains |
 | `quality_report` | boolean | `false` | Include routing diagnostics, provider scores, result counts, and extraction recommendation |
-| `mode` | string | `"normal"` | `normal` or opt-in `research` |
+| `mode` | string | `"normal"` | `normal` (single routed provider), opt-in `fusion` (parallel multi-provider RRF merge, no extraction), or opt-in `research` (multi-provider + extraction) |
 | `research_time_budget` | number | `55.0` | Best-effort seconds budget for research mode |
 
 ### `web_extract_plus`

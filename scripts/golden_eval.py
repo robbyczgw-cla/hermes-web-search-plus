@@ -246,7 +246,7 @@ def write_markdown_report(rows: List[Dict[str, Any]], path: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run web-search-plus golden query evaluation")
     parser.add_argument("--queries", type=Path, help="Optional JSON file with golden query cases")
-    parser.add_argument("--modes", nargs="+", default=["normal", "research"], choices=["normal", "research"])
+    parser.add_argument("--modes", nargs="+", default=["normal", "research"], choices=["normal", "research", "fusion"])
     parser.add_argument("--max-results", type=int, default=4)
     parser.add_argument("--research-extract-count", type=int, default=2)
     parser.add_argument("--timeout", type=int, default=90)

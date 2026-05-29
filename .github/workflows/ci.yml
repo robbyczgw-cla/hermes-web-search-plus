@@ -33,6 +33,7 @@ jobs:
           provider_health.py
           quality.py
           research.py
+          fusion.py
           routing.py
           providers.py
           extract.py

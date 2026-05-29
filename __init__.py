@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v2.2.1
-Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
+web-search-plus — Hermes Plugin v2.3.0
+Multi-provider web search, URL extraction, quality reports, and opt-in research/fusion modes.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "2.2.1"
+__version__ = "2.3.0"
 
 import argparse
 import getpass
@@ -971,8 +971,10 @@ def _run_search(
         cmd += ["--include-domains"] + include_domains
     if exclude_domains:
         cmd += ["--exclude-domains"] + exclude_domains
-    if mode != "normal":
+    if mode == "research":
         cmd += ["--mode", mode, "--research-time-budget", str(research_time_budget)]
+    elif mode == "fusion":
+        cmd += ["--mode", mode, "--fusion-time-budget", str(research_time_budget)]
     if quality_report:
         cmd.append("--quality-report")
     if language and language != "auto":
@@ -1191,8 +1193,8 @@ def register(ctx: Any) -> None:
                 },
                 "mode": {
                     "type": "string",
-                    "enum": ["normal", "research"],
-                    "description": "normal = fast routed search; research = multi-provider search plus top-source extraction.",
+                    "enum": ["normal", "research", "fusion"],
+                    "description": "normal = fast single-provider routed search; fusion = query 2-3 providers in parallel and merge with Reciprocal Rank Fusion for better coverage/agreement (no extraction, cheap+fast); research = multi-provider search plus top-source extraction.",
                     "default": "normal",
                 },
                 "quality_report": {
@@ -1202,7 +1204,7 @@ def register(ctx: Any) -> None:
                 },
                 "research_time_budget": {
                     "type": "number",
-                    "description": "Best-effort wall-clock budget in seconds for research mode. Checked between provider calls and before extraction.",
+                    "description": "Best-effort wall-clock budget in seconds. In research mode it is checked between provider calls and before extraction; in fusion mode it caps how long parallel providers are awaited before slower ones are dropped from the merge.",
                     "default": 55.0,
                     "minimum": 1,
                     "maximum": 75,

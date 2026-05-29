@@ -1,5 +1,19 @@
 # Changelog
 
+## [v2.3.0] — 2026-05-29
+
+### ✨ Added
+- Added an opt-in **fusion** search mode (`mode="fusion"`) that queries 2-3 auto-allowed providers in parallel and merges their ranked results with Reciprocal Rank Fusion (RRF). Fusion rewards cross-provider agreement for better coverage and diversity than single-provider routing, while staying far cheaper and faster than research mode because it skips extraction.
+- Fused results expose `fusion_score` and a `found_by` provider list; response metadata reports `unique_results` and `overlap_count` (URLs surfaced by more than one provider).
+- Added a `fusion.py` orchestrator plus `reciprocal_rank_fusion`/`select_fusion_providers` helpers in `quality.py`.
+- Added CLI flags `--mode fusion`, `--fusion-providers`, `--fusion-max-providers`, `--fusion-k`, and `--fusion-time-budget`; `golden_eval.py --modes` can now evaluate fusion.
+
+### 🔧 Changed
+- Fusion is best-effort: providers that error or exceed the wall-clock budget are recorded under `provider_errors` and dropped from the merge, and whatever arrived in time is still fused and returned. The thread pool is shut down without waiting so a single straggler cannot delay the response beyond the budget.
+
+### 🧪 Tests
+- Added fusion coverage: RRF cross-provider ranking, URL normalization, richest-snippet retention, provider selection order, deterministic parallel fan-out (barrier-synchronized), partial results on provider error, and time-budget skips.
+
 ## [v2.2.1] — 2026-05-25
 
 ### 🔧 Changed

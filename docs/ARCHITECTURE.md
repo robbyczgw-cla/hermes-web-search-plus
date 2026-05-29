@@ -143,6 +143,7 @@ The plugin favors partial truth over fake certainty.
 - Cooldowns step through 1 minute, 5 minutes, 25 minutes, and 1 hour.
 - Cooldown state is local and stored in `provider_health.json` under the cache directory.
 - Research mode keeps partial provider results when later extraction or provider calls fail.
+- Fusion mode queries its providers in parallel and is best-effort: providers that error or exceed the wall-clock budget are recorded under `provider_errors` and dropped from the Reciprocal Rank Fusion merge, while results that arrived in time are still merged and returned. The thread pool is shut down without waiting so a single straggler cannot delay the response past the budget (each provider call is still bounded by its own HTTP timeout). Fusion does not write provider-health/cooldown state from its parallel workers.
 
 
 A provider outage should produce skipped-provider metadata or a structured error, not a confident hallucination.
@@ -166,6 +167,7 @@ The plugin has cost guards, not provider billing control.
 
 - `count` limits requested search result count.
 - Research mode has a best-effort `research_time_budget` checked between provider and extraction steps.
+- Fusion mode issues one search call per selected provider (default up to 3, `--fusion-max-providers`) and bounds the parallel wait with `--fusion-time-budget`. It adds provider calls but no extraction calls, so it costs more than a single routed search and far less than research mode.
 - Extraction provider order is bounded and explicit.
 - `disabled_providers`, `set-default`, and `auto_allow` let users control which providers can receive traffic.
 

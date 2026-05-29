@@ -191,6 +191,7 @@ Examples:
 web_search_plus(query="Graz weather today")
 web_search_plus(query="best bookshelf speakers under 1000 EUR", quality_report=True)
 web_search_plus(query="alternatives to Notion", provider="exa")
+web_search_plus(query="state of the art RAG 2026", mode="fusion")
 web_search_plus(query="turntable reviews under 1000", mode="research", research_time_budget=45)
 ```
 
@@ -201,6 +202,7 @@ Important parameters:
 - `time_range`: `day`, `week`, `month`, or `year` where supported.
 - `include_domains` / `exclude_domains`: provider-dependent domain filters.
 - `quality_report`: include routing diagnostics, skipped providers, result quality hints, and extraction recommendation.
+- `mode="fusion"`: query 2-3 auto-allowed providers in parallel and merge their ranked results with Reciprocal Rank Fusion. Cheaper and faster than research mode (no extraction), with better coverage and cross-provider agreement than a single routed provider. Fused results carry `fusion_score` and a `found_by` provider list; metadata reports `overlap_count`. Slower providers are dropped from the merge once the wall-clock budget is hit.
 - `mode="research"`: query multiple providers and optionally extract selected URLs within a best-effort wall-clock budget.
 
 ## Using `web_extract_plus`

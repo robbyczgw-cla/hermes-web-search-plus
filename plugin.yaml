@@ -1,6 +1,6 @@
 name: web-search-plus
-version: "2.2.1"
-description: "Multi-provider web search, URL extraction, quality reports, and opt-in research mode"
+version: "2.3.0"
+description: "Multi-provider web search, URL extraction, quality reports, and opt-in research/fusion modes"
 author: robbyczgw-cla
 requires_env: []
 optional_env:

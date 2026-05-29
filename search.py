@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 2.2.1
+Version: 2.3.0
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
 Brave Search, SerpBase, Querit, Parallel, Perplexity, Kilo Perplexity, SearXNG.
 Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com.
@@ -70,10 +70,13 @@ from quality import (  # noqa: F401 - re-exported for backward-compatible tests/
     _domain_matches_rule,
     build_quality_report,
     deduplicate_results_across_providers,
+    reciprocal_rank_fusion,
     rerank_results_for_intent,
+    select_fusion_providers,
     select_research_providers,
 )
 from research import run_research_mode
+from fusion import run_fusion_mode
 import providers as _providers
 import routing as _routing
 import extract as _extract
@@ -817,13 +820,36 @@ Full docs: See README.md and SKILL.md
     parser.add_argument(
         "--mode",
         default="normal",
-        choices=["normal", "research"],
-        help="Search mode: normal single-provider route or research multi-provider + extraction"
+        choices=["normal", "research", "fusion"],
+        help="Search mode: normal single-provider route, fusion multi-provider RRF merge, or research multi-provider + extraction"
     )
     parser.add_argument(
         "--research-providers",
         nargs="+",
         help="Explicit provider list for --mode research"
+    )
+    parser.add_argument(
+        "--fusion-providers",
+        nargs="+",
+        help="Explicit provider list for --mode fusion (default: router pick + routing priority)"
+    )
+    parser.add_argument(
+        "--fusion-max-providers",
+        type=int,
+        default=3,
+        help="Maximum providers to query in parallel for --mode fusion"
+    )
+    parser.add_argument(
+        "--fusion-k",
+        type=int,
+        default=60,
+        help="Reciprocal Rank Fusion damping constant for --mode fusion (standard: 60)"
+    )
+    parser.add_argument(
+        "--fusion-time-budget",
+        type=float,
+        default=25.0,
+        help="Best-effort wall-clock budget for --mode fusion; providers slower than this are dropped from the merge"
     )
     parser.add_argument(
         "--research-extract-count",
@@ -1226,6 +1252,66 @@ Full docs: See README.md and SKILL.md
             cooldown_skips=cooldown_skips,
             errors=result.get("routing", {}).get("provider_errors", []),
         )
+        indent = None if args.compact else 2
+        print(json.dumps(result, indent=indent, ensure_ascii=False))
+        return
+
+    if args.mode == "fusion":
+        if not args.query:
+            parser.error("--query is required for --mode fusion")
+        available_fusion_providers = {
+            p for p in providers_to_try
+            if p not in disabled_providers and _provider_auto_allowed(p, auto_config) and get_api_key(p, config) and not provider_in_cooldown(p)[0]
+        }
+        if provider and get_api_key(provider, config) and not provider_in_cooldown(provider)[0]:
+            available_fusion_providers.add(provider)
+        if args.fusion_providers:
+            fusion_providers = [
+                p for p in args.fusion_providers
+                if p not in disabled_providers and _provider_auto_allowed(p, auto_config) and get_api_key(p, config) and not provider_in_cooldown(p)[0]
+            ]
+        else:
+            fusion_providers = select_fusion_providers(
+                primary_provider=provider,
+                provider_priority=provider_priority,
+                available_providers=available_fusion_providers,
+                max_providers=max(1, args.fusion_max_providers),
+            )
+
+        if not fusion_providers:
+            error_result = {
+                "error": "No configured providers available for fusion mode",
+                "provider": provider,
+                "query": args.query,
+                "routing": routing_info,
+                "cooldown_skips": cooldown_skips,
+            }
+            print(json.dumps(error_result, indent=2), file=sys.stderr)
+            sys.exit(1)
+
+        result = run_fusion_mode(
+            query=args.query,
+            fusion_providers=fusion_providers,
+            execute_search=execute_with_retry,
+            max_results=args.max_results,
+            k=args.fusion_k,
+            time_budget_seconds=args.fusion_time_budget,
+        )
+        routing_info["mode"] = "fusion"
+        routing_info["provider"] = "fusion"
+        result["routing"].update(routing_info)
+        if cooldown_skips:
+            result["routing"]["cooldown_skips"] = cooldown_skips
+        if args.quality_report:
+            result["quality_report"] = build_quality_report(
+                query=args.query,
+                result=result,
+                routing_info=routing_info,
+                providers_considered=providers_considered,
+                eligible_providers=fusion_providers,
+                cooldown_skips=cooldown_skips,
+                errors=result.get("routing", {}).get("provider_errors", []),
+            )
         indent = None if args.compact else 2
         print(json.dumps(result, indent=indent, ensure_ascii=False))
         return
