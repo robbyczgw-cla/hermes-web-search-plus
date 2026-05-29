@@ -82,6 +82,29 @@ def test_provider_status_detects_capability_tiers_without_requiring_all(monkeypa
     assert status["providers"]["linkup"]["configured"] is False
 
 
+def test_provider_status_treats_template_placeholders_as_missing():
+    env = {"SERPER_API_KEY": "***", "LINKUP_API_KEY": "'*****'", "TAVILY_API_KEY": "tvly-test"}
+
+    status = wsp._provider_config_status(env=env)
+
+    assert status["configured"] is True
+    assert status["configured_count"] == 1
+    assert status["configured_search_count"] == 1
+    assert status["configured_extract_count"] == 1
+    assert status["providers"]["serper"]["configured"] is False
+    assert status["providers"]["linkup"]["configured"] is False
+    assert status["providers"]["tavily"]["configured"] is True
+
+
+def test_read_env_file_omits_template_placeholders(tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text("SERPER_API_KEY=***\nLINKUP_API_KEY=real-linkup-key\n")
+
+    values = wsp._read_env_file(env_path)
+
+    assert values == {"LINKUP_API_KEY": "real-linkup-key"}
+
+
 def test_provider_status_allows_search_only_with_extraction_hint():
     env = {"BRAVE_API_KEY": "brave-test"}
 

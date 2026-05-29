@@ -92,6 +92,63 @@ class GoldenEvalTests(unittest.TestCase):
             self.assertIn("normal", text)
             self.assertIn("research", text)
 
+    def test_snapshot_fixture_quality_checks_pass_and_fail_deterministically(self):
+        fixture_path = Path(__file__).parent / "fixtures" / "golden_snapshots.json"
+        snapshots = golden_eval.load_snapshot_fixtures(fixture_path)
+        rows = golden_eval.run_snapshot_quality(snapshots)
+
+        self.assertEqual(len(rows), 3)
+        self.assertTrue(all(row["status"] == "ok" for row in rows))
+        self.assertEqual(rows[0]["top_domain"], "github.com")
+
+        broken = snapshots[0].copy()
+        broken["payload"] = {"results": [{"url": "https://example-mirror.invalid/only"}]}
+        row = golden_eval.evaluate_snapshot_quality(broken)
+
+        self.assertEqual(row["status"], "fail")
+        self.assertIn("too_few_results", row["failure_flags"])
+        self.assertIn("missing_required_domain", row["failure_flags"])
+        self.assertIn("top_domain_not_canonical", row["failure_flags"])
+        self.assertIn("blocked_domain_present", row["failure_flags"])
+
+    def test_snapshot_quality_recomputes_duplicates_from_result_urls(self):
+        snapshot = {
+            "id": "dupes",
+            "category": "tech_release",
+            "query": "release notes",
+            "payload": {
+                "results": [
+                    {"url": "https://example.com/a"},
+                    {"url": "https://example.com/a/"},
+                    {"url": "https://example.com/b"},
+                ],
+                "quality_report": {"duplicate_count": 0},
+            },
+            "expect": {"max_duplicate_count": 0},
+        }
+
+        row = golden_eval.evaluate_snapshot_quality(snapshot)
+
+        self.assertEqual(row["duplicate_count"], 1)
+        self.assertIn("too_many_duplicates", row["failure_flags"])
+
+    def test_snapshot_quality_counts_research_source_summary_content(self):
+        snapshot = {
+            "id": "research-content",
+            "category": "research_policy",
+            "query": "EU AI Act",
+            "payload": {
+                "results": [{"url": "https://ec.europa.eu/a"}],
+                "source_summaries": [{"url": "https://ec.europa.eu/a", "content": "x" * 120}],
+            },
+            "expect": {"min_content_chars": 100},
+        }
+
+        row = golden_eval.evaluate_snapshot_quality(snapshot)
+
+        self.assertEqual(row["status"], "ok")
+        self.assertEqual(row["content_chars"], 120)
+
     def test_run_case_builds_expected_commands(self):
         calls = []
 

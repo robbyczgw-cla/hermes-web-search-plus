@@ -87,12 +87,126 @@ def _safe_domain(url: str) -> str:
         return ""
 
 
+def _normalized_result_url(url: str) -> str:
+    try:
+        parsed = urlparse(url or "")
+        netloc = parsed.netloc.lower()
+        if netloc.startswith("www."):
+            netloc = netloc[4:]
+        return f"{netloc}{parsed.path.rstrip('/')}"
+    except Exception:
+        return ""
+
+
+def _duplicate_url_count(results: List[Dict[str, Any]]) -> int:
+    seen = set()
+    duplicates = 0
+    for item in results:
+        normalized = _normalized_result_url(item.get("url", ""))
+        if not normalized:
+            continue
+        if normalized in seen:
+            duplicates += 1
+            continue
+        seen.add(normalized)
+    return duplicates
+
+
 def _json_from_stdout(stdout: str) -> Dict[str, Any]:
     try:
         parsed = json.loads(stdout or "{}")
         return parsed if isinstance(parsed, dict) else {"error": "stdout was not a JSON object", "results": []}
     except json.JSONDecodeError as e:
         return {"error": f"invalid JSON stdout: {e}", "results": []}
+
+
+def _result_text(item: Dict[str, Any]) -> str:
+    return " ".join(
+        str(item.get(key) or "")
+        for key in ("title", "snippet", "description", "content", "raw_content", "summary")
+    )
+
+
+def evaluate_snapshot_quality(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    """Evaluate an offline replay payload against deterministic quality expectations.
+
+    This is intentionally not a live benchmark: fixtures pin representative
+    provider outputs and assert source-quality properties that schema contract
+    tests cannot see, such as primary-domain presence and extraction substance.
+    """
+    payload = snapshot.get("payload") or {}
+    expect = snapshot.get("expect") or {}
+    results = payload.get("results") or []
+    domains = [_safe_domain(item.get("url", "")) for item in results if item.get("url")]
+    domain_set = set(d for d in domains if d)
+    top_domain = domains[0] if domains else ""
+    combined_text = "\n".join(_result_text(item) for item in results)
+    source_summaries = payload.get("source_summaries") or []
+    content_items = list(results) + list(source_summaries)
+    content_chars = sum(len(str(item.get("content") or item.get("raw_content") or "")) for item in content_items)
+    reported_duplicate_count = int((payload.get("quality_report") or {}).get("duplicate_count", payload.get("metadata", {}).get("dedup_count", 0)) or 0)
+    duplicate_count = max(reported_duplicate_count, _duplicate_url_count(results))
+
+    failure_flags: List[str] = []
+    min_results = expect.get("min_results")
+    if min_results is not None and len(results) < int(min_results):
+        failure_flags.append("too_few_results")
+    min_domain_count = expect.get("min_domain_count")
+    if min_domain_count is not None and len(domain_set) < int(min_domain_count):
+        failure_flags.append("low_domain_count")
+    min_content_chars = expect.get("min_content_chars")
+    if min_content_chars is not None and content_chars < int(min_content_chars):
+        failure_flags.append("thin_extracted_content")
+
+    required_domains = set(expect.get("must_include_domains") or [])
+    missing_domains = sorted(required_domains - domain_set)
+    if missing_domains:
+        failure_flags.append("missing_required_domain")
+
+    top_domain_any_of = set(expect.get("top_domain_any_of") or [])
+    if top_domain_any_of and top_domain not in top_domain_any_of:
+        failure_flags.append("top_domain_not_canonical")
+
+    blocked_domains = set(expect.get("blocked_domains") or [])
+    blocked_hits = sorted(blocked_domains & domain_set)
+    if blocked_hits and expect.get("allow_blocked_domains") is not True:
+        failure_flags.append("blocked_domain_present")
+
+    missing_terms = [term for term in expect.get("required_terms") or [] if term.lower() not in combined_text.lower()]
+    if missing_terms:
+        failure_flags.append("missing_required_terms")
+
+    max_duplicate_count = expect.get("max_duplicate_count")
+    if max_duplicate_count is not None and duplicate_count > int(max_duplicate_count):
+        failure_flags.append("too_many_duplicates")
+
+    return {
+        "id": snapshot["id"],
+        "category": snapshot.get("category"),
+        "query": snapshot.get("query"),
+        "status": "ok" if not failure_flags else "fail",
+        "failure_flags": failure_flags,
+        "result_count": len(results),
+        "domain_count": len(domain_set),
+        "domains": sorted(domain_set),
+        "top_domain": top_domain,
+        "missing_domains": missing_domains,
+        "blocked_domain_hits": blocked_hits,
+        "missing_terms": missing_terms,
+        "content_chars": content_chars,
+        "duplicate_count": duplicate_count,
+    }
+
+
+def load_snapshot_fixtures(path: Path) -> List[Dict[str, Any]]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list):
+        raise ValueError("Golden snapshot fixture must contain a JSON list")
+    return data
+
+
+def run_snapshot_quality(snapshots: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [evaluate_snapshot_quality(snapshot) for snapshot in snapshots]
 
 
 def summarize_result(
@@ -253,9 +367,27 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=Path("eval/golden-results.jsonl"))
     parser.add_argument("--report", type=Path, default=Path("eval/golden-report.md"))
     parser.add_argument("--limit", type=int, help="Limit number of cases for smoke runs")
+    parser.add_argument(
+        "--snapshot-fixtures",
+        type=Path,
+        help="Validate offline replay fixtures instead of making live provider calls",
+    )
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
+    if args.snapshot_fixtures:
+        fixture_path = args.snapshot_fixtures if args.snapshot_fixtures.is_absolute() else repo_root / args.snapshot_fixtures
+        rows = run_snapshot_quality(load_snapshot_fixtures(fixture_path))
+        write_jsonl(rows, repo_root / args.out if not args.out.is_absolute() else args.out)
+        failed = [row for row in rows if row.get("status") != "ok"]
+        print(json.dumps({
+            "snapshots": len(rows),
+            "out": str(args.out),
+            "failed": len(failed),
+            "failure_flags": {row["id"]: row.get("failure_flags") for row in failed},
+        }, indent=2, sort_keys=True))
+        return 1 if failed else 0
+
     script_path = repo_root / "search.py"
     cases = load_golden_queries(args.queries)
     if args.limit:

@@ -48,6 +48,14 @@ _EXTRACT_PROVIDER_ENV_KEYS = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_env_value(value: str) -> Optional[str]:
+    """Return a real env value, or None for empty/template placeholders."""
+    stripped = (value or "").strip().strip('"').strip("'")
+    return None if not stripped or set(stripped) == {"*"} else stripped
+
+
 _PROVIDER_CATALOG = [
     {
         "provider": "tavily",
@@ -194,8 +202,8 @@ def _load_plugin_env() -> None:
             continue
         key, _, val = line.partition("=")
         key = key.strip()
-        val = val.strip()
-        if val and not val.startswith("***") and key not in os.environ:
+        val = _clean_env_value(val)
+        if val and key not in os.environ:
             os.environ[key] = val
 
 # Load plugin .env on import
@@ -217,7 +225,9 @@ def _read_env_file(path: Path) -> Dict[str, str]:
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
         key, _, value = stripped.partition("=")
-        values[key.strip()] = value.strip().strip('"').strip("'")
+        value = _clean_env_value(value)
+        if key.strip() and value:
+            values[key.strip()] = value
     return values
 
 
@@ -235,7 +245,7 @@ def _provider_config_status(env: Optional[Mapping[str, str]] = None) -> Dict[str
     configured_extract_count = 0
     for item in _PROVIDER_CATALOG:
         key = item["env"]
-        configured = bool((env.get(key) or "").strip())
+        configured = _clean_env_value(env.get(key) or "") is not None
         configured_count += int(configured)
         capabilities = item.get("capabilities", [])
         if configured and "search" in capabilities:
@@ -973,6 +983,8 @@ def _run_search(
         cmd += ["--exclude-domains"] + exclude_domains
     if mode != "normal":
         cmd += ["--mode", mode, "--research-time-budget", str(research_time_budget)]
+        if mode == "research":
+            subprocess_timeout = max(subprocess_timeout, int(research_time_budget) + 15)
     if quality_report:
         cmd.append("--quality-report")
     if language and language != "auto":

@@ -1,5 +1,7 @@
 """Configuration and credential helpers for Web Search Plus."""
 
+from __future__ import annotations
+
 import json
 import os
 import sys
@@ -11,6 +13,17 @@ from typing import Any, Dict, List, Optional
 class ProviderConfigError(Exception):
     """Raised when a provider is missing or has an invalid API key/config."""
     pass
+
+
+def _is_placeholder_env_value(value: str) -> bool:
+    """Return True for template placeholders that should not count as credentials."""
+    stripped = (value or "").strip().strip('"').strip("'")
+    return not stripped or set(stripped) == {"*"}
+
+
+def _clean_env_value(value: str) -> Optional[str]:
+    stripped = (value or "").strip().strip('"').strip("'")
+    return None if _is_placeholder_env_value(stripped) else stripped
 
 
 def _load_env_file():
@@ -31,8 +44,8 @@ def _load_env_file():
                         line = line[7:]
                     key, _, value = line.partition("=")
                     key = key.strip()
-                    value = value.strip().strip('"').strip("'")
-                    if key and key not in os.environ:
+                    value = _clean_env_value(value)
+                    if key and value and key not in os.environ:
                         os.environ[key] = value
 
 DEFAULT_CONFIG = {
@@ -290,14 +303,15 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
         provider_config = config.get(provider, {})
         if isinstance(provider_config, dict):
             key = provider_config.get("api_key") or provider_config.get("apiKey")
+            key = _clean_env_value(str(key)) if key is not None else None
             if key:
                 return key
 
     # Then check environment
     if provider == "perplexity":
-        return os.environ.get("PERPLEXITY_API_KEY")
+        return _clean_env_value(os.environ.get("PERPLEXITY_API_KEY", ""))
     if provider == "kilo-perplexity":
-        return os.environ.get("KILOCODE_API_KEY")
+        return _clean_env_value(os.environ.get("KILOCODE_API_KEY", ""))
     key_map = {
         "serper": "SERPER_API_KEY",
         "serpbase": "SERPBASE_API_KEY",
@@ -310,7 +324,7 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
         "parallel": "PARALLEL_API_KEY",
         "firecrawl": "FIRECRAWL_API_KEY",
     }
-    return os.environ.get(key_map.get(provider, ""))
+    return _clean_env_value(os.environ.get(key_map.get(provider, ""), ""))
 
 
 def _validate_searxng_url(url: str) -> str:
@@ -378,7 +392,7 @@ def get_searxng_instance_url(config: Dict[str, Any] = None) -> Optional[str]:
                 return _validate_searxng_url(url)
 
     # Then check environment
-    env_url = os.environ.get("SEARXNG_INSTANCE_URL")
+    env_url = _clean_env_value(os.environ.get("SEARXNG_INSTANCE_URL", ""))
     if env_url:
         return _validate_searxng_url(env_url)
     return None

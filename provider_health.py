@@ -1,6 +1,8 @@
 """Provider cooldown and retry helpers for Web Search Plus."""
 
 import json
+import os
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, Tuple
@@ -31,8 +33,22 @@ def _load_provider_health() -> Dict[str, Any]:
 
 def _save_provider_health(state: Dict[str, Any]) -> None:
     _ensure_parent(PROVIDER_HEALTH_FILE)
-    with open(PROVIDER_HEALTH_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=PROVIDER_HEALTH_FILE.name + ".",
+        suffix=".tmp",
+        dir=str(PROVIDER_HEALTH_FILE.parent),
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        os.replace(tmp_name, PROVIDER_HEALTH_FILE)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
 
 
 def provider_in_cooldown(provider: str) -> Tuple[bool, int]:

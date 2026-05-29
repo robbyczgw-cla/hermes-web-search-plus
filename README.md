@@ -63,7 +63,7 @@ Notes:
 
 - Plugin install clones into `~/.hermes/plugins/web-search-plus`.
 - Keys are written to the active Hermes environment file by the setup helper; they should never be committed to the repo.
-- Python 3.8+ is required. Normal Hermes plugin installation handles runtime dependencies; manual development can use `python3 -m pip install -r requirements.txt` inside the Hermes/plugin environment.
+- Python 3.8+ is required. Runtime code is stdlib-only; manual development can still run `python3 -m pip install -r requirements.txt` safely before installing dev tools like `pytest` and `ruff`.
 
 ---
 
@@ -131,7 +131,7 @@ Notes:
 - `set-default <provider>` disables auto-routing and makes `--provider auto` resolve to that provider.
 - `set-routing on` restores query-based routing while keeping the saved default for later.
 - `set-priority` accepts comma-separated provider names, normalizes case/whitespace, and ignores duplicates with a warning.
-- `set-auto-allow <provider> off` keeps a configured provider available for explicit calls while preventing auto-routing/fallback from selecting it. Brave, SerpBase, Querit, Perplexity, and Kilo Perplexity default to `off` here.
+- `set-auto-allow <provider> off` keeps a configured provider available for explicit calls while preventing auto-routing/fallback from selecting it. Brave, SerpBase, Querit, Parallel, Perplexity, and Kilo Perplexity default to `off` here.
 - `setup.py --config-path /path/to/config.json` points the helper at a custom config; `WEB_SEARCH_PLUS_CONFIG=/path/to/config.json` points `search.py` at the same file.
 - `config reset --yes` backs up the existing file before writing fresh defaults.
 
@@ -291,6 +291,12 @@ python3 setup.py list --json
 python3 setup.py status
 python3 search.py --query "Hermes Agent latest release" --provider auto --quality-report --compact
 python3 search.py --query "Hermes Agent latest release" --provider brave --max-results 2 --compact
+```
+
+Golden snapshot quality checks are offline/replayable and safe for CI. They assert source-quality expectations such as canonical-domain presence, blocked mirror domains, duplicate counts, and extracted-content substance without making live provider calls:
+
+```bash
+python3 scripts/golden_eval.py --snapshot-fixtures tests/fixtures/golden_snapshots.json --out /tmp/golden-quality.jsonl
 ```
 
 ---
