@@ -103,7 +103,7 @@ CANONICAL_DOMAIN_RULES: Dict[str, Dict[str, List[str]]] = {
         "demote": ["reddit.com", "fool.com", "seekingalpha.com", "youtube.com"],
     },
     "security_advisory": {
-        "boost": ["nvd.nist.gov", "cve.org", "github.com/advisories", "security.", "cert.europa.eu", "kb.cert.org"],
+        "boost": ["nvd.nist.gov", "cve.org", "github.com", "github.com/advisories", "security.", "cert.europa.eu", "kb.cert.org"],
         "demote": ["youtube.com", "medium.com", "reddit.com"],
     },
 }
@@ -111,6 +111,15 @@ CANONICAL_DOMAIN_RULES: Dict[str, Dict[str, List[str]]] = {
 
 def _domain_matches_rule(domain: str, rule: str) -> bool:
     return domain == rule or domain.endswith(f".{rule}") or domain.startswith(rule)
+
+
+def _url_matches_rule(url: str, rule: str) -> bool:
+    domain = _result_domain(url)
+    if "/" not in rule:
+        return _domain_matches_rule(domain, rule)
+    normalized = normalize_result_url(url)
+    normalized_rule = rule.lower().strip().rstrip("/")
+    return normalized == normalized_rule or normalized.startswith(f"{normalized_rule}/")
 
 
 def rerank_results_for_intent(
@@ -126,13 +135,14 @@ def rerank_results_for_intent(
     q = query.lower()
     scored: List[Tuple[float, int, Dict[str, Any]]] = []
     for idx, item in enumerate(results):
-        domain = _result_domain(item.get("url", ""))
+        url = item.get("url", "")
+        domain = _result_domain(url)
         title = (item.get("title") or "").lower()
         snippet = (item.get("snippet") or item.get("description") or "").lower()
         score = float(len(results) - idx) * 0.01
-        if any(_domain_matches_rule(domain, rule) for rule in rules.get("boost", [])):
+        if any(_url_matches_rule(url, rule) for rule in rules.get("boost", [])):
             score += 10.0
-        if any(_domain_matches_rule(domain, rule) for rule in rules.get("demote", [])):
+        if any(_url_matches_rule(url, rule) for rule in rules.get("demote", [])):
             score -= 6.0
         if routing_class == "official_vendor_release" and any(term in domain for term in ("mistral", "anthropic", "openai", "nvidia", "google", "meta")):
             score += 3.0
@@ -157,13 +167,18 @@ def rerank_results_for_intent(
 def build_authority_signals(routing_class: str, results: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Summarize primary-source authority signals for quality reports."""
     rules = CANONICAL_DOMAIN_RULES.get(routing_class, {})
-    domains = [_result_domain(item.get("url", "")) for item in results if item.get("url")]
+    urls = [item.get("url", "") for item in results if item.get("url")]
+    domains = [_result_domain(url) for url in urls]
     boosted_domains = []
     demoted_domains = []
-    for domain in domains:
-        if any(_domain_matches_rule(domain, rule) for rule in rules.get("boost", [])):
+    boosted_flags = []
+    for url, domain in zip(urls, domains):
+        boosted = any(_url_matches_rule(url, rule) for rule in rules.get("boost", []))
+        demoted = any(_url_matches_rule(url, rule) for rule in rules.get("demote", []))
+        boosted_flags.append(boosted)
+        if boosted:
             boosted_domains.append(domain)
-        if any(_domain_matches_rule(domain, rule) for rule in rules.get("demote", [])):
+        if demoted:
             demoted_domains.append(domain)
 
     return {
@@ -172,7 +187,7 @@ def build_authority_signals(routing_class: str, results: List[Dict[str, Any]]) -
         "top_domain": domains[0] if domains else None,
         "canonical_domain_hits": sorted(set(boosted_domains)),
         "demoted_domain_hits": sorted(set(demoted_domains)),
-        "canonical_top_result": bool(domains and domains[0] in boosted_domains),
+        "canonical_top_result": bool(boosted_flags and boosted_flags[0]),
     }
 
 
