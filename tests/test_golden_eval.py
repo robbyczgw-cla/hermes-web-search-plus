@@ -120,6 +120,35 @@ class GoldenEvalTests(unittest.TestCase):
         self.assertIn("--mode", calls[1])
         self.assertIn("research", calls[1])
 
+    def test_run_case_includes_mode_fusion(self):
+        calls = []
+
+        def fake_run(cmd, capture_output, text, timeout, env):
+            calls.append(cmd)
+            class Result:
+                returncode = 0
+                stdout = json.dumps({"provider": "fusion", "results": [{"url": "https://example.com"}], "quality_report": {}})
+                stderr = ""
+            return Result()
+
+        with mock.patch("scripts.golden_eval.subprocess.run", side_effect=fake_run):
+            golden_eval.run_case(
+                case={"id": "q1", "category": "hifi_product", "query": "turntables", "fusion_providers": ["you", "serper"]},
+                script_path=Path("search.py"),
+                modes=["fusion"],
+                max_results=3,
+                research_extract_count=1,
+                timeout_seconds=10,
+                env={},
+            )
+
+        # The fusion mode must actually pass --mode fusion, not silently run normal search.
+        self.assertIn("--mode", calls[0])
+        self.assertIn("fusion", calls[0])
+        self.assertIn("--fusion-providers", calls[0])
+        self.assertIn("you", calls[0])
+        self.assertIn("serper", calls[0])
+
 
 if __name__ == "__main__":
     unittest.main()

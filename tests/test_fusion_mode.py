@@ -1,7 +1,41 @@
+import contextlib
+import io
+import json
+import sys
 import threading
 import unittest
+from unittest import mock
 
 import search
+
+
+def _run_fusion_main(argv, route, provider_payloads):
+    """Drive search.main() through the fusion path with mocked providers/routing."""
+    captured = io.StringIO()
+    with mock.patch.object(search, "get_api_key", return_value="k"), \
+            mock.patch.object(search, "provider_in_cooldown", return_value=(False, 0)), \
+            mock.patch.object(search, "validate_api_key", return_value="k"), \
+            mock.patch.object(search, "auto_route_provider", return_value=route), \
+            mock.patch.object(search, "search_serper", side_effect=lambda **k: provider_payloads["serper"]), \
+            mock.patch.object(search, "search_you", side_effect=lambda **k: provider_payloads["you"]), \
+            mock.patch.object(sys, "argv", argv), \
+            contextlib.redirect_stdout(captured):
+        search.main()
+    return json.loads(captured.getvalue())
+
+
+def _route(provider, routing_class):
+    return {
+        "provider": provider,
+        "confidence": 0.8,
+        "confidence_level": "high",
+        "reason": "test",
+        "routing_policy": "routing-v2",
+        "top_signals": [],
+        "scores": {"serper": 5.0, "you": 4.0},
+        "auto_allow_excluded": [],
+        "analysis_summary": {"routing_class": routing_class, "language_hint": "en"},
+    }
 
 
 class ReciprocalRankFusionTests(unittest.TestCase):
@@ -183,6 +217,95 @@ class RunFusionModeTests(unittest.TestCase):
         self.assertEqual(result["results"], [])
         self.assertEqual(result["routing"]["providers_queried"], [])
         self.assertEqual(result["metadata"]["overlap_count"], 0)
+
+
+class ApplyDomainConstraintsTests(unittest.TestCase):
+    def test_site_operator_filters_off_domain_results(self):
+        results = [
+            {"url": "https://www.reddit.com/r/x/1"},
+            {"url": "https://dev.to/post"},
+            {"url": "https://old.reddit.com/r/x/2"},
+        ]
+        kept, dropped = search.apply_domain_constraints(results, "site:reddit.com best llm", None, None)
+        self.assertEqual(
+            [r["url"] for r in kept],
+            ["https://www.reddit.com/r/x/1", "https://old.reddit.com/r/x/2"],
+        )
+        self.assertEqual(dropped, 1)
+
+    def test_include_domains_filter(self):
+        results = [{"url": "https://arxiv.org/abs/1"}, {"url": "https://medium.com/p"}]
+        kept, dropped = search.apply_domain_constraints(results, "scaling laws", ["arxiv.org"], None)
+        self.assertEqual([r["url"] for r in kept], ["https://arxiv.org/abs/1"])
+        self.assertEqual(dropped, 1)
+
+    def test_exclude_domains_filter(self):
+        results = [{"url": "https://reddit.com/x"}, {"url": "https://docs.python.org/3"}]
+        kept, dropped = search.apply_domain_constraints(results, "asyncio taskgroup", None, ["reddit.com"])
+        self.assertEqual([r["url"] for r in kept], ["https://docs.python.org/3"])
+        self.assertEqual(dropped, 1)
+
+    def test_no_constraints_passthrough(self):
+        results = [{"url": "https://a.test/1"}, {"url": "https://b.test/2"}]
+        kept, dropped = search.apply_domain_constraints(results, "general query", None, None)
+        self.assertEqual(kept, results)
+        self.assertEqual(dropped, 0)
+
+
+class FusionMainPathTests(unittest.TestCase):
+    def test_site_query_drops_off_domain_results(self):
+        # Regression: fusion must not dilute a site: query with off-domain results
+        # just because one provider ignored the operator.
+        payloads = {
+            "serper": {"provider": "serper", "results": [
+                {"url": "https://www.reddit.com/r/LocalLLaMA/a", "title": "R1", "snippet": "x"},
+                {"url": "https://reddit.com/r/LocalLLaMA/b", "title": "R2", "snippet": "y"},
+            ]},
+            "you": {"provider": "you", "results": [
+                {"url": "https://dev.to/some-article", "title": "D", "snippet": "z"},
+                {"url": "https://reddit.com/r/LocalLLaMA/c", "title": "R3", "snippet": "w"},
+            ]},
+        }
+        out = _run_fusion_main(
+            ["search.py", "--query", "site:reddit.com best local llm server",
+             "--mode", "fusion", "--fusion-providers", "serper", "you",
+             "--max-results", "5", "--compact"],
+            route=_route("serper", "reddit_community"),
+            provider_payloads=payloads,
+        )
+
+        self.assertEqual(out["provider"], "fusion")
+        urls = [r["url"] for r in out["results"]]
+        self.assertTrue(urls, "expected reddit results to survive the filter")
+        self.assertTrue(all("reddit.com" in u for u in urls), urls)
+        self.assertFalse(any("dev.to" in u for u in urls), urls)
+        self.assertEqual(out["metadata"]["domain_filtered_count"], 1)
+
+    def test_authority_rerank_runs_in_fusion_path(self):
+        # Regression: fusion returned before normal search's authority rerank, letting
+        # aggregators outrank official sources on release/regulatory queries.
+        payloads = {
+            "serper": {"provider": "serper", "results": [
+                {"url": "https://medium.com/p", "title": "M", "snippet": "m"},
+                {"url": "https://www.anthropic.com/news/claude", "title": "A", "snippet": "a"},
+            ]},
+            "you": {"provider": "you", "results": [
+                {"url": "https://medium.com/p", "title": "M2", "snippet": "m2"},
+                {"url": "https://anthropic.com/news/claude", "title": "A2", "snippet": "a2"},
+            ]},
+        }
+        out = _run_fusion_main(
+            ["search.py", "--query", "official Anthropic Claude release notes",
+             "--mode", "fusion", "--fusion-providers", "serper", "you",
+             "--max-results", "5", "--compact"],
+            route=_route("you", "official_vendor_release"),
+            provider_payloads=payloads,
+        )
+
+        # Raw RRF would rank medium.com first (both providers list it at rank 0);
+        # the authority rerank must lift the official anthropic.com source above it.
+        self.assertIn("anthropic.com", out["results"][0]["url"])
+        self.assertTrue(out["metadata"]["intent_rerank"]["reranked"])
 
 
 if __name__ == "__main__":

@@ -179,6 +179,10 @@ def run_case(
             cmd += ["--mode", "research", "--research-extract-count", str(research_extract_count)]
             if case.get("research_providers"):
                 cmd += ["--research-providers", *case["research_providers"]]
+        elif mode == "fusion":
+            cmd += ["--mode", "fusion"]
+            if case.get("fusion_providers"):
+                cmd += ["--fusion-providers", *case["fusion_providers"]]
         start = time.perf_counter()
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds, env=env)

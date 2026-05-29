@@ -5,14 +5,16 @@
 ### ✨ Added
 - Added an opt-in **fusion** search mode (`mode="fusion"`) that queries 2-3 auto-allowed providers in parallel and merges their ranked results with Reciprocal Rank Fusion (RRF). Fusion rewards cross-provider agreement for better coverage and diversity than single-provider routing, while staying far cheaper and faster than research mode because it skips extraction.
 - Fused results expose `fusion_score` and a `found_by` provider list; response metadata reports `unique_results` and `overlap_count` (URLs surfaced by more than one provider).
-- Added a `fusion.py` orchestrator plus `reciprocal_rank_fusion`/`select_fusion_providers` helpers in `quality.py`.
-- Added CLI flags `--mode fusion`, `--fusion-providers`, `--fusion-max-providers`, `--fusion-k`, and `--fusion-time-budget`; `golden_eval.py --modes` can now evaluate fusion.
+- Fusion preserves single-provider intent guarantees: explicit domain scope (`site:` operators plus `include_domains`/`exclude_domains`) is hard-enforced after merging so a provider that ignores the operator can't leak off-domain results, and the same authority/intent rerank normal search runs after fetch is applied to the fused results (so official/regulatory/release sources are not buried by aggregators). `metadata.domain_filtered_count` and `metadata.intent_rerank` report when these fire.
+- Added a `fusion.py` orchestrator plus `reciprocal_rank_fusion`/`select_fusion_providers`/`apply_domain_constraints` helpers in `quality.py`.
+- Added CLI flags `--mode fusion`, `--fusion-providers`, `--fusion-max-providers`, `--fusion-k`, and `--fusion-time-budget`; `golden_eval.py --modes fusion` now actually runs fusion (passes `--mode fusion`) instead of silently running normal search under a fusion label.
 
 ### 🔧 Changed
 - Fusion is best-effort: providers that error or exceed the wall-clock budget are recorded under `provider_errors` and dropped from the merge, and whatever arrived in time is still fused and returned. The thread pool is shut down without waiting so a single straggler cannot delay the response beyond the budget.
 
 ### 🧪 Tests
 - Added fusion coverage: RRF cross-provider ranking, URL normalization, richest-snippet retention, provider selection order, deterministic parallel fan-out (barrier-synchronized), partial results on provider error, and time-budget skips.
+- Added domain-constraint unit tests and end-to-end `main()` fusion tests proving `site:` queries drop off-domain results and the authority rerank lifts official sources over aggregators; added a golden-eval test asserting `--mode fusion` is passed through.
 
 ## [v2.2.1] — 2026-05-25
 

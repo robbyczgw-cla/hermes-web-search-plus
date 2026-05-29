@@ -68,6 +68,7 @@ from provider_health import (  # noqa: F401 - re-exported for backward-compatibl
 from quality import (  # noqa: F401 - re-exported for backward-compatible tests/imports
     _choose_tie_winner,
     _domain_matches_rule,
+    apply_domain_constraints,
     build_quality_report,
     deduplicate_results_across_providers,
     reciprocal_rank_fusion,
@@ -1297,6 +1298,25 @@ Full docs: See README.md and SKILL.md
             k=args.fusion_k,
             time_budget_seconds=args.fusion_time_budget,
         )
+
+        # Fusion must not weaken a single routed provider's intent guarantees:
+        # 1) honor explicit domain scope (site:/include_domains/exclude_domains) that
+        #    some providers ignore, so the merge can't leak off-domain results, and
+        # 2) apply the same authority/intent rerank normal search runs after fetch,
+        #    which the early-return fusion path would otherwise skip (letting
+        #    SEO/aggregator pages drift above official/regulatory/release sources).
+        if isinstance(result.get("results"), list):
+            constrained, dropped = apply_domain_constraints(
+                result["results"], args.query or "", args.include_domains, args.exclude_domains
+            )
+            if dropped:
+                result.setdefault("metadata", {})["domain_filtered_count"] = dropped
+            routing_class = routing_info.get("analysis_summary", {}).get("routing_class", "general")
+            reranked, rerank_metadata = rerank_results_for_intent(args.query or "", routing_class, constrained)
+            result["results"] = reranked
+            if rerank_metadata.get("reranked"):
+                result.setdefault("metadata", {})["intent_rerank"] = rerank_metadata
+
         routing_info["mode"] = "fusion"
         routing_info["provider"] = "fusion"
         result["routing"].update(routing_info)

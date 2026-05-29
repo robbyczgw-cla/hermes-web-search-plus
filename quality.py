@@ -2,7 +2,7 @@
 
 import hashlib
 import re
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 
@@ -137,6 +137,66 @@ def _result_domain(url: str) -> str:
         return netloc[4:] if netloc.startswith("www.") else netloc
     except Exception:
         return ""
+
+
+def _normalize_domain(domain: str) -> str:
+    domain = (domain or "").strip().strip('"').strip("'").lower()
+    return domain[4:] if domain.startswith("www.") else domain
+
+
+def _required_domains_from_query(query: str) -> set:
+    """Extract domains from explicit ``site:`` operators in a query."""
+    domains = set()
+    for token in re.findall(r"site:([^\s]+)", (query or "").lower()):
+        host = _normalize_domain(token.split("/")[0])
+        if host:
+            domains.add(host)
+    return domains
+
+
+def _domain_satisfies(url: str, domains: set) -> bool:
+    netloc = _result_domain(url)
+    if not netloc:
+        return False
+    return any(netloc == d or netloc.endswith(f".{d}") for d in domains)
+
+
+def apply_domain_constraints(
+    results: List[Dict[str, Any]],
+    query: str,
+    include_domains: Optional[List[str]] = None,
+    exclude_domains: Optional[List[str]] = None,
+) -> Tuple[List[Dict[str, Any]], int]:
+    """Hard-filter merged results to honor explicit domain intent.
+
+    Fusion queries several providers and some ignore ``site:``/domain operators, so a
+    multi-provider merge can leak off-domain results that violate a domain-scoped
+    query (e.g. ``site:reddit.com`` picking up dev.to). This enforces the contract
+    after merging: required domains (``site:`` operators plus ``include_domains``) keep
+    only matching results, and ``exclude_domains`` drops matching results.
+
+    Returns ``(filtered_results, dropped_count)``. With no constraints the input is
+    returned unchanged.
+    """
+    required = _required_domains_from_query(query)
+    for domain in include_domains or []:
+        normalized = _normalize_domain(domain)
+        if normalized:
+            required.add(normalized)
+    excluded = {d for d in (_normalize_domain(x) for x in (exclude_domains or [])) if d}
+
+    if not required and not excluded:
+        return results, 0
+
+    kept = []
+    for item in results:
+        url = item.get("url", "")
+        if required and not _domain_satisfies(url, required):
+            continue
+        if excluded and _domain_satisfies(url, excluded):
+            continue
+        kept.append(item)
+    return kept, len(results) - len(kept)
 
 
 CANONICAL_DOMAIN_RULES: Dict[str, Dict[str, List[str]]] = {
