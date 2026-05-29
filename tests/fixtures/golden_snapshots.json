@@ -1,0 +1,94 @@
+[
+  {
+    "id": "github-primary-source",
+    "category": "software_canonical",
+    "query": "Hermes Web Search Plus GitHub",
+    "payload": {
+      "provider": "replay",
+      "results": [
+        {
+          "title": "GitHub - robbyczgw-cla/hermes-web-search-plus",
+          "url": "https://github.com/robbyczgw-cla/hermes-web-search-plus",
+          "snippet": "Hermes Agent flagship plugin for multi-provider web search and extraction."
+        },
+        {
+          "title": "Web Search Plus — One search. Every source.",
+          "url": "https://websearchplus.xyz/",
+          "snippet": "Public homepage for Web Search Plus."
+        },
+        {
+          "title": "Hermes Agent docs",
+          "url": "https://hermes-agent.nousresearch.com/docs",
+          "snippet": "Hermes Agent runtime repository."
+        }
+      ],
+      "quality_report": {"duplicate_count": 0}
+    },
+    "expect": {
+      "min_results": 3,
+      "min_domain_count": 3,
+      "top_domain_any_of": ["github.com"],
+      "must_include_domains": ["github.com", "websearchplus.xyz"],
+      "blocked_domains": ["example-mirror.invalid"],
+      "max_duplicate_count": 0
+    }
+  },
+  {
+    "id": "policy-primary-source",
+    "category": "policy_canonical",
+    "query": "EU AI Act official obligations",
+    "payload": {
+      "provider": "replay",
+      "results": [
+        {
+          "title": "AI Act | Shaping Europe's digital future",
+          "url": "https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai",
+          "snippet": "European Commission official policy page for the AI Act."
+        },
+        {
+          "title": "Artificial Intelligence Act | EUR-Lex",
+          "url": "https://eur-lex.europa.eu/legal-content/EN/TXT/?uri=CELEX:32024R1689",
+          "snippet": "Official legal text of Regulation (EU) 2024/1689."
+        },
+        {
+          "title": "Official AI Act overview",
+          "url": "https://artificialintelligenceact.eu/",
+          "snippet": "Public information site linking to official AI Act resources."
+        }
+      ],
+      "quality_report": {"duplicate_count": 0}
+    },
+    "expect": {
+      "min_results": 3,
+      "min_domain_count": 3,
+      "top_domain_any_of": ["digital-strategy.ec.europa.eu", "eur-lex.europa.eu"],
+      "must_include_domains": ["digital-strategy.ec.europa.eu", "eur-lex.europa.eu"],
+      "blocked_domains": ["example-consulting.invalid"],
+      "max_duplicate_count": 0
+    }
+  },
+  {
+    "id": "extract-content-quality",
+    "category": "extract_replay",
+    "query": "extract homepage docs",
+    "payload": {
+      "provider": "replay",
+      "results": [
+        {
+          "title": "Web Search Plus",
+          "url": "https://websearchplus.xyz/",
+          "content": "Web Search Plus routes web search and extraction across providers for Hermes Agent, OpenClaw and MCP clients. It documents install paths, providers, quickstart commands, quality reports and research mode.",
+          "raw_content": "Web Search Plus routes web search and extraction across providers for Hermes Agent, OpenClaw and MCP clients. It documents install paths, providers, quickstart commands, quality reports and research mode."
+        }
+      ],
+      "quality_report": {"duplicate_count": 0}
+    },
+    "expect": {
+      "min_results": 1,
+      "min_content_chars": 120,
+      "must_include_domains": ["websearchplus.xyz"],
+      "required_terms": ["Hermes Agent", "providers", "quality reports"],
+      "max_duplicate_count": 0
+    }
+  }
+]

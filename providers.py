@@ -9,6 +9,7 @@ from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 from http_client import (
+    DEFAULT_USER_AGENT,
     ProviderRequestError,
     TRANSIENT_HTTP_CODES,
     _read_json_response,
@@ -1272,7 +1273,7 @@ def search_you(
     headers = {
         "X-API-KEY": api_key,
         "Accept": "application/json",
-        "User-Agent": "ClawdBot-WebSearchPlus/2.4",
+        "User-Agent": DEFAULT_USER_AGENT,
     }
 
     # Make GET request (You.com uses GET, not POST)
@@ -1432,7 +1433,7 @@ def search_searxng(
     url = f"{base_url}/search?{query_string}"
 
     headers = {
-        "User-Agent": "ClawdBot-WebSearchPlus/2.5",
+        "User-Agent": DEFAULT_USER_AGENT,
         "Accept": "application/json",
     }
 

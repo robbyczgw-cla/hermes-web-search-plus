@@ -42,3 +42,7 @@ def test_http_client_provider_request_error_exports_retry_metadata():
     assert str(error) == "down"
     assert error.status_code == 503
     assert error.transient is True
+
+
+def test_default_user_agent_uses_release_version():
+    assert http_client.DEFAULT_USER_AGENT == "ClawdBot-WebSearchPlus/2.2.1"

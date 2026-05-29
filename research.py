@@ -1,4 +1,6 @@
-"""Opt-in research mode orchestration."""
+"""Research mode orchestration helpers."""
+
+from __future__ import annotations
 
 import time
 from typing import Any, Dict, List, Tuple

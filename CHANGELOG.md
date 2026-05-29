@@ -2,8 +2,18 @@
 
 ## Unreleased
 
+### ✨ Added
+- Added the ProviderSpec registry as the central source of truth for provider metadata across setup, config, routing, extraction, doctor diagnostics, and CLI choices.
+
+### 🔧 Improved
+- Quality reports now expose transparent authority signals for canonical-source routing classes, including canonical domain hits, demoted domain hits, and whether the top result is a primary source.
+
 ### 📚 Docs
 - Documented the `search.py` compatibility-shim policy and removal path for the monolith-to-module split.
+
+### 🧪 Tests
+- Added offline golden snapshot quality checks for canonical source presence, blocked mirror domains, duplicate counts, and extracted-content substance without live provider calls.
+- Added registry drift coverage so provider metadata stays synchronized across public surfaces.
 
 ## [v2.2.1] — 2026-05-25
 

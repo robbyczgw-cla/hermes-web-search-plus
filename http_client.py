@@ -1,5 +1,7 @@
 """Shared HTTP client helpers for Web Search Plus providers."""
 
+from __future__ import annotations
+
 from http.client import IncompleteRead
 import gzip
 import json
@@ -9,7 +11,7 @@ from urllib.request import Request, urlopen
 
 
 TRANSIENT_HTTP_CODES = {429, 503}
-DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/2.1"
+DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/2.2.1"
 
 
 class ProviderRequestError(Exception):
