@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from env_loader import clean_env_value as _shared_clean_env_value, load_env_files
 from provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS
 
 
@@ -19,36 +20,16 @@ class ProviderConfigError(Exception):
 
 def _is_placeholder_env_value(value: str) -> bool:
     """Return True for template placeholders that should not count as credentials."""
-    stripped = (value or "").strip().strip('"').strip("'")
-    return not stripped or set(stripped) == {"*"}
+    return _shared_clean_env_value(value) is None
 
 
 def _clean_env_value(value: str) -> Optional[str]:
-    stripped = (value or "").strip().strip('"').strip("'")
-    return None if _is_placeholder_env_value(stripped) else stripped
+    return _shared_clean_env_value(value)
 
 
 def _load_env_file():
-    """Load .env files from plugin-local and legacy parent locations."""
-    env_paths = [
-        Path(__file__).parent / ".env",
-        Path(__file__).parent.parent / ".env",
-    ]
-    for env_path in env_paths:
-        if not env_path.exists():
-            continue
-        with open(env_path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    # Handle export VAR=value or VAR=value
-                    if line.startswith("export "):
-                        line = line[7:]
-                    key, _, value = line.partition("=")
-                    key = key.strip()
-                    value = _clean_env_value(value)
-                    if key and value and key not in os.environ:
-                        os.environ[key] = value
+    """Load plugin-local, legacy parent, and Hermes profile .env files."""
+    load_env_files(__file__)
 
 DEFAULT_CONFIG = {
     "version": 1,

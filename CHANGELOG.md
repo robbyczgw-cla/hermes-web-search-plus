@@ -6,6 +6,9 @@
 - The Hermes plugin now runs `web_search_plus` and `web_extract_plus` in-process by default instead of spawning a `search.py` subprocess per call, removing interpreter-startup, module re-import, and JSON round-trip overhead on every tool invocation. The legacy subprocess path remains as an automatic fallback (used if the in-process import fails) and can be forced with `WSP_FORCE_SUBPROCESS=1`. A thread watchdog preserves the previous hard wall-clock timeout.
 - Research mode now queries its providers concurrently instead of sequentially, so wall-clock cost tracks the slowest provider rather than the sum of all of them. Result ordering stays deterministic (preserved by submission order) and the time budget still gates which providers launch and whether extraction runs.
 
+### 🐛 Fixed
+- Standalone `search.py`, config helpers, and `setup.py status` now load provider keys from the active Hermes profile `.env` in addition to plugin-local legacy `.env` files, preventing false `missing_api_key` fallbacks when keys live in `~/.hermes/.env`.
+
 ### 🔧 Improved
 - Provider retry backoff now adds bounded random jitter (`RETRY_JITTER_FRACTION`) so concurrent or repeated retries against a recovering provider no longer synchronize into bursts.
 - Provider health read-modify-write is now guarded by a lock so concurrent in-process provider calls (parallel research mode) cannot lose cooldown updates.

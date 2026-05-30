@@ -34,6 +34,7 @@ try:  # Package load path used by Hermes plugin discovery.
         PROVIDER_SPECS,
         plugin_catalog,
     )
+    from .env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, load_env_files
 except ImportError:  # Direct script/test imports from the plugin directory.
     from provider_registry import (
         DEFAULT_AUTO_ALLOW,
@@ -43,6 +44,7 @@ except ImportError:  # Direct script/test imports from the plugin directory.
         PROVIDER_SPECS,
         plugin_catalog,
     )
+    from env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, load_env_files
 
 _SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 _TOOLSET_NAME = "web-search-plus"
@@ -54,27 +56,15 @@ logger = logging.getLogger(__name__)
 
 def _clean_env_value(value: str) -> Optional[str]:
     """Return a real env value, or None for empty/template placeholders."""
-    stripped = (value or "").strip().strip('"').strip("'")
-    return None if not stripped or set(stripped) == {"*"} else stripped
+    return _shared_clean_env_value(value)
 
 
 _PROVIDER_CATALOG = plugin_catalog()
 
 
 def _load_plugin_env() -> None:
-    """Load the plugin's .env file into os.environ if keys aren't already set."""
-    plugin_env = Path(__file__).parent / ".env"
-    if not plugin_env.exists():
-        return
-    for line in plugin_env.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, val = line.partition("=")
-        key = key.strip()
-        val = _clean_env_value(val)
-        if val and key not in os.environ:
-            os.environ[key] = val
+    """Load plugin-local, legacy parent, and Hermes profile .env files."""
+    load_env_files(__file__)
 
 # Load plugin .env on import
 _load_plugin_env()
@@ -143,11 +133,7 @@ def _provider_config_status(env: Optional[Mapping[str, str]] = None) -> Dict[str
 
 def _get_hermes_env_path() -> Path:
     """Return Hermes' profile-aware .env path when available."""
-    try:
-        from hermes_constants import get_hermes_home  # type: ignore
-        return Path(get_hermes_home()) / ".env"
-    except Exception:
-        return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / ".env"
+    return get_hermes_env_path()
 
 
 
@@ -737,7 +723,12 @@ def _web_search_plus_cli_command(args: Any) -> None:
     if command == "status":
         env_path = getattr(args, "env_path", None)
         config_path = getattr(args, "config_path", None)
-        env = _read_env_file(Path(env_path)) if env_path else None
+        if env_path:
+            env = _read_env_file(Path(env_path))
+        else:
+            env = dict(os.environ)
+            for key, value in _read_env_file(_get_hermes_env_path()).items():
+                env.setdefault(key, value)
         config = _load_behavior_config(Path(config_path)) if config_path else _load_behavior_config()
         if getattr(args, "json", False):
             print(json.dumps(_status_payload(env, config), indent=2, sort_keys=True))

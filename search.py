@@ -29,7 +29,6 @@ import json
 import os
 import sys
 import time
-from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from http_client import (  # noqa: F401 - re-exported for backward-compatible tests/imports
     ProviderRequestError,
@@ -77,6 +76,7 @@ from quality import (  # noqa: F401 - re-exported for backward-compatible tests/
     select_research_providers,
 )
 from provider_registry import SEARCH_PROVIDER_IDS, doctor_catalog
+from env_loader import load_env_files
 from research import run_research_mode
 import providers as _providers
 import routing as _routing
@@ -90,25 +90,8 @@ get_cache_stats = cache_stats
 
 
 def _load_env_file():
-    """Load .env files using search.py's path for backward-compatible tests/shims."""
-    env_paths = [
-        Path(__file__).parent / ".env",
-        Path(__file__).parent.parent / ".env",
-    ]
-    for env_path in env_paths:
-        if not env_path.exists():
-            continue
-        with open(env_path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    if line.startswith("export "):
-                        line = line[7:]
-                    key, _, value = line.partition("=")
-                    key = key.strip()
-                    value = _clean_env_value(value)
-                    if key and value and key not in os.environ:
-                        os.environ[key] = value
+    """Load plugin-local, legacy parent, and Hermes profile .env files."""
+    load_env_files(__file__)
 
 
 ROUTING_POLICY = "routing-v2"

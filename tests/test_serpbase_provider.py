@@ -2,6 +2,7 @@ import importlib.util
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -115,27 +116,29 @@ class SerpBaseProviderTests(unittest.TestCase):
         self.assertIn("serpbase_signals", explanation["intent_breakdown"])
 
     def test_explicit_serpbase_missing_key_hard_fails_without_fallback(self):
-        env = os.environ.copy()
-        env.pop("SERPBASE_API_KEY", None)
-        env["SERPER_API_KEY"] = "serper-test-key-present-but-must-not-be-used"
-        proc = subprocess.run(
-            [
-                sys.executable,
-                str(SEARCH_PATH),
-                "--provider",
-                "serpbase",
-                "--query",
-                "Graz weather today",
-                "--max-results",
-                "1",
-                "--no-cache",
-            ],
-            cwd=str(SEARCH_PATH.parent),
-            env=env,
-            text=True,
-            capture_output=True,
-            timeout=20,
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            env = os.environ.copy()
+            env.pop("SERPBASE_API_KEY", None)
+            env["SERPER_API_KEY"] = "serper-test-key-present-but-must-not-be-used"
+            env["HERMES_HOME"] = str(Path(tmp) / "empty-hermes-home")
+            proc = subprocess.run(
+                [
+                    sys.executable,
+                    str(SEARCH_PATH),
+                    "--provider",
+                    "serpbase",
+                    "--query",
+                    "Graz weather today",
+                    "--max-results",
+                    "1",
+                    "--no-cache",
+                ],
+                cwd=str(SEARCH_PATH.parent),
+                env=env,
+                text=True,
+                capture_output=True,
+                timeout=20,
+            )
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("Missing API key for serpbase", proc.stderr)
         self.assertNotIn('"trying_next"', proc.stderr)

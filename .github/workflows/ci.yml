@@ -34,6 +34,7 @@ jobs:
           http_client.py
           cache.py
           config.py
+          env_loader.py
           provider_health.py
           quality.py
           research.py
