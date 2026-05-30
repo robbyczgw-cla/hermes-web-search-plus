@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+### ✨ Added
+- Added lexical (BM25) relevance reranking of search results. Every query now reorders results whose title/snippet/URL actually match the query terms above raw provider order, instead of only reranking the handful of canonical-authority classes. The signal is stdlib-only (no new dependencies), normalized to `[0, 1]`, and weighted below the canonical-source authority boosts so primary sources still win their tier. Per-result `relevance` scores are attached to results and a `relevance_signals` block (applied / top / mean / low-relevance count) is exposed in `quality_report`. Tunable via `auto_routing.lexical_rerank` (`enabled`, `weight`) in config.
+
 ## [v2.3.0] — 2026-05-29
 
 ### ✨ Added

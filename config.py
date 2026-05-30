@@ -66,6 +66,14 @@ DEFAULT_CONFIG = {
         "disabled_providers": [],
         "auto_allow": dict(DEFAULT_AUTO_ALLOW),
         "confidence_threshold": 0.3,  # Below this, note low confidence
+        # Lexical (BM25) relevance reranking of results. Reorders results whose
+        # title/snippet actually match the query above provider-order luck, while
+        # staying below canonical-source authority boosts. weight should stay < 6
+        # so it never overrides authority rules.
+        "lexical_rerank": {
+            "enabled": True,
+            "weight": 3.0,
+        },
     },
     "serper": {
         "country": "us",

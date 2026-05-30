@@ -1,12 +1,39 @@
 """Result normalization, deduplication, reranking, and quality-report helpers."""
 
 import hashlib
+import math
 import re
 from typing import Any, Dict, List, Tuple
 from urllib.parse import urlparse
 
 
 ROUTING_POLICY = "routing-v2"
+
+# Default weight applied to the normalized lexical-relevance score during
+# reranking. Kept below the authority boost/demote magnitudes in
+# CANONICAL_DOMAIN_RULES (+10 / -6) so canonical-source authority still wins;
+# lexical relevance reorders results *within* the same authority tier and
+# provides the primary ordering signal for classes that have no authority rules.
+DEFAULT_LEXICAL_WEIGHT = 3.0
+
+# Conservative multilingual stopword set (English + German, the two languages
+# this plugin routes most heavily) plus common search operators. Dropped from
+# the query so boilerplate terms do not dominate the relevance signal.
+_LEXICAL_STOPWORDS = frozenset({
+    # English
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "how",
+    "in", "is", "it", "of", "on", "or", "that", "the", "this", "to", "was",
+    "what", "when", "where", "which", "who", "why", "with", "you", "your",
+    "do", "does", "i", "me", "my", "we", "us", "can", "will", "vs",
+    # German
+    "der", "die", "das", "und", "oder", "ist", "im", "in", "von", "zu", "den",
+    "dem", "ein", "eine", "einen", "fuer", "für", "mit", "auf", "wie", "was",
+    "wer", "wo", "warum", "wann", "welche", "welcher", "ich", "wir", "sie",
+    # Search operators (e.g. site:, filetype:) tokenize into these keywords.
+    "site", "filetype", "inurl", "intitle", "intext", "url",
+})
+
+_TOKEN_RE = re.compile(r"\w+", re.UNICODE)
 
 
 def _title_from_url(url: str) -> str:
@@ -122,15 +149,134 @@ def _url_matches_rule(url: str, rule: str) -> bool:
     return normalized == normalized_rule or normalized.startswith(f"{normalized_rule}/")
 
 
+def _tokenize(text: str) -> List[str]:
+    """Lowercase word-tokenize, dropping stopwords and single chars."""
+    tokens = []
+    for tok in _TOKEN_RE.findall((text or "").lower()):
+        if tok in _LEXICAL_STOPWORDS:
+            continue
+        if len(tok) < 2 and not tok.isdigit():
+            continue
+        tokens.append(tok)
+    return tokens
+
+
+def _result_document(item: Dict[str, Any]) -> str:
+    """Build the text a result is scored against: title + snippet + url path."""
+    title = item.get("title") or ""
+    snippet = item.get("snippet") or item.get("description") or item.get("content") or ""
+    # Path/slug tokens often carry the most query-relevant terms for SEO pages.
+    path = ""
+    try:
+        parsed = urlparse(item.get("url") or "")
+        path = (parsed.path or "").replace("-", " ").replace("_", " ").replace("/", " ")
+    except Exception:
+        path = ""
+    return f"{title} {snippet} {path}"
+
+
+def compute_lexical_relevance(
+    query: str,
+    results: List[Dict[str, Any]],
+    k1: float = 1.5,
+    b: float = 0.75,
+) -> Tuple[List[float], Dict[str, Any]]:
+    """Score how well each result's text matches the query terms (BM25, stdlib).
+
+    Returns ``(scores, detail)`` where ``scores`` is aligned to ``results`` and
+    normalized to ``[0, 1]`` relative to the best-matching result (best == 1.0),
+    so the weight applied during reranking has a predictable magnitude. ``detail``
+    reports whether the signal applied and summary metrics for diagnostics.
+    """
+    query_terms = _tokenize(query)
+    detail: Dict[str, Any] = {
+        "applied": False,
+        "query_terms": query_terms,
+        "top_relevance": 0.0,
+        "mean_relevance": 0.0,
+    }
+    if not results or not query_terms:
+        return [0.0] * len(results), detail
+
+    docs = [_tokenize(_result_document(item)) for item in results]
+    doc_lengths = [len(d) for d in docs]
+    total_len = sum(doc_lengths)
+    if total_len == 0:
+        return [0.0] * len(results), detail
+    avg_len = total_len / len(docs)
+
+    n_docs = len(docs)
+    doc_freq: Dict[str, int] = {}
+    unique_terms = set(query_terms)
+    for doc in docs:
+        doc_set = set(doc)
+        for term in unique_terms:
+            if term in doc_set:
+                doc_freq[term] = doc_freq.get(term, 0) + 1
+
+    idf = {
+        term: math.log(1 + (n_docs - df + 0.5) / (df + 0.5))
+        for term, df in doc_freq.items()
+    }
+
+    raw_scores: List[float] = []
+    for doc, length in zip(docs, doc_lengths):
+        if not doc:
+            raw_scores.append(0.0)
+            continue
+        counts: Dict[str, int] = {}
+        for term in doc:
+            if term in idf:
+                counts[term] = counts.get(term, 0) + 1
+        score = 0.0
+        for term, tf in counts.items():
+            denom = tf + k1 * (1 - b + b * (length / avg_len))
+            score += idf[term] * (tf * (k1 + 1)) / denom
+        raw_scores.append(score)
+
+    max_raw = max(raw_scores)
+    if max_raw <= 0:
+        return [0.0] * len(results), detail
+
+    scores = [round(s / max_raw, 4) for s in raw_scores]
+    detail["applied"] = True
+    detail["top_relevance"] = max(scores)
+    detail["mean_relevance"] = round(sum(scores) / len(scores), 4)
+    return scores, detail
+
+
 def rerank_results_for_intent(
     query: str,
     routing_class: str,
     results: List[Dict[str, Any]],
+    lexical_weight: float = DEFAULT_LEXICAL_WEIGHT,
+    enable_lexical: bool = True,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """Small authority reranker for classes where source authority beats snippet luck."""
+    """Rerank by query relevance plus source authority.
+
+    Two signals combine:
+
+    * **Authority** — for classes in ``CANONICAL_DOMAIN_RULES`` only, canonical
+      sources are boosted (+10) and aggregators demoted (-6); this dominates so a
+      canonical primary source always wins its tier.
+    * **Lexical relevance** — a normalized BM25 score (``[0, 1]`` × ``lexical_weight``)
+      applied to *every* class, so results whose title/snippet actually match the
+      query outrank provider-order luck. Its weight stays below the authority gap,
+      so it reorders within an authority tier and orders rule-free classes.
+    """
     rules = CANONICAL_DOMAIN_RULES.get(routing_class, {})
-    if not results or not rules:
-        return results, {"reranked": False, "routing_class": routing_class}
+    if not results:
+        return results, {"reranked": False, "routing_class": routing_class, "lexical_applied": False}
+
+    if enable_lexical:
+        lexical_scores, lexical_detail = compute_lexical_relevance(query, results)
+    else:
+        lexical_scores, lexical_detail = [0.0] * len(results), {"applied": False}
+    lexical_applied = bool(lexical_detail.get("applied"))
+
+    # Nothing to reorder by: no authority rules and no usable relevance signal.
+    if not rules and not lexical_applied:
+        return results, {"reranked": False, "routing_class": routing_class, "lexical_applied": False}
 
     q = query.lower()
     scored: List[Tuple[float, int, Dict[str, Any]]] = []
@@ -139,26 +285,34 @@ def rerank_results_for_intent(
         domain = _result_domain(url)
         title = (item.get("title") or "").lower()
         snippet = (item.get("snippet") or item.get("description") or "").lower()
+        # Original provider order as a small, stable tie-breaker.
         score = float(len(results) - idx) * 0.01
-        if any(_url_matches_rule(url, rule) for rule in rules.get("boost", [])):
-            score += 10.0
-        if any(_url_matches_rule(url, rule) for rule in rules.get("demote", [])):
-            score -= 6.0
-        if routing_class == "official_vendor_release" and any(term in domain for term in ("mistral", "anthropic", "openai", "nvidia", "google", "meta")):
-            score += 3.0
-        if routing_class == "policy_pdf" and (item.get("url", "").lower().endswith(".pdf") or "pdf" in title):
-            score += 2.0
-        if "official" in q and ("official" in title or "official" in snippet):
-            score += 1.0
-        scored.append((score, idx, item))
+        score += lexical_weight * lexical_scores[idx]
+        if rules:
+            if any(_url_matches_rule(url, rule) for rule in rules.get("boost", [])):
+                score += 10.0
+            if any(_url_matches_rule(url, rule) for rule in rules.get("demote", [])):
+                score -= 6.0
+            if routing_class == "official_vendor_release" and any(term in domain for term in ("mistral", "anthropic", "openai", "nvidia", "google", "meta")):
+                score += 3.0
+            if routing_class == "policy_pdf" and (url.lower().endswith(".pdf") or "pdf" in title):
+                score += 2.0
+            if "official" in q and ("official" in title or "official" in snippet):
+                score += 1.0
+        item_copy = item.copy()
+        if lexical_applied:
+            item_copy["relevance"] = lexical_scores[idx]
+        scored.append((score, idx, item_copy))
 
-    reranked = [item.copy() for _, _, item in sorted(scored, key=lambda row: (-row[0], row[1]))]
+    reranked = [item for _, _, item in sorted(scored, key=lambda row: (-row[0], row[1]))]
     before_urls = [item.get("url", "") for item in results]
     after_urls = [item.get("url", "") for item in reranked]
     changed = before_urls != after_urls
     return reranked, {
         "reranked": changed,
         "routing_class": routing_class,
+        "lexical_applied": lexical_applied,
+        "top_relevance": lexical_detail.get("top_relevance", 0.0),
         "top_domain_before": _result_domain(results[0].get("url", "")) if results else None,
         "top_domain_after": _result_domain(reranked[0].get("url", "")) if reranked else None,
     }
@@ -250,6 +404,14 @@ def build_quality_report(
     routing_class = routing_info.get("analysis_summary", {}).get("routing_class")
     authority_signals = build_authority_signals(routing_class, results) if routing_class else None
 
+    relevance_scores, relevance_detail = compute_lexical_relevance(query, results)
+    relevance_signals = {
+        "applied": relevance_detail.get("applied", False),
+        "top_relevance": relevance_detail.get("top_relevance", 0.0),
+        "mean_relevance": relevance_detail.get("mean_relevance", 0.0),
+        "low_relevance_count": sum(1 for s in relevance_scores if s < 0.15),
+    }
+
     return {
         "query": query,
         "selected_provider": routing_info.get("provider") or result.get("provider"),
@@ -273,6 +435,7 @@ def build_quality_report(
         "extract_reasons": extract_reasons,
         "scores": routing_info.get("scores", {}),
         "authority_signals": authority_signals,
+        "relevance_signals": relevance_signals,
     }
 
 

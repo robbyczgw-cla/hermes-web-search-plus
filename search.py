@@ -67,10 +67,12 @@ from provider_health import (  # noqa: F401 - re-exported for backward-compatibl
     reset_provider_health,
 )
 from quality import (  # noqa: F401 - re-exported for backward-compatible tests/imports
+    DEFAULT_LEXICAL_WEIGHT,
     _choose_tie_winner,
     _domain_matches_rule,
     build_authority_signals,
     build_quality_report,
+    compute_lexical_relevance,
     deduplicate_results_across_providers,
     rerank_results_for_intent,
     select_research_providers,
@@ -1343,7 +1345,14 @@ Full docs: See README.md and SKILL.md
 
         routing_class = routing_info.get("analysis_summary", {}).get("routing_class", "general")
         if not cache_hit and isinstance(result.get("results"), list):
-            reranked, rerank_metadata = rerank_results_for_intent(args.query or "", routing_class, result.get("results", []))
+            lexical_cfg = config.get("auto_routing", {}).get("lexical_rerank", {})
+            reranked, rerank_metadata = rerank_results_for_intent(
+                args.query or "",
+                routing_class,
+                result.get("results", []),
+                lexical_weight=float(lexical_cfg.get("weight", DEFAULT_LEXICAL_WEIGHT)),
+                enable_lexical=bool(lexical_cfg.get("enabled", True)),
+            )
             result["results"] = reranked
             if rerank_metadata.get("reranked"):
                 result.setdefault("metadata", {})["intent_rerank"] = rerank_metadata
