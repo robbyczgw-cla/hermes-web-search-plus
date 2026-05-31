@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## [v2.3.1] — 2026-05-31
+
+### 🐛 Fixed
+- Fixed Hermes plugin loading by using package-relative provider registry imports with direct-import fallback compatibility.
+
 ## [v2.3.0] — 2026-05-29
 
 ### ✨ Added

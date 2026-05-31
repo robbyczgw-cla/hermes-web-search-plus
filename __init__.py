@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v2.3.0
+web-search-plus — Hermes Plugin v2.3.1
 Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "2.3.0"
+__version__ = "2.3.1"
 
 import argparse
 import getpass
@@ -21,14 +21,24 @@ import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
-from provider_registry import (
-    DEFAULT_AUTO_ALLOW,
-    DEFAULT_PROVIDER_PRIORITY,
-    EXTRACT_PROVIDER_ENV_KEYS,
-    PROVIDER_ENV_KEYS,
-    PROVIDER_SPECS,
-    plugin_catalog,
-)
+try:  # Package load path used by Hermes plugin discovery.
+    from .provider_registry import (
+        DEFAULT_AUTO_ALLOW,
+        DEFAULT_PROVIDER_PRIORITY,
+        EXTRACT_PROVIDER_ENV_KEYS,
+        PROVIDER_ENV_KEYS,
+        PROVIDER_SPECS,
+        plugin_catalog,
+    )
+except ImportError:  # Direct script/test imports from the plugin directory.
+    from provider_registry import (
+        DEFAULT_AUTO_ALLOW,
+        DEFAULT_PROVIDER_PRIORITY,
+        EXTRACT_PROVIDER_ENV_KEYS,
+        PROVIDER_ENV_KEYS,
+        PROVIDER_SPECS,
+        plugin_catalog,
+    )
 
 _SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 _TOOLSET_NAME = "web-search-plus"
