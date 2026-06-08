@@ -2,7 +2,9 @@
 
 import json
 import os
+import random
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, Tuple
@@ -14,6 +16,20 @@ from http_client import ProviderRequestError
 PROVIDER_HEALTH_FILE = CACHE_DIR / "provider_health.json"
 COOLDOWN_STEPS_SECONDS = [60, 300, 1500, 3600]  # 1m -> 5m -> 25m -> 1h cap
 RETRY_BACKOFF_SECONDS = [1, 3, 9]
+# Add up to this fraction of the base delay as random jitter so concurrent or
+# repeated retries against a recovering provider do not synchronize into bursts.
+RETRY_JITTER_FRACTION = 0.5
+
+# Serializes read-modify-write of the shared health file when search/extract run
+# providers concurrently in-process (e.g. parallel research mode). Atomic writes
+# already prevent torn reads; this prevents lost updates between threads.
+_HEALTH_LOCK = threading.Lock()
+
+
+def _retry_delay(attempt: int) -> float:
+    """Return the backoff delay (seconds) for a retry attempt, with jitter."""
+    base = RETRY_BACKOFF_SECONDS[min(attempt, len(RETRY_BACKOFF_SECONDS) - 1)]
+    return base + random.uniform(0.0, base * RETRY_JITTER_FRACTION)
 
 
 def _ensure_parent(path: Path) -> None:
@@ -60,27 +76,29 @@ def provider_in_cooldown(provider: str) -> Tuple[bool, int]:
 
 
 def mark_provider_failure(provider: str, error_message: str) -> Dict[str, Any]:
-    state = _load_provider_health()
-    now = int(time.time())
-    pstate = state.get(provider, {})
-    fail_count = int(pstate.get("failure_count", 0)) + 1
-    cooldown_seconds = COOLDOWN_STEPS_SECONDS[min(fail_count - 1, len(COOLDOWN_STEPS_SECONDS) - 1)]
-    state[provider] = {
-        "failure_count": fail_count,
-        "cooldown_until": now + cooldown_seconds,
-        "cooldown_seconds": cooldown_seconds,
-        "last_error": error_message,
-        "last_failure_at": now,
-    }
-    _save_provider_health(state)
-    return state[provider]
+    with _HEALTH_LOCK:
+        state = _load_provider_health()
+        now = int(time.time())
+        pstate = state.get(provider, {})
+        fail_count = int(pstate.get("failure_count", 0)) + 1
+        cooldown_seconds = COOLDOWN_STEPS_SECONDS[min(fail_count - 1, len(COOLDOWN_STEPS_SECONDS) - 1)]
+        state[provider] = {
+            "failure_count": fail_count,
+            "cooldown_until": now + cooldown_seconds,
+            "cooldown_seconds": cooldown_seconds,
+            "last_error": error_message,
+            "last_failure_at": now,
+        }
+        _save_provider_health(state)
+        return state[provider]
 
 
 def reset_provider_health(provider: str) -> None:
-    state = _load_provider_health()
-    if provider in state:
-        state.pop(provider, None)
-        _save_provider_health(state)
+    with _HEALTH_LOCK:
+        state = _load_provider_health()
+        if provider in state:
+            state.pop(provider, None)
+            _save_provider_health(state)
 
 
 def execute_provider_with_retry(provider: str, operation, max_attempts: int = 3) -> Dict[str, Any]:
@@ -96,7 +114,7 @@ def execute_provider_with_retry(provider: str, operation, max_attempts: int = 3)
             if not e.transient:
                 break
             if attempt < max_attempts - 1:
-                time.sleep(RETRY_BACKOFF_SECONDS[min(attempt, len(RETRY_BACKOFF_SECONDS) - 1)])
+                time.sleep(_retry_delay(attempt))
                 continue
             break
         except Exception as e:

@@ -258,7 +258,13 @@ class ExtractPlusCoreTests(unittest.TestCase):
 
         self.assertEqual(result["provider"], "firecrawl")
         self.assertEqual(mock_firecrawl.call_count, 2)
-        mock_sleep.assert_called_once_with(search.RETRY_BACKOFF_SECONDS[0])
+        # Retry backoff now carries jitter to de-synchronize retries: the delay is
+        # the base step plus up to RETRY_JITTER_FRACTION of it.
+        mock_sleep.assert_called_once()
+        (slept,) = mock_sleep.call_args[0]
+        base = search.RETRY_BACKOFF_SECONDS[0]
+        self.assertGreaterEqual(slept, base)
+        self.assertLessEqual(slept, base * (1 + search.RETRY_JITTER_FRACTION))
 
     def test_extract_plus_marks_failed_provider_and_resets_successful_fallback(self):
         transient = search.ProviderRequestError("temporary outage", status_code=503, transient=True)
@@ -292,16 +298,47 @@ class ExtractPlusCoreTests(unittest.TestCase):
 
 
 class ExtractPlusPluginTests(unittest.TestCase):
-    def test_run_extract_invokes_search_script_extract_mode(self):
+    def test_run_extract_runs_in_process(self):
+        captured = {}
+
+        def fake_run_extract_request(urls, **kwargs):
+            captured["urls"] = urls
+            captured.update(kwargs)
+            return {"provider": "linkup", "results": []}
+
+        class FakeSearch:
+            run_extract_request = staticmethod(fake_run_extract_request)
+
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("WSP_FORCE_SUBPROCESS", None)
+            with mock.patch.object(plugin, "_load_search_module", return_value=FakeSearch):
+                with mock.patch("subprocess.run", side_effect=AssertionError("should not subprocess")):
+                    result = plugin._run_extract(
+                        urls=["https://example.com"],
+                        provider="linkup",
+                        output_format="markdown",
+                        include_images=True,
+                        render_js=True,
+                    )
+
+        self.assertEqual(result["provider"], "linkup")
+        self.assertEqual(captured["urls"], ["https://example.com"])
+        self.assertEqual(captured["provider"], "linkup")
+        self.assertEqual(captured["output_format"], "markdown")
+        self.assertTrue(captured["include_images"])
+        self.assertTrue(captured["render_js"])
+
+    def test_run_extract_subprocess_fallback_builds_extract_command(self):
         completed = mock.Mock(returncode=0, stdout=json.dumps({"provider": "linkup", "results": []}), stderr="")
-        with mock.patch("subprocess.run", return_value=completed) as mock_run:
-            result = plugin._run_extract(
-                urls=["https://example.com"],
-                provider="linkup",
-                output_format="markdown",
-                include_images=True,
-                render_js=True,
-            )
+        with mock.patch.dict(os.environ, {"WSP_FORCE_SUBPROCESS": "1"}):
+            with mock.patch("subprocess.run", return_value=completed) as mock_run:
+                result = plugin._run_extract(
+                    urls=["https://example.com"],
+                    provider="linkup",
+                    output_format="markdown",
+                    include_images=True,
+                    render_js=True,
+                )
 
         self.assertEqual(result["provider"], "linkup")
         cmd = mock_run.call_args.kwargs["args"] if "args" in mock_run.call_args.kwargs else mock_run.call_args.args[0]

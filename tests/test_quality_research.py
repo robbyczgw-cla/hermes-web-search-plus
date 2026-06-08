@@ -130,7 +130,9 @@ class ResearchModeTests(unittest.TestCase):
             max_extract_urls=2,
         )
 
-        self.assertEqual(calls, ["tavily", "linkup"])
+        # Providers run concurrently, so completion/call order is not guaranteed,
+        # but both must be queried and result ordering must stay deterministic.
+        self.assertEqual(sorted(calls), ["linkup", "tavily"])
         self.assertEqual(result["mode"], "research")
         self.assertEqual(result["routing"]["providers_queried"], ["tavily", "linkup"])
         self.assertEqual(result["metadata"]["dedup_count"], 1)
@@ -168,6 +170,36 @@ class ResearchModeTests(unittest.TestCase):
         self.assertEqual(result["routing"]["extraction_provider"], None)
         self.assertEqual(result["routing"]["extraction_error"], "extract provider timed out")
         self.assertEqual(result["metadata"]["extracted_url_count"], 0)
+
+    def test_research_mode_preserves_provider_order_when_completion_is_out_of_order(self):
+        import time as _time
+
+        def execute(provider):
+            # Provider submitted first finishes last; ordering must still follow
+            # submission order so deduplication stays deterministic.
+            if provider == "tavily":
+                _time.sleep(0.05)
+            return {"provider": provider, "results": [
+                {"url": f"https://{provider}.test/a", "title": provider, "description": "x"},
+            ]}
+
+        def extract(urls):
+            return {"provider": None, "results": []}
+
+        result = search.run_research_mode(
+            query="ordered research",
+            research_providers=["tavily", "linkup"],
+            execute_search=execute,
+            extract_urls=extract,
+            max_results=5,
+            max_extract_urls=0,
+        )
+
+        self.assertEqual(result["routing"]["providers_queried"], ["tavily", "linkup"])
+        self.assertEqual([r["url"] for r in result["results"]], [
+            "https://tavily.test/a",
+            "https://linkup.test/a",
+        ])
 
     def test_research_mode_respects_time_budget_between_providers_and_skips_extract(self):
         ticks = iter([0.0, 0.0, 6.0, 6.0])

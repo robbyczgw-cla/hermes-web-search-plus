@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Tuple
 
 from quality import deduplicate_results_across_providers
@@ -17,15 +18,21 @@ def run_research_mode(
     max_extract_urls: int = 3,
     time_budget_seconds: float | None = None,
     now_fn=None,
+    max_workers: int | None = None,
 ) -> Dict[str, Any]:
     """Run broad search, deduplicate, then extract top sources for grounding.
 
     Research mode is intentionally best-effort: provider/extraction failures should
     produce diagnostics and partial search results instead of throwing away the
-    whole response. The optional time budget is checked between expensive calls so
-    the mode can degrade safely before starting more provider work or extraction.
+    whole response. Provider searches run concurrently to keep the wall-clock cost
+    close to the slowest single provider rather than the sum of all of them. The
+    optional time budget gates which providers are launched (checked before each
+    submission, so a tight budget still skips later providers deterministically) and
+    whether extraction runs at all.
+
+    Result ordering is preserved by provider submission order regardless of which
+    provider finishes first, so deduplication stays deterministic.
     """
-    provider_results: List[Tuple[str, Dict[str, Any]]] = []
     provider_errors: List[Dict[str, Any]] = []
     now = now_fn or time.monotonic
     start = now()
@@ -33,15 +40,32 @@ def run_research_mode(
     def budget_exhausted() -> bool:
         return time_budget_seconds is not None and (now() - start) >= time_budget_seconds
 
-    for provider in research_providers:
-        if budget_exhausted():
-            provider_errors.append({"provider": provider, "error": "skipped: research time budget exhausted"})
-            continue
-        try:
-            payload = execute_search(provider)
-            provider_results.append((provider, payload))
-        except Exception as e:
-            provider_errors.append({"provider": provider, "error": str(e)})
+    # Submit providers (budget gate is sequential/deterministic); the actual
+    # provider HTTP calls run concurrently in the thread pool.
+    pending: List[Tuple[int, str]] = []
+    futures: Dict[int, Any] = {}
+    workers = max_workers or max(1, len(research_providers))
+    executor = ThreadPoolExecutor(max_workers=workers)
+    try:
+        for index, provider in enumerate(research_providers):
+            if budget_exhausted():
+                provider_errors.append({"provider": provider, "error": "skipped: research time budget exhausted"})
+                continue
+            futures[index] = executor.submit(execute_search, provider)
+            pending.append((index, provider))
+
+        results_by_index: Dict[int, Tuple[str, Dict[str, Any]]] = {}
+        for index, provider in pending:
+            try:
+                results_by_index[index] = (provider, futures[index].result())
+            except Exception as e:
+                provider_errors.append({"provider": provider, "error": str(e)})
+    finally:
+        executor.shutdown(wait=True)
+
+    provider_results: List[Tuple[str, Dict[str, Any]]] = [
+        results_by_index[index] for index in sorted(results_by_index)
+    ]
 
     deduped, dedup_count = deduplicate_results_across_providers(provider_results, max_results)
     urls = [r.get("url") for r in deduped if r.get("url")][:max(0, max_extract_urls)]

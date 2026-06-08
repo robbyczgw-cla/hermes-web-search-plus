@@ -41,7 +41,39 @@ def test_setup_guidance_does_not_advertise_answer_layer(monkeypatch):
     assert "answer=" not in guidance
 
 
-def test_research_mode_subprocess_timeout_exceeds_requested_budget(monkeypatch):
+def test_research_mode_timeout_exceeds_requested_budget():
+    # Research mode widens the wall-clock watchdog beyond the requested budget so
+    # the in-flight provider/extraction work can finish; normal mode uses the base.
+    assert wsp._search_timeout("research", 120) > 120
+    assert wsp._search_timeout("normal", 120) == 75
+
+
+def test_search_runs_in_process_without_subprocess(monkeypatch):
+    captured = {}
+
+    def fake_run_search_request(**kwargs):
+        captured.update(kwargs)
+        return {"provider": "you", "results": []}
+
+    class FakeSearch:
+        run_search_request = staticmethod(fake_run_search_request)
+
+    monkeypatch.delenv("WSP_FORCE_SUBPROCESS", raising=False)
+    monkeypatch.setattr(wsp, "_load_search_module", lambda: FakeSearch)
+
+    def explode(*args, **kwargs):
+        raise AssertionError("subprocess fallback should not be used on the in-process path")
+
+    monkeypatch.setattr(wsp.subprocess, "run", explode)
+
+    result = wsp._run_search("graz weather", mode="research", research_time_budget=120)
+
+    assert result == {"provider": "you", "results": []}
+    assert captured["query"] == "graz weather"
+    assert captured["mode"] == "research"
+
+
+def test_research_mode_subprocess_fallback_passes_budget(monkeypatch):
     seen = {}
 
     def fake_run(cmd, capture_output, text, timeout, env):
@@ -55,6 +87,7 @@ def test_research_mode_subprocess_timeout_exceeds_requested_budget(monkeypatch):
 
         return Result()
 
+    monkeypatch.setenv("WSP_FORCE_SUBPROCESS", "1")
     monkeypatch.setattr(wsp.subprocess, "run", fake_run)
 
     wsp._run_search("deep query", mode="research", research_time_budget=120)

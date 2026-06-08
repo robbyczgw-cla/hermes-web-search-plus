@@ -30,7 +30,7 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 from http_client import (  # noqa: F401 - re-exported for backward-compatible tests/imports
     ProviderRequestError,
     TRANSIENT_HTTP_CODES,
@@ -60,6 +60,7 @@ from config import (  # noqa: F401 - re-exported for backward-compatible tests/i
 )
 from provider_health import (  # noqa: F401 - re-exported for backward-compatible tests/imports
     RETRY_BACKOFF_SECONDS,
+    RETRY_JITTER_FRACTION,
     COOLDOWN_STEPS_SECONDS,
     execute_provider_with_retry,
     mark_provider_failure,
@@ -581,9 +582,13 @@ def build_parser_for_tests() -> argparse.ArgumentParser:
     return parser
 
 
-def main():
-    config = load_config()
+def build_parser(config: Dict[str, Any]) -> argparse.ArgumentParser:
+    """Build the search.py CLI argument parser.
 
+    Shared by the CLI ``main()`` entry and the in-process ``run_search_request``
+    helper so the Hermes plugin can route argv through the exact same parsing and
+    defaults without spawning a subprocess.
+    """
     parser = argparse.ArgumentParser(
         description="Web Search Plus — Intelligent multi-provider search with smart auto-routing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -890,7 +895,13 @@ Full docs: See README.md and SKILL.md
         action="store_true",
         help="Show cache statistics and exit"
     )
-    
+
+    return parser
+
+
+def main():
+    config = load_config()
+    parser = build_parser(config)
     args = parser.parse_args()
 
     if args.command == "doctor":
@@ -940,7 +951,24 @@ Full docs: See README.md and SKILL.md
         indent = None if args.compact else 2
         print(json.dumps(explanation, indent=indent, ensure_ascii=False))
         return
-    
+
+    payload, exit_code = execute_search_request(args, config)
+    if exit_code == 0:
+        indent = None if args.compact else 2
+        print(json.dumps(payload, indent=indent, ensure_ascii=False))
+    else:
+        print(json.dumps(payload, indent=2), file=sys.stderr)
+        sys.exit(1)
+
+
+def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
+    """Run the search/research pipeline for parsed args.
+
+    Returns ``(payload, exit_code)`` where exit_code 0 means a success payload bound
+    for stdout and 1 means an error payload bound for stderr. This function never
+    prints or calls ``sys.exit`` so the Hermes plugin can invoke it in-process
+    instead of spawning a subprocess.
+    """
     # Determine provider
     if args.provider == "auto" or (args.provider is None and not args.similar_url):
         if args.query:
@@ -1073,6 +1101,7 @@ Full docs: See README.md and SKILL.md
                 timeout=int(linkup_config.get("timeout", 30)),
             )
         elif prov == "querit":
+            querit_config = config.get("querit", {})
             return search_querit(
                 query=args.query,
                 api_key=key,
@@ -1227,8 +1256,7 @@ Full docs: See README.md and SKILL.md
                 "routing": routing_info,
                 "cooldown_skips": cooldown_skips,
             }
-            print(json.dumps(error_result, indent=2), file=sys.stderr)
-            sys.exit(1)
+            return error_result, 1
 
         result = run_research_mode(
             query=args.query,
@@ -1256,9 +1284,7 @@ Full docs: See README.md and SKILL.md
             cooldown_skips=cooldown_skips,
             errors=result.get("routing", {}).get("provider_errors", []),
         )
-        indent = None if args.compact else 2
-        print(json.dumps(result, indent=indent, ensure_ascii=False))
-        return
+        return result, 0
 
     # Check cache first (unless --no-cache is set)
     cached_result = None
@@ -1376,8 +1402,7 @@ Full docs: See README.md and SKILL.md
                 errors=errors,
             )
 
-        indent = None if args.compact else 2
-        print(json.dumps(result, indent=indent, ensure_ascii=False))
+        return result, 0
     else:
         error_result = {
             "error": "All providers failed",
@@ -1387,8 +1412,83 @@ Full docs: See README.md and SKILL.md
             "provider_errors": errors,
             "cooldown_skips": cooldown_skips,
         }
-        print(json.dumps(error_result, indent=2), file=sys.stderr)
-        sys.exit(1)
+        return error_result, 1
+
+
+def run_search_request(
+    *,
+    query: str,
+    provider: str = "auto",
+    count: int = 5,
+    exa_depth: str = "normal",
+    time_range: Optional[str] = None,
+    include_domains: Optional[List[str]] = None,
+    exclude_domains: Optional[List[str]] = None,
+    mode: str = "normal",
+    quality_report: bool = False,
+    research_time_budget: float = 55.0,
+    language: Optional[str] = None,
+    country: Optional[str] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Run a search in-process and return the result dict the CLI would emit.
+
+    Mirrors the argv the Hermes plugin used to pass to the subprocess, then routes
+    it through the same parser and pipeline so behaviour is identical without the
+    interpreter-startup and JSON round-trip cost of spawning ``search.py``.
+    """
+    if not query and not (include_domains or exclude_domains):
+        return {"error": "query is required", "provider": provider, "query": query, "results": []}
+    config = config or load_config()
+    argv: List[str] = [
+        "--query", query or "",
+        "--provider", provider or "auto",
+        "--max-results", str(count),
+    ]
+    if exa_depth and exa_depth != "normal":
+        argv += ["--exa-depth", exa_depth]
+    if time_range and time_range != "none":
+        argv += ["--time-range", time_range]
+    if include_domains:
+        argv += ["--include-domains", *include_domains]
+    if exclude_domains:
+        argv += ["--exclude-domains", *exclude_domains]
+    if mode and mode != "normal":
+        argv += ["--mode", mode, "--research-time-budget", str(research_time_budget)]
+    if quality_report:
+        argv += ["--quality-report"]
+    if language and language != "auto":
+        argv += ["--language", language]
+    if country and country != "auto":
+        argv += ["--country", country]
+
+    parser = build_parser(config)
+    args = parser.parse_args(argv)
+    payload, _exit_code = execute_search_request(args, config)
+    return payload
+
+
+def run_extract_request(
+    urls: List[str],
+    *,
+    provider: str = "auto",
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Run URL extraction in-process and return the result dict."""
+    config = config or load_config()
+    return extract_plus(
+        urls=urls,
+        provider=provider or "auto",
+        output_format=output_format,
+        include_images=include_images,
+        include_raw_html=include_raw_html,
+        render_js=render_js,
+        config=config,
+    )
 
 
 if __name__ == "__main__":
