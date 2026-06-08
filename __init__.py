@@ -9,6 +9,7 @@ __version__ = "2.3.1"
 
 import argparse
 import getpass
+import importlib.util
 import json
 import logging
 import os
@@ -824,12 +825,13 @@ _search_import_lock = threading.Lock()
 
 
 def _load_search_module() -> Any:
-    """Import the in-process search engine, ensuring the plugin dir is importable.
+    """Load the in-process search engine from this plugin's ``search.py``.
 
-    ``search.py`` uses flat absolute imports for its sibling modules, so the plugin
-    directory must be on ``sys.path`` (it is for the standalone CLI/tests, but not
-    necessarily when Hermes loads us as a package). Returns the module, or ``None``
-    if import fails so callers transparently fall back to the subprocess path.
+    ``search.py`` still uses flat absolute imports for sibling modules, so the
+    plugin directory must be on ``sys.path`` while it loads. The search module
+    itself is loaded from its exact file path under a private module name instead
+    of ``import search`` so an unrelated global ``search`` module cannot shadow the
+    plugin engine.
     """
     global _search_module, _search_import_failed
     if _search_module is not None:
@@ -842,14 +844,28 @@ def _load_search_module() -> Any:
         if _search_import_failed:
             return None
         plugin_dir = str(Path(__file__).parent)
+        inserted = False
         if plugin_dir not in sys.path:
             sys.path.insert(0, plugin_dir)
+            inserted = True
         try:
-            import search as _search  # noqa: F401 — flat sibling layout resolved via sys.path
+            spec = importlib.util.spec_from_file_location("_wsp_search_engine", _SEARCH_SCRIPT)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"cannot load search engine from {_SEARCH_SCRIPT}")
+            _search = importlib.util.module_from_spec(spec)
+            sys.modules["_wsp_search_engine"] = _search
+            spec.loader.exec_module(_search)
         except Exception:  # pragma: no cover - defensive: fall back to subprocess
+            sys.modules.pop("_wsp_search_engine", None)
             logger.exception("web-search-plus: in-process search import failed; using subprocess fallback")
             _search_import_failed = True
             return None
+        finally:
+            if inserted:
+                try:
+                    sys.path.remove(plugin_dir)
+                except ValueError:  # pragma: no cover - defensive cleanup
+                    pass
         _search_module = _search
         return _search_module
 

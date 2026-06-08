@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
+import types
 from pathlib import Path
 
 
@@ -94,3 +96,20 @@ def test_research_mode_subprocess_fallback_passes_budget(monkeypatch):
 
     assert "--research-time-budget" in seen["cmd"]
     assert seen["timeout"] > 120
+
+
+def test_load_search_module_ignores_unrelated_global_search_module(monkeypatch):
+    fake_search = types.ModuleType("search")
+    setattr(fake_search, "not_the_plugin_engine", True)
+    monkeypatch.setitem(sys.modules, "search", fake_search)
+    monkeypatch.setattr(wsp, "_search_module", None)
+    monkeypatch.setattr(wsp, "_search_import_failed", False)
+    monkeypatch.delitem(sys.modules, "_wsp_search_engine", raising=False)
+
+    loaded = wsp._load_search_module()
+
+    assert loaded is not None
+    assert loaded is not fake_search
+    assert Path(loaded.__file__).resolve() == PLUGIN_PATH.with_name("search.py").resolve()
+    assert hasattr(loaded, "run_search_request")
+    assert sys.modules["search"] is fake_search
