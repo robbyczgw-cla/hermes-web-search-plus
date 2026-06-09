@@ -31,6 +31,7 @@ jobs:
           python -m py_compile
           search.py
           __init__.py
+          daemon_tasks.py
           http_client.py
           cache.py
           config.py

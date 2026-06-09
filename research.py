@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any, Dict, List, Optional, Tuple
 
+from daemon_tasks import DaemonTask
 from quality import deduplicate_results_across_providers
 
 
@@ -52,41 +53,41 @@ def run_research_mode(
         return time_budget_seconds - (now() - start)
 
     # Submit providers (budget gate is sequential/deterministic); the actual
-    # provider HTTP calls run concurrently in the thread pool.
+    # provider HTTP calls run concurrently on daemon threads. Daemon threads —
+    # unlike ThreadPoolExecutor workers — are not joined at interpreter exit,
+    # so an overdue provider cannot stall CLI/subprocess shutdown either.
     pending: List[Tuple[int, str]] = []
-    futures: Dict[int, Any] = {}
+    tasks: Dict[int, DaemonTask] = {}
     workers = max_workers or max(1, len(research_providers))
-    executor = ThreadPoolExecutor(max_workers=workers)
-    try:
-        for index, provider in enumerate(research_providers):
-            remaining = remaining_budget()
-            if remaining is not None and remaining <= 0:
-                provider_errors.append({"provider": provider, "error": "skipped: research time budget exhausted"})
-                continue
-            futures[index] = executor.submit(execute_search, provider)
-            pending.append((index, provider))
+    gate = threading.Semaphore(workers)
 
-        results_by_index: Dict[int, Tuple[str, Dict[str, Any]]] = {}
-        for index, provider in pending:
-            future = futures[index]
-            remaining = remaining_budget()
-            if remaining is not None and remaining <= 0:
-                # Budget gone: give already-submitted calls a short real-time grace
-                # so finished futures are still harvested without blocking on slow ones.
-                timeout = _RESULT_GRACE_SECONDS
-            else:
-                timeout = remaining
-            try:
-                results_by_index[index] = (provider, future.result(timeout=timeout))
-            except FuturesTimeoutError:
-                future.cancel()
-                provider_errors.append({"provider": provider, "error": "timed out: research time budget exhausted"})
-            except Exception as e:
-                provider_errors.append({"provider": provider, "error": str(e)})
-    finally:
-        # Do not block on providers that overran the budget; their threads finish
-        # in the background bounded by the per-request HTTP timeout.
-        executor.shutdown(wait=False)
+    def run_gated(provider_name: str) -> Dict[str, Any]:
+        with gate:
+            return execute_search(provider_name)
+
+    for index, provider in enumerate(research_providers):
+        remaining = remaining_budget()
+        if remaining is not None and remaining <= 0:
+            provider_errors.append({"provider": provider, "error": "skipped: research time budget exhausted"})
+            continue
+        tasks[index] = DaemonTask(run_gated, provider)
+        pending.append((index, provider))
+
+    results_by_index: Dict[int, Tuple[str, Dict[str, Any]]] = {}
+    for index, provider in pending:
+        remaining = remaining_budget()
+        if remaining is not None and remaining <= 0:
+            # Budget gone: give already-submitted calls a short real-time grace
+            # so finished tasks are still harvested without blocking on slow ones.
+            timeout = _RESULT_GRACE_SECONDS
+        else:
+            timeout = remaining
+        try:
+            results_by_index[index] = (provider, tasks[index].result(timeout=timeout))
+        except FuturesTimeoutError:
+            provider_errors.append({"provider": provider, "error": "timed out: research time budget exhausted"})
+        except Exception as e:
+            provider_errors.append({"provider": provider, "error": str(e)})
 
     provider_results: List[Tuple[str, Dict[str, Any]]] = [
         results_by_index[index] for index in sorted(results_by_index)
@@ -107,20 +108,15 @@ def run_research_mode(
                 extraction_error = str(e)
                 extracted = {"provider": None, "results": []}
         else:
-            # Run extraction in a worker so the remaining budget bounds it too.
-            extract_executor = ThreadPoolExecutor(max_workers=1)
+            # Run extraction on a daemon thread so the remaining budget bounds it too.
             try:
-                extract_future = extract_executor.submit(extract_urls, urls)
-                extracted = extract_future.result(timeout=remaining) or {"provider": None, "results": []}
+                extracted = DaemonTask(extract_urls, urls).result(timeout=remaining) or {"provider": None, "results": []}
             except FuturesTimeoutError:
-                extract_future.cancel()
                 extraction_error = "timed out: research time budget exhausted"
                 extracted = {"provider": None, "results": []}
             except Exception as e:
                 extraction_error = str(e)
                 extracted = {"provider": None, "results": []}
-            finally:
-                extract_executor.shutdown(wait=False)
 
     routing = {
         "providers_queried": [p for p, _ in provider_results],

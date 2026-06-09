@@ -20,7 +20,6 @@ import sys
 import threading
 import time
 import webbrowser
-from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
@@ -45,6 +44,11 @@ except ImportError:  # Direct script/test imports from the plugin directory.
         plugin_catalog,
     )
     from env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, load_env_files
+
+try:
+    from .daemon_tasks import DaemonTask
+except ImportError:
+    from daemon_tasks import DaemonTask
 
 _SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 _TOOLSET_NAME = "web-search-plus"
@@ -874,18 +878,15 @@ def _search_timeout(mode: str, research_time_budget: float, base: int = 75) -> i
 
 
 def _call_with_timeout(fn: Callable[[], dict], timeout: int) -> dict:
-    """Run ``fn`` in a worker thread bounded by a wall-clock timeout.
+    """Run ``fn`` on a daemon thread bounded by a wall-clock timeout.
 
     Mirrors the hard timeout the subprocess used to give us. On timeout we stop
     waiting (the orphaned worker is bounded by per-provider HTTP timeouts) and
     raise ``FuturesTimeout`` for the caller to translate into a structured error.
+    A daemon thread — unlike a ThreadPoolExecutor worker — is not joined at
+    interpreter exit, so an overdue call cannot stall process shutdown either.
     """
-    executor = ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(fn)
-    try:
-        return future.result(timeout=timeout)
-    finally:
-        executor.shutdown(wait=False)
+    return DaemonTask(fn).result(timeout=timeout)
 
 
 def _run_search(
