@@ -129,15 +129,47 @@ SPAM_MIRROR_DOMAINS: List[str] = [
     "exceptionshub.com",
     "code-examples.net",
     "i-harness.com",
+    "fixmycodeerror.com",
+    "stacklesson.com",
     # GitHub issue/readme mirrors
     "githubmemory.com",
     "gitmemory.com",
     "issueexplorer.com",
     "bleepcoder.com",
     "gitanswer.com",
+    # Documentation mirrors
+    "w3cub.com",
     # Generic AI/SEO content farms already demoted by the intent reranker
     "aizolo.com",
 ]
+
+
+def _blocked_domain_matches(domain: str, rule: str) -> bool:
+    """Strict matcher for domain block/allow lists.
+
+    Only the exact domain or true subdomains match (``newbedev.com``,
+    ``de.newbedev.com``). Unlike ``_domain_matches_rule`` there is no
+    ``startswith`` clause, so look-alike registrations such as
+    ``newbedev.com.evil.example`` do NOT match.
+    """
+    return domain == rule or domain.endswith(f".{rule}")
+
+
+_SITE_OPERATOR_RE = re.compile(r"\bsite:([a-z0-9][a-z0-9.-]*)", re.IGNORECASE)
+
+
+def extract_domain_constraints(query: str, include_domains: Optional[List[str]] = None) -> List[str]:
+    """Domains the user explicitly constrained the search to.
+
+    Collects ``site:`` operators from the query plus ``include_domains``.
+    Explicit constraints express intent: constrained domains are exempt from
+    spam filtering, and domain-diversity reranking is skipped entirely.
+    """
+    domains = [d.lower().rstrip(".") for d in _SITE_OPERATOR_RE.findall(query or "")]
+    for entry in include_domains or []:
+        if entry and entry.strip():
+            domains.append(entry.lower().strip())
+    return sorted(set(domains))
 
 
 def filter_spam_results(
@@ -158,8 +190,8 @@ def filter_spam_results(
         domain = _result_domain(item.get("url", ""))
         if (
             domain
-            and not any(_domain_matches_rule(domain, rule) for rule in allowed_rules)
-            and any(_domain_matches_rule(domain, rule) for rule in blocked_rules)
+            and not any(_blocked_domain_matches(domain, rule) for rule in allowed_rules)
+            and any(_blocked_domain_matches(domain, rule) for rule in blocked_rules)
         ):
             removed_domains.append(domain)
             continue
