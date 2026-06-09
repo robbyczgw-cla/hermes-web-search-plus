@@ -73,6 +73,7 @@ from quality import (  # noqa: F401 - re-exported for backward-compatible tests/
     build_authority_signals,
     build_quality_report,
     deduplicate_results_across_providers,
+    extract_domain_constraints,
     filter_spam_results,
     rerank_domain_diversity,
     rerank_results_for_intent,
@@ -947,8 +948,18 @@ def main():
         sys.exit(1)
 
 
-def _apply_result_quality_pipeline(result: Dict[str, Any], config: Dict[str, Any]) -> None:
+def _apply_result_quality_pipeline(
+    result: Dict[str, Any],
+    config: Dict[str, Any],
+    query: str = "",
+    include_domains: Optional[List[str]] = None,
+) -> None:
     """Filter mirror/SEO-spam domains and cap per-domain dominance, in place.
+
+    Explicit domain constraints (``site:`` operators, ``include_domains``)
+    express user intent and win: constrained domains are exempt from the spam
+    filter, and the diversity rerank is skipped entirely — a deliberately
+    one-domain query must not have its order shuffled.
 
     Both steps are truthful: removals and demotions are reported in
     ``result["metadata"]`` so quality reports and callers can see what changed.
@@ -957,11 +968,13 @@ def _apply_result_quality_pipeline(result: Dict[str, Any], config: Dict[str, Any
     if not isinstance(results, list) or not results:
         return
     quality_config = config.get("quality") if isinstance(config.get("quality"), dict) else {}
+    constrained_domains = extract_domain_constraints(query, include_domains)
     if quality_config.get("filter_spam", True):
+        allowed = list(quality_config.get("allowed_domains") or []) + constrained_domains
         kept, removed_domains = filter_spam_results(
             results,
             extra_blocked=quality_config.get("blocked_domains"),
-            allowed=quality_config.get("allowed_domains"),
+            allowed=allowed,
         )
         if removed_domains:
             result["results"] = kept
@@ -970,6 +983,8 @@ def _apply_result_quality_pipeline(result: Dict[str, Any], config: Dict[str, Any
                 "domains": removed_domains,
             }
             results = kept
+    if constrained_domains:
+        return
     try:
         max_per_domain = int(quality_config.get("max_results_per_domain", 2))
     except (TypeError, ValueError):
@@ -1309,7 +1324,7 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
         routing_info["mode"] = "research"
         routing_info["provider"] = "research"
         result["routing"].update(routing_info)
-        _apply_result_quality_pipeline(result, config)
+        _apply_result_quality_pipeline(result, config, query=args.query or "", include_domains=args.include_domains)
         result["quality_report"] = build_quality_report(
             query=args.query,
             result=result,
@@ -1408,7 +1423,7 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
             result["results"] = reranked
             if rerank_metadata.get("reranked"):
                 result.setdefault("metadata", {})["intent_rerank"] = rerank_metadata
-            _apply_result_quality_pipeline(result, config)
+            _apply_result_quality_pipeline(result, config, query=args.query or "", include_domains=args.include_domains)
 
         result["routing"] = routing_info
 
