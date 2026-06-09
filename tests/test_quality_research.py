@@ -202,7 +202,8 @@ class ResearchModeTests(unittest.TestCase):
         ])
 
     def test_research_mode_respects_time_budget_between_providers_and_skips_extract(self):
-        ticks = iter([0.0, 0.0, 6.0, 6.0])
+        # start, submit-gate linkup, submit-gate tavily, collect linkup, extract gate
+        ticks = iter([0.0, 0.0, 6.0, 6.0, 6.0])
         calls = []
 
         def now():
@@ -232,6 +233,93 @@ class ResearchModeTests(unittest.TestCase):
         self.assertEqual(result["routing"]["provider_errors"], [{"provider": "tavily", "error": "skipped: research time budget exhausted"}])
         self.assertEqual(result["routing"]["extraction_error"], "skipped: research time budget exhausted")
         self.assertEqual(result["metadata"]["extracted_url_count"], 0)
+
+    def test_research_mode_time_budget_bounds_slow_providers_already_running(self):
+        import time as _time
+
+        def execute(provider):
+            if provider == "slowpoke":
+                _time.sleep(5.0)
+            return {"provider": provider, "results": [
+                {"url": f"https://{provider}.test/a", "title": provider, "description": "Result"},
+            ]}
+
+        def extract(urls):
+            raise AssertionError("extract should be skipped once budget is exhausted")
+
+        start = _time.monotonic()
+        result = search.run_research_mode(
+            query="budget bounds completion",
+            research_providers=["fast", "slowpoke"],
+            execute_search=execute,
+            extract_urls=extract,
+            max_results=5,
+            max_extract_urls=1,
+            time_budget_seconds=0.5,
+        )
+        elapsed = _time.monotonic() - start
+
+        # The budget must bound wall-clock time even though slowpoke was already
+        # submitted; without completion-side enforcement this would take ~5s.
+        self.assertLess(elapsed, 3.0)
+        self.assertEqual([r["url"] for r in result["results"]], ["https://fast.test/a"])
+        self.assertEqual(result["routing"]["providers_queried"], ["fast"])
+        slow_errors = [e for e in result["routing"]["provider_errors"] if e["provider"] == "slowpoke"]
+        self.assertEqual(slow_errors, [{"provider": "slowpoke", "error": "timed out: research time budget exhausted"}])
+
+    def test_research_mode_time_budget_bounds_slow_extraction(self):
+        import time as _time
+
+        def execute(provider):
+            return {"provider": provider, "results": [
+                {"url": "https://source.test/a", "title": "A", "description": "Alpha"},
+            ]}
+
+        def extract(urls):
+            _time.sleep(5.0)
+            return {"provider": "linkup", "results": [{"url": u, "content": "late"} for u in urls]}
+
+        start = _time.monotonic()
+        result = search.run_research_mode(
+            query="budget bounds extraction",
+            research_providers=["fast"],
+            execute_search=execute,
+            extract_urls=extract,
+            max_results=3,
+            max_extract_urls=1,
+            time_budget_seconds=0.5,
+        )
+        elapsed = _time.monotonic() - start
+
+        self.assertLess(elapsed, 3.0)
+        self.assertEqual(len(result["results"]), 1)
+        self.assertEqual(result["source_summaries"], [])
+        self.assertEqual(result["routing"]["extraction_error"], "timed out: research time budget exhausted")
+
+    def test_research_mode_without_budget_still_waits_for_all_providers(self):
+        import time as _time
+
+        def execute(provider):
+            if provider == "slow":
+                _time.sleep(0.2)
+            return {"provider": provider, "results": [
+                {"url": f"https://{provider}.test/a", "title": provider, "description": "x"},
+            ]}
+
+        def extract(urls):
+            return {"provider": None, "results": []}
+
+        result = search.run_research_mode(
+            query="no budget",
+            research_providers=["slow", "fast"],
+            execute_search=execute,
+            extract_urls=extract,
+            max_results=5,
+            max_extract_urls=0,
+        )
+
+        self.assertEqual(result["routing"]["providers_queried"], ["slow", "fast"])
+        self.assertEqual(result["routing"]["provider_errors"], [])
 
 
 if __name__ == "__main__":

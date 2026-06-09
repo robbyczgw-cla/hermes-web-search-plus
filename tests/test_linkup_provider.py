@@ -1,7 +1,9 @@
 import os
+import time
 import unittest
 from unittest import mock
 
+import providers
 import search
 from search import get_api_key, validate_api_key
 
@@ -73,6 +75,31 @@ class LinkupProviderTests(unittest.TestCase):
         self.assertEqual(result["answer"], "The claim is supported by current studies.")
         self.assertEqual(result["results"][0]["title"], "Study source")
         self.assertEqual(result["results"][0]["snippet"], "A relevant study snippet")
+
+    def test_extract_linkup_batch_keeps_partial_results_when_one_fetch_hangs(self):
+        def fake_make_request(url, headers, body, timeout=30):
+            if body["url"] == "https://slow.test/page":
+                time.sleep(1.0)
+            return {"markdown": f"content for {body['url']}"}
+
+        start = time.monotonic()
+        with mock.patch.object(providers, "make_request", fake_make_request):
+            with mock.patch.object(providers, "_BATCH_TIMEOUT_GRACE_SECONDS", 0.3):
+                result = providers.extract_linkup(
+                    ["https://fast.test/page", "https://slow.test/page"],
+                    api_key="linkup-test-key-12345",
+                    timeout=0,
+                )
+        elapsed = time.monotonic() - start
+
+        # The batch must return within the bounded window with partial results
+        # instead of blocking on the hung fetch.
+        self.assertLess(elapsed, 0.9)
+        self.assertEqual(len(result["results"]), 2)
+        self.assertEqual(result["results"][0]["url"], "https://fast.test/page")
+        self.assertFalse(result["results"][0].get("error"))
+        self.assertEqual(result["results"][1]["url"], "https://slow.test/page")
+        self.assertIn("timed out", result["results"][1]["error"])
 
     def test_auto_router_prefers_linkup_for_source_grounding_queries(self):
         config = {

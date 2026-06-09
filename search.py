@@ -1310,7 +1310,7 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
                 break
         except Exception as e:
             error_msg = str(e)
-            cooldown_info = mark_provider_failure(current_provider, error_msg)
+            cooldown_info = mark_provider_failure(current_provider, error_msg, retry_after=getattr(e, "retry_after", None))
             errors.append({
                 "provider": current_provider,
                 "error": error_msg,

@@ -658,7 +658,7 @@ def test_fixed_provider_mode_does_not_add_fallback_providers(monkeypatch, tmp_pa
 
     monkeypatch.setattr(search, "search_brave", fail_brave)
     monkeypatch.setattr(search, "search_tavily", should_not_fallback)
-    monkeypatch.setattr(search, "mark_provider_failure", lambda provider, error: {"cooldown_seconds": 60})
+    monkeypatch.setattr(search, "mark_provider_failure", lambda provider, error, retry_after=None: {"cooldown_seconds": 60})
 
     try:
         search.main()

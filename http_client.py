@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from email.utils import parsedate_to_datetime
 from http.client import IncompleteRead
 import gzip
 import json
+import time
 import zlib
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -17,10 +19,18 @@ DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/2.4.0"
 class ProviderRequestError(Exception):
     """Structured provider error with retry/cooldown metadata."""
 
-    def __init__(self, message: str, status_code: int | None = None, transient: bool = False):
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        transient: bool = False,
+        retry_after: float | None = None,
+    ):
         super().__init__(message)
         self.status_code = status_code
         self.transient = transient
+        # Provider-requested wait (seconds) from a Retry-After header, if any.
+        self.retry_after = retry_after
 
 
 def _response_header(response, name: str) -> str:
@@ -87,6 +97,24 @@ def _extract_http_error_detail(error: HTTPError) -> str:
         return error_body[:500]
 
 
+def _parse_retry_after(error: HTTPError) -> float | None:
+    """Parse a Retry-After header (delta-seconds or HTTP-date) into seconds."""
+    value = _response_header(error, "Retry-After").strip()
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        retry_at = parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if retry_at is None:
+        return None
+    return max(0.0, retry_at.timestamp() - time.time())
+
+
 def _raise_provider_http_error(error: HTTPError) -> None:
     error_detail = _extract_http_error_detail(error)
     friendly_msg = _friendly_http_error(error.code, error_detail)
@@ -94,6 +122,7 @@ def _raise_provider_http_error(error: HTTPError) -> None:
         f"{friendly_msg} (HTTP {error.code})",
         status_code=error.code,
         transient=error.code in TRANSIENT_HTTP_CODES,
+        retry_after=_parse_retry_after(error) if error.code == 429 else None,
     )
 
 

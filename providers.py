@@ -1,6 +1,7 @@
 """Provider implementations for Web Search Plus search and extraction backends."""
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 import json
 import re
 from typing import Any, Dict, List, Optional
@@ -18,6 +19,11 @@ from http_client import (
     make_request,
 )
 from quality import _title_from_url
+
+
+# Extra scheduling headroom added on top of the per-request HTTP timeout when
+# bounding a concurrent extraction batch.
+_BATCH_TIMEOUT_GRACE_SECONDS = 5
 
 
 def search_serper(
@@ -706,11 +712,31 @@ def extract_linkup(
         return {"provider": "linkup", "results": [fetch_one(url) for url in urls]}
 
     indexed_results: Dict[int, Dict[str, Any]] = {}
-    with ThreadPoolExecutor(max_workers=min(len(urls), 5)) as executor:
+    workers = min(len(urls), 5)
+    # Bound the total wait so one hung fetch cannot stall the whole batch beyond
+    # the per-request HTTP timeout window (plus a small scheduling grace).
+    overall_timeout = timeout * ((len(urls) + workers - 1) // workers) + _BATCH_TIMEOUT_GRACE_SECONDS
+    executor = ThreadPoolExecutor(max_workers=workers)
+    try:
         futures = {executor.submit(fetch_one, url): idx for idx, url in enumerate(urls)}
-        for future in as_completed(futures):
-            indexed_results[futures[future]] = future.result()
-    results = [indexed_results[idx] for idx in range(len(urls)) if idx in indexed_results]
+        try:
+            for future in as_completed(futures, timeout=overall_timeout):
+                indexed_results[futures[future]] = future.result()
+        except FuturesTimeoutError:
+            for future in futures:
+                future.cancel()
+    finally:
+        # Keep partial results instead of blocking on overdue fetches; leftover
+        # threads finish in the background bounded by the HTTP timeout.
+        executor.shutdown(wait=False)
+    results = []
+    for idx, url in enumerate(urls):
+        if idx in indexed_results:
+            results.append(indexed_results[idx])
+        else:
+            results.append(_normalize_extract_result(
+                "linkup", url, error=f"Extraction timed out after {overall_timeout}s",
+            ))
     return {"provider": "linkup", "results": results}
 
 def extract_tavily(

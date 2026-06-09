@@ -104,7 +104,7 @@ def extract_plus(
             return result
         except Exception as e:
             error_msg = str(e)
-            cooldown_info = mark_provider_failure(prov, error_msg)
+            cooldown_info = mark_provider_failure(prov, error_msg, retry_after=getattr(e, "retry_after", None))
             errors.append({"provider": prov, "error": error_msg, "cooldown_seconds": cooldown_info.get("cooldown_seconds")})
             continue
     error_result = {"provider": selected, "results": [], "error": "All extraction providers failed", "fallback_errors": errors}
