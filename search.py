@@ -66,12 +66,15 @@ from provider_health import (  # noqa: F401 - re-exported for backward-compatibl
     provider_in_cooldown,
     reset_provider_health,
 )
+from provider_stats import record_provider_outcome
 from quality import (  # noqa: F401 - re-exported for backward-compatible tests/imports
     _choose_tie_winner,
     _domain_matches_rule,
     build_authority_signals,
     build_quality_report,
     deduplicate_results_across_providers,
+    filter_spam_results,
+    rerank_domain_diversity,
     rerank_results_for_intent,
     select_research_providers,
 )
@@ -944,6 +947,40 @@ def main():
         sys.exit(1)
 
 
+def _apply_result_quality_pipeline(result: Dict[str, Any], config: Dict[str, Any]) -> None:
+    """Filter mirror/SEO-spam domains and cap per-domain dominance, in place.
+
+    Both steps are truthful: removals and demotions are reported in
+    ``result["metadata"]`` so quality reports and callers can see what changed.
+    """
+    results = result.get("results")
+    if not isinstance(results, list) or not results:
+        return
+    quality_config = config.get("quality") if isinstance(config.get("quality"), dict) else {}
+    if quality_config.get("filter_spam", True):
+        kept, removed_domains = filter_spam_results(
+            results,
+            extra_blocked=quality_config.get("blocked_domains"),
+            allowed=quality_config.get("allowed_domains"),
+        )
+        if removed_domains:
+            result["results"] = kept
+            result.setdefault("metadata", {})["spam_filtered"] = {
+                "removed_count": len(results) - len(kept),
+                "domains": removed_domains,
+            }
+            results = kept
+    try:
+        max_per_domain = int(quality_config.get("max_results_per_domain", 2))
+    except (TypeError, ValueError):
+        max_per_domain = 2
+    if max_per_domain > 0:
+        reranked, demoted = rerank_domain_diversity(results, max_per_domain=max_per_domain)
+        if demoted:
+            result["results"] = reranked
+            result.setdefault("metadata", {})["domain_diversity_demoted"] = demoted
+
+
 def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
     """Run the search/research pipeline for parsed args.
 
@@ -1188,7 +1225,21 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
             raise ValueError(f"Unknown provider: {prov}")
 
     def execute_with_retry(prov: str) -> Dict[str, Any]:
-        return execute_provider_with_retry(prov, lambda: execute_search(prov))
+        started = time.monotonic()
+        try:
+            provider_result = execute_provider_with_retry(prov, lambda: execute_search(prov))
+        except ProviderRequestError:
+            # Only real provider interactions count as performance signal;
+            # config/validation errors (e.g. missing keys) are not recorded.
+            record_provider_outcome(prov, latency_seconds=time.monotonic() - started, result_count=0, error=True)
+            raise
+        record_provider_outcome(
+            prov,
+            latency_seconds=time.monotonic() - started,
+            result_count=len(provider_result.get("results", []) or []),
+            error=False,
+        )
+        return provider_result
 
     cache_context = {
         "locale": f"{args.country}:{args.language}",
@@ -1258,6 +1309,7 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
         routing_info["mode"] = "research"
         routing_info["provider"] = "research"
         result["routing"].update(routing_info)
+        _apply_result_quality_pipeline(result, config)
         result["quality_report"] = build_quality_report(
             query=args.query,
             result=result,
@@ -1356,6 +1408,7 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
             result["results"] = reranked
             if rerank_metadata.get("reranked"):
                 result.setdefault("metadata", {})["intent_rerank"] = rerank_metadata
+            _apply_result_quality_pipeline(result, config)
 
         result["routing"] = routing_info
 

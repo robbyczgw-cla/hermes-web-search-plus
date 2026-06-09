@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from config import DEFAULT_CONFIG, get_api_key
 from provider_registry import DEFAULT_PROVIDER_PRIORITY
+from provider_stats import performance_adjustments
 from quality import _choose_tie_winner
 
 
@@ -925,6 +926,19 @@ class QueryAnalyzer:
                 "auto_allow_excluded": auto_excluded,
             }
 
+        # Adaptive routing: blend in bounded, learned performance adjustments
+        # (latency / success / empty-result history of real calls). Only when
+        # query-class signals matched at all — performance memory breaks close
+        # calls but never invents a winner out of silence.
+        adaptive_adjustments: Dict[str, float] = {}
+        if max(available.values()) > 0 and self.auto_config.get("adaptive_routing", True):
+            adaptive_adjustments = performance_adjustments(list(available))
+            if adaptive_adjustments:
+                available = {
+                    p: max(0.0, s + adaptive_adjustments.get(p, 0.0))
+                    for p, s in available.items()
+                }
+
         # Find the winner
         max_score = max(available.values())
 
@@ -994,6 +1008,7 @@ class QueryAnalyzer:
             "routing_policy": ROUTING_POLICY,
             "exa_depth": exa_depth,
             "scores": {p: round(s, 2) for p, s in available.items()},
+            "adaptive_adjustments": adaptive_adjustments,
             "winning_score": round(max_score, 2),
             "top_signals": [
                 {"matched": s["matched"], "weight": s["weight"]}

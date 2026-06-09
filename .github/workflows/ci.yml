@@ -37,6 +37,7 @@ jobs:
           config.py
           env_loader.py
           provider_health.py
+          provider_stats.py
           quality.py
           research.py
           routing.py
