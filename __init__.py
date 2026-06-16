@@ -5,7 +5,7 @@ Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API
 """
 from __future__ import annotations
 
-__version__ = "2.5.0"
+__version__ = "2.5.1"
 
 import argparse
 import getpass

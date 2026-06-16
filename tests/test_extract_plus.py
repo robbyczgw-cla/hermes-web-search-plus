@@ -169,6 +169,38 @@ class ExtractPlusCoreTests(unittest.TestCase):
         self.assertEqual(result["provider"], "exa")
         mock_exa.assert_called_once()
 
+    def test_extract_plus_auto_skips_disabled_providers(self):
+        config = {
+            "auto_routing": {
+                "disabled_providers": ["firecrawl"],
+                "provider_priority": ["tavily", "exa", "linkup", "parallel", "firecrawl", "you"],
+            }
+        }
+        with mock.patch.dict(os.environ, {"TAVILY_API_KEY": "tvly-test", "FIRECRAWL_API_KEY": "fc-test"}, clear=True):
+            with mock.patch("search.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
+                with mock.patch("search.extract_firecrawl") as mock_firecrawl:
+                    result = search.extract_plus(["https://example.com"], provider="auto", config=config)
+
+        self.assertEqual(result["provider"], "tavily")
+        mock_tavily.assert_called_once()
+        mock_firecrawl.assert_not_called()
+
+    def test_extract_plus_explicit_disabled_provider_is_still_tried(self):
+        config = {
+            "auto_routing": {
+                "disabled_providers": ["firecrawl"],
+                "provider_priority": ["tavily", "exa", "linkup", "parallel", "firecrawl", "you"],
+            }
+        }
+        with mock.patch.dict(os.environ, {"FIRECRAWL_API_KEY": "fc-test", "LINKUP_API_KEY": "linkup-test"}, clear=True):
+            with mock.patch("search.extract_firecrawl", return_value={"provider": "firecrawl", "results": [{"url": "https://example.com", "error": "fetch failed"}]}) as mock_firecrawl:
+                with mock.patch("search.extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback"}]}) as mock_linkup:
+                    result = search.extract_plus(["https://example.com"], provider="firecrawl", config=config)
+
+        self.assertEqual(result["provider"], "linkup")
+        mock_firecrawl.assert_called_once()
+        mock_linkup.assert_called_once()
+
     def test_extract_provider_priority_prefers_fast_clean_extractors(self):
         self.assertEqual(search.EXTRACT_PROVIDER_PRIORITY, ["tavily", "exa", "linkup", "parallel", "firecrawl", "you"])
 

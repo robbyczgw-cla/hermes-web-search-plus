@@ -52,7 +52,7 @@ def test_http_client_provider_request_error_exports_retry_metadata():
 
 
 def test_default_user_agent_uses_release_version():
-    assert http_client.DEFAULT_USER_AGENT == "ClawdBot-WebSearchPlus/2.5.0"
+    assert http_client.DEFAULT_USER_AGENT == "ClawdBot-WebSearchPlus/2.5.1"
 
 
 def _make_http_error(code: int, headers=None, body: bytes = b"{}") -> HTTPError:

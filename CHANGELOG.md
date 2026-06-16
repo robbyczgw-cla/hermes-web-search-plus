@@ -1,5 +1,13 @@
 # Changelog
 
+## [v2.5.1] — 2026-06-16
+
+### 🐛 Fixed
+- `extract_plus` now respects `disabled_providers` from `config.json`. Previously only search routing honored the disabled-provider list; extraction used a hardcoded provider order, causing disabled providers to still be called during URL extraction. Explicit provider selection still tries the requested provider first, matching search semantics.
+
+### 🔧 Improved
+- Added tests covering auto-mode extraction skip and explicit-provider fallback behavior when providers are disabled in config.
+
 ## [v2.5.0] — 2026-06-16
 
 ### Credits

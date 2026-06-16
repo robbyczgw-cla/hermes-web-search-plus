@@ -35,7 +35,7 @@ def test_plugin_loads_with_hermes_package_style_import():
 
         spec.loader.exec_module(module)
 
-        assert module.__version__ == "2.5.0"
+        assert module.__version__ == "2.5.1"
         assert module._get_provider_catalog()
     finally:
         sys.modules.pop(module_name, None)

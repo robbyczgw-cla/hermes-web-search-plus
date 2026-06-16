@@ -45,7 +45,10 @@ def extract_plus(
             "error": f"Invalid URL(s) — must start with http:// or https://: {invalid}",
             "requested_provider": selected,
         }
-    providers = EXTRACT_PROVIDER_PRIORITY if selected == "auto" else [selected] + [p for p in EXTRACT_PROVIDER_PRIORITY if p != selected]
+    auto_config = config.get("auto_routing", {})
+    disabled_providers = set(auto_config.get("disabled_providers", []))
+    base_providers = EXTRACT_PROVIDER_PRIORITY if selected == "auto" else [selected] + [p for p in EXTRACT_PROVIDER_PRIORITY if p != selected]
+    providers = [p for p in base_providers if p == selected or p not in disabled_providers]
     errors = []
     cooldown_skips = []
     for prov in providers:
