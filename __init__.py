@@ -843,6 +843,30 @@ def _load_search_module() -> Any:
         if plugin_dir not in sys.path:
             sys.path.insert(0, plugin_dir)
             inserted = True
+        # Stash any top-level modules whose names collide with this plugin's
+        # flat sibling imports (providers, extract, routing, research, etc.).
+        # If hermes-agent's `providers` package is already in sys.modules,
+        # `from providers import extract_exa` inside extract.py resolves
+        # to the wrong module. Pop them for the duration of the load,
+        # restore afterward.
+        _COLLIDING_MODULES = (
+            "providers",
+            "extract",
+            "routing",
+            "research",
+            "search",
+            "config",
+            "cache",
+            "quality",
+            "http_client",
+            "env_loader",
+            "provider_health",
+            "provider_registry",
+        )
+        stashed: dict[str, Any] = {}
+        for _name in _COLLIDING_MODULES:
+            if _name in sys.modules:
+                stashed[_name] = sys.modules.pop(_name)
         try:
             spec = importlib.util.spec_from_file_location("_wsp_search_engine", _SEARCH_SCRIPT)
             if spec is None or spec.loader is None:
@@ -856,6 +880,12 @@ def _load_search_module() -> Any:
             _search_import_failed = True
             return None
         finally:
+            # Restore the original top-level modules so unrelated code that
+            # imported `providers` etc. still sees what it expects.
+            for _name in _COLLIDING_MODULES:
+                sys.modules.pop(_name, None)
+            for _name, _mod in stashed.items():
+                sys.modules[_name] = _mod
             if inserted:
                 try:
                     sys.path.remove(plugin_dir)
