@@ -408,8 +408,6 @@ class ExtractPlusPluginTests(unittest.TestCase):
             def register_tool(self, **kwargs):
                 registered[kwargs["name"]] = kwargs
 
-        # No keys at all: keyless Keenable keeps web_extract_plus available even
-        # though no search provider is configured (so search stays unavailable).
         with mock.patch.dict(os.environ, {}, clear=True):
             plugin.register(Ctx())
             self.assertFalse(registered["web_search_plus"]["check_fn"]())

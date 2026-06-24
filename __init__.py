@@ -28,6 +28,8 @@ try:  # Package load path used by Hermes plugin discovery.
     from .provider_registry import (
         DEFAULT_AUTO_ALLOW,
         DEFAULT_PROVIDER_PRIORITY,
+        EXTRACT_PROVIDER_ENV_KEYS,
+        KEYLESS_EXTRACT_PROVIDER_IDS,
         PROVIDER_ENV_KEYS,
         PROVIDER_SPECS,
         plugin_catalog,
@@ -37,6 +39,8 @@ except ImportError:  # Direct script/test imports from the plugin directory.
     from provider_registry import (
         DEFAULT_AUTO_ALLOW,
         DEFAULT_PROVIDER_PRIORITY,
+        EXTRACT_PROVIDER_ENV_KEYS,
+        KEYLESS_EXTRACT_PROVIDER_IDS,
         PROVIDER_ENV_KEYS,
         PROVIDER_SPECS,
         plugin_catalog,
@@ -51,6 +55,8 @@ except ImportError:
 _SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 _TOOLSET_NAME = "web-search-plus"
 _PROVIDER_ENV_KEYS = list(PROVIDER_ENV_KEYS)
+_EXTRACT_PROVIDER_ENV_KEYS = list(EXTRACT_PROVIDER_ENV_KEYS)
+_KEYLESS_EXTRACT_PROVIDER_IDS = list(KEYLESS_EXTRACT_PROVIDER_IDS)
 
 logger = logging.getLogger(__name__)
 
@@ -1309,9 +1315,9 @@ def register(ctx: Any) -> None:
         return any(os.environ.get(k) for k in _PROVIDER_ENV_KEYS)
 
     def extract_check_fn() -> bool:
-        """Extraction is always available: Keenable extracts keyless, so web_extract_plus
-        works even with no provider credential configured."""
-        return True
+        """Extraction is available when a keyless extract provider exists (Keenable
+        works without a key) or any extraction-capable provider credential is set."""
+        return bool(_KEYLESS_EXTRACT_PROVIDER_IDS) or any(os.environ.get(k) for k in _EXTRACT_PROVIDER_ENV_KEYS)
 
     ctx.register_tool(
         name="web_search_plus",

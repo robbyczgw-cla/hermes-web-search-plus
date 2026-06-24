@@ -11,9 +11,6 @@ from dataclasses import dataclass
 from typing import Dict, Tuple
 
 
-# Sentinel "key" for Keenable's keyless public endpoints. Keenable works without
-# a credential, so get_api_key returns this when KEENABLE_API_KEY is unset; the
-# provider functions switch to /public endpoints (no X-API-Key) when they see it.
 KEENABLE_PUBLIC_SENTINEL = "keenable:public"
 
 
@@ -34,6 +31,7 @@ class ProviderSpec:
     free_tier: str = "API key required"
     signup_url: str = ""
     upstream_capabilities: Tuple[str, ...] = ()
+    keyless: bool = False
 
 
 _PROVIDER_SPECS = (
@@ -212,6 +210,7 @@ _PROVIDER_SPECS = (
         capability_labels=("search", "extract"),
         free_tier="Keyless public tier; optional key for higher limits",
         signup_url="https://keenable.ai",
+        keyless=True,
     ),
 )
 
@@ -241,6 +240,9 @@ DEFAULT_AUTO_ALLOW = {
 }
 PROVIDER_ENV_KEYS = tuple(spec.env_var for spec in _PROVIDER_SPECS)
 EXTRACT_PROVIDER_ENV_KEYS = tuple(spec.env_var for spec in _PROVIDER_SPECS if spec.supports_extract)
+KEYLESS_EXTRACT_PROVIDER_IDS = tuple(
+    spec.provider for spec in _PROVIDER_SPECS if spec.keyless and spec.supports_extract
+)
 
 
 def doctor_catalog() -> Dict[str, Dict[str, object]]:

@@ -287,10 +287,8 @@ def test_tool_check_functions_treat_missing_or_empty_keys_as_unconfigured(monkey
 
     assert ctx.tools["web_search_plus"]["check_fn"]() is False
     assert "web_answer_plus" not in ctx.tools
-    # web_extract_plus stays available with no keys: Keenable extracts keyless.
     assert ctx.tools["web_extract_plus"]["check_fn"]() is True
 
-    # A search-only provider key enables search; extract remains available via keyless Keenable.
     monkeypatch.setenv("BRAVE_API_KEY", "brave-test")
     assert ctx.tools["web_search_plus"]["check_fn"]() is True
     assert ctx.tools["web_extract_plus"]["check_fn"]() is True

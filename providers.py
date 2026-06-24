@@ -1542,6 +1542,16 @@ def search_searxng(
 _KEENABLE_TIME_RANGE = {"hour": "1h", "day": "1d", "week": "7d", "month": "1mo", "year": "1y"}
 
 
+def _keenable_endpoint(api_url: str, api_key: str) -> tuple:
+    """Return (endpoint, headers) for Keenable: the keyless /public route with no
+    credential, or the authenticated route plus X-API-Key when a real key is set."""
+    authenticated = api_key != KEENABLE_PUBLIC_SENTINEL
+    headers = {"X-Keenable-Title": "hermes-web-search-plus"}
+    if authenticated:
+        headers["X-API-Key"] = api_key
+    return (api_url if authenticated else f"{api_url}/public"), headers
+
+
 def search_keenable(
     query: str,
     api_key: str,
@@ -1557,18 +1567,14 @@ def search_keenable(
     public sentinel) switches to the authenticated endpoint and adds X-API-Key
     for higher rate limits.
     """
-    authenticated = api_key != KEENABLE_PUBLIC_SENTINEL
-    url = api_url if authenticated else f"{api_url}/public"
-
     body: Dict[str, Any] = {"query": query}
     if time_range and time_range in _KEENABLE_TIME_RANGE:
         body["published_after"] = _KEENABLE_TIME_RANGE[time_range]
     if include_domains:
         body["site"] = include_domains[0]
 
-    headers = {"Content-Type": "application/json", "X-Keenable-Title": "hermes-web-search-plus"}
-    if authenticated:
-        headers["X-API-Key"] = api_key
+    url, headers = _keenable_endpoint(api_url, api_key)
+    headers["Content-Type"] = "application/json"
 
     data = make_request(url, headers, body, timeout=timeout)
     results = []
@@ -1608,11 +1614,7 @@ def extract_keenable(
 
     Keyless by default; a real key switches to the authenticated endpoint.
     """
-    authenticated = api_key != KEENABLE_PUBLIC_SENTINEL
-    base_url = api_url if authenticated else f"{api_url}/public"
-    headers = {"X-Keenable-Title": "hermes-web-search-plus"}
-    if authenticated:
-        headers["X-API-Key"] = api_key
+    base_url, headers = _keenable_endpoint(api_url, api_key)
 
     results: List[Dict[str, Any]] = []
     for url in urls:

@@ -292,9 +292,7 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
     spec = PROVIDER_SPECS.get(provider)
     env_key = _clean_env_value(os.environ.get(spec.env_var if spec else "", ""))
 
-    # Keenable works keyless: fall back to its public-endpoint sentinel so it
-    # counts as always-configured (lowest-priority fallback) without a credential.
-    if not env_key and provider == "keenable":
+    if not env_key and spec and spec.keyless:
         return KEENABLE_PUBLIC_SENTINEL
     return env_key
 
