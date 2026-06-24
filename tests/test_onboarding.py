@@ -247,7 +247,7 @@ def test_setup_dry_run_uses_target_env_path_for_dashboard(tmp_path, monkeypatch,
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "Providers: 1/13 configured" in out
+    assert "Providers: 1/14 configured" in out
     assert "Active: You.com" in out
     assert "Brave Search" not in out.split("Setup plan:", 1)[0]
 
@@ -263,7 +263,7 @@ def test_status_uses_target_env_path_for_dashboard(tmp_path, monkeypatch, capsys
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "Providers: 1/13 configured" in out
+    assert "Providers: 1/14 configured" in out
     assert "Active: Linkup" in out
     assert "Brave Search" not in out
 
@@ -287,11 +287,13 @@ def test_tool_check_functions_treat_missing_or_empty_keys_as_unconfigured(monkey
 
     assert ctx.tools["web_search_plus"]["check_fn"]() is False
     assert "web_answer_plus" not in ctx.tools
-    assert ctx.tools["web_extract_plus"]["check_fn"]() is False
+    # web_extract_plus stays available with no keys: Keenable extracts keyless.
+    assert ctx.tools["web_extract_plus"]["check_fn"]() is True
 
+    # A search-only provider key enables search; extract remains available via keyless Keenable.
     monkeypatch.setenv("BRAVE_API_KEY", "brave-test")
     assert ctx.tools["web_search_plus"]["check_fn"]() is True
-    assert ctx.tools["web_extract_plus"]["check_fn"]() is False
+    assert ctx.tools["web_extract_plus"]["check_fn"]() is True
 
     monkeypatch.setenv("LINKUP_API_KEY", "linkup-test")
     assert ctx.tools["web_extract_plus"]["check_fn"]() is True

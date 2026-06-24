@@ -20,6 +20,7 @@ from http_client import (
     make_get_request,
     make_request,
 )
+from provider_registry import KEENABLE_PUBLIC_SENTINEL
 from quality import _title_from_url
 
 
@@ -1536,3 +1537,98 @@ def search_searxng(
             "instance_url": instance_url,
         }
     }
+
+
+_KEENABLE_TIME_RANGE = {"hour": "1h", "day": "1d", "week": "7d", "month": "1mo", "year": "1y"}
+
+
+def search_keenable(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    time_range: Optional[str] = None,
+    include_domains: Optional[List[str]] = None,
+    api_url: str = "https://api.keenable.ai/v1/search",
+    timeout: int = 30,
+) -> dict:
+    """Search using Keenable's independent web index.
+
+    Works keyless via the /public endpoint; passing a real key (not the
+    public sentinel) switches to the authenticated endpoint and adds X-API-Key
+    for higher rate limits.
+    """
+    authenticated = api_key != KEENABLE_PUBLIC_SENTINEL
+    url = api_url if authenticated else f"{api_url}/public"
+
+    body: Dict[str, Any] = {"query": query}
+    if time_range and time_range in _KEENABLE_TIME_RANGE:
+        body["published_after"] = _KEENABLE_TIME_RANGE[time_range]
+    if include_domains:
+        body["site"] = include_domains[0]
+
+    headers = {"Content-Type": "application/json", "X-Keenable-Title": "hermes-web-search-plus"}
+    if authenticated:
+        headers["X-API-Key"] = api_key
+
+    data = make_request(url, headers, body, timeout=timeout)
+    results = []
+    for i, item in enumerate(data.get("results", [])[:max_results]):
+        item_url = item.get("url", "")
+        results.append({
+            "title": item.get("title") or _title_from_url(item_url),
+            "url": item_url,
+            "snippet": item.get("snippet") or item.get("description", ""),
+            "score": round(1.0 - i * 0.05, 3),
+            "date": item.get("published_at"),
+            "acquired_at": item.get("acquired_at"),
+        })
+
+    answer = results[0]["snippet"] if results else ""
+    return {
+        "provider": "keenable",
+        "query": query,
+        "results": results,
+        "images": [],
+        "answer": answer,
+        "metadata": {"number_of_results": data.get("number_of_results")},
+    }
+
+
+def extract_keenable(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://api.keenable.ai/v1/fetch",
+    timeout: int = 30,
+) -> dict:
+    """Extract page content via Keenable's fetch endpoint (clean markdown).
+
+    Keyless by default; a real key switches to the authenticated endpoint.
+    """
+    authenticated = api_key != KEENABLE_PUBLIC_SENTINEL
+    base_url = api_url if authenticated else f"{api_url}/public"
+    headers = {"X-Keenable-Title": "hermes-web-search-plus"}
+    if authenticated:
+        headers["X-API-Key"] = api_key
+
+    results: List[Dict[str, Any]] = []
+    for url in urls:
+        try:
+            endpoint = f"{base_url}?url={quote(url, safe='')}"
+            data = make_get_request(endpoint, headers, timeout=timeout)
+            content = data.get("content") or ""
+            results.append(_normalize_extract_result(
+                "keenable",
+                data.get("url") or url,
+                title=data.get("title", ""),
+                content=content,
+                raw_content=content,
+                author=data.get("author"),
+                description=data.get("description"),
+            ))
+        except Exception as e:
+            results.append(_normalize_extract_result("keenable", url, error=str(e)))
+    return {"provider": "keenable", "results": results}

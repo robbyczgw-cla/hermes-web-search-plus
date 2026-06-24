@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from env_loader import clean_env_value as _shared_clean_env_value, load_env_files
-from provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS
+from provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, KEENABLE_PUBLIC_SENTINEL, PROVIDER_SPECS
 
 
 class ProviderConfigError(Exception):
@@ -118,6 +118,11 @@ DEFAULT_CONFIG = {
         "safesearch": 0,  # 0=off, 1=moderate, 2=strict
         "engines": None,  # Optional list of engines to use
         "language": "en"
+    },
+    "keenable": {
+        "search_url": "https://api.keenable.ai/v1/search",
+        "fetch_url": "https://api.keenable.ai/v1/fetch",
+        "timeout": 30
     }
 }
 
@@ -285,7 +290,13 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
 
     # Then check environment
     spec = PROVIDER_SPECS.get(provider)
-    return _clean_env_value(os.environ.get(spec.env_var if spec else "", ""))
+    env_key = _clean_env_value(os.environ.get(spec.env_var if spec else "", ""))
+
+    # Keenable works keyless: fall back to its public-endpoint sentinel so it
+    # counts as always-configured (lowest-priority fallback) without a credential.
+    if not env_key and provider == "keenable":
+        return KEENABLE_PUBLIC_SENTINEL
+    return env_key
 
 
 def _validate_searxng_url(url: str) -> str:

@@ -11,6 +11,12 @@ from dataclasses import dataclass
 from typing import Dict, Tuple
 
 
+# Sentinel "key" for Keenable's keyless public endpoints. Keenable works without
+# a credential, so get_api_key returns this when KEENABLE_API_KEY is unset; the
+# provider functions switch to /public endpoints (no X-API-Key) when they see it.
+KEENABLE_PUBLIC_SENTINEL = "keenable:public"
+
+
 @dataclass(frozen=True)
 class ProviderSpec:
     """Public, non-secret metadata for one provider."""
@@ -195,11 +201,23 @@ _PROVIDER_SPECS = (
         free_tier="Free if self-hosted",
         signup_url="https://docs.searxng.org/admin/installation.html",
     ),
+    ProviderSpec(
+        provider="keenable",
+        env_var="KEENABLE_API_KEY",
+        display_name="Keenable",
+        description="Independent web index for search and extraction; works keyless, optional key raises rate limits.",
+        config_section="keenable",
+        supports_search=True,
+        supports_extract=True,
+        capability_labels=("search", "extract"),
+        free_tier="Keyless public tier; optional key for higher limits",
+        signup_url="https://keenable.ai",
+    ),
 )
 
 PROVIDER_SPECS: Dict[str, ProviderSpec] = {spec.provider: spec for spec in _PROVIDER_SPECS}
 SEARCH_PROVIDER_IDS = tuple(spec.provider for spec in _PROVIDER_SPECS if spec.supports_search)
-EXTRACT_PROVIDER_IDS = ("tavily", "exa", "linkup", "parallel", "firecrawl", "you")
+EXTRACT_PROVIDER_IDS = ("tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable")
 DEFAULT_PROVIDER_PRIORITY = (
     "you",
     "serper",
@@ -214,6 +232,7 @@ DEFAULT_PROVIDER_PRIORITY = (
     "kilo-perplexity",
     "perplexity",
     "searxng",
+    "keenable",
 )
 DEFAULT_AUTO_ALLOW = {
     spec.provider: False

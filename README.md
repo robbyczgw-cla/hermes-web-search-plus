@@ -153,8 +153,8 @@ Notes:
 
 | Capability | Unlocks | Configure at least one of |
 |---|---|---|
-| Search | `web_search_plus` | Brave, Serper, Tavily, Exa, Linkup, Firecrawl, Parallel, Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, or Querit |
-| Extraction | `web_extract_plus` | Linkup, Firecrawl, Tavily, Exa, Parallel, or You.com |
+| Search | `web_search_plus` | Brave, Serper, Tavily, Exa, Linkup, Firecrawl, Parallel, Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, Querit, or Keenable |
+| Extraction | `web_extract_plus` | Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, or Keenable |
 | Best starter | Search + extraction + reliable fallback | You.com + Serper + Linkup |
 
 `setup.py status --plain` reports this directly:
@@ -194,7 +194,7 @@ Parameters:
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `query` | string | **required** | Search query |
-| `provider` | string | `"auto"` | `auto`, `serper`, `brave`, `tavily`, `exa`, `linkup`, `firecrawl`, `parallel`, `perplexity`, `kilo-perplexity`, `you`, `searxng`, `serpbase`, `querit` |
+| `provider` | string | `"auto"` | `auto`, `serper`, `brave`, `tavily`, `exa`, `linkup`, `firecrawl`, `parallel`, `perplexity`, `kilo-perplexity`, `you`, `searxng`, `serpbase`, `querit`, `keenable` |
 | `depth` | string | `"normal"` | Exa only: `normal`, `deep`, `deep-reasoning` |
 | `count` | integer | `5` | Results, 1–20 |
 | `time_range` | string | — | `day`, `week`, `month`, `year` |
@@ -216,7 +216,7 @@ web_extract_plus(urls=["https://docs.linkup.so"], provider="linkup", render_js=F
 # → Linkup fetch endpoint
 ```
 
-Auto extraction currently tries Tavily, then Exa, Linkup, Parallel, Firecrawl, and You.com when keys are available. Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form/RAG fallback; Parallel is the excerpt-heavy LLM-ready backup; Firecrawl remains the robust scraper safety net; You.com is the final fallback.
+Auto extraction currently tries Tavily, then Exa, Linkup, Parallel, Firecrawl, and You.com when keys are available, then keyless Keenable as the last resort. Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form/RAG fallback; Parallel is the excerpt-heavy LLM-ready backup; Firecrawl remains the robust scraper safety net; You.com is a fallback; Keenable needs no key, so `web_extract_plus` always has a working provider.
 
 Parameters:
 
@@ -245,6 +245,7 @@ Parameters:
 | Kilo Perplexity | ✅ | — | Perplexity through Kilo gateway; explicit/research-style guarded by default (`auto_allow=false`) |
 | Brave | ✅ | — | Independent web index; explicit/guarded by default (`auto_allow=false`) |
 | SearXNG | ✅ | — | Privacy-focused self-hosted metasearch |
+| Keenable | ✅ | ✅ | Independent web index; works keyless, optional key raises limits; lowest-priority fallback |
 | SerpBase | ✅ | — | Cheap Google-like SERP fallback; explicit/fallback-only by default (`auto_allow=false`) |
 | Parallel | ✅ | ✅ | LLM-ready search and fast extract with long source excerpts; explicit/guarded by default (`auto_allow=false`) |
 | Querit | ✅ | — | Multilingual and real-time queries; explicit/fallback-only by default (`auto_allow=false`) |
@@ -268,6 +269,7 @@ FIRECRAWL_API_KEY=***     # https://firecrawl.dev — search + extraction
 PERPLEXITY_API_KEY=***    # https://perplexity.ai/settings/api
 YOU_API_KEY=***           # https://api.you.com — search + extraction
 SEARXNG_INSTANCE_URL=https://your-instance.example.com
+KEENABLE_API_KEY=***      # https://keenable.ai — optional; search + extraction work keyless, a key raises limits
 SERPBASE_API_KEY=***      # https://www.serpbase.dev — explicit/fallback-only Google-like SERP search
 PARALLEL_API_KEY=***      # https://platform.parallel.ai — explicit/guarded LLM-ready search + extraction
 QUERIT_API_KEY=***        # https://querit.ai — explicit/fallback-only by default

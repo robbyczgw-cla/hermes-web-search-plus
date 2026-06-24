@@ -28,7 +28,6 @@ try:  # Package load path used by Hermes plugin discovery.
     from .provider_registry import (
         DEFAULT_AUTO_ALLOW,
         DEFAULT_PROVIDER_PRIORITY,
-        EXTRACT_PROVIDER_ENV_KEYS,
         PROVIDER_ENV_KEYS,
         PROVIDER_SPECS,
         plugin_catalog,
@@ -38,7 +37,6 @@ except ImportError:  # Direct script/test imports from the plugin directory.
     from provider_registry import (
         DEFAULT_AUTO_ALLOW,
         DEFAULT_PROVIDER_PRIORITY,
-        EXTRACT_PROVIDER_ENV_KEYS,
         PROVIDER_ENV_KEYS,
         PROVIDER_SPECS,
         plugin_catalog,
@@ -53,7 +51,6 @@ except ImportError:
 _SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 _TOOLSET_NAME = "web-search-plus"
 _PROVIDER_ENV_KEYS = list(PROVIDER_ENV_KEYS)
-_EXTRACT_PROVIDER_ENV_KEYS = list(EXTRACT_PROVIDER_ENV_KEYS)
 
 logger = logging.getLogger(__name__)
 
@@ -1220,7 +1217,7 @@ def register(ctx: Any) -> None:
                 },
                 "provider": {
                     "type": "string",
-                    "enum": ["auto", "serper", "serpbase", "brave", "tavily", "exa", "querit", "linkup", "firecrawl", "parallel", "perplexity", "kilo-perplexity", "you", "searxng"],
+                    "enum": ["auto", "serper", "serpbase", "brave", "tavily", "exa", "querit", "linkup", "firecrawl", "parallel", "perplexity", "kilo-perplexity", "you", "searxng", "keenable"],
                     "description": "Search provider. Use 'auto' for intelligent routing (default). Brave and Serper share generic web-search intents and ties are distributed deterministically per query.",
                     "default": "auto",
                 },
@@ -1312,8 +1309,9 @@ def register(ctx: Any) -> None:
         return any(os.environ.get(k) for k in _PROVIDER_ENV_KEYS)
 
     def extract_check_fn() -> bool:
-        """Extraction is available if at least one extraction-capable provider credential is configured."""
-        return any(os.environ.get(k) for k in _EXTRACT_PROVIDER_ENV_KEYS)
+        """Extraction is always available: Keenable extracts keyless, so web_extract_plus
+        works even with no provider credential configured."""
+        return True
 
     ctx.register_tool(
         name="web_search_plus",
@@ -1330,13 +1328,13 @@ def register(ctx: Any) -> None:
         "name": "web_extract_plus",
         "description": (
             "Multi-provider URL content extraction. Auto tries Tavily, Exa, Linkup, "
-            "Firecrawl, then You.com; force a provider for robust scraping, clean markdown, or explicit fallback tests."
+            "Firecrawl, You.com, then keyless Keenable; force a provider for robust scraping, clean markdown, or explicit fallback tests."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "urls": {"type": "array", "items": {"type": "string"}, "description": "URLs to extract"},
-                "provider": {"type": "string", "enum": ["auto", "firecrawl", "linkup", "parallel", "tavily", "exa", "you"], "default": "auto"},
+                "provider": {"type": "string", "enum": ["auto", "firecrawl", "linkup", "parallel", "tavily", "exa", "you", "keenable"], "default": "auto"},
                 "format": {"type": "string", "enum": ["markdown", "html"], "default": "markdown"},
                 "include_images": {"type": "boolean", "default": False},
                 "include_raw_html": {"type": "boolean", "default": False},

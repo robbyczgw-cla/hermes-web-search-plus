@@ -17,6 +17,7 @@ optional_env:
   - YOU_API_KEY
   - PARALLEL_API_KEY
   - SEARXNG_INSTANCE_URL
+  - KEENABLE_API_KEY
 provides_tools:
   - web_search_plus
   - web_extract_plus

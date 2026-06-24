@@ -98,6 +98,8 @@ def fake_make_request(url, headers, body, timeout=30):
         return {"results": [{"url": RESULT_URL, "title": "You extract", "markdown": "You content", "metadata": {}}]}
     if "parallel.ai/v1/extract" in url:
         return {"results": [{"url": RESULT_URL, "title": "Parallel extract", "full_content": "Parallel content"}]}
+    if "keenable.ai/v1/search" in url:
+        return {"results": [{"title": "Keenable title", "url": RESULT_URL, "snippet": "Keenable snippet"}]}
     raise AssertionError(f"Unexpected POST URL in contract test: {url}")
 
 
@@ -138,6 +140,7 @@ SEARCH_CASES = [
     ("kilo-perplexity", search.search_perplexity, (QUERY, API_KEY), {"provider_name": "kilo-perplexity", "api_url": "https://api.kilo.ai/openai/v1/chat/completions", "model": "perplexity/sonar-pro"}),
     ("you", search.search_you, (QUERY, API_KEY), {}),
     ("searxng", search.search_searxng, (QUERY, "https://searxng.example"), {}),
+    ("keenable", search.search_keenable, (QUERY, API_KEY), {}),
 ]
 
 

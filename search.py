@@ -392,6 +392,16 @@ def search_searxng(*args, **kwargs):
     return _providers.search_searxng(*args, **kwargs)
 
 
+def search_keenable(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.search_keenable(*args, **kwargs)
+
+
+def extract_keenable(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.extract_keenable(*args, **kwargs)
+
+
 
 # =============================================================================
 # Exa (Neural/Semantic/Deep Search)
@@ -446,6 +456,7 @@ def _sync_extract_dependencies() -> None:
     _extract.extract_exa = extract_exa
     _extract.extract_you = extract_you
     _extract.extract_parallel = extract_parallel
+    _extract.extract_keenable = extract_keenable
 
 
 EXTRACT_PROVIDER_PRIORITY = _extract.EXTRACT_PROVIDER_PRIORITY
@@ -1235,6 +1246,17 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
                 language=args.language,
                 time_range=args.time_range,
                 safesearch=args.searxng_safesearch,
+            )
+        elif prov == "keenable":
+            keenable_config = config.get("keenable", {})
+            return search_keenable(
+                query=args.query,
+                api_key=key,
+                max_results=args.max_results,
+                time_range=args.time_range or args.freshness,
+                include_domains=args.include_domains,
+                api_url=keenable_config.get("search_url", "https://api.keenable.ai/v1/search"),
+                timeout=int(keenable_config.get("timeout", 30)),
             )
         else:
             raise ValueError(f"Unknown provider: {prov}")

@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### ✨ Added
+- Keenable as a search and extraction provider. It uses Keenable's independent web index and works keyless via the `/v1/search/public` and `/v1/fetch/public` endpoints; setting `KEENABLE_API_KEY` (or a `keenable.api_key` in `config.json`) switches to the authenticated endpoints (with an `X-API-Key` header) for higher rate limits. Available via `provider="keenable"` and as the lowest-priority auto-routing/extraction fallback, so it never displaces a configured keyed provider. Because it needs no key, `web_extract_plus` is now always available.
+
 ## [v2.5.1] — 2026-06-16
 
 ### 🐛 Fixed
