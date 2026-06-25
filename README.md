@@ -147,6 +147,21 @@ Notes:
 - `setup.py --config-path /path/to/config.json` points the helper at a custom config; `WEB_SEARCH_PLUS_CONFIG=/path/to/config.json` points `search.py` at the same file.
 - `config reset --yes` backs up the existing file before writing fresh defaults.
 
+### GroktoCrawl / local Firecrawl-compatible backends
+
+The Firecrawl provider can target a local Firecrawl-v2-compatible backend by overriding its search and scrape URLs in `config.json`. For example, a local [GroktoCrawl](https://github.com/groktopus/groktocrawl) instance listening on `127.0.0.1:8080` can be used without adding a separate provider:
+
+```json
+{
+  "firecrawl": {
+    "api_url": "http://127.0.0.1:8080/v2/search",
+    "scrape_url": "http://127.0.0.1:8080/v2/scrape"
+  }
+}
+```
+
+Keep `FIRECRAWL_API_KEY` configured if your backend enforces bearer authentication; local development instances may ignore the header. This recipe has been smoke-tested for Firecrawl-style search and URL scrape responses, including GitHub repository extraction through GroktoCrawl's adapter layer. It does not make GroktoCrawl the default, and it does not claim coverage for every Firecrawl endpoint, pagination edge case, or provider-specific error shape.
+
 ---
 
 ## Capability model

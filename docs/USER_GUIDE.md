@@ -116,6 +116,21 @@ Preview config changes without writing:
 python ~/.hermes/plugins/web-search-plus/setup.py config set-default you --dry-run
 ```
 
+### GroktoCrawl / local Firecrawl-compatible backends
+
+Firecrawl search and extraction use configurable endpoint URLs. If you run a local Firecrawl-v2-compatible service such as [GroktoCrawl](https://github.com/groktopus/groktocrawl), point the existing `firecrawl` provider at that service instead of adding a new provider name:
+
+```json
+{
+  "firecrawl": {
+    "api_url": "http://127.0.0.1:8080/v2/search",
+    "scrape_url": "http://127.0.0.1:8080/v2/scrape"
+  }
+}
+```
+
+The backend still receives the same bearer header WSP sends for Firecrawl, so set `FIRECRAWL_API_KEY` when the local service requires authentication. This is an operator-controlled override: WSP keeps the default Firecrawl cloud URLs unless you set these config values. The GroktoCrawl path has been smoke-tested for search and scrape/extract response compatibility, but monitor your own timeout, pagination, and rate-limit behavior before relying on it for production crawls.
+
 ### Routing debug walkthrough
 
 When a query does not use the provider you expected, ask for routing diagnostics instead of guessing:

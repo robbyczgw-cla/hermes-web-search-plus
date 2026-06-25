@@ -2,10 +2,26 @@
 
 ## [Unreleased]
 
+## [v2.6.1] — 2026-06-26
+
+### Credits
+- #57 by @robbyczgw-cla — GroktoCrawl / local Firecrawl-compatible backend documentation and endpoint override tests.
+
+### 📚 Docs
+- Documented using Firecrawl-v2-compatible local backends such as GroktoCrawl by overriding the existing Firecrawl search and scrape URLs in `config.json`.
+- Corrected the v2.6.0 changelog history to include #55 and #56 attribution after the GitHub Release notes were also fixed.
+
+### 🧪 Tests
+- Added Firecrawl provider tests covering custom search and scrape endpoint overrides so local-compatible backends stay on the same wire path as Firecrawl cloud.
+
 ## [v2.6.0] — 2026-06-26
 
 ### Credits
+- #55 by @maksym-mishchenko — in-process loader fix for `sys.modules` name collisions with host packages.
 - #56 by @IlyaGusev — Keenable search and extraction provider with keyed endpoints plus an opt-in keyless public tier.
+
+### 🐛 Fixed
+- Fixed in-process loading when the host runtime already has top-level modules such as `providers` in `sys.modules`, preventing host/package name collisions from forcing the plugin onto the subprocess fallback path. (#55)
 
 ### ✨ Added
 - Added Keenable as a search and extraction provider, using Keenable's independent web index. Setting `KEENABLE_API_KEY` (or `keenable.api_key` in `config.json`) uses the authenticated endpoints (with an `X-API-Key` header). It can also run keyless against the `/v1/search/public` and `/v1/fetch/public` endpoints, but this is **opt-in and off by default** — enable it with `keenable.allow_public: true` in `config.json` or `KEENABLE_ALLOW_PUBLIC=1`, since the public tier routes queries and fetched URLs to an unauthenticated service (~1000 req/hour, 10 req/sec per-IP limits, no SLA) and emits a one-time warning when first used. Once configured (keyed or opted-in), Keenable is available via `provider="keenable"` and as the lowest-priority auto-routing/extraction fallback, so it never displaces a configured keyed provider. Key status stays truthful — keyless providers report `key=no` with a distinct keyless badge in `doctor`. (#56)
