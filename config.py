@@ -304,7 +304,7 @@ def keyless_public_allowed(provider: str, config: Dict[str, Any] = None) -> bool
     if not (spec and spec.keyless):
         return False
     section = (config or {}).get(spec.config_section, {})
-    if isinstance(section, dict) and bool(section.get("allow_public")):
+    if isinstance(section, dict) and section.get("allow_public"):
         return True
     return _clean_env_value(os.environ.get(f"{spec.config_section.upper()}_ALLOW_PUBLIC", "")) is not None
 

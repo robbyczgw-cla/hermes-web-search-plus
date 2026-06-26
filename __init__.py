@@ -164,13 +164,14 @@ def _get_plugin_config_path() -> Path:
 
 def _keyless_public_opted_in(provider: str) -> bool:
     """Registration-path mirror of config.keyless_public_allowed (env var or config.json, default off)."""
-    if _clean_env_value(os.environ.get(f"{provider.upper()}_ALLOW_PUBLIC", "")) is not None:
+    name = PROVIDER_SPECS[provider].config_section
+    if _clean_env_value(os.environ.get(f"{name.upper()}_ALLOW_PUBLIC", "")) is not None:
         return True
     try:
         config_path = _get_plugin_config_path()
         if config_path.exists():
             with open(config_path) as f:
-                section = json.load(f).get(provider, {})
+                section = json.load(f).get(name, {})
             return isinstance(section, dict) and bool(section.get("allow_public"))
     except (json.JSONDecodeError, OSError, TypeError, ValueError):
         pass
@@ -1330,15 +1331,13 @@ def register(ctx: Any) -> None:
 
     def check_fn() -> bool:
         """Search is available if a provider credential is set, or a keyless provider is opted in."""
-        if any(os.environ.get(k) for k in _PROVIDER_ENV_KEYS):
-            return True
-        return any(_keyless_public_opted_in(p) for p in _KEYLESS_PROVIDER_IDS)
+        return any(os.environ.get(k) for k in _PROVIDER_ENV_KEYS) or any(
+            _keyless_public_opted_in(p) for p in _KEYLESS_PROVIDER_IDS)
 
     def extract_check_fn() -> bool:
         """Extraction is available if an extract-capable credential is set, or a keyless provider is opted in."""
-        if any(os.environ.get(k) for k in _EXTRACT_PROVIDER_ENV_KEYS):
-            return True
-        return any(_keyless_public_opted_in(p) for p in _KEYLESS_EXTRACT_PROVIDER_IDS)
+        return any(os.environ.get(k) for k in _EXTRACT_PROVIDER_ENV_KEYS) or any(
+            _keyless_public_opted_in(p) for p in _KEYLESS_EXTRACT_PROVIDER_IDS)
 
     ctx.register_tool(
         name="web_search_plus",
