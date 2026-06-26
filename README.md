@@ -216,7 +216,7 @@ web_extract_plus(urls=["https://docs.linkup.so"], provider="linkup", render_js=F
 # → Linkup fetch endpoint
 ```
 
-Auto extraction currently tries Tavily, then Exa, Linkup, Parallel, Firecrawl, and You.com when keys are available, then keyless Keenable as the last resort. Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form/RAG fallback; Parallel is the excerpt-heavy LLM-ready backup; Firecrawl remains the robust scraper safety net; You.com is a fallback; Keenable needs no key, so `web_extract_plus` always has a working provider.
+Auto extraction currently tries Tavily, then Exa, Linkup, Parallel, Firecrawl, and You.com when keys are available, then Keenable as the last resort **only if it is configured** (a `KEENABLE_API_KEY`, or the opted-in keyless public endpoint). Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form/RAG fallback; Parallel is the excerpt-heavy LLM-ready backup; Firecrawl remains the robust scraper safety net; You.com is a fallback; Keenable is the lowest-priority fallback. The keyless public tier is off by default — see [Keenable keyless public access](#keenable-keyless-public-access) — so `web_extract_plus` is available only when at least one extraction provider is configured.
 
 Parameters:
 
@@ -245,7 +245,7 @@ Parameters:
 | Kilo Perplexity | ✅ | — | Perplexity through Kilo gateway; explicit/research-style guarded by default (`auto_allow=false`) |
 | Brave | ✅ | — | Independent web index; explicit/guarded by default (`auto_allow=false`) |
 | SearXNG | ✅ | — | Privacy-focused self-hosted metasearch |
-| Keenable | ✅ | ✅ | Independent web index; works keyless, optional key raises limits; lowest-priority fallback |
+| Keenable | ✅ | ✅ | Independent web index; key via `KEENABLE_API_KEY`, or opt-in keyless public tier (off by default); lowest-priority fallback |
 | SerpBase | ✅ | — | Cheap Google-like SERP fallback; explicit/fallback-only by default (`auto_allow=false`) |
 | Parallel | ✅ | ✅ | LLM-ready search and fast extract with long source excerpts; explicit/guarded by default (`auto_allow=false`) |
 | Querit | ✅ | — | Multilingual and real-time queries; explicit/fallback-only by default (`auto_allow=false`) |
@@ -269,7 +269,7 @@ FIRECRAWL_API_KEY=***     # https://firecrawl.dev — search + extraction
 PERPLEXITY_API_KEY=***    # https://perplexity.ai/settings/api
 YOU_API_KEY=***           # https://api.you.com — search + extraction
 SEARXNG_INSTANCE_URL=https://your-instance.example.com
-KEENABLE_API_KEY=***      # https://keenable.ai — optional; search + extraction work keyless, a key raises limits
+KEENABLE_API_KEY=***      # https://keenable.ai — search + extraction (or opt into the keyless public tier, off by default)
 SERPBASE_API_KEY=***      # https://www.serpbase.dev — explicit/fallback-only Google-like SERP search
 PARALLEL_API_KEY=***      # https://platform.parallel.ai — explicit/guarded LLM-ready search + extraction
 QUERIT_API_KEY=***        # https://querit.ai — explicit/fallback-only by default
@@ -277,6 +277,19 @@ QUERIT_API_KEY=***        # https://querit.ai — explicit/fallback-only by defa
 # Kilo gateway alternate provider (`provider="kilo-perplexity"`)
 KILOCODE_API_KEY=***
 ```
+
+### Keenable keyless public access
+
+Keenable also exposes keyless `/public` endpoints, but they are **opt-in and off by default**. With a `KEENABLE_API_KEY` set, requests always use the authenticated endpoints. Without a key, Keenable is treated as unconfigured (it won't auto-route, fall back, or enable `web_extract_plus`) unless you explicitly enable the public tier:
+
+```json
+// config.json
+{ "keenable": { "allow_public": true } }
+```
+
+or via environment: `KEENABLE_ALLOW_PUBLIC=1`.
+
+When enabled, queries and fetched URLs are sent to an **unauthenticated, shared** public service. These are **collective** limits with **no SLA** — roughly **1,000 requests/hour** and **10 requests/second** across all keyless callers — so treat the public tier as a best-effort last resort, not a dependable provider. The first request that uses the public endpoint logs a one-time warning so the egress is visible. `web-search-plus doctor` reports keyless providers as `key=no` with a separate `keyless=on/off` badge so key status stays truthful.
 
 ---
 

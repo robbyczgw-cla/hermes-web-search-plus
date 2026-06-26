@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from env_loader import clean_env_value as _shared_clean_env_value, load_env_files
-from provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, KEENABLE_PUBLIC_SENTINEL, PROVIDER_SPECS
+from provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS
 
 
 class ProviderConfigError(Exception):
@@ -122,7 +122,8 @@ DEFAULT_CONFIG = {
     "keenable": {
         "search_url": "https://api.keenable.ai/v1/search",
         "fetch_url": "https://api.keenable.ai/v1/fetch",
-        "timeout": 30
+        "timeout": 30,
+        "allow_public": False
     }
 }
 
@@ -290,11 +291,33 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
 
     # Then check environment
     spec = PROVIDER_SPECS.get(provider)
-    env_key = _clean_env_value(os.environ.get(spec.env_var if spec else "", ""))
+    return _clean_env_value(os.environ.get(spec.env_var if spec else "", ""))
 
-    if not env_key and spec and spec.keyless:
-        return KEENABLE_PUBLIC_SENTINEL
-    return env_key
+
+def keyless_public_allowed(provider: str, config: Dict[str, Any] = None) -> bool:
+    """Whether a keyless provider may use its unauthenticated public endpoint.
+
+    Off by default; opt in via config.json (``<provider>.allow_public``) or the
+    ``<PROVIDER>_ALLOW_PUBLIC`` env var.
+    """
+    spec = PROVIDER_SPECS.get(provider)
+    if not (spec and spec.keyless):
+        return False
+    section = (config or {}).get(spec.config_section, {})
+    if isinstance(section, dict) and bool(section.get("allow_public")):
+        return True
+    return _clean_env_value(os.environ.get(f"{spec.config_section.upper()}_ALLOW_PUBLIC", "")) is not None
+
+
+def provider_configured(provider: str, config: Dict[str, Any] = None) -> bool:
+    """Whether a provider can run: it has a key, or its keyless public endpoint is opted in.
+
+    Distinct from ``get_api_key`` truthiness so key-status logic never treats a
+    keyless provider as keyed.
+    """
+    if get_api_key(provider, config):
+        return True
+    return keyless_public_allowed(provider, config)
 
 
 def _validate_searxng_url(url: str) -> str:
@@ -403,6 +426,9 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
             }))
 
         return key
+
+    if not key and keyless_public_allowed(provider, config):
+        return ""
 
     if not key:
         spec = PROVIDER_SPECS[provider]

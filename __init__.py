@@ -30,6 +30,7 @@ try:  # Package load path used by Hermes plugin discovery.
         DEFAULT_PROVIDER_PRIORITY,
         EXTRACT_PROVIDER_ENV_KEYS,
         KEYLESS_EXTRACT_PROVIDER_IDS,
+        KEYLESS_PROVIDER_IDS,
         PROVIDER_ENV_KEYS,
         PROVIDER_SPECS,
         plugin_catalog,
@@ -41,6 +42,7 @@ except ImportError:  # Direct script/test imports from the plugin directory.
         DEFAULT_PROVIDER_PRIORITY,
         EXTRACT_PROVIDER_ENV_KEYS,
         KEYLESS_EXTRACT_PROVIDER_IDS,
+        KEYLESS_PROVIDER_IDS,
         PROVIDER_ENV_KEYS,
         PROVIDER_SPECS,
         plugin_catalog,
@@ -57,6 +59,7 @@ _TOOLSET_NAME = "web-search-plus"
 _PROVIDER_ENV_KEYS = list(PROVIDER_ENV_KEYS)
 _EXTRACT_PROVIDER_ENV_KEYS = list(EXTRACT_PROVIDER_ENV_KEYS)
 _KEYLESS_EXTRACT_PROVIDER_IDS = list(KEYLESS_EXTRACT_PROVIDER_IDS)
+_KEYLESS_PROVIDER_IDS = list(KEYLESS_PROVIDER_IDS)
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +160,21 @@ def _get_plugin_config_path() -> Path:
     if override:
         return Path(override)
     return Path(__file__).parent.parent / "config.json"
+
+
+def _keyless_public_opted_in(provider: str) -> bool:
+    """Registration-path mirror of config.keyless_public_allowed (env var or config.json, default off)."""
+    if _clean_env_value(os.environ.get(f"{provider.upper()}_ALLOW_PUBLIC", "")) is not None:
+        return True
+    try:
+        config_path = _get_plugin_config_path()
+        if config_path.exists():
+            with open(config_path) as f:
+                section = json.load(f).get(provider, {})
+            return isinstance(section, dict) and bool(section.get("allow_public"))
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        pass
+    return False
 
 
 def _default_behavior_config() -> Dict[str, Any]:
@@ -1311,13 +1329,16 @@ def register(ctx: Any) -> None:
         return _format_results(data)
 
     def check_fn() -> bool:
-        """Search is available if at least one search provider credential is configured."""
-        return any(os.environ.get(k) for k in _PROVIDER_ENV_KEYS)
+        """Search is available if a provider credential is set, or a keyless provider is opted in."""
+        if any(os.environ.get(k) for k in _PROVIDER_ENV_KEYS):
+            return True
+        return any(_keyless_public_opted_in(p) for p in _KEYLESS_PROVIDER_IDS)
 
     def extract_check_fn() -> bool:
-        """Extraction is available when a keyless extract provider exists (Keenable
-        works without a key) or any extraction-capable provider credential is set."""
-        return bool(_KEYLESS_EXTRACT_PROVIDER_IDS) or any(os.environ.get(k) for k in _EXTRACT_PROVIDER_ENV_KEYS)
+        """Extraction is available if an extract-capable credential is set, or a keyless provider is opted in."""
+        if any(os.environ.get(k) for k in _EXTRACT_PROVIDER_ENV_KEYS):
+            return True
+        return any(_keyless_public_opted_in(p) for p in _KEYLESS_EXTRACT_PROVIDER_IDS)
 
     ctx.register_tool(
         name="web_search_plus",
@@ -1334,7 +1355,8 @@ def register(ctx: Any) -> None:
         "name": "web_extract_plus",
         "description": (
             "Multi-provider URL content extraction. Auto tries Tavily, Exa, Linkup, "
-            "Firecrawl, You.com, then keyless Keenable; force a provider for robust scraping, clean markdown, or explicit fallback tests."
+            "Firecrawl, You.com (plus keyless Keenable when its public endpoint is opted in); "
+            "force a provider for robust scraping, clean markdown, or explicit fallback tests."
         ),
         "parameters": {
             "type": "object",

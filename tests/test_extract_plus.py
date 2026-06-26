@@ -401,21 +401,33 @@ class ExtractPlusPluginTests(unittest.TestCase):
         self.assertIn("exa", schema["parameters"]["properties"]["provider"]["enum"])
         self.assertIn("you", schema["parameters"]["properties"]["provider"]["enum"])
 
-    def test_web_extract_plus_is_always_extract_capable_via_keyless_keenable(self):
+    def test_web_extract_plus_check_fn_requires_extract_capable_provider(self):
         registered = {}
 
         class Ctx:
             def register_tool(self, **kwargs):
                 registered[kwargs["name"]] = kwargs
 
-        with mock.patch.dict(os.environ, {}, clear=True):
+        with mock.patch.dict(os.environ, {"SERPER_API_KEY": "serper-test"}, clear=True):
             plugin.register(Ctx())
-            self.assertFalse(registered["web_search_plus"]["check_fn"]())
-            self.assertTrue(registered["web_extract_plus"]["check_fn"]())
+            self.assertTrue(registered["web_search_plus"]["check_fn"]())
+            self.assertFalse(registered["web_extract_plus"]["check_fn"]())
 
         registered.clear()
         with mock.patch.dict(os.environ, {"FIRECRAWL_API_KEY": "fc-test"}, clear=True):
             plugin.register(Ctx())
+            self.assertTrue(registered["web_extract_plus"]["check_fn"]())
+
+    def test_web_extract_plus_opt_in_enables_keyless_keenable(self):
+        registered = {}
+
+        class Ctx:
+            def register_tool(self, **kwargs):
+                registered[kwargs["name"]] = kwargs
+
+        with mock.patch.dict(os.environ, {"KEENABLE_ALLOW_PUBLIC": "1"}, clear=True):
+            plugin.register(Ctx())
+            self.assertTrue(registered["web_search_plus"]["check_fn"]())
             self.assertTrue(registered["web_extract_plus"]["check_fn"]())
 
 

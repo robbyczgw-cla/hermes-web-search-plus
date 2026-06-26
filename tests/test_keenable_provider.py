@@ -2,23 +2,59 @@ import os
 import unittest
 from unittest import mock
 
+import providers
 import search
-from config import get_api_key, validate_api_key
-from provider_registry import KEENABLE_PUBLIC_SENTINEL
+from config import (
+    ProviderConfigError,
+    get_api_key,
+    keyless_public_allowed,
+    provider_configured,
+    validate_api_key,
+)
+
+
+def _allow_public_config():
+    return {"keenable": {"allow_public": True}}
 
 
 class KeenableKeyResolutionTests(unittest.TestCase):
-    def test_get_api_key_returns_public_sentinel_when_no_key(self):
+    def test_get_api_key_returns_none_when_no_key(self):
+        """Keyless must not be truthy as a key, so key-status logic never treats it as keyed."""
         with mock.patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(get_api_key("keenable", {}), KEENABLE_PUBLIC_SENTINEL)
+            self.assertIsNone(get_api_key("keenable", {}))
+            self.assertIsNone(get_api_key("keenable", _allow_public_config()))
 
     def test_get_api_key_prefers_real_key(self):
         with mock.patch.dict(os.environ, {"KEENABLE_API_KEY": "keen_secret"}, clear=True):
             self.assertEqual(get_api_key("keenable", {}), "keen_secret")
 
-    def test_validate_api_key_accepts_keyless_sentinel(self):
+    def test_keyless_not_treated_as_key_even_when_opted_in(self):
+        """Opting in must not make key-status truthy, yet provider_configured is True."""
         with mock.patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(validate_api_key("keenable", {}), KEENABLE_PUBLIC_SENTINEL)
+            cfg = _allow_public_config()
+            self.assertFalse(bool(get_api_key("keenable", cfg)))
+            self.assertTrue(provider_configured("keenable", cfg))
+            self.assertFalse(provider_configured("keenable", {}))
+
+    def test_keyless_public_allowed_is_opt_in(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(keyless_public_allowed("keenable", {}))
+            self.assertTrue(keyless_public_allowed("keenable", _allow_public_config()))
+            self.assertFalse(keyless_public_allowed("serper", _allow_public_config()))
+
+    def test_keyless_public_allowed_via_env(self):
+        with mock.patch.dict(os.environ, {"KEENABLE_ALLOW_PUBLIC": "1"}, clear=True):
+            self.assertTrue(keyless_public_allowed("keenable", {}))
+
+    def test_validate_api_key_requires_opt_in_for_keyless(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(ProviderConfigError):
+                validate_api_key("keenable", {})
+            self.assertEqual(validate_api_key("keenable", _allow_public_config()), "")
+
+    def test_validate_api_key_prefers_real_key(self):
+        with mock.patch.dict(os.environ, {"KEENABLE_API_KEY": "keen_secret_value"}, clear=True):
+            self.assertEqual(validate_api_key("keenable", {}), "keen_secret_value")
 
 
 class KeenableSearchTests(unittest.TestCase):
@@ -36,7 +72,7 @@ class KeenableSearchTests(unittest.TestCase):
         with mock.patch("search.make_request", return_value=fake_response) as mock_request:
             result = search.search_keenable(
                 query="rust async patterns",
-                api_key=KEENABLE_PUBLIC_SENTINEL,
+                api_key="",
                 max_results=3,
                 time_range="week",
                 include_domains=["example.com"],
@@ -64,11 +100,26 @@ class KeenableSearchTests(unittest.TestCase):
         self.assertEqual(headers["X-API-Key"], "keen_secret")
 
 
+class KeenablePublicWarningTests(unittest.TestCase):
+    def test_public_route_warns_once(self):
+        with mock.patch.object(providers, "_KEENABLE_PUBLIC_WARNED", False):
+            with mock.patch("providers.print") as mock_print:
+                providers._keenable_endpoint("https://api.keenable.ai/v1/search", "")
+                providers._keenable_endpoint("https://api.keenable.ai/v1/search", "")
+        self.assertEqual(mock_print.call_count, 1)
+
+    def test_keyed_route_does_not_warn(self):
+        with mock.patch.object(providers, "_KEENABLE_PUBLIC_WARNED", False):
+            with mock.patch("providers.print") as mock_print:
+                providers._keenable_endpoint("https://api.keenable.ai/v1/search", "keen_secret")
+        mock_print.assert_not_called()
+
+
 class KeenableExtractTests(unittest.TestCase):
     def test_keyless_fetches_via_public_endpoint(self):
         fake_response = {"url": "https://example.com", "title": "Example", "content": "# Page\nbody"}
         with mock.patch("search.make_get_request", return_value=fake_response) as mock_get:
-            result = search.extract_keenable(["https://example.com"], KEENABLE_PUBLIC_SENTINEL)
+            result = search.extract_keenable(["https://example.com"], "")
 
         self.assertEqual(result["provider"], "keenable")
         self.assertEqual(result["results"][0]["content"], "# Page\nbody")
@@ -88,11 +139,21 @@ class KeenableExtractTests(unittest.TestCase):
         self.assertTrue(url.startswith("https://api.keenable.ai/v1/fetch?url="))
         self.assertEqual(headers["X-API-Key"], "keen_secret")
 
-    def test_extract_plus_falls_back_to_keyless_keenable_when_no_key(self):
+    def test_extract_plus_skips_keenable_when_not_opted_in(self):
+        """No key and no opt-in: keenable is not a silent fallback."""
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with mock.patch("search.make_get_request") as mock_get:
+                result = search.extract_plus(["https://example.com"], provider="auto", config={})
+
+        mock_get.assert_not_called()
+        self.assertNotEqual(result.get("provider"), "keenable")
+        self.assertTrue(result.get("error") or result.get("errors"))
+
+    def test_extract_plus_falls_back_to_keenable_when_opted_in(self):
         fake_response = {"url": "https://example.com", "title": "Example", "content": "keenable body"}
         with mock.patch.dict(os.environ, {}, clear=True):
             with mock.patch("search.make_get_request", return_value=fake_response):
-                result = search.extract_plus(["https://example.com"], provider="auto", config={})
+                result = search.extract_plus(["https://example.com"], provider="auto", config=_allow_public_config())
 
         self.assertEqual(result["provider"], "keenable")
         self.assertEqual(result["results"][0]["content"], "keenable body")

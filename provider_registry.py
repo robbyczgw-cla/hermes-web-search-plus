@@ -11,9 +11,6 @@ from dataclasses import dataclass
 from typing import Dict, Tuple
 
 
-KEENABLE_PUBLIC_SENTINEL = "keenable:public"
-
-
 @dataclass(frozen=True)
 class ProviderSpec:
     """Public, non-secret metadata for one provider."""
@@ -240,6 +237,7 @@ DEFAULT_AUTO_ALLOW = {
 }
 PROVIDER_ENV_KEYS = tuple(spec.env_var for spec in _PROVIDER_SPECS)
 EXTRACT_PROVIDER_ENV_KEYS = tuple(spec.env_var for spec in _PROVIDER_SPECS if spec.supports_extract)
+KEYLESS_PROVIDER_IDS = tuple(spec.provider for spec in _PROVIDER_SPECS if spec.keyless)
 KEYLESS_EXTRACT_PROVIDER_IDS = tuple(
     spec.provider for spec in _PROVIDER_SPECS if spec.keyless and spec.supports_extract
 )

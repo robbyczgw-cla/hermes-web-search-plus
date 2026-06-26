@@ -3,6 +3,7 @@
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 import json
 import re
+import sys
 import threading
 import time
 from typing import Any, Dict, List, Optional
@@ -20,7 +21,6 @@ from http_client import (
     make_get_request,
     make_request,
 )
-from provider_registry import KEENABLE_PUBLIC_SENTINEL
 from quality import _title_from_url
 
 
@@ -1542,13 +1542,31 @@ def search_searxng(
 _KEENABLE_TIME_RANGE = {"hour": "1h", "day": "1d", "week": "7d", "month": "1mo", "year": "1y"}
 
 
+_KEENABLE_PUBLIC_WARNED = False
+
+
+def _warn_keenable_public_once() -> None:
+    global _KEENABLE_PUBLIC_WARNED
+    if _KEENABLE_PUBLIC_WARNED:
+        return
+    _KEENABLE_PUBLIC_WARNED = True
+    print(json.dumps({
+        "warning": (
+            "Keenable keyless public endpoint in use: queries and fetched URLs are sent "
+            "to an unauthenticated shared service (https://keenable.ai) with no SLA. "
+            "Set KEENABLE_API_KEY for the authenticated endpoint."
+        )
+    }), file=sys.stderr)
+
+
 def _keenable_endpoint(api_url: str, api_key: str) -> tuple:
-    """Return (endpoint, headers) for Keenable: the keyless /public route with no
-    credential, or the authenticated route plus X-API-Key when a real key is set."""
-    authenticated = api_key != KEENABLE_PUBLIC_SENTINEL
+    """Return (endpoint, headers): authenticated route plus X-API-Key when keyed, else the /public route."""
+    authenticated = bool(api_key)
     headers = {"X-Keenable-Title": "hermes-web-search-plus"}
     if authenticated:
         headers["X-API-Key"] = api_key
+    else:
+        _warn_keenable_public_once()
     return (api_url if authenticated else f"{api_url}/public"), headers
 
 

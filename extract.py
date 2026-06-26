@@ -2,7 +2,7 @@
 
 from typing import Any, Dict, List, Optional
 
-from config import get_api_key, load_config
+from config import get_api_key, keyless_public_allowed, load_config
 from provider_health import (
     execute_provider_with_retry,
     mark_provider_failure,
@@ -57,7 +57,7 @@ def extract_plus(
             errors.append({"provider": prov, "error": f"Provider {prov} does not support extraction"})
             continue
         key = get_api_key(prov, config)
-        if not key:
+        if not key and not keyless_public_allowed(prov, config):
             errors.append({"provider": prov, "error": "missing_api_key"})
             continue
         in_cooldown, remaining = provider_in_cooldown(prov)

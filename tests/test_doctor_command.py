@@ -62,6 +62,8 @@ def test_doctor_json_reports_provider_capabilities_without_secrets(monkeypatch, 
         "search_capable": True,
         "extract_capable": False,
         "key_present": True,
+        "keyless": False,
+        "keyless_public_enabled": False,
         "auto_allowed": True,
         "disabled": False,
         "cooldown": {"active": False, "remaining_seconds": 0},
@@ -70,6 +72,26 @@ def test_doctor_json_reports_provider_capabilities_without_secrets(monkeypatch, 
     assert providers["tavily"]["extract_capable"] is True
     assert providers["tavily"]["key_present"] is True
     assert providers["brave"]["disabled"] is True
+    assert providers["keenable"]["keyless"] is True
+    assert providers["keenable"]["key_present"] is False
+    assert providers["keenable"]["keyless_public_enabled"] is False
+
+
+def test_doctor_reports_keyless_badge_when_public_opted_in(monkeypatch, tmp_path, capsys):
+    _clear_provider_env(monkeypatch)
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"version": 1, "keenable": {"allow_public": True}}))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
+    monkeypatch.setattr(search, "provider_in_cooldown", lambda _provider: (False, 0))
+    monkeypatch.setattr(sys, "argv", ["search.py", "doctor", "--json"])
+
+    search.main()
+
+    data = json.loads(capsys.readouterr().out)
+    providers = {provider["provider"]: provider for provider in data["providers"]}
+    assert providers["keenable"]["key_present"] is False
+    assert providers["keenable"]["keyless_public_enabled"] is True
+    assert data["ok"] is True
 
 
 def test_doctor_json_reports_provider_cooldowns(monkeypatch, tmp_path, capsys):

@@ -54,7 +54,9 @@ from config import (  # noqa: F401 - re-exported for backward-compatible tests/i
     _validate_runtime_config,
     _validate_searxng_url,
     get_api_key,
+    keyless_public_allowed,
     load_config,
+    provider_configured,
     validate_api_key,
 )
 from provider_health import (  # noqa: F401 - re-exported for backward-compatible tests/imports
@@ -79,7 +81,7 @@ from quality import (  # noqa: F401 - re-exported for backward-compatible tests/
     rerank_results_for_intent,
     select_research_providers,
 )
-from provider_registry import SEARCH_PROVIDER_IDS, doctor_catalog
+from provider_registry import PROVIDER_SPECS, SEARCH_PROVIDER_IDS, doctor_catalog
 from env_loader import load_env_files
 from research import run_research_mode
 import providers as _providers
@@ -511,12 +513,18 @@ def _build_doctor_report(config: Dict[str, Any], *, live: bool = False) -> Dict[
             key_present = False
             errors.append(_doctor_error("config", "invalid provider configuration"))
 
+        spec_obj = PROVIDER_SPECS.get(provider)
+        keyless = bool(spec_obj and spec_obj.keyless)
+        keyless_enabled = keyless and keyless_public_allowed(provider, config)
+
         provider_report = {
             "provider": provider,
             "env_var": spec["env_var"],
             "search_capable": spec["search_capable"],
             "extract_capable": spec["extract_capable"],
             "key_present": key_present,
+            "keyless": keyless,
+            "keyless_public_enabled": keyless_enabled,
             "auto_allowed": _provider_auto_allowed(provider, auto_config),
             "disabled": provider in disabled,
             "cooldown": cooldown,
@@ -525,7 +533,7 @@ def _build_doctor_report(config: Dict[str, Any], *, live: bool = False) -> Dict[
             provider_report["error"] = errors[0] if len(errors) == 1 else errors
         providers.append(provider_report)
 
-    usable = [p for p in providers if p["key_present"] and not p["disabled"]]
+    usable = [p for p in providers if (p["key_present"] or p["keyless_public_enabled"]) and not p["disabled"]]
     config_errors = [p for p in providers if _doctor_provider_has_error_type(p, "config")]
     return {
         "ok": bool(usable) and not config_errors,
@@ -556,9 +564,13 @@ def _format_doctor_text(report: Dict[str, Any]) -> str:
             capabilities.append("extract")
         cooldown = provider["cooldown"]
         cooldown_text = f"cooldown {cooldown['remaining_seconds']}s" if cooldown["active"] else "no cooldown"
+        keyless_text = ""
+        if provider.get("keyless"):
+            keyless_text = f"keyless={'on' if provider.get('keyless_public_enabled') else 'off'} "
         lines.append(
             f"- {provider['provider']}: env={provider['env_var']} "
             f"key={'yes' if provider['key_present'] else 'no'} "
+            f"{keyless_text}"
             f"capabilities={','.join(capabilities)} "
             f"auto_allowed={'yes' if provider['auto_allowed'] else 'no'} "
             f"disabled={'yes' if provider['disabled'] else 'no'} "
@@ -1068,7 +1080,7 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
     providers_to_try = [provider] if provider else []
     if not strict_provider_mode:
         for p in provider_priority:
-            if p not in providers_to_try and p not in disabled_providers and _provider_auto_allowed(p, auto_config) and get_api_key(p, config):
+            if p not in providers_to_try and p not in disabled_providers and _provider_auto_allowed(p, auto_config) and provider_configured(p, config):
                 providers_to_try.append(p)
 
     # Skip providers currently in cooldown
@@ -1302,14 +1314,14 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
     if args.mode == "research":
         available_research_providers = {
             p for p in providers_to_try
-            if p not in disabled_providers and _provider_auto_allowed(p, auto_config) and get_api_key(p, config) and not provider_in_cooldown(p)[0]
+            if p not in disabled_providers and _provider_auto_allowed(p, auto_config) and provider_configured(p, config) and not provider_in_cooldown(p)[0]
         }
-        if provider and get_api_key(provider, config) and not provider_in_cooldown(provider)[0]:
+        if provider and provider_configured(provider, config) and not provider_in_cooldown(provider)[0]:
             available_research_providers.add(provider)
         if args.research_providers:
             research_providers = [
                 p for p in args.research_providers
-                if p not in disabled_providers and _provider_auto_allowed(p, auto_config) and get_api_key(p, config) and not provider_in_cooldown(p)[0]
+                if p not in disabled_providers and _provider_auto_allowed(p, auto_config) and provider_configured(p, config) and not provider_in_cooldown(p)[0]
             ]
         else:
             research_providers = select_research_providers(

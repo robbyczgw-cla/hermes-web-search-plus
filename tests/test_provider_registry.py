@@ -27,6 +27,7 @@ def test_provider_registry_is_the_complete_capability_source():
     assert registry.PROVIDER_SPECS["keenable"].supports_search is True
     assert registry.PROVIDER_SPECS["keenable"].keyless is True
     assert registry.KEYLESS_EXTRACT_PROVIDER_IDS == ("keenable",)
+    assert registry.KEYLESS_PROVIDER_IDS == ("keenable",)
     assert registry.PROVIDER_SPECS["serper"].env_var == "SERPER_API_KEY"
     assert registry.PROVIDER_SPECS["tavily"].supports_extract is True
     assert registry.PROVIDER_SPECS["brave"].auto_allowed_by_default is False
