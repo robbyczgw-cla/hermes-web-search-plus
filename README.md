@@ -289,7 +289,7 @@ Keenable also exposes keyless `/public` endpoints, but they are **opt-in and off
 
 or via environment: `KEENABLE_ALLOW_PUBLIC=1`.
 
-When enabled, queries and fetched URLs are sent to an **unauthenticated, shared** public service. These are **collective** limits with **no SLA** — roughly **1,000 requests/hour** and **10 requests/second** across all keyless callers — so treat the public tier as a best-effort last resort, not a dependable provider. The first request that uses the public endpoint logs a one-time warning so the egress is visible. `web-search-plus doctor` reports keyless providers as `key=no` with a separate `keyless=on/off` badge so key status stays truthful.
+When enabled, queries and fetched URLs are sent to an **unauthenticated** public service. The limits are **per IP** with **no SLA** — roughly **1,000 requests/hour** and **10 requests/second** — so treat the public tier as a best-effort last resort, not a dependable provider. The first request that uses the public endpoint logs a one-time warning so the egress is visible. `web-search-plus doctor` reports keyless providers as `key=no` with a separate `keyless=on/off` badge so key status stays truthful.
 
 ---
 
