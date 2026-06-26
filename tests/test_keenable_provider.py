@@ -139,6 +139,18 @@ class KeenableExtractTests(unittest.TestCase):
         self.assertTrue(url.startswith("https://api.keenable.ai/v1/fetch?url="))
         self.assertEqual(headers["X-API-Key"], "keen_secret")
 
+    def test_key_wins_over_public_when_both_set(self):
+        fake_response = {"url": "https://example.com", "title": "X", "content": "body"}
+        with mock.patch.dict(os.environ, {"KEENABLE_API_KEY": "keen_secret"}, clear=True):
+            with mock.patch("search.make_get_request", return_value=fake_response) as mock_get:
+                result = search.extract_plus(["https://example.com"], provider="keenable",
+                                             config={"keenable": {"allow_public": True}})
+
+        self.assertEqual(result["provider"], "keenable")
+        url, headers = mock_get.call_args.args[:2]
+        self.assertNotIn("/fetch/public", url)
+        self.assertEqual(headers["X-API-Key"], "keen_secret")
+
     def test_extract_plus_skips_keenable_when_not_opted_in(self):
         """No key and no opt-in: keenable is not a silent fallback."""
         with mock.patch.dict(os.environ, {}, clear=True):
