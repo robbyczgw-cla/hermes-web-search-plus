@@ -2,8 +2,13 @@
 
 ## [Unreleased]
 
+## [v2.6.0] — 2026-06-26
+
+### Credits
+- #56 by @IlyaGusev — Keenable search and extraction provider with keyed endpoints plus an opt-in keyless public tier.
+
 ### ✨ Added
-- Keenable as a search and extraction provider, using Keenable's independent web index. Setting `KEENABLE_API_KEY` (or `keenable.api_key` in `config.json`) uses the authenticated endpoints (with an `X-API-Key` header). It can also run keyless against the `/v1/search/public` and `/v1/fetch/public` endpoints, but this is **opt-in and off by default** — enable it with `keenable.allow_public: true` in `config.json` or `KEENABLE_ALLOW_PUBLIC=1`, since the public tier routes queries and fetched URLs to an unauthenticated service (~1000 req/hour, 10 req/sec per-IP limits, no SLA) and emits a one-time warning when first used. Once configured (keyed or opted-in), Keenable is available via `provider="keenable"` and as the lowest-priority auto-routing/extraction fallback, so it never displaces a configured keyed provider. Key status stays truthful — keyless providers report `key=no` with a distinct keyless badge in `doctor`.
+- Added Keenable as a search and extraction provider, using Keenable's independent web index. Setting `KEENABLE_API_KEY` (or `keenable.api_key` in `config.json`) uses the authenticated endpoints (with an `X-API-Key` header). It can also run keyless against the `/v1/search/public` and `/v1/fetch/public` endpoints, but this is **opt-in and off by default** — enable it with `keenable.allow_public: true` in `config.json` or `KEENABLE_ALLOW_PUBLIC=1`, since the public tier routes queries and fetched URLs to an unauthenticated service (~1000 req/hour, 10 req/sec per-IP limits, no SLA) and emits a one-time warning when first used. Once configured (keyed or opted-in), Keenable is available via `provider="keenable"` and as the lowest-priority auto-routing/extraction fallback, so it never displaces a configured keyed provider. Key status stays truthful — keyless providers report `key=no` with a distinct keyless badge in `doctor`. (#56)
 
 ## [v2.5.1] — 2026-06-16
 
