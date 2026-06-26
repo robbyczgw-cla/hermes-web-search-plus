@@ -30,11 +30,7 @@ _TRUTHY_VALUES = {"1", "true", "yes", "on"}
 
 
 def is_truthy(value: object) -> bool:
-    """Strictly interpret an opt-in flag: only 1/true/yes/on (any case) are True.
-
-    0/false/no/off, empty, None, and anything else are False — so an egress flag
-    is never enabled by a present-but-false value.
-    """
+    """Strict opt-in parse: only 1/true/yes/on are truthy, so a present-but-false value never enables an egress flag."""
     if isinstance(value, bool):
         return value
     if value is None:

@@ -1331,12 +1331,10 @@ def register(ctx: Any) -> None:
         return _format_results(data)
 
     def check_fn() -> bool:
-        """Search is available if a provider credential is set, or a keyless provider is opted in."""
         return any(os.environ.get(k) for k in _PROVIDER_ENV_KEYS) or any(
             _keyless_public_opted_in(p) for p in _KEYLESS_PROVIDER_IDS)
 
     def extract_check_fn() -> bool:
-        """Extraction is available if an extract-capable credential is set, or a keyless provider is opted in."""
         return any(os.environ.get(k) for k in _EXTRACT_PROVIDER_ENV_KEYS) or any(
             _keyless_public_opted_in(p) for p in _KEYLESS_EXTRACT_PROVIDER_IDS)
 

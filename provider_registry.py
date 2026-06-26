@@ -244,7 +244,6 @@ KEYLESS_EXTRACT_PROVIDER_IDS = tuple(
 
 
 def keyless_public_env_var(provider: str) -> str:
-    """Env var that opts a keyless provider into its unauthenticated public endpoint."""
     return f"{PROVIDER_SPECS[provider].config_section.upper()}_ALLOW_PUBLIC"
 
 
