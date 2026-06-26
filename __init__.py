@@ -339,9 +339,6 @@ def _atomic_write_json(path: Path, data: Mapping[str, Any]) -> None:
 
 
 def _write_behavior_config(path: Path, data: Mapping[str, Any], *, dry_run: bool = False, backup: bool = False) -> None:
-    # config.json is shared with provider sections (keenable.*, searxng.*, ...) this
-    # writer does not own. Merge onto the existing file so a routing rewrite updates
-    # only the keys it carries and never drops sections it knows nothing about.
     merged: Dict[str, Any] = {}
     if path.exists():
         try:
@@ -823,7 +820,6 @@ def _web_search_plus_cli_command(args: Any) -> None:
             if value:
                 values[item["env"]] = value
                 continue
-            # No key given: offer the keyless public tier where the provider supports it.
             if item["provider"] not in _KEYLESS_PROVIDER_IDS or _keyless_public_opted_in(item["provider"], config_path):
                 continue
             if force_keyless:

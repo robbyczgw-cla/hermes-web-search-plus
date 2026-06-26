@@ -737,7 +737,6 @@ def test_search_load_config_normalizes_kilo_underscore_perplexity_alias(tmp_path
 
 
 def _isolate_keyless_env(monkeypatch, config_path):
-    """Point keyless opt-in checks at the test config and clear inherited opt-ins."""
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     for provider in wsp._KEYLESS_PROVIDER_IDS:
         monkeypatch.delenv(wsp.keyless_public_env_var(provider), raising=False)
