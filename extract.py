@@ -57,7 +57,8 @@ def extract_plus(
             errors.append({"provider": prov, "error": f"Provider {prov} does not support extraction"})
             continue
         key = get_api_key(prov, config)
-        if not key and not keyless_public_allowed(prov, config):
+        keyless_allowed = keyless_public_allowed(prov, config)
+        if not key and not keyless_allowed:
             errors.append({"provider": prov, "error": "missing_api_key"})
             continue
         in_cooldown, remaining = provider_in_cooldown(prov)
@@ -90,7 +91,7 @@ def extract_plus(
                     )
                 if prov == "keenable":
                     kn = config.get("keenable", {})
-                    return extract_keenable(urls, key, output_format, include_images, include_raw_html, render_js, public=keyless_public_allowed(prov, config), api_url=kn.get("fetch_url", "https://api.keenable.ai/v1/fetch"), timeout=int(kn.get("timeout", 30)))
+                    return extract_keenable(urls, key, output_format, include_images, include_raw_html, render_js, public=keyless_allowed, api_url=kn.get("fetch_url", "https://api.keenable.ai/v1/fetch"), timeout=int(kn.get("timeout", 30)))
                 you = config.get("you", {})
                 return extract_you(urls, key, output_format, include_images, include_raw_html, render_js, api_url=you.get("contents_url", "https://ydc-index.io/v1/contents"), timeout=int(you.get("timeout", 30)))
 

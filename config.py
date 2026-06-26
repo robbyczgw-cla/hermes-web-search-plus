@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from env_loader import clean_env_value as _shared_clean_env_value, load_env_files
-from provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS
+from provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS, keyless_public_env_var
 
 
 class ProviderConfigError(Exception):
@@ -306,7 +306,7 @@ def keyless_public_allowed(provider: str, config: Dict[str, Any] = None) -> bool
     section = (config or {}).get(spec.config_section, {})
     if isinstance(section, dict) and section.get("allow_public"):
         return True
-    return _clean_env_value(os.environ.get(f"{spec.config_section.upper()}_ALLOW_PUBLIC", "")) is not None
+    return _clean_env_value(os.environ.get(keyless_public_env_var(provider), "")) is not None
 
 
 def provider_configured(provider: str, config: Dict[str, Any] = None) -> bool:
