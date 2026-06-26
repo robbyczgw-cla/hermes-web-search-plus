@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from env_loader import clean_env_value as _shared_clean_env_value, load_env_files
+from env_loader import clean_env_value as _shared_clean_env_value, is_truthy, load_env_files
 from provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS, keyless_public_env_var
 
 
@@ -304,9 +304,9 @@ def keyless_public_allowed(provider: str, config: Dict[str, Any] = None) -> bool
     if not (spec and spec.keyless):
         return False
     section = (config or {}).get(spec.config_section, {})
-    if isinstance(section, dict) and section.get("allow_public"):
+    if isinstance(section, dict) and is_truthy(section.get("allow_public")):
         return True
-    return _clean_env_value(os.environ.get(keyless_public_env_var(provider), "")) is not None
+    return is_truthy(os.environ.get(keyless_public_env_var(provider)))
 
 
 def provider_configured(provider: str, config: Dict[str, Any] = None) -> bool:

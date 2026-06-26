@@ -26,6 +26,22 @@ def clean_env_value(value: str) -> Optional[str]:
     return None if is_placeholder_env_value(stripped) else stripped
 
 
+_TRUTHY_VALUES = {"1", "true", "yes", "on"}
+
+
+def is_truthy(value: object) -> bool:
+    """Strictly interpret an opt-in flag: only 1/true/yes/on (any case) are True.
+
+    0/false/no/off, empty, None, and anything else are False — so an egress flag
+    is never enabled by a present-but-false value.
+    """
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().strip('"').strip("'").lower() in _TRUTHY_VALUES
+
+
 def get_hermes_env_path() -> Path:
     """Return Hermes' profile-aware .env path when available."""
     try:

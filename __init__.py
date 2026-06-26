@@ -36,7 +36,7 @@ try:  # Package load path used by Hermes plugin discovery.
         keyless_public_env_var,
         plugin_catalog,
     )
-    from .env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, load_env_files
+    from .env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, is_truthy, load_env_files
 except ImportError:  # Direct script/test imports from the plugin directory.
     from provider_registry import (
         DEFAULT_AUTO_ALLOW,
@@ -49,7 +49,7 @@ except ImportError:  # Direct script/test imports from the plugin directory.
         keyless_public_env_var,
         plugin_catalog,
     )
-    from env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, load_env_files
+    from env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, is_truthy, load_env_files
 
 try:
     from .daemon_tasks import DaemonTask
@@ -166,14 +166,14 @@ def _get_plugin_config_path() -> Path:
 
 def _keyless_public_opted_in(provider: str) -> bool:
     """Registration-path mirror of config.keyless_public_allowed (env var or config.json, default off)."""
-    if _clean_env_value(os.environ.get(keyless_public_env_var(provider), "")) is not None:
+    if is_truthy(os.environ.get(keyless_public_env_var(provider))):
         return True
     try:
         config_path = _get_plugin_config_path()
         if config_path.exists():
             with open(config_path) as f:
                 section = json.load(f).get(PROVIDER_SPECS[provider].config_section, {})
-            return isinstance(section, dict) and bool(section.get("allow_public"))
+            return isinstance(section, dict) and is_truthy(section.get("allow_public"))
     except (json.JSONDecodeError, OSError, TypeError, ValueError):
         pass
     return False

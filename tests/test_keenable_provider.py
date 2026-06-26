@@ -1,7 +1,10 @@
+import json
 import os
+import tempfile
 import unittest
 from unittest import mock
 
+import __init__ as plugin
 import providers
 import search
 from config import (
@@ -11,6 +14,7 @@ from config import (
     provider_configured,
     validate_api_key,
 )
+from env_loader import is_truthy
 
 
 def _allow_public_config():
@@ -55,6 +59,54 @@ class KeenableKeyResolutionTests(unittest.TestCase):
     def test_validate_api_key_prefers_real_key(self):
         with mock.patch.dict(os.environ, {"KEENABLE_API_KEY": "keen_secret_value"}, clear=True):
             self.assertEqual(validate_api_key("keenable", {}), "keen_secret_value")
+
+
+class KeenablePublicOptInStrictnessTests(unittest.TestCase):
+    TRUE_VALUES = ["1", "true", "TRUE", "yes", "On"]
+    FALSE_VALUES = ["0", "false", "no", "off", "", "2", "enabled"]
+
+    def test_is_truthy_helper(self):
+        for v in ["1", "true", "True", "YES", "on", True, 1]:
+            self.assertTrue(is_truthy(v), v)
+        for v in ["0", "false", "no", "off", "", None, False, 0, "2", "tru"]:
+            self.assertFalse(is_truthy(v), v)
+
+    def test_env_opt_in_is_strict(self):
+        for v in self.TRUE_VALUES:
+            with mock.patch.dict(os.environ, {"KEENABLE_ALLOW_PUBLIC": v}, clear=True):
+                self.assertTrue(keyless_public_allowed("keenable", {}), f"env={v!r}")
+        for v in self.FALSE_VALUES:
+            with mock.patch.dict(os.environ, {"KEENABLE_ALLOW_PUBLIC": v}, clear=True):
+                self.assertFalse(keyless_public_allowed("keenable", {}), f"env={v!r}")
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertFalse(keyless_public_allowed("keenable", {}))
+
+    def test_config_opt_in_is_strict(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            for v in [True, "true", "yes", "on", "1", 1]:
+                self.assertTrue(keyless_public_allowed("keenable", {"keenable": {"allow_public": v}}), f"cfg={v!r}")
+            for v in [False, "false", "no", "off", "0", 0, ""]:
+                self.assertFalse(keyless_public_allowed("keenable", {"keenable": {"allow_public": v}}), f"cfg={v!r}")
+
+    def test_registration_env_opt_in_is_strict(self):
+        base = {"WEB_SEARCH_PLUS_CONFIG": "/nonexistent-strict.json"}
+        for v in self.TRUE_VALUES:
+            with mock.patch.dict(os.environ, {**base, "KEENABLE_ALLOW_PUBLIC": v}, clear=True):
+                self.assertTrue(plugin._keyless_public_opted_in("keenable"), f"env={v!r}")
+        for v in self.FALSE_VALUES:
+            with mock.patch.dict(os.environ, {**base, "KEENABLE_ALLOW_PUBLIC": v}, clear=True):
+                self.assertFalse(plugin._keyless_public_opted_in("keenable"), f"env={v!r}")
+
+    def test_registration_config_file_opt_in_is_strict(self):
+        for v, expected in [(True, True), ("yes", True), ("false", False), (False, False), (0, False)]:
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+                json.dump({"keenable": {"allow_public": v}}, f)
+                path = f.name
+            try:
+                with mock.patch.dict(os.environ, {"WEB_SEARCH_PLUS_CONFIG": path}, clear=True):
+                    self.assertEqual(plugin._keyless_public_opted_in("keenable"), expected, f"cfg={v!r}")
+            finally:
+                os.unlink(path)
 
 
 class KeenableSearchTests(unittest.TestCase):
