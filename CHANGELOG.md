@@ -7,6 +7,10 @@
 
 ### 🐛 Fixed
 - A routing-config rewrite (e.g. `config set-priority`, `config reset`) no longer drops non-routing provider sections from `config.json` (e.g. `keenable.allow_public`, `keenable.search_url`, `searxng.instance_url`); the writer now merges routing keys onto the existing file instead of rebuilding it from routing defaults.
+- Corrected the Querit provider `signup_url` from the dead `querit.com` to `querit.ai`.
+
+### 📚 Docs
+- Refreshed the README hero graphic to v2.6.1 (13 search / 7 extract providers, with search+extract dual-capability markings).
 
 ## [v2.6.1] — 2026-06-26
 

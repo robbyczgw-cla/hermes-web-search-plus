@@ -2,7 +2,7 @@
 
 
 <p align="center">
-  <img src="docs/assets/web-search-plus-v21-hero.png" alt="Hermes web-search-plus v2.1 hero showing the two-tool surface, Routing v2, Tavily-first extraction, and supported providers" width="100%">
+  <img src="docs/assets/web-search-plus-v261-hero.png" alt="Hermes web-search-plus v2.6.1 hero: two-tool surface, adaptive Routing v2, Tavily-first extraction, and 13 search / 7 extract providers with search+extract markings" width="100%">
 </p>
 
 <p align="center">
