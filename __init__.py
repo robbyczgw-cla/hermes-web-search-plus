@@ -285,6 +285,13 @@ def _merge_behavior_config(user_config: Mapping[str, Any]) -> Dict[str, Any]:
     config["auto_routing"] = auto
     if config["default_provider"] and config["default_provider"] in set(auto.get("disabled_providers", [])):
         raise SystemExit("default_provider cannot be disabled")
+    # Keyless providers persist their public-tier opt-in (allow_public) outside the
+    # routing schema; carry it through so a routing rewrite never drops it.
+    for provider in _KEYLESS_PROVIDER_IDS:
+        section_name = PROVIDER_SPECS[provider].config_section
+        section = user_config.get(section_name)
+        if isinstance(section, Mapping) and "allow_public" in section:
+            config.setdefault(section_name, {})["allow_public"] = bool(section.get("allow_public"))
     return config
 
 
@@ -585,6 +592,7 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     setup.add_argument("--env-path", help="Override Hermes .env path")
     setup.add_argument("--config-path", help="Override web-search-plus config.json path")
     setup.add_argument("--show-values", action="store_true", help="Use visible input instead of hidden secret prompts")
+    setup.add_argument("--keyless-public", action="store_true", help="Opt into the keyless public tier (no API key) for any keyless provider without prompting")
     setup.add_argument("--dry-run", action="store_true", help="Show the setup/routing plan without writing files")
     setup.add_argument("--routing", choices=["auto", "fixed"], help="Persist routing mode after key setup")
     setup.add_argument("--default-provider", help="Provider to use when routing is fixed/off")
@@ -779,7 +787,8 @@ def _web_search_plus_cli_command(args: Any) -> None:
         for item in catalog:
             rec = " recommended" if item.get("recommended") else ""
             caps = ", ".join(item.get("capabilities", []))
-            print(f"  • {item['display_name']} ({item['provider']}) — {item['env']} — {caps}{rec}")
+            keyless = " — keyless public tier available (no key needed)" if item["provider"] in _KEYLESS_PROVIDER_IDS else ""
+            print(f"  • {item['display_name']} ({item['provider']}) — {item['env']} — {caps}{rec}{keyless}")
             print(f"    {item['signup_url']}")
         print(f"\nTarget env file: {env_path}")
         print(f"Target config file: {config_path}")
@@ -788,7 +797,9 @@ def _web_search_plus_cli_command(args: Any) -> None:
             print("Dry run only; no keys or routing config written.")
             return
 
+        force_keyless = getattr(args, "keyless_public", False)
         values: Dict[str, str] = {}
+        keyless_enable: List[str] = []
         for item in catalog:
             if getattr(args, "open", False):
                 webbrowser.open(item["signup_url"])
@@ -802,6 +813,25 @@ def _web_search_plus_cli_command(args: Any) -> None:
                 value = ""
             if value:
                 values[item["env"]] = value
+                continue
+            # No key given: offer the keyless public tier where the provider supports it.
+            if item["provider"] in _KEYLESS_PROVIDER_IDS and not _keyless_public_opted_in(item["provider"]):
+                if force_keyless:
+                    keyless_enable.append(item["provider"])
+                else:
+                    try:
+                        answer = input(f"  Use {item['display_name']} keyless public search (no API key)? [y/N, Enter to skip]: ").strip().lower()
+                    except (EOFError, OSError):
+                        answer = ""
+                    if answer in ("y", "yes"):
+                        keyless_enable.append(item["provider"])
+        for provider in keyless_enable:
+            section_name = PROVIDER_SPECS[provider].config_section
+            section = config.get(section_name)
+            if not isinstance(section, dict):
+                section = {}
+                config[section_name] = section
+            section["allow_public"] = True
         routing_args_present = any(
             getattr(args, name, None) is not None
             for name in ["routing", "default_provider", "provider_priority", "disable_providers", "fallback_provider", "confidence_threshold"]
@@ -813,9 +843,13 @@ def _web_search_plus_cli_command(args: Any) -> None:
             print(f"\n✓ Configured {len(changed)} provider key(s) in {env_path}: " + ", ".join(changed))
             print("✓ Secrets were not printed.")
             wrote_any = True
-        if routing_args_present:
+        if routing_args_present or keyless_enable:
             _write_behavior_config(config_path, config)
-            print(f"✓ Saved routing preferences in {config_path}")
+            if routing_args_present:
+                print(f"✓ Saved routing preferences in {config_path}")
+            if keyless_enable:
+                names = ", ".join(PROVIDER_SPECS[p].display_name for p in keyless_enable)
+                print(f"✓ Enabled keyless public search for {names} in {config_path}")
             wrote_any = True
         if not wrote_any:
             print("No keys entered; nothing changed.")

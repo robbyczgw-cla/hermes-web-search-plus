@@ -734,4 +734,93 @@ def test_search_load_config_normalizes_kilo_underscore_perplexity_alias(tmp_path
     assert config["default_provider"] == "kilo-perplexity"
     assert config["auto_routing"]["provider_priority"] == ["kilo-perplexity"]
     assert config["auto_routing"]["fallback_provider"] == "kilo-perplexity"
+
+
+def _isolate_keyless_env(monkeypatch, config_path):
+    """Point keyless opt-in checks at the test config and clear inherited opt-ins."""
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
+    for provider in wsp._KEYLESS_PROVIDER_IDS:
+        monkeypatch.delenv(wsp.keyless_public_env_var(provider), raising=False)
+
+
+def test_setup_offers_keyless_public_tier_when_no_key_given(tmp_path, monkeypatch, capsys):
+    env_path = tmp_path / ".env"
+    config_path = tmp_path / "config.json"
+    _isolate_keyless_env(monkeypatch, config_path)
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "keenable", "--env-path", str(env_path), "--config-path", str(config_path)])
+    monkeypatch.setattr(wsp.getpass, "getpass", lambda _prompt: "")
+    monkeypatch.setattr("builtins.input", lambda _prompt: "y")
+
+    args.func(args)
+
+    out = capsys.readouterr().out
+    assert "keyless public tier available" in out
+    assert "Enabled keyless public search for Keenable" in out
+    data = json.loads(config_path.read_text())
+    assert data["keenable"]["allow_public"] is True
+    assert not env_path.exists()
+
+
+def test_setup_keyless_public_flag_enables_without_prompting(tmp_path, monkeypatch, capsys):
+    env_path = tmp_path / ".env"
+    config_path = tmp_path / "config.json"
+    _isolate_keyless_env(monkeypatch, config_path)
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "keenable", "--keyless-public", "--env-path", str(env_path), "--config-path", str(config_path)])
+    monkeypatch.setattr(wsp.getpass, "getpass", lambda _prompt: "")
+    monkeypatch.setattr("builtins.input", lambda _prompt: (_ for _ in ()).throw(AssertionError("should not prompt for keyless when flag is set")))
+
+    args.func(args)
+
+    data = json.loads(config_path.read_text())
+    assert data["keenable"]["allow_public"] is True
+
+
+def test_setup_declining_keyless_writes_nothing(tmp_path, monkeypatch, capsys):
+    env_path = tmp_path / ".env"
+    config_path = tmp_path / "config.json"
+    _isolate_keyless_env(monkeypatch, config_path)
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "keenable", "--env-path", str(env_path), "--config-path", str(config_path)])
+    monkeypatch.setattr(wsp.getpass, "getpass", lambda _prompt: "")
+    monkeypatch.setattr("builtins.input", lambda _prompt: "n")
+
+    args.func(args)
+
+    assert "No keys entered; nothing changed." in capsys.readouterr().out
+    assert not config_path.exists()
+
+
+def test_setup_skips_keyless_prompt_when_already_opted_in(tmp_path, monkeypatch, capsys):
+    env_path = tmp_path / ".env"
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"version": 1, "keenable": {"allow_public": true}}\n')
+    _isolate_keyless_env(monkeypatch, config_path)
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "keenable", "--env-path", str(env_path), "--config-path", str(config_path)])
+    monkeypatch.setattr(wsp.getpass, "getpass", lambda _prompt: "")
+    monkeypatch.setattr("builtins.input", lambda _prompt: (_ for _ in ()).throw(AssertionError("should not re-prompt when already opted in")))
+
+    args.func(args)
+
+    assert "No keys entered; nothing changed." in capsys.readouterr().out
+
+
+def test_keyless_allow_public_survives_routing_rewrite(tmp_path):
+    config_path = tmp_path / "config.json"
+    config_path.write_text('{"version": 1, "keenable": {"allow_public": true}}\n')
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["config", "set-priority", "keenable,brave", "--config-path", str(config_path)])
+
+    args.func(args)
+
+    data = json.loads(config_path.read_text())
+    assert data["keenable"]["allow_public"] is True
+    assert data["auto_routing"]["provider_priority"][:2] == ["keenable", "brave"]
     assert not list(tmp_path.glob("config.json.broken-*"))

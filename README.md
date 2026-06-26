@@ -97,6 +97,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py list
 python ~/.hermes/plugins/web-search-plus/setup.py setup
 python ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter --open
 python ~/.hermes/plugins/web-search-plus/setup.py setup you linkup --env-path ~/.hermes/.env
+python ~/.hermes/plugins/web-search-plus/setup.py setup keenable --keyless-public
 ```
 
 Presets:
@@ -109,6 +110,8 @@ Presets:
 - `all` — prompt for every supported provider.
 
 The CLI never prints secret values. It writes keys into the active Hermes `.env` file, then reminds you to restart Hermes or run `/reset` so the tools re-register.
+
+For keyless providers (e.g. Keenable), if you skip the key prompt the wizard offers to enable that provider's opt-in public tier and writes `allow_public` to `config.json`. Use `--keyless-public` to opt in non-interactively. See [Keenable keyless public access](#keenable-keyless-public-access).
 
 ### Routing preferences
 
@@ -302,7 +305,7 @@ Keenable also exposes keyless `/public` endpoints, but they are **opt-in and off
 { "keenable": { "allow_public": true } }
 ```
 
-or via environment: `KEENABLE_ALLOW_PUBLIC=1`.
+or via environment: `KEENABLE_ALLOW_PUBLIC=1`, or let the setup wizard do it — skip the key prompt and answer yes, or run `setup.py setup keenable --keyless-public`.
 
 When enabled, queries and fetched URLs are sent to an **unauthenticated** public service. The limits are **per IP** with **no SLA** — roughly **1,000 requests/hour** and **10 requests/second** — so treat the public tier as a best-effort last resort, not a dependable provider. The first request that uses the public endpoint logs a one-time warning so the egress is visible. `web-search-plus doctor` reports keyless providers as `key=no` with a separate `keyless=on/off` badge so key status stays truthful.
 

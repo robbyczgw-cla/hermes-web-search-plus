@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### ✨ Added
+- The setup wizard now offers the keyless public tier for keyless providers (currently Keenable): skip the key prompt and it asks whether to enable the no-key public endpoint, writing `<provider>.allow_public: true` to `config.json`. Add `--keyless-public` to opt in non-interactively. The mechanism is driven by the registry's keyless flag, so it covers future keyless providers automatically.
+
+### 🐛 Fixed
+- A routing-config rewrite (e.g. `config set-priority`) no longer drops a keyless provider's `allow_public` opt-in from `config.json`; the setup config merge now preserves it.
+
 ## [v2.6.1] — 2026-06-26
 
 ### Credits
