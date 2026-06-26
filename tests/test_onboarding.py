@@ -811,9 +811,9 @@ def test_setup_skips_keyless_prompt_when_already_opted_in(tmp_path, monkeypatch,
     assert "No keys entered; nothing changed." in capsys.readouterr().out
 
 
-def test_keyless_allow_public_survives_routing_rewrite(tmp_path):
+def test_routing_rewrite_preserves_non_routing_provider_sections(tmp_path):
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "keenable": {"allow_public": true}}\n')
+    config_path.write_text('{"version": 1, "keenable": {"allow_public": true, "search_url": "https://custom"}, "searxng": {"instance_url": "https://x"}}\n')
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["config", "set-priority", "keenable,brave", "--config-path", str(config_path)])
@@ -821,6 +821,7 @@ def test_keyless_allow_public_survives_routing_rewrite(tmp_path):
     args.func(args)
 
     data = json.loads(config_path.read_text())
-    assert data["keenable"]["allow_public"] is True
+    assert data["keenable"] == {"allow_public": True, "search_url": "https://custom"}
+    assert data["searxng"] == {"instance_url": "https://x"}
     assert data["auto_routing"]["provider_priority"][:2] == ["keenable", "brave"]
     assert not list(tmp_path.glob("config.json.broken-*"))

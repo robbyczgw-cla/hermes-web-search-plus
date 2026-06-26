@@ -164,12 +164,12 @@ def _get_plugin_config_path() -> Path:
     return Path(__file__).parent.parent / "config.json"
 
 
-def _keyless_public_opted_in(provider: str) -> bool:
+def _keyless_public_opted_in(provider: str, config_path: Optional[Path] = None) -> bool:
     """Registration-path mirror of config.keyless_public_allowed (env var or config.json, default off)."""
     if is_truthy(os.environ.get(keyless_public_env_var(provider))):
         return True
     try:
-        config_path = _get_plugin_config_path()
+        config_path = config_path or _get_plugin_config_path()
         if config_path.exists():
             with open(config_path) as f:
                 section = json.load(f).get(PROVIDER_SPECS[provider].config_section, {})
@@ -285,13 +285,6 @@ def _merge_behavior_config(user_config: Mapping[str, Any]) -> Dict[str, Any]:
     config["auto_routing"] = auto
     if config["default_provider"] and config["default_provider"] in set(auto.get("disabled_providers", [])):
         raise SystemExit("default_provider cannot be disabled")
-    # Keyless providers persist their public-tier opt-in (allow_public) outside the
-    # routing schema; carry it through so a routing rewrite never drops it.
-    for provider in _KEYLESS_PROVIDER_IDS:
-        section_name = PROVIDER_SPECS[provider].config_section
-        section = user_config.get(section_name)
-        if isinstance(section, Mapping) and "allow_public" in section:
-            config.setdefault(section_name, {})["allow_public"] = bool(section.get("allow_public"))
     return config
 
 
@@ -346,7 +339,23 @@ def _atomic_write_json(path: Path, data: Mapping[str, Any]) -> None:
 
 
 def _write_behavior_config(path: Path, data: Mapping[str, Any], *, dry_run: bool = False, backup: bool = False) -> None:
-    rendered = json.dumps(data, indent=2, sort_keys=True) + "\n"
+    # config.json is shared with provider sections (keenable.*, searxng.*, ...) this
+    # writer does not own. Merge onto the existing file so a routing rewrite updates
+    # only the keys it carries and never drops sections it knows nothing about.
+    merged: Dict[str, Any] = {}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text() or "{}")
+            if isinstance(existing, Mapping):
+                merged = dict(existing)
+        except (json.JSONDecodeError, OSError):
+            merged = {}
+    for key, value in data.items():
+        if isinstance(value, Mapping) and isinstance(merged.get(key), Mapping):
+            merged[key] = {**merged[key], **value}
+        else:
+            merged[key] = value
+    rendered = json.dumps(merged, indent=2, sort_keys=True) + "\n"
     if dry_run:
         print(rendered, end="")
         return
@@ -354,7 +363,7 @@ def _write_behavior_config(path: Path, data: Mapping[str, Any], *, dry_run: bool
         backup_path = _unique_timestamped_path(path, "bak")
         shutil.copy2(path, backup_path)
         print(f"Backup written: {backup_path}")
-    _atomic_write_json(path, data)
+    _atomic_write_json(path, merged)
 
 
 def _routing_summary(config: Mapping[str, Any]) -> str:
@@ -815,23 +824,19 @@ def _web_search_plus_cli_command(args: Any) -> None:
                 values[item["env"]] = value
                 continue
             # No key given: offer the keyless public tier where the provider supports it.
-            if item["provider"] in _KEYLESS_PROVIDER_IDS and not _keyless_public_opted_in(item["provider"]):
-                if force_keyless:
-                    keyless_enable.append(item["provider"])
-                else:
-                    try:
-                        answer = input(f"  Use {item['display_name']} keyless public search (no API key)? [y/N, Enter to skip]: ").strip().lower()
-                    except (EOFError, OSError):
-                        answer = ""
-                    if answer in ("y", "yes"):
-                        keyless_enable.append(item["provider"])
+            if item["provider"] not in _KEYLESS_PROVIDER_IDS or _keyless_public_opted_in(item["provider"], config_path):
+                continue
+            if force_keyless:
+                answer = "y"
+            else:
+                try:
+                    answer = input(f"  Use {item['display_name']} keyless public search (no API key)? [y/N, Enter to skip]: ").strip().lower()
+                except (EOFError, OSError):
+                    answer = ""
+            if answer in ("y", "yes"):
+                keyless_enable.append(item["provider"])
         for provider in keyless_enable:
-            section_name = PROVIDER_SPECS[provider].config_section
-            section = config.get(section_name)
-            if not isinstance(section, dict):
-                section = {}
-                config[section_name] = section
-            section["allow_public"] = True
+            config.setdefault(PROVIDER_SPECS[provider].config_section, {})["allow_public"] = True
         routing_args_present = any(
             getattr(args, name, None) is not None
             for name in ["routing", "default_provider", "provider_priority", "disable_providers", "fallback_provider", "confidence_threshold"]
