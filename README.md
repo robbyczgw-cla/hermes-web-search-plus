@@ -111,7 +111,7 @@ Presets:
 
 The CLI never prints secret values. It writes keys into the active Hermes `.env` file, then reminds you to restart Hermes or run `/reset` so the tools re-register.
 
-For keyless providers (e.g. Keenable), if you skip the key prompt the wizard offers to enable that provider's opt-in public tier and writes `allow_public` to `config.json`. Use `--keyless-public` to opt in non-interactively. See [Keenable keyless public access](#keenable-keyless-public-access).
+For keyless providers (e.g. Keenable), if you skip the key prompt the wizard offers to enable that provider's opt-in public tier and writes `allow_public` to `config.json`. Pass `--keyless-public` to skip that confirmation prompt and opt in directly (the API-key prompt still runs first). See [Keenable keyless public access](#keenable-keyless-public-access).
 
 ### Routing preferences
 

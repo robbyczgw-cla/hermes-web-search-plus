@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### ✨ Added
-- The setup wizard now offers the keyless public tier for keyless providers (currently Keenable): skip the key prompt and it asks whether to enable the no-key public endpoint, writing `<provider>.allow_public: true` to `config.json`. Add `--keyless-public` to opt in non-interactively. The mechanism is driven by the registry's keyless flag, so it covers future keyless providers automatically.
+- The setup wizard now offers the keyless public tier for keyless providers (currently Keenable): skip the key prompt and it asks whether to enable the no-key public endpoint, writing `<provider>.allow_public: true` to `config.json`. Add `--keyless-public` to skip that confirmation prompt and opt in directly. The mechanism is driven by the registry's keyless flag, so it covers future keyless providers automatically.
 
 ### 🐛 Fixed
 - A routing-config rewrite (e.g. `config set-priority`, `config reset`) no longer drops non-routing provider sections from `config.json` (e.g. `keenable.allow_public`, `keenable.search_url`, `searxng.instance_url`); the writer now merges routing keys onto the existing file instead of rebuilding it from routing defaults.

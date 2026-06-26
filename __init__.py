@@ -598,7 +598,7 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     setup.add_argument("--env-path", help="Override Hermes .env path")
     setup.add_argument("--config-path", help="Override web-search-plus config.json path")
     setup.add_argument("--show-values", action="store_true", help="Use visible input instead of hidden secret prompts")
-    setup.add_argument("--keyless-public", action="store_true", help="Opt into the keyless public tier (no API key) for any keyless provider without prompting")
+    setup.add_argument("--keyless-public", action="store_true", help="Opt into the keyless public tier (no API key) for any keyless provider, skipping its confirmation prompt")
     setup.add_argument("--dry-run", action="store_true", help="Show the setup/routing plan without writing files")
     setup.add_argument("--routing", choices=["auto", "fixed"], help="Persist routing mode after key setup")
     setup.add_argument("--default-provider", help="Provider to use when routing is fixed/off")
