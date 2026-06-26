@@ -95,7 +95,7 @@ _PROVIDER_SPECS = (
         capability_labels=("search", "multilingual"),
         auto_allowed_by_default=False,
         free_tier="1,000 free searches/month",
-        signup_url="https://querit.com",
+        signup_url="https://www.querit.ai",
     ),
     ProviderSpec(
         provider="linkup",

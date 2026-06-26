@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### 🐛 Fixed
+- Corrected the Querit provider `signup_url` from the dead `querit.com` to `querit.ai`.
+
+### 📚 Docs
+- Refreshed the README hero graphic to v2.6.1 (13 search / 7 extract providers, with search+extract dual-capability markings).
+
 ## [v2.6.1] — 2026-06-26
 
 ### Credits
