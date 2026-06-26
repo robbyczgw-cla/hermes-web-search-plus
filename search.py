@@ -1267,7 +1267,7 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
                 max_results=args.max_results,
                 time_range=args.time_range or args.freshness,
                 include_domains=args.include_domains,
-                public=key is None and keyless_public_allowed(prov, config),
+                public=keyless_public_allowed(prov, config),
                 api_url=keenable_config.get("search_url", "https://api.keenable.ai/v1/search"),
                 timeout=int(keenable_config.get("timeout", 30)),
             )

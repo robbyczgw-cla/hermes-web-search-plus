@@ -114,6 +114,18 @@ class KeenablePublicWarningTests(unittest.TestCase):
                 providers._keenable_endpoint("https://api.keenable.ai/v1/search", "keen_secret", public=False)
         mock_print.assert_not_called()
 
+    def test_key_wins_even_when_public_enabled(self):
+        with mock.patch.object(providers, "_KEENABLE_PUBLIC_WARNED", False):
+            with mock.patch("providers.print") as mock_print:
+                url, headers = providers._keenable_endpoint("https://api.keenable.ai/v1/search", "keen_secret", public=True)
+        self.assertEqual(url, "https://api.keenable.ai/v1/search")
+        self.assertEqual(headers["X-API-Key"], "keen_secret")
+        mock_print.assert_not_called()
+
+    def test_raises_without_key_or_public(self):
+        with self.assertRaises(ValueError):
+            providers._keenable_endpoint("https://api.keenable.ai/v1/search", None, public=False)
+
 
 class KeenableExtractTests(unittest.TestCase):
     def test_keyless_fetches_via_public_endpoint(self):

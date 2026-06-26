@@ -1560,13 +1560,16 @@ def _warn_keenable_public_once() -> None:
 
 
 def _keenable_endpoint(api_url: str, api_key: Optional[str], public: bool) -> tuple:
-    """Return (endpoint, headers): the /public route when public, else the authenticated route + X-API-Key."""
+    """Return (endpoint, headers). A present key always uses the authenticated route;
+    with no key, the keyless /public route is used when public is enabled."""
     headers = {"X-Keenable-Title": "hermes-web-search-plus"}
+    if api_key:
+        headers["X-API-Key"] = api_key
+        return api_url, headers
     if public:
         _warn_keenable_public_once()
         return f"{api_url}/public", headers
-    headers["X-API-Key"] = api_key
-    return api_url, headers
+    raise ValueError("Keenable requires an API key or an enabled public endpoint")
 
 
 def search_keenable(
@@ -1581,8 +1584,8 @@ def search_keenable(
 ) -> dict:
     """Search using Keenable's independent web index.
 
-    public=True hits the keyless /public endpoint; otherwise the authenticated
-    endpoint is used with api_key in X-API-Key.
+    Uses the authenticated endpoint when api_key is set; with no key, public=True
+    selects the keyless /public endpoint.
     """
     body: Dict[str, Any] = {"query": query}
     if time_range and time_range in _KEENABLE_TIME_RANGE:
@@ -1630,8 +1633,8 @@ def extract_keenable(
 ) -> dict:
     """Extract page content via Keenable's fetch endpoint (clean markdown).
 
-    public=True hits the keyless /public endpoint; otherwise the authenticated
-    endpoint is used with api_key in X-API-Key.
+    Uses the authenticated endpoint when api_key is set; with no key, public=True
+    selects the keyless /public endpoint.
     """
     base_url, headers = _keenable_endpoint(api_url, api_key, public)
 
