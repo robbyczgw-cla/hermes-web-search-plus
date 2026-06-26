@@ -1559,31 +1559,30 @@ def _warn_keenable_public_once() -> None:
     }), file=sys.stderr)
 
 
-def _keenable_endpoint(api_url: str, api_key: str) -> tuple:
-    """Return (endpoint, headers): authenticated route plus X-API-Key when keyed, else the /public route."""
-    authenticated = bool(api_key)
+def _keenable_endpoint(api_url: str, api_key: Optional[str], public: bool) -> tuple:
+    """Return (endpoint, headers): the /public route when public, else the authenticated route + X-API-Key."""
     headers = {"X-Keenable-Title": "hermes-web-search-plus"}
-    if authenticated:
-        headers["X-API-Key"] = api_key
-    else:
+    if public:
         _warn_keenable_public_once()
-    return (api_url if authenticated else f"{api_url}/public"), headers
+        return f"{api_url}/public", headers
+    headers["X-API-Key"] = api_key
+    return api_url, headers
 
 
 def search_keenable(
     query: str,
-    api_key: str,
+    api_key: Optional[str] = None,
     max_results: int = 5,
     time_range: Optional[str] = None,
     include_domains: Optional[List[str]] = None,
+    public: bool = False,
     api_url: str = "https://api.keenable.ai/v1/search",
     timeout: int = 30,
 ) -> dict:
     """Search using Keenable's independent web index.
 
-    Works keyless via the /public endpoint; passing a real key (not the
-    public sentinel) switches to the authenticated endpoint and adds X-API-Key
-    for higher rate limits.
+    public=True hits the keyless /public endpoint; otherwise the authenticated
+    endpoint is used with api_key in X-API-Key.
     """
     body: Dict[str, Any] = {"query": query}
     if time_range and time_range in _KEENABLE_TIME_RANGE:
@@ -1591,7 +1590,7 @@ def search_keenable(
     if include_domains:
         body["site"] = include_domains[0]
 
-    url, headers = _keenable_endpoint(api_url, api_key)
+    url, headers = _keenable_endpoint(api_url, api_key, public)
     headers["Content-Type"] = "application/json"
 
     data = make_request(url, headers, body, timeout=timeout)
@@ -1620,19 +1619,21 @@ def search_keenable(
 
 def extract_keenable(
     urls: List[str],
-    api_key: str,
+    api_key: Optional[str] = None,
     output_format: str = "markdown",
     include_images: bool = False,
     include_raw_html: bool = False,
     render_js: bool = False,
+    public: bool = False,
     api_url: str = "https://api.keenable.ai/v1/fetch",
     timeout: int = 30,
 ) -> dict:
     """Extract page content via Keenable's fetch endpoint (clean markdown).
 
-    Keyless by default; a real key switches to the authenticated endpoint.
+    public=True hits the keyless /public endpoint; otherwise the authenticated
+    endpoint is used with api_key in X-API-Key.
     """
-    base_url, headers = _keenable_endpoint(api_url, api_key)
+    base_url, headers = _keenable_endpoint(api_url, api_key, public)
 
     results: List[Dict[str, Any]] = []
     for url in urls:

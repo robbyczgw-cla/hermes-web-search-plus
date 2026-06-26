@@ -50,7 +50,7 @@ class KeenableKeyResolutionTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(ProviderConfigError):
                 validate_api_key("keenable", {})
-            self.assertEqual(validate_api_key("keenable", _allow_public_config()), "")
+            self.assertIsNone(validate_api_key("keenable", _allow_public_config()))
 
     def test_validate_api_key_prefers_real_key(self):
         with mock.patch.dict(os.environ, {"KEENABLE_API_KEY": "keen_secret_value"}, clear=True):
@@ -72,7 +72,7 @@ class KeenableSearchTests(unittest.TestCase):
         with mock.patch("search.make_request", return_value=fake_response) as mock_request:
             result = search.search_keenable(
                 query="rust async patterns",
-                api_key="",
+                public=True,
                 max_results=3,
                 time_range="week",
                 include_domains=["example.com"],
@@ -104,14 +104,14 @@ class KeenablePublicWarningTests(unittest.TestCase):
     def test_public_route_warns_once(self):
         with mock.patch.object(providers, "_KEENABLE_PUBLIC_WARNED", False):
             with mock.patch("providers.print") as mock_print:
-                providers._keenable_endpoint("https://api.keenable.ai/v1/search", "")
-                providers._keenable_endpoint("https://api.keenable.ai/v1/search", "")
+                providers._keenable_endpoint("https://api.keenable.ai/v1/search", None, public=True)
+                providers._keenable_endpoint("https://api.keenable.ai/v1/search", None, public=True)
         self.assertEqual(mock_print.call_count, 1)
 
     def test_keyed_route_does_not_warn(self):
         with mock.patch.object(providers, "_KEENABLE_PUBLIC_WARNED", False):
             with mock.patch("providers.print") as mock_print:
-                providers._keenable_endpoint("https://api.keenable.ai/v1/search", "keen_secret")
+                providers._keenable_endpoint("https://api.keenable.ai/v1/search", "keen_secret", public=False)
         mock_print.assert_not_called()
 
 
@@ -119,7 +119,7 @@ class KeenableExtractTests(unittest.TestCase):
     def test_keyless_fetches_via_public_endpoint(self):
         fake_response = {"url": "https://example.com", "title": "Example", "content": "# Page\nbody"}
         with mock.patch("search.make_get_request", return_value=fake_response) as mock_get:
-            result = search.extract_keenable(["https://example.com"], "")
+            result = search.extract_keenable(["https://example.com"], public=True)
 
         self.assertEqual(result["provider"], "keenable")
         self.assertEqual(result["results"][0]["content"], "# Page\nbody")

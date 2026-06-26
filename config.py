@@ -397,8 +397,11 @@ def get_env_key(provider: str) -> Optional[str]:
     return get_api_key(provider)
 
 
-def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
-    """Validate and return API key (or instance URL for SearXNG), with helpful error messages."""
+def validate_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
+    """Validate and return the API key (or SearXNG instance URL), with helpful error messages.
+
+    Returns None for a keyless provider whose public endpoint is opted in.
+    """
     key = get_api_key(provider, config)
 
     # Special handling for SearXNG - it needs instance URL, not API key
@@ -428,7 +431,7 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> str:
         return key
 
     if not key and keyless_public_allowed(provider, config):
-        return ""
+        return None
 
     if not key:
         spec = PROVIDER_SPECS[provider]
