@@ -72,6 +72,7 @@ EXPECTED_SEARCH_KWARGS = {
     "you": {"query", "api_key", "max_results", "country", "language", "freshness", "safesearch", "include_news", "livecrawl"},
     "searxng": {"query", "instance_url", "max_results", "categories", "engines", "language", "time_range", "safesearch"},
     "keenable": {"query", "api_key", "max_results", "time_range", "include_domains", "public", "api_url", "timeout"},
+    "caesar": {"query", "api_key", "max_results", "api_url", "timeout"},
 }
 
 # The provider function each search adapter must resolve (late) from the

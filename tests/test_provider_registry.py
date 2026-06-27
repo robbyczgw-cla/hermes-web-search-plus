@@ -21,12 +21,16 @@ def test_provider_registry_is_the_complete_capability_source():
         "you",
         "searxng",
         "keenable",
+        "caesar",
     )
     assert registry.EXTRACT_PROVIDER_IDS == ("tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper")
     assert registry.PROVIDER_SPECS["serper"].supports_extract is True
     assert registry.PROVIDER_SPECS["keenable"].supports_extract is True
     assert registry.PROVIDER_SPECS["keenable"].supports_search is True
     assert registry.PROVIDER_SPECS["keenable"].keyless is True
+    assert registry.PROVIDER_SPECS["caesar"].supports_extract is False
+    assert registry.PROVIDER_SPECS["caesar"].supports_search is True
+    assert registry.PROVIDER_SPECS["caesar"].keyless is False
     assert registry.KEYLESS_EXTRACT_PROVIDER_IDS == ("keenable",)
     assert registry.KEYLESS_PROVIDER_IDS == ("keenable",)
     assert registry.PROVIDER_SPECS["serper"].env_var == "SERPER_API_KEY"

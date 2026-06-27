@@ -209,6 +209,18 @@ _PROVIDER_SPECS = (
         signup_url="https://keenable.ai",
         keyless=True,
     ),
+    ProviderSpec(
+        provider="caesar",
+        env_var="CAESAR_API_KEY",
+        display_name="Caesar",
+        description="Agentic web search with per-result provenance and capture timestamps.",
+        config_section="caesar",
+        supports_search=True,
+        supports_extract=False,
+        capability_labels=("search",),
+        free_tier="Credit-backed; new accounts start with a credit grant",
+        signup_url="https://app.trycaesar.com",
+    ),
 )
 
 PROVIDER_SPECS: Dict[str, ProviderSpec] = {spec.provider: spec for spec in _PROVIDER_SPECS}
@@ -231,6 +243,7 @@ DEFAULT_PROVIDER_PRIORITY = (
     "perplexity",
     "searxng",
     "keenable",
+    "caesar",
 )
 DEFAULT_AUTO_ALLOW = {
     spec.provider: False

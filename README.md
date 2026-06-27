@@ -11,7 +11,7 @@
   <img alt="Hermes Plugin" src="https://img.shields.io/badge/Hermes-plugin-a78bfa.svg">
 </p>
 
-**Web Search Plus is the operator-grade web layer for Hermes: one search tool, one extraction tool, many providers, conservative routing, safe large-page handling, freshness controls, and provider benchmarking without locking you into a single API.** Routing v2 spans 14 search providers and 8 extraction-capable providers; `web_extract_plus(provider="auto")` defaults to Tavily-first extraction for fast, reliable fetches, with Exa, Linkup, Firecrawl, Parallel, You.com, and Serper as fallback paths when available.
+**Web Search Plus is the operator-grade web layer for Hermes: one search tool, one extraction tool, many providers, conservative routing, safe large-page handling, freshness controls, and provider benchmarking without locking you into a single API.** Routing v2 spans 15 search providers and 8 extraction-capable providers; `web_extract_plus(provider="auto")` defaults to Tavily-first extraction for fast, reliable fetches, with Exa, Linkup, Firecrawl, Parallel, You.com, and Serper as fallback paths when available.
 
 `web-search-plus` adds two Hermes tools:
 
@@ -84,7 +84,7 @@ Notes:
 
 | Capability | Unlocks | Configure at least one of |
 |---|---|---|
-| Search | `web_search_plus` | Brave, Serper, Tavily, Exa, Linkup, Firecrawl, Parallel, Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, Querit, or Keenable |
+| Search | `web_search_plus` | Brave, Serper, Tavily, Exa, Linkup, Firecrawl, Parallel, Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, Querit, Keenable, or Caesar |
 | Extraction | `web_extract_plus` | Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, Serper, or Keenable |
 | Best starter | Search + extraction + reliable fallback | You.com + Serper + Linkup |
 
@@ -146,6 +146,7 @@ Full parameter tables for both tools, freshness/vertical/locale semantics, and c
 | SerpBase | ✅ | — | Cheap Google-like SERP fallback; guarded by default (`auto_allow=false`) |
 | Parallel | ✅ | ✅ | LLM-ready search and fast extract with long source excerpts; guarded by default (`auto_allow=false`) |
 | Querit | ✅ | — | Multilingual and real-time queries; guarded by default (`auto_allow=false`) |
+| Caesar | ✅ | — | Agentic web search with per-result provenance and capture timestamps |
 
 Routing v2 is benchmarked and class-aware: it detects language/script hints and query classes (news, shopping/local, docs/API, GitHub, academic, community, CVE/security, finance, weather, and more — see the [Routing Reference](docs/ROUTING.md)). Guarded providers are available for explicit `provider=` calls once their key is set; opt them into automatic routing with `setup.py config set-auto-allow <provider> on`.
 
@@ -170,12 +171,17 @@ KEENABLE_API_KEY=***      # https://keenable.ai — search + extraction
 SERPBASE_API_KEY=***      # https://www.serpbase.dev — explicit/fallback-only Google-like SERP search
 PARALLEL_API_KEY=***      # https://platform.parallel.ai — explicit/guarded LLM-ready search + extraction
 QUERIT_API_KEY=***        # https://querit.ai — explicit/fallback-only by default
+CAESAR_API_KEY=***        # https://app.trycaesar.com — agentic web search with per-result provenance
 
 # Kilo gateway alternate provider (`provider="kilo-perplexity"`)
 KILOCODE_API_KEY=***
 ```
 
 Keenable also has an opt-in keyless public tier (off by default, per-IP limits, no SLA) — see [User Guide → Provider setup](docs/USER_GUIDE.md#provider-setup).
+
+### Caesar
+
+[Caesar](https://docs.trycaesar.com) needs a `CAESAR_API_KEY`, sent as a `Bearer` token. Keys are issued at [app.trycaesar.com](https://app.trycaesar.com) and usage is credit-backed. Each result carries provenance (a canonical URL and a capture timestamp), which is what the mapper surfaces as the result `date`. Caesar is search-only (no `web_extract_plus` backend).
 
 ---
 

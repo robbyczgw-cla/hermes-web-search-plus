@@ -23,6 +23,7 @@ catalog; regenerate it with `python scripts/gen_provider_docs.py` after changing
 | You.com | ✅ | ✅ | `YOU_API_KEY` | — | yes (priority 1) | Limited/API key required | https://api.you.com |
 | SearXNG | ✅ | — | `SEARXNG_INSTANCE_URL` | — | yes (priority 13) | Free if self-hosted | https://docs.searxng.org/admin/installation.html |
 | Keenable | ✅ | ✅ | `KEENABLE_API_KEY` | yes (`KEENABLE_ALLOW_PUBLIC` opt-in) | yes (priority 14) | Keyless public tier; optional key for higher limits | https://keenable.ai |
+| Caesar | ✅ | — | `CAESAR_API_KEY` | — | yes (priority 15) | Credit-backed; new accounts start with a credit grant | https://app.trycaesar.com |
 
 `priority N` is the provider's position in the default routing priority list.
 Providers marked explicit-only stay out of `provider="auto"` routing and fallback
@@ -91,3 +92,7 @@ Self-hosted/privacy-preserving metasearch instance URL.
 ### Keenable
 
 Independent web index for search and extraction; works keyless, optional key raises rate limits.
+
+### Caesar
+
+Agentic web search with per-result provenance and capture timestamps.

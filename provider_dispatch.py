@@ -267,6 +267,17 @@ def _call_keenable_search(search_module, prov, args, key, config, routing_info):
     )
 
 
+def _call_caesar_search(search_module, prov, args, key, config, routing_info):
+    caesar_config = config.get("caesar", {})
+    return _resolve(search_module, "search_caesar")(
+        query=args.query,
+        api_key=key,
+        max_results=args.max_results,
+        api_url=caesar_config.get("api_url", "https://alpha.api.trycaesar.com/v1/search"),
+        timeout=int(caesar_config.get("timeout", 30)),
+    )
+
+
 # Adapter signature: (search_module, provider, args, key, config, routing_info) -> result dict.
 SEARCH_DISPATCH: Dict[str, Callable[..., Dict[str, Any]]] = {
     "serper": _call_serper_search,
@@ -283,6 +294,7 @@ SEARCH_DISPATCH: Dict[str, Callable[..., Dict[str, Any]]] = {
     "you": _call_you_search,
     "searxng": _call_searxng_search,
     "keenable": _call_keenable_search,
+    "caesar": _call_caesar_search,
 }
 
 

@@ -18,6 +18,7 @@ optional_env:
   - PARALLEL_API_KEY
   - SEARXNG_INSTANCE_URL
   - KEENABLE_API_KEY
+  - CAESAR_API_KEY
 provides_tools:
   - web_search_plus
   - web_extract_plus

@@ -142,6 +142,11 @@ DEFAULT_CONFIG = {
         "fetch_url": "https://api.keenable.ai/v1/fetch",
         "timeout": 30,
         "allow_public": False
+    },
+    "caesar": {
+        "search_url": "https://alpha.api.trycaesar.com/v1/search",
+        "timeout": 30,
+        "allow_public": False
     }
 }
 

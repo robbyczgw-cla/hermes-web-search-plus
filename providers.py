@@ -1846,3 +1846,99 @@ def extract_serper(
         except Exception as e:
             results.append(_normalize_extract_result("serper", url, error=str(e)))
     return {"provider": "serper", "results": results}
+
+
+def _caesar_score(raw: Any) -> Optional[float]:
+    """Normalize a Caesar relevance score.
+
+    Caesar returns a scalar at default verbosity and a ``{"value": 0.87}`` object
+    at higher verbosity. Tolerate both (and a null score from gibberish queries)
+    so a numeric score never crashes the mapping.
+    """
+    if isinstance(raw, dict):
+        raw = raw.get("value")
+    if raw is None:
+        return None
+    try:
+        return round(float(raw), 3)
+    except (TypeError, ValueError):
+        return None
+
+
+def _caesar_snippet(item: Dict[str, Any]) -> str:
+    """Prefer the passages Caesar selected for this query.
+
+    ``snippet`` is the page's meta description, the same for every query that
+    surfaces the document. ``passages`` are the spans Caesar picked for *this*
+    query, so they carry the text that actually answers it. Joining them mirrors
+    how ``search_parallel`` joins its ``excerpts``. Fall back to the flat fields
+    when a result has no passages.
+    """
+    parts = []
+    for passage in item.get("passages") or []:
+        if isinstance(passage, dict):
+            text = passage.get("text") or ""
+        elif isinstance(passage, str):
+            text = passage
+        else:
+            text = ""
+        if text.strip():
+            parts.append(text.strip())
+    if parts:
+        return "\n\n".join(parts)
+    return item.get("snippet") or item.get("content") or item.get("passage") or ""
+
+
+def search_caesar(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    api_url: str = "https://alpha.api.trycaesar.com/v1/search",
+    timeout: int = 30,
+) -> dict:
+    """Search using Caesar's agentic web-search API.
+
+    Requires ``CAESAR_API_KEY``, sent as a Bearer token. Caesar is credit-backed;
+    keys are issued at https://app.trycaesar.com.
+    """
+    body: Dict[str, Any] = {"query": query, "max_results": max_results}
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+
+    data = make_request(api_url, headers, body, timeout=timeout)
+
+    raw_results = data.get("results") or []
+    results = []
+    for i, item in enumerate(raw_results[:max_results]):
+        url = item.get("url") or item.get("canonical_url") or item.get("source_url") or ""
+        score = _caesar_score(item.get("score"))
+        result = {
+            "title": item.get("title") or _title_from_url(url),
+            "url": url,
+            "snippet": _caesar_snippet(item),
+            # Caesar omits a score for gibberish queries; fall back to a
+            # rank-derived score so ordering survives mapping (mirrors siblings).
+            "score": score if score is not None else round(1.0 - i * 0.05, 3),
+        }
+        metadata = item.get("metadata") or {}
+        published_at = metadata.get("published_at") if isinstance(metadata, dict) else None
+        if published_at:
+            result["date"] = published_at
+        results.append(result)
+
+    answer = results[0]["snippet"] if results else ""
+    access = data.get("access") or {}
+    return {
+        "provider": "caesar",
+        "query": query,
+        "results": results,
+        "images": [],
+        "answer": answer,
+        "metadata": {
+            "tier": access.get("tier") if isinstance(access, dict) else None,
+            "search_id": data.get("search_id"),
+        },
+    }

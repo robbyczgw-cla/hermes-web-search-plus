@@ -450,6 +450,11 @@ def extract_serper(*args, **kwargs):
     return _providers.extract_serper(*args, **kwargs)
 
 
+def search_caesar(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.search_caesar(*args, **kwargs)
+
+
 
 # =============================================================================
 # Exa (Neural/Semantic/Deep Search)
