@@ -48,6 +48,11 @@ DEFAULT_CONFIG = {
         "auto_allow": dict(DEFAULT_AUTO_ALLOW),
         "confidence_threshold": 0.3,  # Below this, note low confidence
     },
+    "extract": {
+        # Target URLs supplied to extract_plus are blocked when they resolve to
+        # private/internal networks. Operators can opt in for trusted intranet use.
+        "allow_private_urls": False,
+    },
     "serper": {
         "country": "us",
         "language": "en",

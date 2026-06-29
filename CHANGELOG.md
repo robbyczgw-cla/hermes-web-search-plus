@@ -6,6 +6,7 @@
 - The setup wizard now offers the keyless public tier for keyless providers (currently Keenable): skip the key prompt and it asks whether to enable the no-key public endpoint, writing `<provider>.allow_public: true` to `config.json`. Add `--keyless-public` to skip that confirmation prompt and opt in directly. The mechanism is driven by the registry's keyless flag, so it covers future keyless providers automatically.
 
 ### 🐛 Fixed
+- `web_extract_plus` now rejects private/internal extraction target URLs by default before provider dispatch, blocking loopback, RFC1918, CGNAT/shared-address ranges, IPv6 ULA/link-local/mapped-private addresses, multicast, cloud metadata, and hostnames that resolve to private IPs. Operator-configured provider endpoints (for example a local Firecrawl-compatible backend) remain allowed; trusted intranet extraction can be opted into with `extract.allow_private_urls: true` in `config.json`.
 - A routing-config rewrite (e.g. `config set-priority`, `config reset`) no longer drops non-routing provider sections from `config.json` (e.g. `keenable.allow_public`, `keenable.search_url`, `searxng.instance_url`); the writer now merges routing keys onto the existing file instead of rebuilding it from routing defaults.
 - Corrected the Querit provider `signup_url` from the dead `querit.com` to `querit.ai`.
 

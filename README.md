@@ -320,6 +320,7 @@ When enabled, queries and fetched URLs are sent to an **unauthenticated** public
 
 ## Reliability and cost controls
 
+- **Safe extraction targets:** `web_extract_plus` rejects private/internal target URLs by default before provider dispatch, including loopback, RFC1918, CGNAT/shared-address ranges, IPv6 ULA/link-local/mapped-private addresses, multicast, cloud metadata, and hostnames that resolve to private IPs. This protects local/self-hosted extraction backends from being used to fetch internal resources. Operator-configured provider endpoints such as a local Firecrawl-compatible `firecrawl.scrape_url` are not blocked; if you intentionally need trusted intranet target extraction, set `{ "extract": { "allow_private_urls": true } }` in `config.json`. This guard validates the initial extraction target before dispatch; redirect-follow hardening belongs in provider fetch layers and should be treated as a follow-up for local backends.
 - **Provider cooldowns:** failed providers are skipped for 1 hour before retry.
 - **Research budget:** `mode="research"` checks the wall-clock budget between provider calls and extraction steps.
 - **Partial results:** search results already collected are preserved if extraction fails or times out.

@@ -1,6 +1,9 @@
 """Extraction orchestrator for Web Search Plus."""
 
+import ipaddress
+import socket
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 from config import get_api_key, keyless_public_allowed, load_config
 from provider_health import (
@@ -24,6 +27,73 @@ from provider_registry import EXTRACT_PROVIDER_IDS
 EXTRACT_PROVIDER_PRIORITY = list(EXTRACT_PROVIDER_IDS)
 
 
+class ExtractUrlSecurityError(ValueError):
+    """Raised when an extraction target URL points at an internal resource."""
+
+
+_BLOCKED_EXTRACT_HOSTS = {
+    "localhost",
+    "metadata.google.internal",
+    "metadata.internal",
+}
+
+
+def _extract_allows_private_urls(config: Dict[str, Any]) -> bool:
+    extract_config = config.get("extract", {}) if isinstance(config, dict) else {}
+    if not isinstance(extract_config, dict):
+        return False
+    return extract_config.get("allow_private_urls") is True
+
+
+def _is_private_or_internal_ip(value: str) -> bool:
+    ip = ipaddress.ip_address(value)
+    return (not ip.is_global) or ip.is_multicast
+
+
+def _validate_extract_urls(urls: List[str], config: Optional[Dict[str, Any]] = None) -> List[str]:
+    """Validate extraction target URLs before handing them to remote/local fetchers.
+
+    Provider endpoint URLs are operator-controlled config and are intentionally
+    not checked here. This guard only covers user/agent-controlled target URLs.
+    """
+    config = config or {}
+    invalid = [u for u in urls if not (isinstance(u, str) and u.startswith(("http://", "https://")))]
+    if invalid:
+        raise ValueError(f"Invalid URL(s) — must start with http:// or https://: {invalid}")
+    if _extract_allows_private_urls(config):
+        return urls
+
+    for url in urls:
+        parsed = urlparse(url)
+        hostname = (parsed.hostname or "").strip().lower().rstrip(".")
+        if not hostname:
+            raise ValueError(f"Invalid URL — hostname is required: {url}")
+        if hostname in _BLOCKED_EXTRACT_HOSTS:
+            raise ExtractUrlSecurityError(f"Extraction URL blocked: {hostname} is private/internal")
+
+        try:
+            ipaddress.ip_address(hostname)
+        except ValueError:
+            pass
+        else:
+            if _is_private_or_internal_ip(hostname):
+                raise ExtractUrlSecurityError(f"Extraction URL blocked: {hostname} is private/internal")
+            continue
+
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        try:
+            resolved_ips = socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP)
+        except socket.gaierror as exc:
+            raise ExtractUrlSecurityError(f"Extraction URL blocked: cannot resolve hostname {hostname}") from exc
+        for _family, _type, _proto, _canonname, sockaddr in resolved_ips:
+            ip = ipaddress.ip_address(sockaddr[0])
+            if _is_private_or_internal_ip(str(ip)):
+                raise ExtractUrlSecurityError(
+                    f"Extraction URL blocked: {hostname} resolves to private/internal IP {ip}"
+                )
+    return urls
+
+
 def extract_plus(
     urls: List[str],
     provider: str = "auto",
@@ -38,12 +108,13 @@ def extract_plus(
     selected = provider or "auto"
     if not urls:
         return {"provider": selected, "results": [], "error": "No URLs provided", "requested_provider": selected}
-    invalid = [u for u in urls if not (isinstance(u, str) and u.startswith(("http://", "https://")))]
-    if invalid:
+    try:
+        urls = _validate_extract_urls(urls, config)
+    except (ValueError, ExtractUrlSecurityError) as exc:
         return {
             "provider": selected,
             "results": [],
-            "error": f"Invalid URL(s) — must start with http:// or https://: {invalid}",
+            "error": str(exc),
             "requested_provider": selected,
         }
     auto_config = config.get("auto_routing", {})
