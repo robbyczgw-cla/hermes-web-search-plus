@@ -40,6 +40,22 @@ cd ~/.hermes/plugins/web-search-plus
 python3 search.py --query "Hermes Agent latest release" --provider auto --quality-report --compact
 ```
 
+Inspect whether the install is likely to hit the low-latency Hermes fast path:
+
+```bash
+python ~/.hermes/plugins/web-search-plus/setup.py fastpath
+python ~/.hermes/plugins/web-search-plus/setup.py fastpath --json
+```
+
+The fast-path checker is intentionally advisory and stdlib-only. It verifies that the plugin declares both tools for direct registration, that the standalone setup helper is available, and whether your Hermes `config.yaml` contains the current public-Hermes hint below. It does not require Hermes core patches.
+
+```yaml
+agent:
+  disabled_toolsets: [web]
+```
+
+Use this when Web Search Plus should be the preferred web layer. Without it, Web Search Plus still works; Hermes may simply have more web-capable tools to choose from. Some forks/local builds may expose additional tool-pinning config, but this guide only documents options available in current public Hermes.
+
 ## Provider setup
 
 Keys live in the active Hermes environment file, normally `~/.hermes/.env`. The setup helper preserves existing entries and does not print secret values.

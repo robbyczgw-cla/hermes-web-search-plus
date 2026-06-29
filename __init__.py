@@ -13,6 +13,7 @@ import importlib.util
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -162,6 +163,163 @@ def _get_plugin_config_path() -> Path:
     if override:
         return Path(override)
     return Path(__file__).parent.parent / "config.json"
+
+
+def _get_hermes_config_path() -> Path:
+    """Return the default Hermes config path inspected by the fast-path doctor."""
+    return Path(os.environ.get("HERMES_CONFIG", Path.home() / ".hermes" / "config.yaml"))
+
+
+def _yamlish_has_list_item(text: str, key: str, item: str) -> bool:
+    """Tiny dependency-free YAML-ish list checker for Hermes config hints.
+
+    This intentionally avoids PyYAML because the setup helper is stdlib-only. It
+    handles the two forms users normally write in config.yaml:
+
+    - key: [a, b]
+    - key:
+      - a
+      - b
+    """
+    escaped_key = re.escape(key)
+    escaped_item = re.escape(item)
+    inline = re.search(rf"(?m)^\s*{escaped_key}\s*:\s*\[[^\]]*\b{escaped_item}\b", text)
+    if inline:
+        return True
+
+    lines = text.splitlines()
+    for idx, line in enumerate(lines):
+        match = re.match(rf"^(\s*){escaped_key}\s*:\s*$", line)
+        if not match:
+            continue
+        base_indent = len(match.group(1))
+        for child in lines[idx + 1:]:
+            if not child.strip() or child.lstrip().startswith("#"):
+                continue
+            indent = len(child) - len(child.lstrip())
+            is_list_item = child.lstrip().startswith("-")
+            if indent < base_indent or (indent == base_indent and not is_list_item):
+                break
+            if re.match(rf"^\s*-\s*{escaped_item}\s*(?:#.*)?$", child):
+                return True
+    return False
+
+
+def _yamlish_nested_list_item(text: str, parent: str, key: str, item: str) -> bool:
+    """Best-effort check for parent.key containing item in simple YAML config."""
+    escaped_parent = re.escape(parent)
+    escaped_key = re.escape(key)
+    escaped_item = re.escape(item)
+    lines = text.splitlines()
+    for idx, line in enumerate(lines):
+        match = re.match(rf"^(\s*){escaped_parent}\s*:\s*$", line)
+        if not match:
+            continue
+        parent_indent = len(match.group(1))
+        block: List[str] = []
+        for child in lines[idx + 1:]:
+            if not child.strip() or child.lstrip().startswith("#"):
+                block.append(child)
+                continue
+            indent = len(child) - len(child.lstrip())
+            if indent <= parent_indent:
+                break
+            block.append(child[parent_indent + 1:] if len(child) > parent_indent else child)
+        block_text = "\n".join(block)
+        if _yamlish_has_list_item(block_text, key, item):
+            return True
+        if re.search(rf"(?m)^\s*{escaped_key}\s*:\s*\[[^\]]*\b{escaped_item}\b", block_text):
+            return True
+    return False
+
+
+def _build_fastpath_report(config_path: Optional[Path] = None) -> Dict[str, Any]:
+    """Inspect local plugin/Hermes hints that affect perceived WSP latency."""
+    config_path = config_path or _get_hermes_config_path()
+    plugin_yaml = Path(__file__).resolve().parent / "plugin.yaml"
+    setup_script = Path(__file__).resolve().parent / "setup.py"
+    checks: List[Dict[str, Any]] = []
+
+    plugin_text = ""
+    try:
+        plugin_text = plugin_yaml.read_text()
+    except OSError:
+        pass
+    checks.append({
+        "id": "plugin_tools_declared",
+        "ok": all(name in plugin_text for name in ["provides_tools", "web_search_plus", "web_extract_plus"]),
+        "detail": "plugin.yaml declares both WSP tools for direct Hermes registration",
+    })
+    checks.append({
+        "id": "standalone_setup_available",
+        "ok": setup_script.exists(),
+        "detail": "setup.py works without unreleased Hermes core plugin-CLI support",
+    })
+
+    config_text = ""
+    config_exists = config_path.exists()
+    if config_exists:
+        try:
+            config_text = config_path.read_text()
+        except OSError:
+            config_text = ""
+    legacy_web_disabled = _yamlish_nested_list_item(config_text, "agent", "disabled_toolsets", "web")
+
+    checks.extend([
+        {
+            "id": "hermes_config_found",
+            "ok": config_exists,
+            "detail": f"Hermes config inspected at {config_path}",
+        },
+        {
+            "id": "legacy_web_toolset_disabled",
+            "ok": legacy_web_disabled,
+            "detail": "agent.disabled_toolsets includes web, reducing legacy web-tool ambiguity on current Hermes builds",
+            "recommendation": "On current public Hermes builds, set agent.disabled_toolsets: [web] when you want Web Search Plus to be the preferred web path.",
+        },
+    ])
+    ok = all(check["ok"] for check in checks if check["id"] in {"plugin_tools_declared", "standalone_setup_available"})
+    preferred = ok and legacy_web_disabled
+    return {
+        "ok": ok,
+        "preferred_web_path_configured": preferred,
+        "hermes_config": str(config_path),
+        "checks": checks,
+        "recommended_hermes_config": {
+            "agent.disabled_toolsets": ["web"],
+        },
+        "notes": [
+            "Current public Hermes builds can register plugin tools directly, but may still route large tool catalogs through Tool Search when enabled.",
+            "Provider latency still depends on keys, cache, provider health, and whether the agent chooses normal search or research/extract mode.",
+            "No local Hermes core patches are required; this doctor only recommends config that exists in current Hermes.",
+        ],
+    }
+
+
+def _render_fastpath_report(report: Mapping[str, Any]) -> str:
+    lines = [
+        "Web Search Plus Fast-Path Doctor",
+        f"Status: {'preferred web path configured' if report.get('preferred_web_path_configured') else 'plugin ok; Hermes config can improve routing'}",
+        f"Hermes config: {report.get('hermes_config')}",
+        "",
+        "Checks:",
+    ]
+    for check in report.get("checks", []):
+        marker = "✓" if check.get("ok") else "•"
+        lines.append(f"  {marker} {check.get('id')}: {check.get('detail')}")
+        if not check.get("ok") and check.get("recommendation"):
+            lines.append(f"    Tip: {check.get('recommendation')}")
+    lines.extend([
+        "",
+        "Recommended Hermes config for current public Hermes builds:",
+        "  agent:",
+        "    disabled_toolsets: [web]",
+        "",
+        "Note: this plugin does not require local Hermes core patches. If your Hermes build",
+        "supports additional tool-pinning options, those may further reduce routing latency,",
+        "but they are not required for this doctor or the plugin to work.",
+    ])
+    return "\n".join(lines)
 
 
 def _keyless_public_opted_in(provider: str, config_path: Optional[Path] = None) -> bool:
@@ -612,6 +770,10 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     list_cmd = subs.add_parser("list", help="List supported providers, capabilities, and signup URLs")
     list_cmd.add_argument("--json", action="store_true", help="Print provider catalog as JSON")
 
+    fastpath = subs.add_parser("fastpath", help="Inspect WSP setup and Hermes config hints for low-latency tool routing")
+    fastpath.add_argument("--json", action="store_true", help="Print fast-path report as JSON")
+    fastpath.add_argument("--config-path", help="Hermes config.yaml path to inspect")
+
     config_cmd = subs.add_parser("config", help="Inspect or change routing preferences")
     config_subs = config_cmd.add_subparsers(dest="config_command")
     show = config_subs.add_parser("show", help="Show routing config")
@@ -755,6 +917,15 @@ def _web_search_plus_cli_command(args: Any) -> None:
     command = getattr(args, "web_search_plus_command", None) or "status"
     if command == "list":
         print(_render_provider_catalog(json_output=getattr(args, "json", False)))
+        return
+
+    if command == "fastpath":
+        config_arg = getattr(args, "config_path", None)
+        report = _build_fastpath_report(Path(config_arg) if config_arg else None)
+        if getattr(args, "json", False):
+            print(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            print(_render_fastpath_report(report))
         return
 
     if command == "config":

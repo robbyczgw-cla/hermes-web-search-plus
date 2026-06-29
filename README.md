@@ -57,6 +57,9 @@ python ~/.hermes/plugins/web-search-plus/setup.py setup
 # 4) Optional shell smoke test
 cd ~/.hermes/plugins/web-search-plus
 python3 search.py --query "Hermes Agent latest release" --provider auto --quality-report
+
+# 5) Optional Hermes fast-path check
+python ~/.hermes/plugins/web-search-plus/setup.py fastpath
 ```
 
 Notes:
@@ -64,6 +67,28 @@ Notes:
 - Plugin install clones into `~/.hermes/plugins/web-search-plus`.
 - Keys are written to the active Hermes environment file by the setup helper; they should never be committed to the repo.
 - Python 3.8+ is required. Runtime code is stdlib-only; manual development can still run `python3 -m pip install -r requirements.txt` safely before installing dev tools like `pytest` and `ruff`.
+
+### Fast-path performance setup
+
+Web Search Plus is most reliably routed when Hermes can call `web_search_plus` and `web_extract_plus` as registered plugin tools instead of falling back to legacy web tools. This feature intentionally targets **current public Hermes behavior** and does not require local Hermes core patches.
+
+Recommended current-Hermes config:
+
+```yaml
+agent:
+  disabled_toolsets: [web]
+```
+
+That keeps the old built-in web toolset from competing with Web Search Plus in installations that use WSP as their preferred web layer. It is the only Hermes-side config Web Search Plus recommends here because it exists in current Hermes builds.
+
+Run the dependency-free checker to see whether the local install is likely on the fast path:
+
+```bash
+python ~/.hermes/plugins/web-search-plus/setup.py fastpath
+python ~/.hermes/plugins/web-search-plus/setup.py fastpath --json
+```
+
+The checker is advisory. If `agent.disabled_toolsets` is not configured, the plugin still works; Hermes may simply have more tool choices before it settles on WSP. Some forks/local builds may offer extra tool-pinning options, but this feature does not document or require them.
 
 ---
 
@@ -94,6 +119,7 @@ The setup wizard is intentionally nicer than “paste keys and pray”:
 ```bash
 python ~/.hermes/plugins/web-search-plus/setup.py status
 python ~/.hermes/plugins/web-search-plus/setup.py list
+python ~/.hermes/plugins/web-search-plus/setup.py fastpath
 python ~/.hermes/plugins/web-search-plus/setup.py setup
 python ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter --open
 python ~/.hermes/plugins/web-search-plus/setup.py setup you linkup --env-path ~/.hermes/.env

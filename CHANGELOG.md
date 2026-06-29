@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### ✨ Added
+- Added `setup.py fastpath`, a dependency-free advisory doctor that checks whether Web Search Plus is installed for direct Hermes tool registration and whether current public-Hermes config (`agent.disabled_toolsets: [web]`) is present for lower-latency routing without requiring Hermes core patches.
 - The setup wizard now offers the keyless public tier for keyless providers (currently Keenable): skip the key prompt and it asks whether to enable the no-key public endpoint, writing `<provider>.allow_public: true` to `config.json`. Add `--keyless-public` to skip that confirmation prompt and opt in directly. The mechanism is driven by the registry's keyless flag, so it covers future keyless providers automatically.
 
 ### 🐛 Fixed
@@ -11,6 +12,7 @@
 - Corrected the Querit provider `signup_url` from the dead `querit.com` to `querit.ai`.
 
 ### 📚 Docs
+- Documented the current public-Hermes fast-path config and the new `setup.py fastpath` checker for users who want lower perceived latency without local Hermes core patches.
 - Refreshed the README hero graphic to v2.6.1 (13 search / 7 extract providers, with search+extract dual-capability markings).
 
 ## [v2.6.1] — 2026-06-26

@@ -26,6 +26,7 @@ provides_hooks:
 onboarding:
   setup_command: "python ~/.hermes/plugins/web-search-plus/setup.py setup"
   status_command: "python ~/.hermes/plugins/web-search-plus/setup.py status"
+  fastpath_status_command: "python ~/.hermes/plugins/web-search-plus/setup.py fastpath"
   routing_status_command: "python ~/.hermes/plugins/web-search-plus/setup.py config show"
   routing_config_commands:
     fixed_provider: "python ~/.hermes/plugins/web-search-plus/setup.py config set-default you"
@@ -37,7 +38,7 @@ onboarding:
     reset: "python ~/.hermes/plugins/web-search-plus/setup.py config reset --yes"
   config_file: "~/.hermes/plugins/config.json"
   env_override: "WEB_SEARCH_PLUS_CONFIG"
-  note: "No single provider key is globally required. Add at least one search-capable provider for web_search_plus; add Linkup or another extraction-capable provider for web_extract_plus. Setup keys live in .env; routing preferences live in config.json and can choose fixed-provider mode or tuned auto-routing without relying on unreleased Hermes core plugin-CLI support."
+  note: "No single provider key is globally required. Add at least one search-capable provider for web_search_plus; add Linkup or another extraction-capable provider for web_extract_plus. Setup keys live in .env; routing preferences live in config.json and can choose fixed-provider mode or tuned auto-routing without relying on unreleased Hermes core plugin-CLI support. Use setup.py fastpath to inspect advisory Hermes config hints for lower-latency direct tool routing."
   recommended_env:
     - name: YOU_API_KEY
       description: "You.com — fast Routing v2 core provider"

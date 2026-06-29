@@ -824,3 +824,73 @@ def test_routing_rewrite_preserves_non_routing_provider_sections(tmp_path):
     assert data["searxng"] == {"instance_url": "https://x"}
     assert data["auto_routing"]["provider_priority"][:2] == ["keenable", "brave"]
     assert not list(tmp_path.glob("config.json.broken-*"))
+
+
+def test_fastpath_report_detects_recommended_hermes_config(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "agent:\n"
+        "  disabled_toolsets: [web]\n"
+    )
+
+    report = wsp._build_fastpath_report(config_path)
+
+    assert report["ok"] is True
+    assert report["preferred_web_path_configured"] is True
+    checks = {check["id"]: check for check in report["checks"]}
+    assert checks["plugin_tools_declared"]["ok"] is True
+    assert checks["legacy_web_toolset_disabled"]["ok"] is True
+
+
+def test_fastpath_report_requires_disabled_toolsets_under_agent(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "other:\n"
+        "  disabled_toolsets: [web]\n"
+    )
+
+    report = wsp._build_fastpath_report(config_path)
+
+    assert report["preferred_web_path_configured"] is False
+    checks = {check["id"]: check for check in report["checks"]}
+    assert checks["legacy_web_toolset_disabled"]["ok"] is False
+
+
+def test_fastpath_report_is_advisory_when_hermes_config_lacks_hints(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("agent:\n  disabled_toolsets: []\n")
+
+    report = wsp._build_fastpath_report(config_path)
+
+    assert report["ok"] is True
+    assert report["preferred_web_path_configured"] is False
+    checks = {check["id"]: check for check in report["checks"]}
+    assert checks["legacy_web_toolset_disabled"]["ok"] is False
+    assert "agent.disabled_toolsets" in checks["legacy_web_toolset_disabled"]["recommendation"]
+
+
+def test_fastpath_cli_outputs_json_without_core_patch_dependency(tmp_path, capsys):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("agent:\n  disabled_toolsets: [web]\n")
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["fastpath", "--json", "--config-path", str(config_path)])
+
+    args.func(args)
+
+    data = json.loads(capsys.readouterr().out)
+    assert data["ok"] is True
+    assert data["recommended_hermes_config"] == {"agent.disabled_toolsets": ["web"]}
+    assert "never_defer" not in json.dumps(data)
+
+
+def test_fastpath_report_handles_missing_hermes_config(tmp_path):
+    config_path = tmp_path / "missing-config.yaml"
+
+    report = wsp._build_fastpath_report(config_path)
+
+    assert report["ok"] is True
+    assert report["preferred_web_path_configured"] is False
+    checks = {check["id"]: check for check in report["checks"]}
+    assert checks["hermes_config_found"]["ok"] is False
+    assert checks["legacy_web_toolset_disabled"]["ok"] is False
