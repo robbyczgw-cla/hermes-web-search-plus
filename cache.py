@@ -15,6 +15,65 @@ DEFAULT_CACHE_TTL = 3600  # 1 hour in seconds
 PROVIDER_HEALTH_FILENAME = "provider_health.json"
 
 
+WEB_TEXT_CACHE_DIRNAME = "web"
+MAX_STORED_TEXT_CHARS = 2_000_000
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write text through a temp file and atomic replace to avoid torn cache reads."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
+def _get_web_text_cache_path(url: str) -> Path:
+    """Return the stable full-text cache path for an extracted URL."""
+    key = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    return CACHE_DIR / WEB_TEXT_CACHE_DIRNAME / f"{key}.md"
+
+
+def store_web_text(url: str, text: str, max_chars: int = MAX_STORED_TEXT_CHARS) -> Dict[str, Any]:
+    """Store cleaned extracted text under cache/web and return storage metadata.
+
+    The write is intentionally separate from the search-result JSON cache so
+    cache_clear() does not collide with page-on-demand full-text files.
+    """
+    path = _get_web_text_cache_path(url)
+    original_chars = len(text)
+    capped = original_chars > max_chars
+    stored_text = text[:max_chars] if capped else text
+    if capped:
+        stored_text = stored_text.rstrip() + f"\n\n[TRUNCATED: stored text capped at {max_chars} characters]\n"
+    try:
+        _atomic_write_text(path, stored_text)
+    except IOError as e:
+        print(json.dumps({"web_text_cache_write_error": str(e)}), file=sys.stderr)
+        return {
+            "stored": False,
+            "path": str(path),
+            "capped": capped,
+            "original_chars": original_chars,
+            "stored_chars": len(stored_text),
+            "error": str(e),
+        }
+    return {
+        "stored": True,
+        "path": str(path),
+        "capped": capped,
+        "original_chars": original_chars,
+        "stored_chars": len(stored_text),
+    }
+
+
 def _build_cache_payload(query: str, provider: str, max_results: int, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Build normalized payload used for cache key hashing."""
     payload = {

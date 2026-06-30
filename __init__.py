@@ -38,6 +38,8 @@ try:  # Package load path used by Hermes plugin discovery.
         plugin_catalog,
     )
     from .env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, is_truthy, load_env_files
+    from .cache import MAX_STORED_TEXT_CHARS, store_web_text
+    from .config import load_config
 except ImportError:  # Direct script/test imports from the plugin directory.
     from provider_registry import (
         DEFAULT_AUTO_ALLOW,
@@ -51,6 +53,8 @@ except ImportError:  # Direct script/test imports from the plugin directory.
         plugin_catalog,
     )
     from env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, is_truthy, load_env_files
+    from cache import MAX_STORED_TEXT_CHARS, store_web_text
+    from config import load_config
 
 try:
     from .daemon_tasks import DaemonTask
@@ -1402,6 +1406,82 @@ def _format_results(data: dict) -> str:
     return "\n".join(lines).strip()
 
 
+
+
+_BASE64_MARKDOWN_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(\s*data:image/[^)]+\)", re.IGNORECASE)
+_BASE64_HTML_IMAGE_RE = re.compile(r"<img\b(?=[^>]*\bsrc=[\"']data:image/)[^>]*(?:\balt=[\"']([^\"']*)[\"'])?[^>]*>", re.IGNORECASE)
+_DEFAULT_EXTRACT_CHAR_LIMIT = 15000
+
+
+def _sanitize_extract_content(content: str) -> str:
+    """Remove inline base64 image bombs while preserving normal http(s) images."""
+    def markdown_repl(match: re.Match[str]) -> str:
+        alt = (match.group(1) or "image").strip() or "image"
+        return f"[IMAGE: {alt}]"
+
+    def html_repl(match: re.Match[str]) -> str:
+        tag = match.group(0)
+        alt_match = re.search(r"\balt=[\"']([^\"']*)[\"']", tag, re.IGNORECASE)
+        alt = (alt_match.group(1) if alt_match else "image").strip() or "image"
+        return f"[IMAGE: {alt}]"
+
+    content = _BASE64_MARKDOWN_IMAGE_RE.sub(markdown_repl, content)
+    content = _BASE64_HTML_IMAGE_RE.sub(html_repl, content)
+    return content
+
+
+def _extract_char_limit() -> int:
+    """Read web.extract_char_limit with a safe default for old configs."""
+    try:
+        config = load_config()
+        limit = int(((config.get("web") or {}).get("extract_char_limit")) or _DEFAULT_EXTRACT_CHAR_LIMIT)
+    except Exception:
+        return _DEFAULT_EXTRACT_CHAR_LIMIT
+    return max(1000, limit)
+
+
+def _split_extract_content(content: str, limit: int) -> tuple[str, str, int, int]:
+    """Return head, tail, omitted-start line, and omitted char count."""
+    head_chars = min(max(1, int(limit * 2 / 3)), max(1, limit - 1))
+    tail_chars = min(max(1, int(limit * 0.2)), max(1, limit - head_chars))
+    if head_chars + tail_chars >= len(content):
+        return content, "", content.count("\n") + 1, 0
+    head = content[:head_chars].rstrip()
+    tail = content[-tail_chars:].lstrip()
+    omitted_start_line = head.count("\n") + 1
+    omitted_chars = max(0, len(content) - len(head) - len(tail))
+    return head, tail, omitted_start_line, omitted_chars
+
+
+def _format_truncated_extract_content(content: str, url: str, limit: int) -> str:
+    """Return inline-safe extract content, storing full text when truncated."""
+    cleaned = _sanitize_extract_content(content)
+    if len(cleaned) <= limit:
+        return cleaned
+
+    store_meta = store_web_text(url or "unknown-url", cleaned, max_chars=MAX_STORED_TEXT_CHARS)
+    head, tail, omitted_start_line, omitted_chars = _split_extract_content(cleaned, limit)
+    footer = [
+        "",
+        "---",
+        f"[Content truncated: original {len(cleaned)} chars; omitted middle {omitted_chars} chars; showing head and tail.]",
+    ]
+    if store_meta.get("stored"):
+        footer.append(f"Full cleaned text stored at: {store_meta['path']}")
+        footer.append(
+            "Page omitted middle with Hermes file tool: "
+            f"read_file(path=\"{store_meta['path']}\", offset={omitted_start_line}, limit=500)"
+        )
+        footer.append("For more of the omitted middle, repeat read_file with the next offset; the stored path contains the cleaned text for page-on-demand.")
+        if store_meta.get("capped"):
+            footer.append(
+                f"Stored file capped at {MAX_STORED_TEXT_CHARS} characters; cleaned text was {store_meta.get('original_chars')} chars."
+            )
+    else:
+        footer.append(f"Full-text store failed for path: {store_meta.get('path')} ({store_meta.get('error', 'unknown error')})")
+    return f"{head}\n\n[... omitted middle; see footer for page-on-demand ...]\n\n{tail}" + "\n" + "\n".join(footer)
+
+
 def _format_extract_results(data: dict) -> str:
     """Format extracted URL content for LLM consumption."""
     if "error" in data and not data.get("results"):
@@ -1418,7 +1498,7 @@ def _format_extract_results(data: dict) -> str:
         if r.get("error"):
             lines.append(f"Error: {r['error']}")
         elif content:
-            lines.append(content)
+            lines.append(_format_truncated_extract_content(content, url, _extract_char_limit()))
     return "\n".join(lines).strip()
 
 

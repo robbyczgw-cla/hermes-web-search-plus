@@ -48,6 +48,11 @@ DEFAULT_CONFIG = {
         "auto_allow": dict(DEFAULT_AUTO_ALLOW),
         "confidence_threshold": 0.3,  # Below this, note low confidence
     },
+    "web": {
+        # Maximum cleaned characters returned inline per extracted result before
+        # truncate-and-store keeps the full text on disk for page-on-demand.
+        "extract_char_limit": 15000,
+    },
     "extract": {
         # Target URLs supplied to extract_plus are blocked when they resolve to
         # private/internal networks. Operators can opt in for trusted intranet use.

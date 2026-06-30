@@ -262,6 +262,16 @@ web_extract_plus(urls=["https://docs.linkup.so"], provider="linkup", render_js=F
 
 Auto extraction currently tries Tavily, then Exa, Linkup, Parallel, Firecrawl, and You.com when keys are available, then Keenable as the last resort **only if it is configured** (a `KEENABLE_API_KEY`, or the opted-in keyless public endpoint). Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form/RAG fallback; Parallel is the excerpt-heavy LLM-ready backup; Firecrawl remains the robust scraper safety net; You.com is a fallback; Keenable is the lowest-priority fallback. The keyless public tier is off by default — see [Keenable keyless public access](#keenable-keyless-public-access) — so `web_extract_plus` is available only when at least one extraction provider is configured.
 
+Large extracted pages use **truncate-and-store** output handling instead of dumping the full provider markdown into the agent context. By default, each result returns up to `web.extract_char_limit` cleaned characters (`15000`) as a head/tail preview. The full cleaned text is stored under `cache/web/<sha256-url>.md`, and the footer includes a concrete `read_file(path=..., offset=..., limit=500)` call so the agent can page into the omitted middle on demand. Inline base64 image data is replaced with `[IMAGE: alt]`; normal `http(s)` image links are preserved.
+
+```json
+{
+  "web": {
+    "extract_char_limit": 15000
+  }
+}
+```
+
 Parameters:
 
 | Parameter | Type | Default | Description |

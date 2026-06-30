@@ -259,6 +259,18 @@ web_extract_plus(urls=["https://docs.linkup.so"], provider="linkup", render_js=F
 
 Auto extraction currently tries Tavily, Exa, Linkup, Firecrawl, Parallel, and You.com when keys are available. Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form fallback; Firecrawl remains the robust scraper safety net.
 
+Large extracted pages are not returned as raw token bombs. `web_extract_plus` sanitizes inline base64 images, stores the full cleaned text under `cache/web`, and returns a bounded head/tail preview with a footer containing the stored file path plus an exact `read_file(path=..., offset=..., limit=500)` call for paging into the omitted middle. Configure the inline budget in `config.json`:
+
+```json
+{
+  "web": {
+    "extract_char_limit": 15000
+  }
+}
+```
+
+If the stored full text exceeds 2,000,000 characters, the stored file and footer both mark that cap explicitly.
+
 ## Reliability and cost controls
 
 The plugin is designed to fail visibly rather than invent confidence.

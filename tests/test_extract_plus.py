@@ -2,10 +2,13 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import search
+import cache
 import __init__ as plugin
 
 
@@ -382,6 +385,83 @@ class ExtractPlusPluginTests(unittest.TestCase):
         self.assertIn("markdown", cmd)
         self.assertIn("--extract-images", cmd)
         self.assertIn("--render-js", cmd)
+
+
+    def test_format_extract_results_short_content_returns_full_without_store(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.object(cache, "CACHE_DIR", Path(tmpdir)):
+                with mock.patch.object(plugin, "load_config", return_value={"web": {"extract_char_limit": 15000}}):
+                    output = plugin._format_extract_results({
+                        "provider": "linkup",
+                        "results": [{"title": "Short", "url": "https://example.com/short", "content": "short page\nall here"}],
+                    })
+
+            self.assertIn("short page\nall here", output)
+            self.assertNotIn("Content truncated", output)
+            self.assertFalse((Path(tmpdir) / "web").exists())
+
+    def test_format_extract_results_long_content_truncates_stores_and_reports_line_offset(self):
+        lines = [f"line {i:04d} " + ("x" * 90) for i in range(350)]
+        content = "\n".join(lines)
+        limit = 15000
+        expected_head = content[: int(limit * 2 / 3)].rstrip()
+        expected_offset = expected_head.count("\n") + 1
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.object(cache, "CACHE_DIR", Path(tmpdir)):
+                with mock.patch.object(plugin, "load_config", return_value={"web": {"extract_char_limit": limit}}):
+                    output = plugin._format_extract_results({
+                        "provider": "linkup",
+                        "results": [{"title": "Long", "url": "https://example.com/long", "content": content}],
+                    })
+            stored_files = list((Path(tmpdir) / "web").glob("*.md"))
+            self.assertEqual(len(stored_files), 1)
+            stored = stored_files[0].read_text(encoding="utf-8")
+
+        self.assertIn("Content truncated", output)
+        self.assertIn(str(stored_files[0]), output)
+        self.assertIn(f"offset={expected_offset}", output)
+        self.assertIn("limit=500", output)
+        self.assertIn("[... omitted middle; see footer for page-on-demand ...]", output)
+        self.assertEqual(stored, content)
+        self.assertLess(len(output), len(content))
+
+    def test_format_extract_results_stored_text_cap_sets_marker(self):
+        content = "A" * (cache.MAX_STORED_TEXT_CHARS + 1234)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.object(cache, "CACHE_DIR", Path(tmpdir)):
+                with mock.patch.object(plugin, "load_config", return_value={"web": {"extract_char_limit": 2000}}):
+                    output = plugin._format_extract_results({
+                        "provider": "linkup",
+                        "results": [{"title": "Huge", "url": "https://example.com/huge", "content": content}],
+                    })
+            stored_files = list((Path(tmpdir) / "web").glob("*.md"))
+            self.assertEqual(len(stored_files), 1)
+            stored = stored_files[0].read_text(encoding="utf-8")
+
+        self.assertIn("Stored file capped at 2000000 characters", output)
+        self.assertIn("[TRUNCATED: stored text capped at 2000000 characters]", stored)
+        self.assertLess(len(stored), len(content) + 100)
+
+    def test_format_extract_results_replaces_base64_images_but_keeps_https_images(self):
+        content = (
+            "Intro\n"
+            "![Tiny](data:image/png;base64," + ("a" * 80) + ")\n"
+            "![Hero](https://example.com/hero.png)\n"
+            "<img alt=\"Inline\" src=\"data:image/jpeg;base64,bbbb\">"
+        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.object(cache, "CACHE_DIR", Path(tmpdir)):
+                with mock.patch.object(plugin, "load_config", return_value={"web": {"extract_char_limit": 15000}}):
+                    output = plugin._format_extract_results({
+                        "provider": "linkup",
+                        "results": [{"title": "Images", "url": "https://example.com/images", "content": content}],
+                    })
+
+        self.assertIn("[IMAGE: Tiny]", output)
+        self.assertIn("[IMAGE: Inline]", output)
+        self.assertIn("![Hero](https://example.com/hero.png)", output)
+        self.assertNotIn("data:image", output)
 
     def test_register_exposes_web_extract_plus_tool(self):
         registered = {}

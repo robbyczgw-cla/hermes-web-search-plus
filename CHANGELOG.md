@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### ✨ Added
+- `web_extract_plus` now uses truncate-and-store output handling for large extracted pages: short pages are returned in full, while long pages return a head/tail window plus a page-on-demand footer pointing to the full cleaned text stored under `cache/web`. Configure the inline budget with `web.extract_char_limit` (default `15000`).
+
+### 🔧 Improved
+- Inline base64 image data in extracted Markdown is replaced with `[IMAGE: alt]` placeholders before measuring/storing content, preventing data-URI token bombs while preserving normal `http(s)` image links.
+
 ## [v2.7.0] — 2026-06-30
 
 ### Credits
