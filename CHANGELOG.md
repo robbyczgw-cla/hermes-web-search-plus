@@ -2,18 +2,30 @@
 
 ## [Unreleased]
 
+## [v2.7.0] — 2026-06-30
+
+### Credits
+- #60 by @IlyaGusev — keyless public-tier setup flow for keyless providers.
+- #61 by @robbyczgw-cla — private/internal extraction target URL guard.
+- #62 by @robbyczgw-cla — public-Hermes fast-path advisory doctor.
+- #63 by @robbyczgw-cla — prevent provider config errors from marking provider health cooldowns.
+- #59 by @robbyczgw-cla — README hero refresh and Querit signup URL correction carried forward from the v2.6.1 post-release range.
+
 ### ✨ Added
-- Added `setup.py fastpath`, a dependency-free advisory doctor that checks whether Web Search Plus is installed for direct Hermes tool registration and whether current public-Hermes config (`agent.disabled_toolsets: [web]`) is present for lower-latency routing without requiring Hermes core patches.
-- The setup wizard now offers the keyless public tier for keyless providers (currently Keenable): skip the key prompt and it asks whether to enable the no-key public endpoint, writing `<provider>.allow_public: true` to `config.json`. Add `--keyless-public` to skip that confirmation prompt and opt in directly. The mechanism is driven by the registry's keyless flag, so it covers future keyless providers automatically.
+- Added `setup.py fastpath`, a dependency-free advisory doctor that checks whether Web Search Plus is installed for direct Hermes tool registration and whether current public-Hermes config (`agent.disabled_toolsets: [web]`) is present for lower-latency routing without requiring Hermes core patches. (#62)
+- The setup wizard now offers the keyless public tier for keyless providers (currently Keenable): skip the key prompt and it asks whether to enable the no-key public endpoint, writing `<provider>.allow_public: true` to `config.json`. Add `--keyless-public` to skip that confirmation prompt and opt in directly. The mechanism is driven by the registry's keyless flag, so it covers future keyless providers automatically. (#60)
+
+### 🛡️ Security
+- `web_extract_plus` now rejects private/internal extraction target URLs by default before provider dispatch, blocking loopback, RFC1918, CGNAT/shared-address ranges, IPv6 ULA/link-local/mapped-private addresses, multicast, cloud metadata, and hostnames that resolve to private IPs. Operator-configured provider endpoints (for example a local Firecrawl-compatible backend) remain allowed; trusted intranet extraction can be opted into with `extract.allow_private_urls: true` in `config.json`. (#61)
 
 ### 🐛 Fixed
-- `web_extract_plus` now rejects private/internal extraction target URLs by default before provider dispatch, blocking loopback, RFC1918, CGNAT/shared-address ranges, IPv6 ULA/link-local/mapped-private addresses, multicast, cloud metadata, and hostnames that resolve to private IPs. Operator-configured provider endpoints (for example a local Firecrawl-compatible backend) remain allowed; trusted intranet extraction can be opted into with `extract.allow_private_urls: true` in `config.json`.
-- A routing-config rewrite (e.g. `config set-priority`, `config reset`) no longer drops non-routing provider sections from `config.json` (e.g. `keenable.allow_public`, `keenable.search_url`, `searxng.instance_url`); the writer now merges routing keys onto the existing file instead of rebuilding it from routing defaults.
-- Corrected the Querit provider `signup_url` from the dead `querit.com` to `querit.ai`.
+- A routing-config rewrite (e.g. `config set-priority`, `config reset`) no longer drops non-routing provider sections from `config.json` (e.g. `keenable.allow_public`, `keenable.search_url`, `searxng.instance_url`); the writer now merges routing keys onto the existing file instead of rebuilding it from routing defaults. (#60)
+- Provider configuration errors such as missing API keys no longer mark providers unhealthy or put them into cooldown. Cooldown now stays reserved for real provider/network failures. (#63)
+- Corrected the Querit provider `signup_url` from the dead `querit.com` to `querit.ai`. (#59)
 
 ### 📚 Docs
-- Documented the current public-Hermes fast-path config and the new `setup.py fastpath` checker for users who want lower perceived latency without local Hermes core patches.
-- Refreshed the README hero graphic to v2.6.1 (13 search / 7 extract providers, with search+extract dual-capability markings).
+- Documented the current public-Hermes fast-path config and the new `setup.py fastpath` checker for users who want lower perceived latency without local Hermes core patches. (#62)
+- Refreshed the README hero graphic for v2.7.0 with the current 14 search / 7 extraction provider taxonomy. (#59)
 
 ## [v2.6.1] — 2026-06-26
 
