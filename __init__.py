@@ -1488,6 +1488,7 @@ def _format_extract_results(data: dict) -> str:
         return f"Extract error: {data['error']}"
     provider = data.get("provider", "unknown")
     lines = [f"[Provider: {provider}]"]
+    limit = _extract_char_limit()
     for i, r in enumerate(data.get("results", []), 1):
         title = r.get("title") or "No title"
         url = r.get("url", "")
@@ -1498,7 +1499,7 @@ def _format_extract_results(data: dict) -> str:
         if r.get("error"):
             lines.append(f"Error: {r['error']}")
         elif content:
-            lines.append(_format_truncated_extract_content(content, url, _extract_char_limit()))
+            lines.append(_format_truncated_extract_content(content, url, limit))
     return "\n".join(lines).strip()
 
 
