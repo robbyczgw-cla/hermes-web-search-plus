@@ -180,6 +180,12 @@ class KeenablePublicWarningTests(unittest.TestCase):
 
 
 class KeenableExtractTests(unittest.TestCase):
+    def setUp(self):
+        search.reset_provider_health("keenable")
+
+    def tearDown(self):
+        search.reset_provider_health("keenable")
+
     def test_keyless_fetches_via_public_endpoint(self):
         fake_response = {"url": "https://example.com", "title": "Example", "content": "# Page\nbody"}
         with mock.patch("search.make_get_request", return_value=fake_response) as mock_get:
@@ -234,6 +240,15 @@ class KeenableExtractTests(unittest.TestCase):
         self.assertEqual(result["provider"], "keenable")
         self.assertEqual(result["results"][0]["content"], "keenable body")
         self.assertEqual(result["routing"]["provider"], "keenable")
+
+    def test_explicit_search_missing_key_does_not_cooldown_keenable(self):
+        """Config errors should not poison provider health for later keyless extract tests."""
+        with mock.patch.dict(os.environ, {}, clear=True):
+            result = search.run_search_request(query="config smoke", provider="keenable", config={})
+
+        self.assertEqual(result["provider"], "keenable")
+        self.assertEqual(result["error"], "All providers failed")
+        self.assertEqual(search.provider_in_cooldown("keenable"), (False, 0))
 
 
 if __name__ == "__main__":
