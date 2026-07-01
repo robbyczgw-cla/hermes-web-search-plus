@@ -284,6 +284,27 @@ def _sync_provider_dependencies() -> None:
     _providers.execute_provider_with_retry = execute_provider_with_retry
 
 
+# Unified freshness helpers (re-exported for tests and callers).
+FRESHNESS_VALUES = _providers.FRESHNESS_VALUES
+PROVIDER_FRESHNESS_FORMATS = _providers.PROVIDER_FRESHNESS_FORMATS
+
+
+def normalize_freshness(*args, **kwargs):
+    return _providers.normalize_freshness(*args, **kwargs)
+
+
+def provider_supports_freshness(*args, **kwargs):
+    return _providers.provider_supports_freshness(*args, **kwargs)
+
+
+def map_freshness_for_provider(*args, **kwargs):
+    return _providers.map_freshness_for_provider(*args, **kwargs)
+
+
+def freshness_metadata(*args, **kwargs):
+    return _providers.freshness_metadata(*args, **kwargs)
+
+
 def search_serper(*args, **kwargs):
     _sync_provider_dependencies()
     return _providers.search_serper(*args, **kwargs)
@@ -706,8 +727,19 @@ Full docs: See README.md and SKILL.md
         choices=["search", "news", "images", "videos", "places", "shopping"]
     )
     parser.add_argument(
-        "--time-range", 
+        "--time-range",
         choices=["hour", "day", "week", "month", "year"]
+    )
+    parser.add_argument(
+        "--freshness",
+        type=str.lower,
+        choices=list(_providers.FRESHNESS_VALUES),
+        help=(
+            "Unified recency filter (day, week, month, year; case-insensitive). "
+            "Applied natively where the provider supports it (serper, brave, querit, firecrawl, "
+            "keenable, you, perplexity, kilo-perplexity, searxng); otherwise the search runs "
+            "unfiltered and result metadata reports freshness.applied=false"
+        )
     )
     
     # Tavily-specific
@@ -805,11 +837,6 @@ Full docs: See README.md and SKILL.md
         default=you_config.get("safesearch", "moderate"),
         choices=["off", "moderate", "strict"],
         help="You.com SafeSearch filter"
-    )
-    parser.add_argument(
-        "--freshness",
-        choices=["day", "week", "month", "year"],
-        help="Filter results by recency (You.com/Serper)"
     )
     parser.add_argument(
         "--livecrawl",
@@ -1107,7 +1134,7 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
                 country=args.country,
                 language=args.language,
                 search_type=args.search_type,
-                time_range=args.time_range,
+                time_range=args.time_range or args.freshness,
                 include_images=args.images,
             )
         elif prov == "serpbase":
@@ -1256,7 +1283,7 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
                 categories=args.categories,
                 engines=args.engines,
                 language=args.language,
-                time_range=args.time_range,
+                time_range=args.time_range or args.freshness,
                 safesearch=args.searxng_safesearch,
             )
         elif prov == "keenable":
@@ -1359,6 +1386,13 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
         routing_info["mode"] = "research"
         routing_info["provider"] = "research"
         result["routing"].update(routing_info)
+        if args.freshness:
+            result.setdefault("metadata", {})["freshness"] = {
+                "requested": args.freshness,
+                "providers": [
+                    _providers.freshness_metadata(p, args.freshness) for p in research_providers
+                ],
+            }
         _apply_result_quality_pipeline(result, config, query=args.query or "", include_domains=args.include_domains)
         result["quality_report"] = build_quality_report(
             query=args.query,
@@ -1471,6 +1505,11 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
 
         result["routing"] = routing_info
 
+        if args.freshness:
+            result.setdefault("metadata", {})["freshness"] = _providers.freshness_metadata(
+                successful_provider or provider, args.freshness
+            )
+
         if not cache_hit and not args.no_cache and args.query:
             cache_put(
                 query=args.query,
@@ -1517,6 +1556,7 @@ def run_search_request(
     count: int = 5,
     exa_depth: str = "normal",
     time_range: Optional[str] = None,
+    freshness: Optional[str] = None,
     include_domains: Optional[List[str]] = None,
     exclude_domains: Optional[List[str]] = None,
     mode: str = "normal",
@@ -1534,6 +1574,10 @@ def run_search_request(
     """
     if not query and not (include_domains or exclude_domains):
         return {"error": "query is required", "provider": provider, "query": query, "results": []}
+    try:
+        freshness = _providers.normalize_freshness(freshness)
+    except ValueError as exc:
+        return {"error": str(exc), "provider": provider, "query": query, "results": []}
     config = config or load_config()
     argv: List[str] = [
         "--query", query or "",
@@ -1544,6 +1588,8 @@ def run_search_request(
         argv += ["--exa-depth", exa_depth]
     if time_range and time_range != "none":
         argv += ["--time-range", time_range]
+    if freshness:
+        argv += ["--freshness", freshness]
     if include_domains:
         argv += ["--include-domains", *include_domains]
     if exclude_domains:

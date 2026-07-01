@@ -29,6 +29,80 @@ from quality import _title_from_url
 _BATCH_TIMEOUT_GRACE_SECONDS = 5
 
 
+# =============================================================================
+# Unified freshness filter
+# =============================================================================
+
+FRESHNESS_VALUES = ("day", "week", "month", "year")
+
+# Native recency formats per provider, derived from the request bodies the
+# provider functions in this module already send. Providers absent from this
+# table (tavily, exa, linkup, parallel, serpbase) have no relative-recency
+# parameter in their current API calls, so no native value is invented for them.
+PROVIDER_FRESHNESS_FORMATS: Dict[str, Dict[str, str]] = {
+    # search_serper: body["tbs"]
+    "serper": {"day": "qdr:d", "week": "qdr:w", "month": "qdr:m", "year": "qdr:y"},
+    # search_brave: params["freshness"]
+    "brave": {"day": "pd", "week": "pw", "month": "pm", "year": "py"},
+    # search_querit: filters["timeRange"]["date"]
+    "querit": {"day": "d1", "week": "w1", "month": "m1", "year": "y1"},
+    # search_firecrawl: body["tbs"]
+    "firecrawl": {"day": "qdr:d", "week": "qdr:w", "month": "qdr:m", "year": "qdr:y"},
+    # search_keenable: body["published_after"]
+    "keenable": {"day": "1d", "week": "7d", "month": "1mo", "year": "1y"},
+    # search_you: params["freshness"] (native values match the unified ones)
+    "you": {"day": "day", "week": "week", "month": "month", "year": "year"},
+    # search_perplexity: body["search_recency_filter"]
+    "perplexity": {"day": "day", "week": "week", "month": "month", "year": "year"},
+    "kilo-perplexity": {"day": "day", "week": "week", "month": "month", "year": "year"},
+    # search_searxng: params["time_range"]
+    "searxng": {"day": "day", "week": "week", "month": "month", "year": "year"},
+}
+
+
+def normalize_freshness(value: Optional[str]) -> Optional[str]:
+    """Return the canonical lowercase freshness value, or None when unset.
+
+    Raises ValueError for values outside day|week|month|year so callers can
+    surface the standard error dict instead of silently dropping the filter.
+    """
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return None
+    if normalized not in FRESHNESS_VALUES:
+        raise ValueError(
+            "Invalid freshness value: {!r}. Valid values: {}".format(value, ", ".join(FRESHNESS_VALUES))
+        )
+    return normalized
+
+
+def provider_supports_freshness(provider: str) -> bool:
+    """Return whether a provider's current API call can apply a freshness filter."""
+    return provider in PROVIDER_FRESHNESS_FORMATS
+
+
+def map_freshness_for_provider(provider: str, freshness: Optional[str]) -> Optional[str]:
+    """Translate the unified freshness value into the provider's native format."""
+    if not freshness:
+        return None
+    return PROVIDER_FRESHNESS_FORMATS.get(provider, {}).get(freshness)
+
+
+def freshness_metadata(provider: str, requested: str) -> Dict[str, Any]:
+    """Describe whether a provider applied the requested freshness filter."""
+    native = map_freshness_for_provider(provider, requested)
+    if native is not None:
+        return {"requested": requested, "applied": True, "provider": provider, "native_value": native}
+    return {
+        "requested": requested,
+        "applied": False,
+        "provider": provider,
+        "reason": "provider {} does not support freshness".format(provider),
+    }
+
+
 def search_serper(
     query: str,
     api_key: str,

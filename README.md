@@ -242,6 +242,7 @@ Parameters:
 | `depth` | string | `"normal"` | Exa only: `normal`, `deep`, `deep-reasoning` |
 | `count` | integer | `5` | Results, 1–20 |
 | `time_range` | string | — | `day`, `week`, `month`, `year` |
+| `freshness` | string | — | Unified recency filter: `day`, `week`, `month`, `year` (case-insensitive). Applied natively by Serper, Brave, Querit, Firecrawl, Keenable, You.com, Perplexity/Kilo Perplexity, and SearXNG; other providers still search and report `freshness.applied=false` in result metadata |
 | `include_domains` | string[] | — | Restrict search to domains |
 | `exclude_domains` | string[] | — | Exclude domains |
 | `quality_report` | boolean | `false` | Include routing diagnostics, provider scores, result counts, authority signals, and extraction recommendation |
