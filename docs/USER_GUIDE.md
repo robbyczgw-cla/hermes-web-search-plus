@@ -58,7 +58,7 @@ Use this when Web Search Plus should be the preferred web layer. Without it, Web
 
 ## Provider setup
 
-Keys live in the active Hermes environment file, normally `~/.hermes/.env`. The setup helper preserves existing entries and does not print secret values.
+Keys live in the active Hermes environment file, normally `~/.hermes/.env`. The setup helper preserves existing entries and does not print secret values. See the generated [provider reference](PROVIDERS.md) for every provider's capabilities, env var, auto-routing default, free tier, and signup link.
 
 Useful commands:
 

@@ -107,6 +107,7 @@ Restart Hermes, or run `/reset` in an existing session, so the updated plugin co
 ## Documentation
 
 - [User Guide](docs/USER_GUIDE.md) — detailed setup, provider tuning, routing, extraction, reliability, and cost controls.
+- [Provider Reference](docs/PROVIDERS.md) — generated per-provider matrix: capabilities, env vars, auto-routing defaults, free tiers, and signup links.
 - [FAQ](docs/FAQ.md) — common setup, SerpBase auto-allow, provider selection, cache, quota, and troubleshooting questions.
 - [Architecture](docs/ARCHITECTURE.md) — plugin boundary, routing engine, auto-allow gate, cache/cooldown state, data flow, and provider-extension notes.
 
