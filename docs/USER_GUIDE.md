@@ -93,6 +93,8 @@ python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase
 
 ## Routing preferences
 
+For a generated class-by-class reference of what auto-routing prefers and demotes, see [Routing v2 Reference](ROUTING.md).
+
 Secrets and behavior are intentionally separate:
 
 - Provider keys live in `.env`.

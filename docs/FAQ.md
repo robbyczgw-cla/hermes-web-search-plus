@@ -171,3 +171,5 @@ python3 search.py --query "best bookshelf speakers under 1000" --provider auto -
 ```
 
 Look for selected provider, provider scores, skipped providers, cooldown skips, and `auto_allow_excluded`.
+
+For `--explain-routing` and a generated reference of every routing class with its signals and provider preferences, see [Routing v2 Reference](ROUTING.md).
