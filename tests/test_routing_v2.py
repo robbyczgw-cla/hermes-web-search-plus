@@ -191,6 +191,14 @@ def test_domain_rule_does_not_substring_match_middle_of_domain():
     assert search._domain_matches_rule("mirror.com", "ir.") is False
 
 
+def test_domain_rule_rejects_lookalike_registrations():
+    # A look-alike domain must not inherit the boost of the real one.
+    assert search._domain_matches_rule("openai.com.evil.example", "openai.com") is False
+    assert search._domain_matches_rule("github.community-fake.xyz", "github.com") is False
+    assert search._domain_matches_rule("openai.com", "openai.com") is True
+    assert search._domain_matches_rule("platform.openai.com", "openai.com") is True
+
+
 def test_reddit_company_finance_query_is_not_community_query():
     routing = _route("Reddit IPO earnings revenue investor relations")
 

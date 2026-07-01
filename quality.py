@@ -110,7 +110,14 @@ CANONICAL_DOMAIN_RULES: Dict[str, Dict[str, List[str]]] = {
 
 
 def _domain_matches_rule(domain: str, rule: str) -> bool:
-    return domain == rule or domain.endswith(f".{rule}") or domain.startswith(rule)
+    if rule.endswith("."):
+        # Label-prefix rules such as "docs." / "investor." / "ir." match a
+        # leading host label (docs.python.org), never a bare domain (notdocs.com).
+        return domain.startswith(rule)
+    # Exact domain or true subdomain only. A bare startswith would let
+    # look-alike registrations such as openai.com.evil.example inherit
+    # authority boosts (same reasoning as _blocked_domain_matches below).
+    return domain == rule or domain.endswith(f".{rule}")
 
 
 # Known content mirrors and SEO scraper sites that republish Stack Overflow,
