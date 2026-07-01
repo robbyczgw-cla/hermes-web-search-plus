@@ -264,6 +264,8 @@ Auto extraction currently tries Tavily, then Exa, Linkup, Parallel, Firecrawl, a
 
 Large extracted pages use **truncate-and-store** output handling instead of dumping the full provider markdown into the agent context. By default, each result returns up to `web.extract_char_limit` cleaned characters (`15000`) as a head/tail preview. The full cleaned text is stored under `cache/web/<sha256-url>.md`, and the footer includes a concrete `read_file(path=..., offset=..., limit=500)` call so the agent can page into the omitted middle on demand. Inline base64 image data is replaced with `[IMAGE: alt]`; normal `http(s)` image links are preserved.
 
+The full-text store is local plaintext cache data. It can contain the complete cleaned contents of URLs you extracted, grows until you clear it, and has no automatic TTL or total-size eviction yet. Monitor it with `python3 search.py --cache-stats` and purge it with `python3 search.py --clear-cache`; normal provider-health state is preserved. If you do not want extracted pages retained, clear the cache after extraction-heavy sessions or point `WSP_CACHE_DIR` at a disposable directory.
+
 ```json
 {
   "web": {

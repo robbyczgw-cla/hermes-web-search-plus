@@ -49,6 +49,14 @@ def _iter_web_text_cache_files():
     return web_dir.glob("*.md")
 
 
+def _iter_web_text_temp_files():
+    """Yield orphaned atomic-write temp files from the web full-text store."""
+    web_dir = CACHE_DIR / WEB_TEXT_CACHE_DIRNAME
+    if not web_dir.exists():
+        return iter(())
+    return web_dir.glob("*.tmp")
+
+
 def _web_text_cache_stats() -> Dict[str, Any]:
     """Return count and size stats for page-on-demand full-text files."""
     entries = []
@@ -226,9 +234,13 @@ def cache_clear() -> Dict[str, Any]:
         return {
             "cleared": 0,
             "web_text_cleared": 0,
+            "web_text_tmp_cleared": 0,
             "web_text_errors": 0,
             "size_freed_bytes": 0,
             "size_freed_kb": 0,
+            "json_size_freed_bytes": 0,
+            "web_text_size_freed_bytes": 0,
+            "web_text_tmp_size_freed_bytes": 0,
             "message": "Cache directory does not exist",
         }
 
@@ -237,6 +249,8 @@ def cache_clear() -> Dict[str, Any]:
     web_text_count = 0
     web_text_errors = 0
     web_text_size_freed = 0
+    web_text_tmp_count = 0
+    web_text_tmp_size_freed = 0
 
     for cache_file in CACHE_DIR.glob("*.json"):
         if cache_file.name == PROVIDER_HEALTH_FILENAME:
@@ -257,15 +271,26 @@ def cache_clear() -> Dict[str, Any]:
         except IOError:
             web_text_errors += 1
 
-    total_size_freed = size_freed + web_text_size_freed
+    for tmp_file in _iter_web_text_temp_files():
+        try:
+            file_size = tmp_file.stat().st_size
+            tmp_file.unlink()
+            web_text_tmp_size_freed += file_size
+            web_text_tmp_count += 1
+        except IOError:
+            web_text_errors += 1
+
+    total_size_freed = size_freed + web_text_size_freed + web_text_tmp_size_freed
     return {
         "cleared": count,
         "web_text_cleared": web_text_count,
+        "web_text_tmp_cleared": web_text_tmp_count,
         "web_text_errors": web_text_errors,
         "size_freed_bytes": total_size_freed,
         "size_freed_kb": round(total_size_freed / 1024, 2),
         "json_size_freed_bytes": size_freed,
         "web_text_size_freed_bytes": web_text_size_freed,
+        "web_text_tmp_size_freed_bytes": web_text_tmp_size_freed,
         "message": f"Cleared {count} cached entries and {web_text_count} web text files",
     }
 

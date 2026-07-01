@@ -73,12 +73,13 @@ class CacheLifecycleTests(unittest.TestCase):
         self.assertEqual(result["web_text_cleared"], 0)
         self.assertEqual(result["web_text_errors"], 0)
 
-    def test_web_text_stats_ignore_orphan_tmp_files(self):
+    def test_web_text_stats_ignore_but_clear_orphan_tmp_files(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = Path(tmpdir)
             web_dir = cache_dir / cache.WEB_TEXT_CACHE_DIRNAME
             web_dir.mkdir(parents=True)
-            (web_dir / "abc.md.tmp").write_text("orphan", encoding="utf-8")
+            orphan = web_dir / "abc.md.tmp"
+            orphan.write_text("orphan", encoding="utf-8")
             with mock.patch.object(cache, "CACHE_DIR", cache_dir):
                 stats = cache.cache_stats()
                 result = cache.cache_clear()
@@ -86,6 +87,8 @@ class CacheLifecycleTests(unittest.TestCase):
         self.assertEqual(stats["web_text_entries"], 0)
         self.assertEqual(stats["web_text_size_bytes"], 0)
         self.assertEqual(result["web_text_cleared"], 0)
+        self.assertEqual(result["web_text_tmp_cleared"], 1)
+        self.assertFalse(orphan.exists())
 
 
 if __name__ == "__main__":
