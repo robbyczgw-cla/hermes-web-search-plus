@@ -774,6 +774,12 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     fastpath.add_argument("--json", action="store_true", help="Print fast-path report as JSON")
     fastpath.add_argument("--config-path", help="Hermes config.yaml path to inspect")
 
+    bench_cmd = subs.add_parser(
+        "bench",
+        help="Benchmark configured search providers with a fixed live query suite and recommend an auto-routing priority (spends real provider quota)",
+    )
+    bench_cmd.add_argument("--json", action="store_true", help="Print the bench report as JSON")
+
     config_cmd = subs.add_parser("config", help="Inspect or change routing preferences")
     config_subs = config_cmd.add_subparsers(dest="config_command")
     show = config_subs.add_parser("show", help="Show routing config")
@@ -928,6 +934,20 @@ def _web_search_plus_cli_command(args: Any) -> None:
             print(_render_fastpath_report(report))
         return
 
+    if command == "bench":
+        search = _load_search_module()
+        if search is None:
+            raise SystemExit(
+                "web-search-plus: in-process search engine unavailable; "
+                "run `python3 search.py --bench` from the plugin directory instead."
+            )
+        report = search.run_provider_bench(search.load_config())
+        if getattr(args, "json", False):
+            print(json.dumps(report, indent=2, ensure_ascii=False))
+        else:
+            print(search.format_bench_text(report))
+        return
+
     if command == "config":
         _handle_config_command(args)
         return
@@ -1080,6 +1100,7 @@ def _load_search_module() -> Any:
         # restore afterward.
         _COLLIDING_MODULES = (
             "providers",
+            "bench",
             "extract",
             "routing",
             "research",

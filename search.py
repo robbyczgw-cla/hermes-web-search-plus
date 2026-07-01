@@ -87,6 +87,7 @@ from research import run_research_mode
 import providers as _providers
 import routing as _routing
 import extract as _extract
+import bench as _bench
 
 # Backward-compatible cache helper aliases for older imports/tests.
 get_cached_result = cache_get
@@ -554,6 +555,19 @@ def _build_doctor_report(config: Dict[str, Any], *, live: bool = False) -> Dict[
     }
 
 
+def run_provider_bench(config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
+    """Run the in-process provider bakeoff (see bench.py) and return its report.
+
+    Passes this module as the provider seam so bench honours the same
+    monkeypatch surface as the rest of the pipeline (``search.search_you``
+    etc.), and never records provider health cooldowns or provider stats.
+    """
+    return _bench.run_bench(config, search_module=sys.modules[__name__], **kwargs)
+
+
+format_bench_text = _bench.format_bench_text
+
+
 def _format_doctor_text(report: Dict[str, Any]) -> str:
     lines = ["Web Search Plus Doctor", f"Mode: {report['mode']}", f"OK: {report['ok']}", "", "Providers:"]
     for provider in report["providers"]:
@@ -635,11 +649,16 @@ Full docs: See README.md and SKILL.md
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["doctor"],
-        help="Run a maintenance command such as 'doctor'",
+        choices=["doctor", "bench"],
+        help="Run a maintenance command such as 'doctor' or 'bench'",
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON for maintenance commands")
     parser.add_argument("--live", action="store_true", help="Allow doctor to run live provider smokes (reserved; offline by default)")
+    parser.add_argument(
+        "--bench",
+        action="store_true",
+        help="Benchmark configured search providers against a fixed live query suite and recommend an auto_routing.provider_priority (alias for the 'bench' command; spends real provider quota)",
+    )
 
     # Common arguments
     parser.add_argument(
@@ -922,7 +941,16 @@ def main():
         else:
             print(_format_doctor_text(report))
         return
-    
+
+    if args.command == "bench" or args.bench:
+        report = run_provider_bench(config, max_results=args.max_results)
+        if args.json or args.compact:
+            indent = None if args.compact else 2
+            print(json.dumps(report, indent=indent, ensure_ascii=False))
+        else:
+            print(format_bench_text(report))
+        return
+
     # Handle cache management commands first (before query validation)
     if args.clear_cache:
         result = cache_clear()

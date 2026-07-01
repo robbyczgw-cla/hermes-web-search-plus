@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### ✨ Added
+- Added a provider bakeoff command — `python3 search.py --bench` (or `search.py bench` / `setup.py bench`) — that runs a small fixed query suite (docs, vendor release, community, non-English) against every configured search provider in-process and reports success rate, median latency, result volume, and quality signals (duplicate-free URLs, snippet coverage). It prints a ranked `auto_routing.provider_priority` recommendation with the exact `config set-priority` command to apply it; config is never written automatically, and bench traffic never triggers provider cooldowns or feeds adaptive routing stats.
+
 ## [v2.7.0] — 2026-06-30
 
 ### Credits
