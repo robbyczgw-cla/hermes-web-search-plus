@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 
 PLUGIN_PATH = Path(__file__).resolve().parents[1] / "__init__.py"
@@ -141,6 +144,19 @@ def test_env_upsert_writes_selected_provider_keys_without_leaking_values(tmp_pat
     assert "LINKUP_API_KEY=lk-secret" in written
     assert "EXISTING=1" in written
     assert result == {"updated": ["TAVILY_API_KEY"], "added": ["LINKUP_API_KEY"]}
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file permissions")
+def test_env_upsert_restricts_env_file_permissions(tmp_path):
+    new_env = tmp_path / "new" / ".env"
+    wsp._upsert_env_values(new_env, {"TAVILY_API_KEY": "secret"})
+    assert (new_env.stat().st_mode & 0o777) == 0o600
+
+    existing = tmp_path / ".env"
+    existing.write_text("EXISTING=1\n")
+    existing.chmod(0o644)
+    wsp._upsert_env_values(existing, {"TAVILY_API_KEY": "secret"})
+    assert (existing.stat().st_mode & 0o777) == 0o600
 
 
 def test_on_session_start_hint_is_one_shot_when_unconfigured(tmp_path):

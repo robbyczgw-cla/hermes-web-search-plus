@@ -93,7 +93,7 @@ def _read_env_file(path: Path) -> Dict[str, str]:
     values: Dict[str, str] = {}
     if not path.exists():
         return values
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
@@ -684,7 +684,7 @@ def _providers_for_preset(preset: str) -> List[Dict[str, Any]]:
 def _upsert_env_values(env_path: Path, values: Mapping[str, str]) -> Dict[str, List[str]]:
     """Insert/update env values in a .env file. Caller owns secret prompting."""
     env_path.parent.mkdir(parents=True, exist_ok=True)
-    existing_lines = env_path.read_text().splitlines() if env_path.exists() else []
+    existing_lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
     keys = set(values)
     seen = set()
     added: List[str] = []
@@ -709,7 +709,14 @@ def _upsert_env_values(env_path: Path, values: Mapping[str, str]) -> Dict[str, L
             output.append(f"{key}={value}")
             added.append(key)
 
-    env_path.write_text("\n".join(output).rstrip() + "\n")
+    # The .env holds plaintext API keys: create it 0600 and re-tighten an
+    # existing file before writing so other local users cannot read secrets.
+    env_path.touch(mode=0o600, exist_ok=True)
+    try:
+        os.chmod(env_path, 0o600)
+    except OSError:
+        pass
+    env_path.write_text("\n".join(output).rstrip() + "\n", encoding="utf-8")
     return {"updated": updated, "added": added}
 
 

@@ -41,7 +41,9 @@ def _get_cache_path(cache_key: str) -> Path:
 
 def _ensure_cache_dir() -> None:
     """Create cache directory if it doesn't exist."""
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    # 0700: cached files carry search queries/results that other local users
+    # have no business listing or reading.
+    CACHE_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
 
 
 def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
