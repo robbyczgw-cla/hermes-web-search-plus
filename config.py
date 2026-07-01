@@ -259,7 +259,7 @@ def load_config() -> Dict[str, Any]:
 
     if config_path.exists():
         try:
-            with open(config_path) as f:
+            with open(config_path, encoding="utf-8") as f:
                 user_config = json.load(f)
                 for key, value in user_config.items():
                     if isinstance(value, dict) and key in config:

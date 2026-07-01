@@ -3,6 +3,7 @@
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 import json
 import re
+import socket
 import sys
 import threading
 import time
@@ -1329,9 +1330,9 @@ def search_you(
         raise ProviderRequestError(f"{friendly_msg} (HTTP {e.code})", status_code=e.code, transient=e.code in TRANSIENT_HTTP_CODES)
     except URLError as e:
         reason = str(getattr(e, "reason", e))
-        is_timeout = "timed out" in reason.lower()
+        is_timeout = isinstance(getattr(e, "reason", None), socket.timeout) or "timed out" in reason.lower()
         raise ProviderRequestError(f"Network error: {reason}. Check your internet connection.", transient=is_timeout)
-    except TimeoutError:
+    except (TimeoutError, socket.timeout):
         raise ProviderRequestError("You.com request timed out after 30s.", transient=True)
 
     # Parse results
@@ -1488,9 +1489,9 @@ def search_searxng(
         raise ProviderRequestError(f"{friendly_msg} (HTTP {e.code})", status_code=e.code, transient=e.code in TRANSIENT_HTTP_CODES)
     except URLError as e:
         reason = str(getattr(e, "reason", e))
-        is_timeout = "timed out" in reason.lower()
+        is_timeout = isinstance(getattr(e, "reason", None), socket.timeout) or "timed out" in reason.lower()
         raise ProviderRequestError(f"Cannot reach SearXNG instance at {instance_url}. Error: {reason}", transient=is_timeout)
-    except TimeoutError:
+    except (TimeoutError, socket.timeout):
         raise ProviderRequestError("SearXNG request timed out after 30s. Check instance health.", transient=True)
 
     # Parse results
