@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v2.8.0] — 2026-07-02
+
 ### Credits
 - #65 by @robbyczgw-cla — truncate-and-store handling for large `web_extract_plus` pages.
 - #66 by @robbyczgw-cla — provider/decode/read-timeout error classification.
