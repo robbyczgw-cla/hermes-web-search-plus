@@ -51,4 +51,5 @@ jobs:
           routing.py
           providers.py
           extract.py
+          ui.py
           scripts/golden_eval.py

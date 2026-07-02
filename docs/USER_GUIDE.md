@@ -341,6 +341,30 @@ If the stored full text exceeds 2,000,000 characters, the stored file and footer
 
 The stored full text is local plaintext cache data. It may contain the complete cleaned contents of extracted pages, persists until cleared, and currently has no automatic TTL or total-size eviction. Use `python3 search.py --cache-stats` to inspect `web_text_entries`, `web_text_size_bytes`, and the combined cache size; use `python3 search.py --clear-cache` to remove both normal JSON cache entries and `cache/web/*.md` full-text files while preserving provider-health state. For privacy-sensitive or throwaway extraction runs, set `WSP_CACHE_DIR` to a disposable directory or clear the cache afterward.
 
+## Local web UI (diagnostics dashboard)
+
+For a visual view of the same diagnostics the doctor and stats commands print, start the bundled read-only web UI:
+
+```bash
+cd ~/.hermes/plugins/web-search-plus
+python3 ui.py            # default port 8765
+python3 ui.py --port 9000
+```
+
+The command prints a URL of the form `http://127.0.0.1:8765/?token=...` — open exactly that URL. The dashboard shows:
+
+- Provider table: configured/keyless status, auto-routing participation, active cooldowns, and adaptive stats (success rate, median latency) when fresh samples exist.
+- Routing config summary and cache stats.
+- **Routing explainer**: type a query and see the Routing v2 decision — routing class, chosen provider, confidence, matched signals, and the full provider score table. This runs the offline scoring only; it never calls a provider and costs nothing.
+
+Security properties, in plain terms:
+
+- The server binds to `127.0.0.1` only and the interface is not configurable.
+- Every request requires the token generated at startup (`?token=` on the page URL, `X-WSP-Token` header on API calls). The token changes on each start. Treat the printed URL like a password: anyone on the same machine who sees it can read your diagnostics until you stop the server.
+- The Host header is validated against `127.0.0.1`/`localhost`, so DNS-rebinding pages cannot read responses.
+- Responses never include key values — only `key_present` booleans, same as the doctor report.
+- The UI is read-only and fully offline: no endpoint triggers provider calls or writes configuration. It is stdlib-only, like the rest of the plugin.
+
 ## Reliability and cost controls
 
 The plugin is designed to fail visibly rather than invent confidence.

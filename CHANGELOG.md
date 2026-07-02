@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### ✨ Added
+- Local read-only web UI (`python3 ui.py`): a stdlib-only dashboard on `127.0.0.1` showing the doctor report, provider health/cooldowns, adaptive provider stats, and cache stats, plus an offline Routing v2 explainer (query in → routing class, confidence, signals, and provider scores out — no provider calls, no cost). Every request requires the startup-generated token, the Host header is validated against localhost to block DNS rebinding, and responses never contain key values.
+
 ### 🔧 Improved
 - Added `scripts/prepare_release.py`: bumps every release-version surface in one step (plugin.yaml, `__version__`, header docstrings, User-Agent, the test gate, and the CHANGELOG section) with a dry-run default and loud failure on surface drift, so a half-done version bump can no longer turn CI red. The hardcoded release gate now lives in exactly one place (`tests/test_release_metadata.py`), and it also covers the User-Agent and `__init__.py` docstring; the package-import and http-client tests read the expected version dynamically from `plugin.yaml`.
 

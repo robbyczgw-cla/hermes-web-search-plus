@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Web Search Plus — Dashboard</title>
+<style>
+  :root {
+    --bg: #f6f8fa; --card: #ffffff; --border: #d8dee4; --text: #1f2328;
+    --muted: #656d76; --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; --accent: #0969da;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; }
+  header .version { color: var(--muted); font-size: 13px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 24px 48px; display: grid; gap: 20px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; }
+  .card h2 { font-size: 15px; margin: 0 0 12px; }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.ok { background: #dafbe1; color: var(--ok); }
+  .badge.warn { background: #fff8c5; color: var(--warn); }
+  .badge.bad { background: #ffebe9; color: var(--bad); }
+  .badge.neutral { background: #eaeef2; color: var(--muted); }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 600; }
+  .table-wrap { overflow-x: auto; }
+  .muted { color: var(--muted); }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; font-size: 13px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; }
+  input[type=text] { flex: 1; min-width: 240px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
+  button { padding: 7px 16px; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 6px; font-size: 14px; cursor: pointer; }
+  button:hover { filter: brightness(1.08); }
+  #route-result { margin-top: 14px; display: none; }
+  #error-banner { display: none; background: #ffebe9; border: 1px solid #ff8182; color: var(--bad); border-radius: 8px; padding: 12px 16px; }
+  .grid-2 { display: grid; gap: 20px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Web Search Plus</h1>
+  <span class="version" id="version"></span>
+  <span id="doctor-ok"></span>
+</header>
+<main>
+  <div id="error-banner"></div>
+
+  <section class="card">
+    <h2>Routing explainer <span class="muted">(offline — no provider calls, no cost)</span></h2>
+    <form id="route-form">
+      <input type="text" id="route-query" placeholder="e.g. NVIDIA Q1 earnings official investor relations" autocomplete="off">
+      <button type="submit">Explain routing</button>
+    </form>
+    <div id="route-result" class="table-wrap"></div>
+  </section>
+
+  <section class="card">
+    <h2>Providers</h2>
+    <div class="table-wrap"><table id="providers">
+      <thead><tr>
+        <th>Provider</th><th>Capabilities</th><th>Key</th><th>Auto-routing</th>
+        <th>Cooldown</th><th>Success</th><th>Latency</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </section>
+
+  <div class="grid-2">
+    <section class="card">
+      <h2>Routing config</h2>
+      <dl class="kv" id="config-kv"></dl>
+    </section>
+    <section class="card">
+      <h2>Cache</h2>
+      <dl class="kv" id="cache-kv"></dl>
+    </section>
+  </div>
+</main>
+<script>
+"use strict";
+const TOKEN = new URLSearchParams(location.search).get("token") || "";
+
+function el(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined && text !== null) node.textContent = String(text);
+  if (className) node.className = className;
+  return node;
+}
+
+function badge(text, kind) {
+  const b = el("span", text, "badge " + kind);
+  return b;
+}
+
+function showError(message) {
+  const banner = document.getElementById("error-banner");
+  banner.textContent = message;
+  banner.style.display = "block";
+}
+
+async function api(path, options) {
+  const opts = options || {};
+  opts.headers = Object.assign({"X-WSP-Token": TOKEN}, opts.headers || {});
+  const response = await fetch(path, opts);
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || ("HTTP " + response.status));
+  return data;
+}
+
+function renderKv(id, entries) {
+  const kv = document.getElementById(id);
+  kv.textContent = "";
+  for (const [key, value] of entries) {
+    kv.appendChild(el("dt", key));
+    kv.appendChild(el("dd", value));
+  }
+}
+
+function renderProviders(overview) {
+  const tbody = document.querySelector("#providers tbody");
+  tbody.textContent = "";
+  for (const p of overview.doctor.providers) {
+    const meta = overview.provider_meta[p.provider] || {};
+    const stats = overview.provider_stats[p.provider];
+    const row = document.createElement("tr");
+
+    const nameCell = el("td", meta.display_name || p.provider);
+    if (meta.recommended) nameCell.appendChild(badge("recommended", "neutral"));
+    row.appendChild(nameCell);
+    row.appendChild(el("td", (meta.capabilities || []).join(", "), "muted"));
+
+    const keyCell = document.createElement("td");
+    if (p.key_present) keyCell.appendChild(badge("configured", "ok"));
+    else if (p.keyless_public_enabled) keyCell.appendChild(badge("keyless", "ok"));
+    else if (p.keyless) keyCell.appendChild(badge("keyless (opt-in)", "warn"));
+    else keyCell.appendChild(badge("missing", "neutral"));
+    row.appendChild(keyCell);
+
+    const autoCell = document.createElement("td");
+    if (p.disabled) autoCell.appendChild(badge("disabled", "bad"));
+    else autoCell.appendChild(badge(p.auto_allowed ? "auto" : "explicit only", p.auto_allowed ? "ok" : "warn"));
+    row.appendChild(autoCell);
+
+    const coolCell = document.createElement("td");
+    if (p.cooldown && p.cooldown.active) coolCell.appendChild(badge(p.cooldown.remaining_seconds + "s", "bad"));
+    else coolCell.appendChild(el("span", "—", "muted"));
+    row.appendChild(coolCell);
+
+    row.appendChild(el("td", stats && stats.success_rate != null ? Math.round(stats.success_rate * 100) + "%" : "—",
+                       stats ? "" : "muted"));
+    row.appendChild(el("td", stats && stats.median_latency_seconds != null ? stats.median_latency_seconds.toFixed(2) + "s" : "—",
+                       stats ? "" : "muted"));
+    tbody.appendChild(row);
+  }
+}
+
+function renderRouteResult(decision) {
+  const target = document.getElementById("route-result");
+  target.textContent = "";
+  target.style.display = "block";
+  const summary = decision.analysis_summary || {};
+  const kv = el("dl", null, "kv");
+  const signals = (decision.top_signals || []).map((s) => s.matched + " (" + s.weight + ")").join(", ");
+  const rows = [
+    ["Chosen provider", decision.provider || "—"],
+    ["Routing class", summary.routing_class || "—"],
+    ["Confidence", (decision.confidence_level || "—") + (decision.confidence != null ? " (" + decision.confidence + ")" : "")],
+    ["Reason", decision.reason || "—"],
+    ["Language hint", summary.language_hint || "—"],
+    ["Top signals", signals || "—"],
+  ];
+  for (const [key, value] of rows) {
+    kv.appendChild(el("dt", key));
+    kv.appendChild(el("dd", value));
+  }
+  target.appendChild(kv);
+
+  const scores = decision.scores;
+  if (scores && typeof scores === "object" && Object.keys(scores).length) {
+    const table = document.createElement("table");
+    const head = document.createElement("tr");
+    head.appendChild(el("th", "Provider"));
+    head.appendChild(el("th", "Score"));
+    table.appendChild(head);
+    Object.entries(scores).sort((a, b) => b[1] - a[1]).forEach(([provider, score]) => {
+      const row = document.createElement("tr");
+      row.appendChild(el("td", provider));
+      row.appendChild(el("td", typeof score === "number" ? score.toFixed(2) : score));
+      table.appendChild(row);
+    });
+    target.appendChild(table);
+  }
+}
+
+async function loadOverview() {
+  const overview = await api("/api/overview");
+  document.getElementById("version").textContent = "v" + overview.version;
+  document.getElementById("doctor-ok").appendChild(
+    badge(overview.doctor.ok ? "doctor: ok" : "doctor: attention", overview.doctor.ok ? "ok" : "bad"));
+  renderProviders(overview);
+
+  const cfg = overview.doctor.config;
+  renderKv("config-kv", [
+    ["Auto-routing", cfg.auto_routing_enabled ? "enabled" : "disabled"],
+    ["Default provider", cfg.default_provider || "auto"],
+    ["Fallback provider", cfg.fallback_provider || "—"],
+    ["Disabled providers", (cfg.disabled_providers || []).join(", ") || "none"],
+  ]);
+
+  const cache = overview.cache;
+  renderKv("cache-kv", [
+    ["Entries", cache.total_entries],
+    ["Size", (cache.total_size_kb || 0) + " KB"],
+    ["Directory", cache.cache_dir],
+  ]);
+}
+
+document.getElementById("route-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const query = document.getElementById("route-query").value.trim();
+  if (!query) return;
+  try {
+    renderRouteResult(await api("/api/route", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({query: query}),
+    }));
+  } catch (error) {
+    showError("Routing explainer failed: " + error.message);
+  }
+});
+
+loadOverview().catch((error) => {
+  showError(TOKEN
+    ? "Could not load dashboard: " + error.message
+    : "Missing token. Open the exact URL printed by `python3 ui.py` (it includes ?token=...).");
+});
+</script>
+</body>
+</html>
