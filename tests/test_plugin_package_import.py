@@ -35,9 +35,28 @@ def test_plugin_loads_with_hermes_package_style_import():
 
         spec.loader.exec_module(module)
 
-        assert module.__version__ == "2.8.0"
+        assert module.__version__ == "2.8.1"
         assert module._get_provider_catalog()
     finally:
         sys.modules.pop(module_name, None)
         if previous_parent is None:
             sys.modules.pop(parent_name, None)
+
+def test_plugin_loads_from_foreign_cwd_without_package_context(tmp_path, monkeypatch):
+    """Hermes standalone discovery can exec __init__.py outside plugin cwd."""
+    module_name = "wsp_standalone_import_test"
+    monkeypatch.chdir(tmp_path)
+    sys.modules.pop(module_name, None)
+
+    try:
+        spec = importlib.util.spec_from_file_location(module_name, ROOT / "__init__.py")
+        assert spec is not None
+        assert spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+
+        spec.loader.exec_module(module)
+
+        assert module.__version__ == "2.8.1"
+        assert module._get_provider_catalog()
+    finally:
+        sys.modules.pop(module_name, None)

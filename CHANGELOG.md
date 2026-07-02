@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [v2.8.1] — 2026-07-02
+
+### Credits
+- #75 by @robbyczgw-cla — cwd-independent plugin import fix for Hermes standalone discovery.
+
+### 🐛 Fixed
+- Web Search Plus plugin discovery no longer depends on the current working directory when Hermes loads the flat plugin from outside the plugin directory. The plugin root is added as a fallback import path so sibling modules such as `provider_registry` resolve under Hermes Agent v0.18 standalone discovery without shadowing host modules.
+
 ## [v2.8.0] — 2026-07-02
 
 ### Credits

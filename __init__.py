@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v2.8.0
+web-search-plus — Hermes Plugin v2.8.1
 Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "2.8.0"
+__version__ = "2.8.1"
 
 import argparse
 import getpass
@@ -24,6 +24,13 @@ import webbrowser
 from concurrent.futures import TimeoutError as FuturesTimeout
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
+
+# Hermes standalone plugin discovery can execute this flat plugin from outside
+# the plugin directory. Keep sibling-module fallback imports cwd-independent
+# without shadowing host/other-plugin modules ahead of normal sys.path entries.
+_PLUGIN_DIR = Path(__file__).resolve().parent
+if str(_PLUGIN_DIR) not in sys.path:
+    sys.path.append(str(_PLUGIN_DIR))
 
 try:  # Package load path used by Hermes plugin discovery.
     from .provider_registry import (
