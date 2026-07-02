@@ -28,6 +28,18 @@ The default auto-search pool is conservative: You.com, Serper, Exa, Firecrawl, T
 
 For the exact flow, see [Architecture](ARCHITECTURE.md#routing-engine).
 
+## Which provider order should I use?
+
+Measure instead of guessing: run the built-in provider bench, which races your configured providers against a small fixed query suite and recommends an `auto_routing.provider_priority` order ranked by success rate, median latency, and simple quality signals:
+
+```bash
+python ~/.hermes/plugins/web-search-plus/setup.py bench
+# or, from the plugin directory:
+python3 search.py --bench
+```
+
+The bench never changes your config — it prints the recommended priority plus the exact `config set-priority` command to apply it. Bench runs call providers directly, so they do not trigger cooldowns or feed adaptive routing statistics, but they do spend a few real API calls per provider. See [User Guide → Bench your providers](USER_GUIDE.md#bench-your-providers).
+
 ## How do I force one provider?
 
 Per call:

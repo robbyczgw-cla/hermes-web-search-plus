@@ -56,6 +56,26 @@ agent:
 
 Use this when Web Search Plus should be the preferred web layer. Without it, Web Search Plus still works; Hermes may simply have more web-capable tools to choose from. Some forks/local builds may expose additional tool-pinning config, but this guide only documents options available in current public Hermes.
 
+### Bench your providers
+
+Once keys are configured, benchmark the providers against each other and get a data-backed `auto_routing.provider_priority` suggestion:
+
+```bash
+python ~/.hermes/plugins/web-search-plus/setup.py bench
+# or, from the plugin directory:
+python3 search.py --bench
+python3 search.py --bench --json   # structured report
+```
+
+The bench runs a small fixed query suite (docs, vendor release, community, non-English) against every configured search-capable provider and reports success rate, median latency, result volume, and simple quality signals (duplicate-free URLs, snippet coverage). Providers are ranked by a weighted score — reliability first, then speed, then quality — and the recommended priority is printed together with the exact `config set-priority` command to apply it.
+
+Two guarantees worth knowing:
+
+- Bench calls providers directly, so a bench run never triggers provider cooldowns and never feeds the adaptive routing statistics.
+- Nothing is written to your config; applying the recommendation is always an explicit step.
+
+Note that the bench makes a few real API calls per provider, so it spends a small amount of quota on every configured provider.
+
 ## Provider setup
 
 Keys live in the active Hermes environment file, normally `~/.hermes/.env`. The setup helper preserves existing entries and does not print secret values. See the generated [provider reference](PROVIDERS.md) for every provider's capabilities, env var, auto-routing default, free tier, and signup link.
