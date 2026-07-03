@@ -42,6 +42,31 @@ _PLUGIN_DIR = Path(__file__).resolve().parent
 if str(_PLUGIN_DIR) not in sys.path:
     sys.path.append(str(_PLUGIN_DIR))
 
+
+def _assert_no_host_module_collision() -> None:
+    """Fail loudly instead of silently using a host's module of the same name.
+
+    The dashboard is a standalone process (``python3 ui.py``). If ui is
+    imported inside a host runtime (e.g. Hermes) that already has top-level
+    modules named ``search``/``cache``/... in sys.modules, the plain imports
+    below would silently bind to the HOST's modules and fail in confusing
+    ways later. The plugin's __init__ handles that via its module stash; ui
+    deliberately does not duplicate that machinery and refuses instead.
+    """
+    for name in ("search", "cache", "config", "providers", "routing", "provider_registry", "provider_stats"):
+        existing = sys.modules.get(name)
+        module_file = getattr(existing, "__file__", None) if existing is not None else None
+        if module_file and Path(module_file).resolve().parent != _PLUGIN_DIR:
+            raise ImportError(
+                "web-search-plus ui must run as its own process, but this interpreter already has a foreign "
+                "module named {!r} ({}). Start the dashboard standalone: python3 {}".format(
+                    name, module_file, _PLUGIN_DIR / "ui.py"
+                )
+            )
+
+
+_assert_no_host_module_collision()
+
 import cache as _cache  # noqa: E402
 import search as _search  # noqa: E402
 from config import load_config  # noqa: E402

@@ -181,3 +181,33 @@ def test_each_server_gets_its_own_token():
     finally:
         first.server_close()
         second.server_close()
+
+
+def test_ui_refuses_to_import_next_to_foreign_host_modules(tmp_path):
+    """Inside a host runtime (e.g. Hermes) that already has a foreign top-level
+    'search' module, importing ui must fail with an actionable message instead
+    of silently binding to the host's module (the #55 collision class)."""
+    import subprocess
+    import sys as _sys
+    import textwrap
+
+    code = textwrap.dedent(
+        """
+        import importlib.util, sys, types
+        fake = types.ModuleType("search")
+        fake.__file__ = r"{fake_file}"
+        sys.modules["search"] = fake
+        spec = importlib.util.spec_from_file_location("wsp_ui_collision_test", r"{ui_path}")
+        module = importlib.util.module_from_spec(spec)
+        try:
+            spec.loader.exec_module(module)
+        except ImportError as exc:
+            assert "own process" in str(exc), str(exc)
+            print("REFUSED-OK")
+        else:
+            raise SystemExit("ui imported silently next to a foreign search module")
+        """
+    ).format(fake_file=str(tmp_path / "host" / "search.py"), ui_path=str(UI_PATH))
+    result = subprocess.run([_sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    assert "REFUSED-OK" in result.stdout
