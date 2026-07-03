@@ -34,7 +34,7 @@ _FAKE_NEWS_RESPONSE = {
             "link": "https://news.example.test/flagship",
             "snippet": "The new deck ships in autumn.",
             "date": "2 hours ago",
-            "source": "HiFi News",
+            "source": "Audio News",
             "imageUrl": "https://news.example.test/flagship.jpg",
             "position": 1,
         },
@@ -61,11 +61,11 @@ class SerperNewsParsingTests(unittest.TestCase):
             return _FAKE_NEWS_RESPONSE
 
         with mock.patch("search.make_request", side_effect=fake_post):
-            result = search.search_serper(query="hifi news", api_key="serper-key", search_type="news")
+            result = search.search_serper(query="audio news", api_key="serper-key", search_type="news")
 
         self.assertEqual(captured["url"], "https://google.serper.dev/news")
         self.assertEqual(captured["headers"]["X-API-KEY"], "serper-key")
-        self.assertEqual(captured["body"]["q"], "hifi news")
+        self.assertEqual(captured["body"]["q"], "audio news")
 
         self.assertEqual(result["provider"], "serper")
         self.assertEqual(len(result["results"]), 2)
@@ -74,7 +74,7 @@ class SerperNewsParsingTests(unittest.TestCase):
         self.assertEqual(first["url"], "https://news.example.test/flagship")
         self.assertEqual(first["snippet"], "The new deck ships in autumn.")
         self.assertEqual(first["date"], "2 hours ago")
-        self.assertEqual(first["source"], "HiFi News")
+        self.assertEqual(first["source"], "Audio News")
         self.assertEqual(first["thumbnail"], "https://news.example.test/flagship.jpg")
         self.assertEqual(first["position"], 1)
         self.assertAlmostEqual(first["score"], 1.0)
@@ -180,7 +180,7 @@ class SearchTypePipelineTests(unittest.TestCase):
                 return _canned("serper")
 
             stack.enter_context(mock.patch.object(search, "search_serper", fake_serper))
-            result = search.run_search_request(query="latest hifi news", provider="serper", search_type="NEWS")
+            result = search.run_search_request(query="latest audio news", provider="serper", search_type="NEWS")
 
         self.assertEqual(seen["search_type"], "news")
         self.assertEqual(result["metadata"]["search_type"], {
@@ -226,11 +226,11 @@ class SearchTypePipelineTests(unittest.TestCase):
             self._isolate(stack)
             stack.enter_context(mock.patch.dict("os.environ", {"SERPER_API_KEY": "serper-test-key"}))
             stack.enter_context(mock.patch("search.make_request", side_effect=fake_post))
-            result = search.run_search_request(query="hifi", provider="serper", search_type="news", freshness="day")
+            result = search.run_search_request(query="audio", provider="serper", search_type="news", freshness="day")
 
         self.assertEqual(captured["url"], "https://google.serper.dev/news")
         self.assertEqual(captured["body"]["tbs"], "qdr:d")
-        self.assertEqual(result["results"][0]["source"], "HiFi News")
+        self.assertEqual(result["results"][0]["source"], "Audio News")
         self.assertTrue(result["metadata"]["search_type"]["applied"])
         self.assertTrue(result["metadata"]["freshness"]["applied"])
 
