@@ -83,6 +83,7 @@ from quality import (  # noqa: F401 - re-exported for backward-compatible tests/
 )
 from provider_dispatch import SEARCH_DISPATCH
 from provider_registry import PROVIDER_SPECS, SEARCH_PROVIDER_IDS, doctor_catalog
+from search_locale import provider_supports_locale, resolve_locale
 from env_loader import load_env_files
 from research import run_research_mode
 import providers as _providers
@@ -759,10 +760,20 @@ Full docs: See README.md and SKILL.md
         help="Show detailed routing analysis (debug mode)"
     )
     
-    # Serper-specific
+    # Locale (providers with country/language request parameters). Left unset,
+    # search_locale.resolve_locale applies: explicit provider config > query
+    # location hint > defaults.locale > us/en fallback. Explicit flags win.
     serper_config = config.get("serper", {})
-    parser.add_argument("--country", default=serper_config.get("country", "us"))
-    parser.add_argument("--language", default=serper_config.get("language", "en"))
+    parser.add_argument(
+        "--country",
+        default=None,
+        help="ISO 3166-1 alpha-2 country override (e.g. at, fr); beats config defaults and query location hints"
+    )
+    parser.add_argument(
+        "--language",
+        default=None,
+        help="ISO 639-1 language override (e.g. de); beats config defaults and query language inference"
+    )
     parser.add_argument(
         "--type", 
         dest="search_type", 
@@ -1217,8 +1228,15 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
         )
         return provider_result
 
+    # Resolved locale for the selected provider: config-first country,
+    # query-aware language (see search_locale.resolve_locale). Defaults stay
+    # us/en, so cache keys are unchanged for unconfigured setups.
+    locale_country, locale_language, _locale_meta = resolve_locale(
+        provider or "", config, args.query, cli_country=args.country, cli_language=args.language
+    )
+
     cache_context = {
-        "locale": f"{args.country}:{args.language}",
+        "locale": f"{locale_country}:{locale_language}",
         "freshness": args.freshness,
         "time_range": args.time_range,
         "include_domains": sorted(args.include_domains) if args.include_domains else None,
@@ -1422,6 +1440,17 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
             result.setdefault("metadata", {})["search_type"] = _providers.search_type_metadata(
                 successful_provider or provider, requested_search_type
             )
+
+        # Locale transparency (freshness-metadata pattern): report the
+        # resolved country/language and where each came from, but only for
+        # providers whose request actually carries locale parameters.
+        final_provider = successful_provider or provider
+        if provider_supports_locale(final_provider):
+            _, _, locale_meta = resolve_locale(
+                final_provider, config, args.query,
+                cli_country=args.country, cli_language=args.language,
+            )
+            result.setdefault("metadata", {})["locale"] = locale_meta
 
         if not cache_hit and not args.no_cache and args.query:
             cache_put(

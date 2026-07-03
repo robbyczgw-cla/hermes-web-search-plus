@@ -36,7 +36,18 @@ DEFAULT_CONFIG = {
     "default_provider": None,
     "defaults": {
         "provider": "serper",
-        "max_results": 5
+        "max_results": 5,
+        # Global locale defaults for providers with country/language request
+        # parameters (serper, brave, you, serpbase, querit, firecrawl,
+        # searxng). country: ISO 3166-1 alpha-2 (e.g. "at"); language:
+        # ISO 639-1 code, or "auto" for conservative query language
+        # inference. Unset values fall back to us/en. Explicit provider
+        # sections in config.json (e.g. serper.country) still win — see
+        # search_locale.resolve_locale for the full precedence.
+        "locale": {
+            "country": None,
+            "language": None,
+        },
     },
     "auto_routing": {
         "enabled": True,
@@ -58,17 +69,16 @@ DEFAULT_CONFIG = {
         # private/internal networks. Operators can opt in for trusted intranet use.
         "allow_private_urls": False,
     },
+    # Note: provider country/language keys are intentionally absent from the
+    # built-in defaults so search_locale.resolve_locale can treat a present
+    # key as an explicit user override from config.json.
     "serper": {
-        "country": "us",
-        "language": "en",
         "type": "search",
         # Webpage scraper endpoint; operator-overridable for compatible
         # self-hosted/proxy services (firecrawl scrape_url pattern).
         "scrape_url": "https://scrape.serper.dev"
     },
     "brave": {
-        "country": "US",
-        "search_lang": "en",
         "safesearch": "moderate",
     },
     "tavily": {
@@ -110,19 +120,15 @@ DEFAULT_CONFIG = {
     },
     "firecrawl": {
         "api_url": "https://api.firecrawl.dev/v2/search",
-        "country": "US",
         "timeout": 30000,
         "sources": ["web"],
         "ignore_invalid_urls": False
     },
     "you": {
-        "country": "us",
         "safesearch": "moderate"
     },
     "serpbase": {
         "api_url": "https://api.serpbase.dev/google/search",
-        "country": "us",
-        "language": "en",
         "page": 1,
         "timeout": 30,
     },
@@ -130,7 +136,6 @@ DEFAULT_CONFIG = {
         "instance_url": None,  # Required - user must set their own instance
         "safesearch": 0,  # 0=off, 1=moderate, 2=strict
         "engines": None,  # Optional list of engines to use
-        "language": "en"
     },
     "keenable": {
         "search_url": "https://api.keenable.ai/v1/search",

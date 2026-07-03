@@ -102,6 +102,105 @@ LANGUAGE_HINT_PROVIDER_BOOSTS: Dict[str, List[Tuple[str, float]]] = {
     "default": [("you", 8.0), ("exa", 5.0), ("firecrawl", 4.0), ("linkup", 3.0), ("tavily", 2.0)],
 }
 
+# ---------------------------------------------------------------------------
+# Conservative query-language inference for locale resolution
+# ---------------------------------------------------------------------------
+# Extends the routing language_hint mechanic (QueryAnalyzer._detect_language_hint)
+# for search_locale.resolve_locale. The routing hint is deliberately trigger-happy
+# (a single stopword is enough to bias provider boosts); locale resolution instead
+# counts distinct stopword/character signals per language and only reports a
+# language when the evidence is unambiguous. Short keyword or technical queries
+# (for example "PostgreSQL 17 release notes") produce no inference on purpose.
+
+# Minimum number of distinct signals before a language inference is trusted.
+LANGUAGE_INFERENCE_MIN_MATCHES = 2
+
+# Common function/search words per supported language. Words shared between
+# languages (e.g. "que" in es/fr/pt) may appear in several sets; the strict
+# single-winner rule in infer_query_language keeps those from mis-firing.
+LANGUAGE_INFERENCE_STOPWORDS: Dict[str, frozenset] = {
+    "en": frozenset({
+        "the", "and", "what", "how", "where", "when", "which", "who",
+        "best", "near", "hours", "open", "with", "from", "for", "are",
+        "is", "was", "does", "latest", "today", "new",
+    }),
+    "de": frozenset({
+        "der", "die", "das", "und", "oder", "nicht", "ist", "sind",
+        "ein", "eine", "einen", "mit", "für", "von", "wie", "wo", "was",
+        "warum", "welche", "beste", "besten", "gibt", "öffnungszeiten",
+        "heute", "morgen", "preis", "kaufen", "günstig", "nähe",
+    }),
+    "es": frozenset({
+        "el", "los", "las", "una", "unos", "que", "qué", "cómo", "dónde",
+        "cuál", "por", "para", "con", "mejores", "mejor", "cerca", "hoy",
+        "horario", "horarios", "abierto", "abiertos", "tiendas",
+        "restaurantes", "precio", "precios", "donde", "como",
+    }),
+    "fr": frozenset({
+        "le", "les", "des", "une", "du", "où", "quel", "quelle", "quels",
+        "quelles", "meilleur", "meilleure", "meilleurs", "meilleures",
+        "horaires", "ouvert", "ouverts", "ouverture", "aujourd", "hui",
+        "près", "proche", "avec", "pour", "prix", "cher", "que",
+    }),
+    "it": frozenset({
+        "il", "lo", "gli", "che", "come", "dove", "quale", "quali",
+        "migliori", "migliore", "orari", "orario", "aperto", "aperti",
+        "vicino", "con", "oggi", "prezzo", "prezzi", "negozi",
+        "ristoranti", "della", "delle",
+    }),
+    "pt": frozenset({
+        "os", "do", "dos", "das", "um", "uma", "que", "como", "onde",
+        "qual", "quais", "melhores", "melhor", "horários", "aberto",
+        "perto", "hoje", "preço", "lojas", "com", "você", "para",
+        "restaurantes",
+    }),
+    "nl": frozenset({
+        "het", "een", "waar", "hoe", "welke", "beste", "goedkoop",
+        "goedkoopste", "vandaag", "morgen", "openingstijden", "winkel",
+        "winkels", "dichtbij", "buurt", "naar", "zijn", "niet", "voor",
+    }),
+}
+
+# Distinctive characters that count as one additional signal per language.
+LANGUAGE_INFERENCE_CHAR_HINTS: Dict[str, str] = {
+    "de": "äöüß",
+    "es": "ñ¿¡",
+    "pt": "ãõ",
+    "fr": "œ",
+}
+
+
+def infer_query_language(query: str) -> Optional[str]:
+    """Infer the query language conservatively for locale defaults.
+
+    Returns an ISO 639-1 code from LANGUAGE_INFERENCE_STOPWORDS when at least
+    LANGUAGE_INFERENCE_MIN_MATCHES distinct signals point to a single language
+    that strictly beats every other candidate. Returns None when the evidence
+    is missing or ambiguous so callers fall back to their configured default
+    (for example "Wiener Kaffeehaus Öffnungszeiten" infers "de", while a terse
+    technical query such as "DAC R2R NOS" infers nothing).
+    """
+    if not query:
+        return None
+    lowered = query.lower()
+    words = set(re.findall(r"\w+", lowered))
+    counts: Dict[str, int] = {}
+    for language, stopwords in LANGUAGE_INFERENCE_STOPWORDS.items():
+        count = len(words & stopwords)
+        count += sum(1 for char in LANGUAGE_INFERENCE_CHAR_HINTS.get(language, "") if char in lowered)
+        if count:
+            counts[language] = count
+    if not counts:
+        return None
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
+    best_language, best_count = ranked[0]
+    if best_count < LANGUAGE_INFERENCE_MIN_MATCHES:
+        return None
+    if len(ranked) > 1 and ranked[1][1] == best_count:
+        return None
+    return best_language
+
+
 # Conservative class-aware provider boosts (positive) and penalties (negative)
 # from the qualitative routing benchmark, applied on top of the signal scores.
 ROUTING_CLASS_PROVIDER_BOOSTS: Dict[str, List[Tuple[str, float]]] = {

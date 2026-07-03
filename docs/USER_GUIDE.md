@@ -221,6 +221,50 @@ Example pattern:
 
 Read that as: guarded providers can have keys but remain explicit-only for `provider="auto"`, and the router selected the best eligible provider. If you want SerpBase, Brave, Querit, Perplexity, or Kilo Perplexity to participate in automatic routing, opt in with `set-auto-allow <provider> on`; if a provider is cooled down, wait or clear local provider health state in your cache directory.
 
+## Search locale defaults
+
+Providers with region/language request parameters (Serper, Brave, You.com, SerpBase, Querit, Firecrawl, SearXNG) no longer hardcode us/en. Set your defaults once in `config.json`:
+
+```json
+{
+  "defaults": {
+    "locale": {
+      "country": "at",
+      "language": "auto"
+    }
+  }
+}
+```
+
+- `country`: ISO 3166-1 alpha-2 code (for example `at`, `fr`, `es`) used as the default region for locale-aware providers.
+- `language`: ISO 639-1 code (for example `de`), or `"auto"` to infer the language from each query.
+
+`"auto"` mode uses a lightweight, local stopword/character heuristic (no LLM, no extra dependency, no IP geolocation) covering `de`, `es`, `fr`, `it`, `pt`, `nl`, and `en`. It is deliberately conservative: it needs at least two distinct language signals and a single unambiguous winner. A query like "Wiener Kaffeehaus Öffnungszeiten" infers German; a terse technical query like "DAC R2R NOS" or "PostgreSQL 17 release notes" infers nothing and keeps the default language.
+
+Explicit location hints in the query move the country: a small curated table of well-known city and country names (Vienna/Wien, Berlin, Paris, Madrid, London, Rome, Amsterdam, ...) is checked, so "mejores restaurantes Madrid" searches with `country=es` and "boulangerie Paris horaires" with `country=fr` even when your configured default is `at`. Conflicting hints ("compare bakeries in Paris and Madrid") change nothing.
+
+Resolution precedence:
+
+1. CLI flags / tool parameters (`--country` / `--language`, or the `country` / `language` tool parameters)
+2. Explicit provider-specific config in `config.json` (for example `serper.country` or `brave.search_lang`)
+3. Explicit location hint in the query (country only)
+4. `defaults.locale.country` / `defaults.locale.language` (with `"auto"` triggering language inference)
+5. Fallback `us` / `en`
+
+**Query language does not imply country.** A German query can come from Austria or Switzerland just as well as Germany, so inferred language never moves the region — only explicit location hints, configuration, or flags do.
+
+Result metadata reports the resolved locale and where each value came from, following the freshness-metadata pattern:
+
+```json
+"locale": {
+  "country": "at",
+  "language": "de",
+  "source": {"country": "config", "language": "inferred"}
+}
+```
+
+Backward compatibility: without `defaults.locale` and without flags, everything still resolves to `us`/`en` exactly as before. Providers without locale parameters (Tavily, Exa, Linkup, Parallel, Perplexity, Keenable) are unaffected.
+
 ## Explicit opt-in providers: guarded providers
 
 Some providers can be configured for explicit use without being selected automatically. That is what `auto_allow` controls.

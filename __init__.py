@@ -1135,6 +1135,7 @@ def _load_search_module() -> Any:
             "provider_health",
             "provider_dispatch",
             "provider_registry",
+            "search_locale",
         )
         stashed: dict[str, Any] = {}
         for _name in _COLLIDING_MODULES:
@@ -1680,6 +1681,14 @@ def register(ctx: Any) -> None:
                     "minimum": 1,
                     "maximum": 75,
                 },
+                "country": {
+                    "type": "string",
+                    "description": "ISO 3166-1 alpha-2 country override for providers with region parameters (e.g. 'at', 'fr'). Beats configured locale defaults and query location hints. Optional.",
+                },
+                "language": {
+                    "type": "string",
+                    "description": "ISO 639-1 language override for providers with language parameters (e.g. 'de'). Beats configured locale defaults and 'auto' query language inference. Optional.",
+                },
             },
             "required": ["query"],
         },
@@ -1690,7 +1699,8 @@ def register(ctx: Any) -> None:
                 search_type: Optional[str] = None,
                 include_domains: Optional[List[str]] = None,
                 exclude_domains: Optional[List[str]] = None, mode: str = "normal",
-                quality_report: bool = False, research_time_budget: float = 55.0, **kwargs) -> str:
+                quality_report: bool = False, research_time_budget: float = 55.0,
+                country: Optional[str] = None, language: Optional[str] = None, **kwargs) -> str:
         # Hermes registry passes the entire input dict as first positional arg
         if isinstance(args_or_query, dict):
             query = args_or_query.get("query", "")
@@ -1705,6 +1715,8 @@ def register(ctx: Any) -> None:
             mode = args_or_query.get("mode", mode)
             quality_report = args_or_query.get("quality_report", quality_report)
             research_time_budget = args_or_query.get("research_time_budget", research_time_budget)
+            country = args_or_query.get("country", country)
+            language = args_or_query.get("language", language)
         else:
             query = args_or_query
         data = _run_search(
@@ -1720,6 +1732,8 @@ def register(ctx: Any) -> None:
             mode=mode,
             quality_report=quality_report,
             research_time_budget=research_time_budget,
+            language=language,
+            country=country,
         )
         return _format_results(data)
 

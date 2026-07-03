@@ -22,6 +22,7 @@ registry capability flags can never drift apart.
 from typing import Any, Callable, Dict
 
 from config import DEFAULT_CONFIG, _validate_searxng_url, keyless_public_allowed
+from search_locale import resolve_locale
 
 
 def _resolve(namespace: Any, name: str) -> Callable[..., Dict[str, Any]]:
@@ -36,6 +37,24 @@ def _resolve(namespace: Any, name: str) -> Callable[..., Dict[str, Any]]:
     return getattr(namespace, name)
 
 
+def _locale(prov: str, args: Any, config: Dict[str, Any]):
+    """Resolve the effective (country, language) for a locale-aware provider.
+
+    CLI flags arrive through ``args.country``/``args.language`` (None unless
+    explicitly passed); everything else — explicit provider config, query
+    location hints, ``defaults.locale``, us/en fallback — is resolved centrally
+    in search_locale.resolve_locale.
+    """
+    country, language, _meta = resolve_locale(
+        prov,
+        config,
+        getattr(args, "query", None),
+        cli_country=getattr(args, "country", None),
+        cli_language=getattr(args, "language", None),
+    )
+    return country, language
+
+
 # =============================================================================
 # Search adapters — one per provider, kwargs identical to the old
 # search.py execute_search() if/elif branches.
@@ -43,12 +62,13 @@ def _resolve(namespace: Any, name: str) -> Callable[..., Dict[str, Any]]:
 
 
 def _call_serper_search(search_module, prov, args, key, config, routing_info):
+    country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_serper")(
         query=args.query,
         api_key=key,
         max_results=args.max_results,
-        country=args.country,
-        language=args.language,
+        country=country,
+        language=language,
         search_type=args.search_type,
         time_range=args.time_range or args.freshness,
         include_images=args.images,
@@ -57,12 +77,13 @@ def _call_serper_search(search_module, prov, args, key, config, routing_info):
 
 def _call_serpbase_search(search_module, prov, args, key, config, routing_info):
     serpbase_config = config.get("serpbase", {})
+    country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_serpbase")(
         query=args.query,
         api_key=key,
         max_results=args.max_results,
-        country=serpbase_config.get("country", args.country),
-        language=serpbase_config.get("language", args.language),
+        country=country,
+        language=language,
         page=int(serpbase_config.get("page", 1)),
         api_url=serpbase_config.get("api_url", "https://api.serpbase.dev/google/search"),
         timeout=int(serpbase_config.get("timeout", 30)),
@@ -71,12 +92,13 @@ def _call_serpbase_search(search_module, prov, args, key, config, routing_info):
 
 def _call_brave_search(search_module, prov, args, key, config, routing_info):
     brave_config = config.get("brave", {})
+    country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_brave")(
         query=args.query,
         api_key=key,
         max_results=args.max_results,
-        country=brave_config.get("country", args.country),
-        language=brave_config.get("search_lang", args.language),
+        country=country,
+        language=language,
         time_range=args.time_range or args.freshness,
         safesearch=brave_config.get("safesearch", "moderate"),
     )
@@ -113,12 +135,13 @@ def _call_linkup_search(search_module, prov, args, key, config, routing_info):
 
 def _call_querit_search(search_module, prov, args, key, config, routing_info):
     querit_config = config.get("querit", {})
+    country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_querit")(
         query=args.query,
         api_key=key,
         max_results=args.max_results,
-        language=args.language,
-        country=args.country,
+        language=language,
+        country=country,
         time_range=args.time_range or args.freshness,
         include_domains=args.include_domains,
         exclude_domains=args.exclude_domains,
@@ -151,11 +174,12 @@ def _call_exa_search(search_module, prov, args, key, config, routing_info):
 
 def _call_firecrawl_search(search_module, prov, args, key, config, routing_info):
     firecrawl_config = config.get("firecrawl", {})
+    country, _language = _locale(prov, args, config)
     return _resolve(search_module, "search_firecrawl")(
         query=args.query,
         api_key=key,
         max_results=args.max_results,
-        country=firecrawl_config.get("country", args.country),
+        country=country,
         time_range=args.time_range or args.freshness,
         sources=args.firecrawl_sources,
         include_domains=args.include_domains,
@@ -197,12 +221,13 @@ def _call_perplexity_search(search_module, prov, args, key, config, routing_info
 
 
 def _call_you_search(search_module, prov, args, key, config, routing_info):
+    country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_you")(
         query=args.query,
         api_key=key,
         max_results=args.max_results,
-        country=args.country,
-        language=args.language,
+        country=country,
+        language=language,
         freshness=args.freshness,
         safesearch=args.you_safesearch,
         include_news=not args.no_news,
@@ -215,13 +240,14 @@ def _call_searxng_search(search_module, prov, args, key, config, routing_info):
     instance_url = args.searxng_url or key
     if instance_url:
         instance_url = _validate_searxng_url(instance_url)
+    _country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_searxng")(
         query=args.query,
         instance_url=instance_url,
         max_results=args.max_results,
         categories=args.categories,
         engines=args.engines,
-        language=args.language,
+        language=language,
         time_range=args.time_range or args.freshness,
         safesearch=args.searxng_safesearch,
     )
