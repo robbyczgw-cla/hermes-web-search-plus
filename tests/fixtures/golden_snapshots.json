@@ -1,7 +1,7 @@
 [
   {
     "id": "github-primary-source",
-    "category": "software_canonical",
+    "category": "tech_release",
     "query": "Hermes Web Search Plus GitHub",
     "payload": {
       "provider": "replay",
@@ -35,7 +35,7 @@
   },
   {
     "id": "policy-primary-source",
-    "category": "policy_canonical",
+    "category": "research_policy",
     "query": "EU AI Act official obligations",
     "payload": {
       "provider": "replay",
@@ -69,7 +69,7 @@
   },
   {
     "id": "extract-content-quality",
-    "category": "extract_replay",
+    "category": "js_extraction",
     "query": "extract homepage docs",
     "payload": {
       "provider": "replay",
@@ -88,6 +88,198 @@
       "min_content_chars": 120,
       "must_include_domains": ["websearchplus.xyz"],
       "required_terms": ["Hermes Agent", "providers", "quality reports"],
+      "max_duplicate_count": 0
+    }
+  },
+  {
+    "id": "hifi-turntables-under-1000",
+    "category": "hifi_product",
+    "query": "best turntables under 1000 euro 2026",
+    "payload": {
+      "provider": "replay",
+      "results": [
+        {
+          "title": "Best turntables 2026: top record players for every budget",
+          "url": "https://www.whathifi.com/best-buys/best-turntables",
+          "snippet": "Our expert pick of the best turntables under 1000 euro, tested by the What Hi-Fi? review team.",
+          "score": 0.95
+        },
+        {
+          "title": "Rega Planar 3 turntable review",
+          "url": "https://www.stereophile.com/content/rega-planar-3-turntable",
+          "snippet": "In-depth review and measurements of the Rega Planar 3 turntable with RB330 tonearm.",
+          "score": 0.9
+        },
+        {
+          "title": "Turntable recommendations under 1000 euro?",
+          "url": "https://www.audiosciencereview.com/forum/index.php?threads/turntable-recommendations-under-1000.54321/",
+          "snippet": "Measurement-focused community discussion of turntable performance in the sub-1000 euro bracket.",
+          "score": 0.85
+        }
+      ],
+      "quality_report": {"duplicate_count": 0}
+    },
+    "expect": {
+      "min_results": 3,
+      "min_domain_count": 3,
+      "top_domain_any_of": ["whathifi.com", "stereophile.com"],
+      "must_include_domains": ["whathifi.com"],
+      "blocked_domains": ["seo-listicle-farm.invalid"],
+      "required_terms": ["turntable"],
+      "max_duplicate_count": 0
+    }
+  },
+  {
+    "id": "graz-weather-today",
+    "category": "local_realtime",
+    "query": "Graz weather today",
+    "payload": {
+      "provider": "replay",
+      "results": [
+        {
+          "title": "Wetter Graz - aktuelle Wettervorhersage von ORF",
+          "url": "https://wetter.orf.at/steiermark/graz",
+          "snippet": "Aktuelles Wetter und Prognose für Graz und die Steiermark vom ORF.",
+          "score": 0.95
+        },
+        {
+          "title": "Aktuelle Messwerte Graz Universität - GeoSphere Austria",
+          "url": "https://www.geosphere.at/de/services/wetter/graz",
+          "snippet": "Current observations and forecast for Graz from Austria's national weather service.",
+          "score": 0.9
+        },
+        {
+          "title": "Weather for Graz, Styria, Austria",
+          "url": "https://www.timeanddate.com/weather/austria/graz",
+          "snippet": "Current conditions, hourly forecast and 14 day outlook for Graz, Austria.",
+          "score": 0.85
+        }
+      ],
+      "quality_report": {"duplicate_count": 0}
+    },
+    "expect": {
+      "min_results": 3,
+      "min_domain_count": 3,
+      "top_domain_any_of": ["wetter.orf.at", "geosphere.at"],
+      "must_include_domains": ["wetter.orf.at"],
+      "blocked_domains": ["weather-aggregator.invalid"],
+      "required_terms": ["Graz"],
+      "max_duplicate_count": 0
+    }
+  },
+  {
+    "id": "deutsche-ki-news",
+    "category": "german_realtime",
+    "query": "aktuelle KI Regulierung Österreich Unternehmen 2026",
+    "payload": {
+      "provider": "replay",
+      "results": [
+        {
+          "title": "KI-Verordnung: Was Unternehmen jetzt beachten müssen - WKO",
+          "url": "https://www.wko.at/digitalisierung/ki-verordnung-unternehmen",
+          "snippet": "Die Wirtschaftskammer Österreich erklärt die Pflichten der KI-Verordnung für Unternehmen ab 2026.",
+          "score": 0.95
+        },
+        {
+          "title": "Künstliche Intelligenz - Regulierung in Österreich",
+          "url": "https://www.oesterreich.gv.at/themen/digitales/kuenstliche-intelligenz.html",
+          "snippet": "Offizielle Informationen zur KI-Regulierung und KI-Servicestelle für Unternehmen in Österreich.",
+          "score": 0.9
+        },
+        {
+          "title": "KI-Regeln: Was auf heimische Unternehmen zukommt",
+          "url": "https://www.derstandard.at/story/ki-regulierung-oesterreich-unternehmen-2026",
+          "snippet": "Überblick über die aktuellen KI-Regeln und Übergangsfristen für Unternehmen in Österreich.",
+          "score": 0.85
+        }
+      ],
+      "quality_report": {"duplicate_count": 0}
+    },
+    "expect": {
+      "min_results": 3,
+      "min_domain_count": 3,
+      "top_domain_any_of": ["wko.at", "oesterreich.gv.at"],
+      "must_include_domains": ["wko.at", "oesterreich.gv.at"],
+      "blocked_domains": ["ki-consulting-spam.invalid"],
+      "required_terms": ["KI", "Unternehmen"],
+      "max_duplicate_count": 0
+    }
+  },
+  {
+    "id": "reddit-local-llama",
+    "category": "reddit_community",
+    "query": "site:reddit.com/r/LocalLLaMA best local LLM inference server 2026",
+    "payload": {
+      "provider": "replay",
+      "results": [
+        {
+          "title": "Best local LLM inference server in 2026? : r/LocalLLaMA",
+          "url": "https://www.reddit.com/r/LocalLLaMA/comments/1abc123/best_local_llm_inference_server_in_2026/",
+          "snippet": "Community thread comparing vLLM, llama.cpp server and TGI for local inference workloads.",
+          "score": 0.95
+        },
+        {
+          "title": "vLLM vs llama.cpp server benchmarks : r/LocalLLaMA",
+          "url": "https://www.reddit.com/r/LocalLLaMA/comments/1def456/vllm_vs_llamacpp_server_benchmarks/",
+          "snippet": "Throughput and latency benchmarks for popular local inference servers on consumer GPUs.",
+          "score": 0.9
+        },
+        {
+          "title": "My 2026 local inference stack : r/LocalLLaMA",
+          "url": "https://www.reddit.com/r/LocalLLaMA/comments/1ghi789/my_2026_local_inference_stack/",
+          "snippet": "Setup writeup: quantized models, an inference server and an OpenAI-compatible gateway.",
+          "score": 0.85
+        }
+      ],
+      "quality_report": {"duplicate_count": 0}
+    },
+    "expect": {
+      "min_results": 3,
+      "min_domain_count": 1,
+      "top_domain_any_of": ["reddit.com"],
+      "must_include_domains": ["reddit.com"],
+      "blocked_domains": ["reddit-mirror.invalid"],
+      "required_terms": ["LocalLLaMA", "inference"],
+      "max_duplicate_count": 0
+    }
+  },
+  {
+    "id": "academic-rag-eval",
+    "category": "academic",
+    "query": "recent papers retrieval augmented generation evaluation benchmark 2026",
+    "payload": {
+      "provider": "replay",
+      "results": [
+        {
+          "title": "A Survey of Retrieval-Augmented Generation Evaluation",
+          "url": "https://arxiv.org/abs/2601.01234",
+          "snippet": "We survey evaluation methodology for retrieval-augmented generation systems and propose a unified benchmark taxonomy.",
+          "score": 0.95,
+          "published_date": "2026-01-15"
+        },
+        {
+          "title": "RAGBench: A Reproducible Benchmark for Retrieval-Augmented Generation",
+          "url": "https://aclanthology.org/2026.acl-long.123/",
+          "snippet": "Benchmark suite measuring faithfulness, answer relevance and retrieval quality for RAG pipelines.",
+          "score": 0.9,
+          "published_date": "2026-03-02"
+        },
+        {
+          "title": "Evaluating Retrieval Quality in RAG Systems",
+          "url": "https://openreview.net/forum?id=rag-eval-2026",
+          "snippet": "Peer-reviewed study on retrieval evaluation metrics and their correlation with end-task benchmark scores.",
+          "score": 0.85
+        }
+      ],
+      "quality_report": {"duplicate_count": 0}
+    },
+    "expect": {
+      "min_results": 3,
+      "min_domain_count": 3,
+      "top_domain_any_of": ["arxiv.org"],
+      "must_include_domains": ["arxiv.org", "aclanthology.org"],
+      "blocked_domains": ["paper-mill.invalid"],
+      "required_terms": ["retrieval", "benchmark"],
       "max_duplicate_count": 0
     }
   }

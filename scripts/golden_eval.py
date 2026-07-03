@@ -3,6 +3,28 @@
 
 Runs a fixed set of representative queries against normal search and optional
 research mode, then writes machine-readable JSONL plus a compact markdown report.
+
+Offline snapshot fixtures (``--snapshot-fixtures``) replay pinned provider
+payloads deterministically; CI exercises them via tests/test_golden_eval.py.
+Every fixture payload must satisfy ``SNAPSHOT_PAYLOAD_CONTRACT`` so fixtures
+cannot drift away from the envelope search.py actually emits.
+
+Recording workflow for refreshing snapshot fixtures (requires configured
+provider API keys, like the live eval):
+
+1. Record: ``python scripts/golden_eval.py --record --record-output
+   tests/fixtures/golden_snapshots.recorded.json`` runs the live golden
+   queries (normal mode, one snapshot per category) and writes sanitized
+   payloads: snippets/content truncated to stable lengths, volatile fields
+   (cache metadata, routing, latency, timestamps) stripped, keys sorted
+   deterministically.
+2. Review: manually inspect the ``.recorded.json`` file and tighten the
+   auto-generated ``expect`` blocks (top_domain_any_of, must_include_domains,
+   blocked_domains, required_terms, min_content_chars) so they encode real
+   source-quality expectations rather than just what happened to come back.
+3. Promote: copy the reviewed snapshots into
+   ``tests/fixtures/golden_snapshots.json``. The recorder deliberately
+   refuses to write the canonical fixture file directly.
 """
 from __future__ import annotations
 
@@ -14,7 +36,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Tuple
 from urllib.parse import urlparse
 
 
@@ -68,6 +90,49 @@ DEFAULT_GOLDEN_QUERIES: List[Dict[str, Any]] = [
         "notes": "Extraction-sensitive / JS-ish query.",
     },
 ]
+
+
+CANONICAL_SNAPSHOT_FIXTURE = Path("tests") / "fixtures" / "golden_snapshots.json"
+
+# Contract between snapshot fixtures and the real search.py output envelope.
+# The recorder sanitizes live payloads down to exactly these fields and the
+# schema test in tests/test_golden_eval.py validates every fixture against it,
+# so schema drift between fixtures and real output fails immediately.
+SNAPSHOT_PAYLOAD_CONTRACT: Dict[str, Any] = {
+    "required_payload_fields": {"results": list},
+    "optional_payload_fields": {
+        "provider": str,
+        "query": str,
+        "answer": str,
+        "source_summaries": list,
+        "quality_report": dict,
+        "metadata": dict,
+    },
+    "required_result_fields": {"title": str, "url": str},
+    "optional_result_fields": {
+        "snippet": str,
+        "content": str,
+        "raw_content": str,
+        "score": (int, float),
+        "published_date": str,
+        "type": str,
+    },
+    "required_source_summary_fields": {"url": str},
+    "optional_source_summary_fields": {
+        "title": str,
+        "snippet": str,
+        "content": str,
+        "raw_content": str,
+    },
+}
+
+# Sanitization limits applied by the recorder so fixtures stay reviewable.
+SNAPSHOT_TEXT_LIMITS: Dict[str, int] = {
+    "snippet": 300,
+    "content": 1200,
+    "raw_content": 1200,
+    "answer": 600,
+}
 
 
 def load_golden_queries(path: Path | None = None) -> List[Dict[str, Any]]:
@@ -124,6 +189,204 @@ def _result_text(item: Dict[str, Any]) -> str:
     return " ".join(
         str(item.get(key) or "")
         for key in ("title", "snippet", "description", "content", "raw_content", "summary")
+    )
+
+
+def _matches_type(value: Any, expected: Any) -> bool:
+    if isinstance(value, bool) and expected is not bool:
+        return False
+    return isinstance(value, expected)
+
+
+def _validate_fields(
+    item: Any,
+    required: Dict[str, Any],
+    optional: Dict[str, Any],
+    label: str,
+) -> List[str]:
+    if not isinstance(item, dict):
+        return [f"{label} must be a JSON object"]
+    issues: List[str] = []
+    for field, expected in required.items():
+        if field not in item:
+            issues.append(f"{label} is missing required field '{field}'")
+        elif not _matches_type(item[field], expected):
+            issues.append(f"{label} field '{field}' must be {getattr(expected, '__name__', expected)}")
+    for field, value in item.items():
+        if field in required:
+            continue
+        if field not in optional:
+            issues.append(f"{label} has unknown field '{field}'")
+        elif value is not None and not _matches_type(value, optional[field]):
+            issues.append(f"{label} optional field '{field}' has wrong type")
+    return issues
+
+
+def validate_snapshot_payload(payload: Any) -> List[str]:
+    """Validate a snapshot payload against SNAPSHOT_PAYLOAD_CONTRACT.
+
+    Returns a list of human-readable contract violations; empty means the
+    payload matches the envelope search.py produces (required results list,
+    typed result fields, no unknown top-level fields).
+    """
+    contract = SNAPSHOT_PAYLOAD_CONTRACT
+    issues = _validate_fields(
+        payload,
+        contract["required_payload_fields"],
+        contract["optional_payload_fields"],
+        "payload",
+    )
+    if not isinstance(payload, dict):
+        return issues
+    for index, item in enumerate(payload.get("results") or []):
+        issues.extend(_validate_fields(
+            item,
+            contract["required_result_fields"],
+            contract["optional_result_fields"],
+            f"results[{index}]",
+        ))
+    for index, item in enumerate(payload.get("source_summaries") or []):
+        issues.extend(_validate_fields(
+            item,
+            contract["required_source_summary_fields"],
+            contract["optional_source_summary_fields"],
+            f"source_summaries[{index}]",
+        ))
+    return issues
+
+
+def _truncate_text(value: Any, limit: int) -> str:
+    text = str(value)
+    return text if len(text) <= limit else text[:limit].rstrip()
+
+
+def _sanitize_item(item: Dict[str, Any], required: Dict[str, Any], optional: Dict[str, Any]) -> Dict[str, Any]:
+    sanitized: Dict[str, Any] = {}
+    for field in required:
+        sanitized[field] = str(item.get(field) or "")
+    for field, expected in optional.items():
+        value = item.get(field)
+        if value is None:
+            continue
+        if field in SNAPSHOT_TEXT_LIMITS:
+            value = _truncate_text(value, SNAPSHOT_TEXT_LIMITS[field])
+            if not value:
+                continue
+        if _matches_type(value, expected):
+            sanitized[field] = value
+    return sanitized
+
+
+def sanitize_payload_for_snapshot(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Reduce a live search payload to the deterministic snapshot contract.
+
+    Drops volatile fields (cache metadata, routing, latency, freshness
+    timestamps), truncates long text to SNAPSHOT_TEXT_LIMITS, and keeps only
+    fields declared in SNAPSHOT_PAYLOAD_CONTRACT so recorded fixtures replay
+    identically on every run.
+    """
+    contract = SNAPSHOT_PAYLOAD_CONTRACT
+    sanitized: Dict[str, Any] = {
+        "provider": str(payload.get("provider") or "replay"),
+        "results": [
+            _sanitize_item(item, contract["required_result_fields"], contract["optional_result_fields"])
+            for item in (payload.get("results") or [])
+            if isinstance(item, dict)
+        ],
+    }
+    answer = payload.get("answer")
+    if isinstance(answer, str) and answer.strip():
+        sanitized["answer"] = _truncate_text(answer, SNAPSHOT_TEXT_LIMITS["answer"])
+    source_summaries = [
+        _sanitize_item(item, contract["required_source_summary_fields"], contract["optional_source_summary_fields"])
+        for item in (payload.get("source_summaries") or [])
+        if isinstance(item, dict)
+    ]
+    if source_summaries:
+        sanitized["source_summaries"] = source_summaries
+    reported_duplicates = (payload.get("quality_report") or {}).get(
+        "duplicate_count", (payload.get("metadata") or {}).get("dedup_count", 0)
+    )
+    sanitized["quality_report"] = {"duplicate_count": int(reported_duplicates or 0)}
+    return sanitized
+
+
+def default_snapshot_expectations(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Derive conservative starter expectations from a sanitized payload.
+
+    These are a floor, not a review: promote a recorded snapshot only after
+    manually tightening the expect block (see module docstring workflow).
+    """
+    results = payload.get("results") or []
+    domains = {_safe_domain(item.get("url", "")) for item in results if item.get("url")}
+    domains.discard("")
+    return {
+        "min_results": max(1, min(len(results), 3)),
+        "min_domain_count": max(1, min(len(domains), 3)),
+        "max_duplicate_count": _duplicate_url_count(results),
+    }
+
+
+def record_snapshots(
+    cases: List[Dict[str, Any]],
+    script_path: Path,
+    max_results: int,
+    timeout_seconds: int,
+    env: Dict[str, str],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Run live golden queries and build sanitized snapshot fixtures.
+
+    Returns (snapshots, errors); cases that error, time out, or violate the
+    payload contract are reported in errors instead of being recorded.
+    """
+    snapshots: List[Dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
+    for case in cases:
+        cmd = [
+            sys.executable,
+            str(script_path),
+            "--query",
+            case["query"],
+            "--provider",
+            case.get("provider", "auto"),
+            "--max-results",
+            str(max_results),
+            "--quality-report",
+            "--no-cache",
+            "--compact",
+        ]
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds, env=env)
+        except subprocess.TimeoutExpired:
+            errors.append({"id": case["id"], "error": f"timeout after {timeout_seconds}s"})
+            continue
+        payload = _json_from_stdout(proc.stdout if proc.returncode == 0 else (proc.stdout or proc.stderr))
+        if proc.returncode != 0 or payload.get("error") or not payload.get("results"):
+            errors.append({
+                "id": case["id"],
+                "error": str(payload.get("error") or f"exit code {proc.returncode} with no results"),
+            })
+            continue
+        sanitized = sanitize_payload_for_snapshot(payload)
+        contract_issues = validate_snapshot_payload(sanitized)
+        if contract_issues:
+            errors.append({"id": case["id"], "error": "; ".join(contract_issues)})
+            continue
+        snapshots.append({
+            "id": case["id"],
+            "category": case.get("category"),
+            "query": case["query"],
+            "payload": sanitized,
+            "expect": default_snapshot_expectations(sanitized),
+        })
+    return snapshots, errors
+
+
+def write_snapshot_fixture(snapshots: List[Dict[str, Any]], path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(snapshots, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
     )
 
 
@@ -370,11 +633,56 @@ def main() -> int:
     parser.add_argument(
         "--snapshot-fixtures",
         type=Path,
-        help="Validate offline replay fixtures instead of making live provider calls",
+        nargs="?",
+        const=CANONICAL_SNAPSHOT_FIXTURE,
+        help="Validate offline replay fixtures instead of making live provider calls "
+             "(defaults to tests/fixtures/golden_snapshots.json when no path is given)",
+    )
+    parser.add_argument(
+        "--record",
+        action="store_true",
+        help="Run the live golden queries and record sanitized snapshot fixtures "
+             "(requires configured provider keys; see module docstring workflow)",
+    )
+    parser.add_argument(
+        "--record-output",
+        type=Path,
+        help="Destination for recorded snapshots (default: tests/fixtures/golden_snapshots.recorded.json); "
+             "the canonical fixture file is never written directly",
     )
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[1]
+    if args.record:
+        canonical = (repo_root / CANONICAL_SNAPSHOT_FIXTURE).resolve()
+        output = args.record_output or CANONICAL_SNAPSHOT_FIXTURE.with_suffix(".recorded.json")
+        if not output.is_absolute():
+            output = repo_root / output
+        if output.resolve() == canonical:
+            print(json.dumps({
+                "error": "refusing to overwrite the canonical fixture; record to a "
+                         ".recorded.json path, review manually, then promote",
+                "canonical": str(canonical),
+            }, indent=2, sort_keys=True))
+            return 2
+        cases = load_golden_queries(args.queries)
+        if args.limit:
+            cases = cases[: args.limit]
+        snapshots, errors = record_snapshots(
+            cases=cases,
+            script_path=repo_root / "search.py",
+            max_results=args.max_results,
+            timeout_seconds=args.timeout,
+            env=os.environ.copy(),
+        )
+        write_snapshot_fixture(snapshots, output)
+        print(json.dumps({
+            "recorded": len(snapshots),
+            "errors": errors,
+            "output": str(output),
+        }, indent=2, sort_keys=True))
+        return 1 if errors else 0
+
     if args.snapshot_fixtures:
         fixture_path = args.snapshot_fixtures if args.snapshot_fixtures.is_absolute() else repo_root / args.snapshot_fixtures
         rows = run_snapshot_quality(load_snapshot_fixtures(fixture_path))
