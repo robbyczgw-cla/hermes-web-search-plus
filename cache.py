@@ -258,10 +258,18 @@ def cache_clear() -> Dict[str, Any]:
         if cache_file.name == PROVIDER_HEALTH_FILENAME:
             continue
         try:
+            # The cache dir is shared with other state files (provider_stats.json,
+            # host-written files such as usage_events.json). Only delete payloads
+            # carrying the cache marker; clearing the cache must never destroy
+            # foreign state.
+            with open(cache_file, "r", encoding="utf-8") as f:
+                cached = json.load(f)
+            if not isinstance(cached, dict) or "_cache_timestamp" not in cached:
+                continue
             size_freed += cache_file.stat().st_size
             cache_file.unlink()
             count += 1
-        except IOError:
+        except (json.JSONDecodeError, IOError):
             pass
 
     for web_file in _iter_web_text_cache_files():
@@ -321,21 +329,32 @@ def cache_stats() -> Dict[str, Any]:
             "exists": False,
         }
 
-    entries = [p for p in CACHE_DIR.glob("*.json") if p.name != PROVIDER_HEALTH_FILENAME]
     total_size = 0
+    entry_count = 0
     oldest_time = None
     newest_time = None
     oldest_query = None
     newest_query = None
     provider_counts = {}
 
-    for cache_file in entries:
+    for cache_file in CACHE_DIR.glob("*.json"):
+        if cache_file.name == PROVIDER_HEALTH_FILENAME:
+            continue
         try:
             stat = cache_file.stat()
-            total_size += stat.st_size
 
             with open(cache_file, "r", encoding="utf-8") as f:
                 cached = json.load(f)
+
+            # The cache dir is shared with other state files (provider_stats.json,
+            # host-written files such as usage_events.json, which may not even be
+            # JSON objects). Only payloads carrying the cache marker are cache
+            # entries; everything else is skipped instead of crashing stats.
+            if not isinstance(cached, dict) or "_cache_timestamp" not in cached:
+                continue
+
+            entry_count += 1
+            total_size += stat.st_size
 
             ts = cached.get("_cache_timestamp", 0)
             query = cached.get("_cache_query", "unknown")
@@ -355,7 +374,7 @@ def cache_stats() -> Dict[str, Any]:
     web_stats = _web_text_cache_stats()
     total_with_web = total_size + web_stats["web_text_size_bytes"]
     return {
-        "total_entries": len(entries),
+        "total_entries": entry_count,
         "total_size_bytes": total_size,
         "total_size_kb": round(total_size / 1024, 2),
         "total_size_bytes_including_web": total_with_web,

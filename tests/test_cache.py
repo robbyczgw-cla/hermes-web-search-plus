@@ -73,6 +73,41 @@ class CacheLifecycleTests(unittest.TestCase):
         self.assertEqual(result["web_text_cleared"], 0)
         self.assertEqual(result["web_text_errors"], 0)
 
+    def test_cache_stats_survives_foreign_json_files_in_cache_dir(self):
+        """Regression: real cache dirs contain non-cache JSON state written by
+        this plugin (provider_stats.json) or by hosts (usage_events.json as a
+        bare list). cache_stats() used to call .get() on the list and crash."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir)
+            with mock.patch.object(cache, "CACHE_DIR", cache_dir):
+                cache.cache_put("query", "linkup", 3, {"results": ["ok"]})
+                (cache_dir / "usage_events.json").write_text('[{"event": "x"}]\n', encoding="utf-8")
+                (cache_dir / "provider_stats.json").write_text('{"linkup": []}\n', encoding="utf-8")
+                (cache_dir / "corrupt.json").write_text("{not json", encoding="utf-8")
+
+                stats = cache.cache_stats()
+
+        self.assertEqual(stats["total_entries"], 1)
+        self.assertEqual(stats["providers"], {"linkup": 1})
+
+    def test_cache_clear_preserves_foreign_json_state(self):
+        """Clearing the cache must delete only marker-carrying cache entries,
+        never foreign state files that happen to live in the cache dir."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir)
+            with mock.patch.object(cache, "CACHE_DIR", cache_dir):
+                cache.cache_put("query", "linkup", 3, {"results": ["ok"]})
+                usage = cache_dir / "usage_events.json"
+                usage.write_text('[{"event": "x"}]\n', encoding="utf-8")
+                stats_file = cache_dir / "provider_stats.json"
+                stats_file.write_text('{"linkup": []}\n', encoding="utf-8")
+
+                result = cache.cache_clear()
+
+                self.assertEqual(result["cleared"], 1)
+                self.assertTrue(usage.exists())
+                self.assertTrue(stats_file.exists())
+
     def test_web_text_stats_ignore_but_clear_orphan_tmp_files(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = Path(tmpdir)
