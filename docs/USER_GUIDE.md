@@ -101,6 +101,8 @@ Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup
 
 Keenable is keyless: set `KEENABLE_API_KEY` for the authenticated endpoints, or opt into its public tier (off by default). In the wizard, skip the Keenable key prompt and answer yes, or run `setup.py setup keenable --keyless-public`; it writes `keenable.allow_public: true` to `config.json` (equivalently `KEENABLE_ALLOW_PUBLIC=1`).
 
+With a `KEENABLE_API_KEY` set, requests always use the authenticated endpoints. Without a key and without the opt-in, Keenable is treated as unconfigured: it won't auto-route, fall back, or enable `web_extract_plus`. When the public tier is enabled, queries and fetched URLs are sent to an **unauthenticated** public service with per-IP limits and no SLA — roughly 1,000 requests/hour and 10 requests/second — so treat it as a best-effort last resort, not a dependable provider. The first request that uses the public endpoint logs a one-time warning so the egress is visible, and `web-search-plus doctor` reports keyless providers as `key=no` with a separate `keyless=on/off` badge so key status stays truthful.
+
 ### Migration note for v2.0.0
 
 Routing v2 changes the default `provider="auto"` behavior. Existing configs keep explicit user choices, but missing `auto_allow` entries inherit the new guarded defaults: Brave, SerpBase, Querit, native Perplexity, and Kilo Perplexity stay explicit-only until you opt them into automatic routing.
@@ -155,6 +157,13 @@ Preview config changes without writing:
 ```bash
 python ~/.hermes/plugins/web-search-plus/setup.py config set-default you --dry-run
 ```
+
+Semantics worth knowing:
+
+- `set-default <provider>` disables auto-routing and makes `--provider auto` resolve to that provider; `set-routing on` restores query-based routing while keeping the saved default for later.
+- `set-priority` accepts comma-separated provider names, normalizes case/whitespace, and ignores duplicates with a warning.
+- `set-auto-allow <provider> off` keeps a configured provider available for explicit calls while preventing auto-routing/fallback from selecting it.
+- `config reset --yes` backs up the existing file before writing fresh defaults.
 
 ### GroktoCrawl / local Firecrawl-compatible backends
 
@@ -305,7 +314,24 @@ web_search_plus(query="alternatives to Notion", provider="exa")
 web_search_plus(query="turntable reviews under 1000", mode="research", research_time_budget=45)
 ```
 
-Important parameters:
+Parameters:
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `query` | string | **required** | Search query |
+| `provider` | string | `"auto"` | `auto`, `serper`, `brave`, `tavily`, `exa`, `linkup`, `firecrawl`, `parallel`, `perplexity`, `kilo-perplexity`, `you`, `searxng`, `serpbase`, `querit`, `keenable` |
+| `depth` | string | `"normal"` | Exa only: `normal`, `deep`, `deep-reasoning` |
+| `count` | integer | `5` | Results, 1–20 |
+| `time_range` | string | — | `day`, `week`, `month`, `year` |
+| `freshness` | string | — | Unified recency filter: `day`, `week`, `month`, `year` (case-insensitive) |
+| `search_type` | string | `"search"` | Result vertical: `search` or `news` |
+| `include_domains` | string[] | — | Restrict search to domains |
+| `exclude_domains` | string[] | — | Exclude domains |
+| `quality_report` | boolean | `false` | Include routing diagnostics, provider scores, result counts, authority signals, and extraction recommendation |
+| `mode` | string | `"normal"` | `normal` or opt-in `research` |
+| `research_time_budget` | number | `55.0` | Best-effort seconds budget for research mode |
+
+Parameter semantics:
 
 - `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `perplexity`, `kilo-perplexity`, `searxng`, `serpbase`, or `querit`. Brave, Parallel, Perplexity/Kilo Perplexity, SerpBase, and Querit are available for explicit calls but default to `auto_allow=false`.
 - `count`: result count, from 1 to 20.
@@ -325,7 +351,18 @@ web_extract_plus(urls=["https://example.com"], provider="firecrawl")
 web_extract_plus(urls=["https://docs.linkup.so"], provider="linkup", render_js=False)
 ```
 
-Auto extraction currently tries Tavily, Exa, Linkup, Firecrawl, Parallel, You.com, and Serper when keys are available. Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form fallback; Firecrawl remains the robust scraper safety net; Serper's webpage scraper (`https://scrape.serper.dev`, overridable via config `serper.scrape_url`) is the last-resort fallback so a Serper-only setup still gets extraction.
+Parameters:
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `urls` | string[] | **required** | URLs to extract |
+| `provider` | string | `"auto"` | `auto`, `tavily`, `exa`, `linkup`, `parallel`, `firecrawl`, `you`, `keenable`, `serper` |
+| `format` | string | `"markdown"` | `markdown` or `html` |
+| `include_images` | boolean | `false` | Include image metadata when supported |
+| `include_raw_html` | boolean | `false` | Include raw HTML when supported |
+| `render_js` | boolean | `false` | Render JavaScript before extraction when supported |
+
+Auto extraction currently tries Tavily, Exa, Linkup, Parallel, Firecrawl, and You.com when keys are available, then Keenable (only if a key is set or its public tier is opted in), and finally Serper as the last resort. Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form fallback; Firecrawl remains the robust scraper safety net; Serper's webpage scraper (`https://scrape.serper.dev`, overridable via config `serper.scrape_url`, timeout via `serper.extract_timeout`) closes the chain so a Serper-only setup still gets extraction.
 
 Large extracted pages are not returned as raw token bombs. `web_extract_plus` sanitizes inline base64 images, stores the full cleaned text under `cache/web`, and returns a bounded head/tail preview with a footer containing the stored file path plus an exact `read_file(path=..., offset=..., limit=500)` call for paging into the omitted middle. Configure the inline budget in `config.json`:
 
@@ -340,6 +377,15 @@ Large extracted pages are not returned as raw token bombs. `web_extract_plus` sa
 If the stored full text exceeds 2,000,000 characters, the stored file and footer both mark that cap explicitly.
 
 The stored full text is local plaintext cache data. It may contain the complete cleaned contents of extracted pages, persists until cleared, and currently has no automatic TTL or total-size eviction. Use `python3 search.py --cache-stats` to inspect `web_text_entries`, `web_text_size_bytes`, and the combined cache size; use `python3 search.py --clear-cache` to remove both normal JSON cache entries and `cache/web/*.md` full-text files while preserving provider-health state. For privacy-sensitive or throwaway extraction runs, set `WSP_CACHE_DIR` to a disposable directory or clear the cache afterward.
+
+## Result quality
+
+Search results pass through a quality layer before they reach the agent:
+
+- **Adaptive routing:** every real provider call records latency, error, and empty-result outcomes (rolling window, last 50 calls / 7 days). Routing blends a bounded adjustment (±1.0) into the scores, so providers that are currently fast and productive win close calls — strong query-class signals are never overridden. Disable with `auto_routing.adaptive_routing: false` in `config.json`; adjustments are visible in `quality_report.adaptive_adjustments`.
+- **Spam/mirror filter:** results from known Stack Overflow/GitHub content mirrors and SEO scrapers are removed (reported in `metadata.spam_filtered`). Extend via `quality.blocked_domains`, rescue a domain via `quality.allowed_domains`, or disable with `quality.filter_spam: false`.
+- **Domain diversity:** at most 2 results per domain keep their position; overflow is moved behind the diverse head (`quality.max_results_per_domain`, `0` disables).
+- **Explicit intent wins:** queries with `site:` operators or `include_domains` are exempt — constrained domains bypass the spam filter and the diversity rerank is skipped entirely.
 
 ## Reliability and cost controls
 

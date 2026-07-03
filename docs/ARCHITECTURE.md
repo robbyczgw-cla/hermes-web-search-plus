@@ -26,6 +26,10 @@ The plugin does not run a separate hosted backend. It does not add an analytics 
 - `setup.py`: thin standalone CLI entrypoint that loads setup helpers from `__init__.py`.
 - `tests/`: unit and regression coverage for providers, onboarding, routing, extraction, and docs-sensitive configuration.
 
+## Compatibility shims
+
+Compatibility shims in `search.py` intentionally preserve legacy imports and monkeypatch seams while the modular split settles. The public shim policy is available via `get_compatibility_shim_policy()` and must keep wrappers in place until the ProviderSpec registry has stabilized for a documented minor release window.
+
 ## Tool surface
 
 The plugin exposes two tools:
@@ -39,8 +43,8 @@ Each provider adapter normalizes provider-specific request and response details 
 
 Provider capability classes:
 
-- Search-only: Brave, Serper, Perplexity, Kilo Perplexity, SearXNG, SerpBase, Querit. Brave, Perplexity/Kilo Perplexity, SerpBase, and Querit default to `auto_allow=false` and are explicit/guarded unless users opt in.
-- Search and extraction: You.com, Firecrawl, Tavily, Exa, Linkup.
+- Search-only: Brave, Perplexity, Kilo Perplexity, SearXNG, SerpBase, Querit. Brave, Parallel, Perplexity/Kilo Perplexity, SerpBase, and Querit default to `auto_allow=false` and are explicit/guarded unless users opt in.
+- Search and extraction: You.com, Serper, Firecrawl, Tavily, Exa, Linkup, Parallel, Keenable. Serper extraction uses its webpage scraper (`scrape.serper.dev`) and sits last in the auto-extraction fallback chain.
 - Answer-style search: Perplexity and Kilo Perplexity return direct-answer style search results, but default auto-routing treats them as guarded providers rather than fast search providers.
 
 Provider pricing, freshness, ranking, localization, and vertical support are controlled by the providers. The plugin normalizes responses; it does not make providers equivalent.
