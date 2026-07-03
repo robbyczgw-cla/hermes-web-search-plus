@@ -2,7 +2,7 @@
 
 
 <p align="center">
-  <img src="docs/assets/web-search-plus-v261-hero.png" alt="Hermes web-search-plus hero: two-tool surface, adaptive Routing v2, research mode, quality diagnostics, and 14 search / 7 extraction providers" width="100%">
+  <img src="docs/assets/web-search-plus-v261-hero.png" alt="Hermes web-search-plus hero: two-tool surface, adaptive Routing v2, research mode, quality diagnostics, and 14 search / 8 extraction providers" width="100%">
 </p>
 
 <p align="center">
@@ -27,7 +27,7 @@
 Most web-search tools fail in one of two boring ways: they hard-code a single provider, or they pretend every user has every API key. Web Search Plus is capability-based instead: it lets Hermes search, extract, compare, and recover across the providers you actually configured.
 
 - **No global required key.** Configure one search-capable provider and search works.
-- **Extraction is additive.** Add Linkup, Firecrawl, Tavily, Exa, Parallel, or You.com for URL extraction.
+- **Extraction is additive.** Add Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, or Serper for URL extraction.
 - **Routing v2 is conservative.** You.com, Serper, Exa, Firecrawl, Tavily, and Linkup form the default search pool; Brave, SerpBase, Querit, Parallel, and Perplexity/Kilo stay explicit/guarded unless opted in.
 - **Large pages stay usable.** Long extracts return a compact head/tail preview plus a `read_file` footer for the full cleaned text, instead of dumping token bombs into the agent context.
 - **Freshness is explicit.** Ask for day/week/month/year recency once; providers that support native date filters receive the right value, and unsupported providers report that freshness was not applied.
@@ -205,7 +205,7 @@ Keep `FIRECRAWL_API_KEY` configured if your backend enforces bearer authenticati
 | Capability | Unlocks | Configure at least one of |
 |---|---|---|
 | Search | `web_search_plus` | Brave, Serper, Tavily, Exa, Linkup, Firecrawl, Parallel, Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, Querit, or Keenable |
-| Extraction | `web_extract_plus` | Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, or Keenable |
+| Extraction | `web_extract_plus` | Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, Serper, or Keenable |
 | Best starter | Search + extraction + reliable fallback | You.com + Serper + Linkup |
 
 `setup.py status --plain` reports this directly:
@@ -269,7 +269,7 @@ web_extract_plus(urls=["https://docs.linkup.so"], provider="linkup", render_js=F
 # → Linkup fetch endpoint
 ```
 
-Auto extraction currently tries Tavily, then Exa, Linkup, Parallel, Firecrawl, and You.com when keys are available, then Keenable as the last resort **only if it is configured** (a `KEENABLE_API_KEY`, or the opted-in keyless public endpoint). Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form/RAG fallback; Parallel is the excerpt-heavy LLM-ready backup; Firecrawl remains the robust scraper safety net; You.com is a fallback; Keenable is the lowest-priority fallback. The keyless public tier is off by default — see [Keenable keyless public access](#keenable-keyless-public-access) — so `web_extract_plus` is available only when at least one extraction provider is configured.
+Auto extraction currently tries Tavily, then Exa, Linkup, Parallel, Firecrawl, and You.com when keys are available, then Keenable **only if it is configured** (a `KEENABLE_API_KEY`, or the opted-in keyless public endpoint), and finally Serper's webpage scraper as the last-resort safety net. Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form/RAG fallback; Parallel is the excerpt-heavy LLM-ready backup; Firecrawl remains the robust scraper safety net; You.com and Keenable are lower-priority fallbacks; Serper closes the chain so a Serper-only setup still gets extraction. The keyless public tier is off by default — see [Keenable keyless public access](#keenable-keyless-public-access) — so `web_extract_plus` is available only when at least one extraction provider is configured.
 
 Large extracted pages use **truncate-and-store** output handling instead of dumping the full provider markdown into the agent context. By default, each result returns up to `web.extract_char_limit` cleaned characters (`15000`) as a head/tail preview. The full cleaned text is stored under `cache/web/<sha256-url>.md`, and the footer includes a concrete `read_file(path=..., offset=..., limit=500)` call so the agent can page into the omitted middle on demand. Inline base64 image data is replaced with `[IMAGE: alt]`; normal `http(s)` image links are preserved.
 
@@ -288,7 +288,7 @@ Parameters:
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `urls` | string[] | **required** | URLs to extract |
-| `provider` | string | `"auto"` | `auto`, `firecrawl`, `linkup`, `parallel`, `tavily`, `exa`, `you` |
+| `provider` | string | `"auto"` | `auto`, `tavily`, `exa`, `linkup`, `parallel`, `firecrawl`, `you`, `keenable`, `serper` |
 | `format` | string | `"markdown"` | `markdown` or `html` |
 | `include_images` | boolean | `false` | Include image metadata when supported |
 | `include_raw_html` | boolean | `false` | Include raw HTML when supported |
@@ -301,7 +301,7 @@ Parameters:
 | Provider | Search | Extract | Best for |
 |---|---:|---:|---|
 | You.com | ✅ | ✅ | Fast Routing v2 core for current, multilingual, LLM-ready search |
-| Serper | ✅ | — | Reliable Google-like fallback for facts, shopping, local, and news |
+| Serper | ✅ | ✅ | Reliable Google-like fallback for facts, shopping, local, and news; webpage scraper as last-resort extraction |
 | Exa | ✅ | ✅ | Semantic discovery, docs, GitHub, academic/arXiv |
 | Firecrawl | ✅ | ✅ | Source-first web search with scrape-ready result content |
 | Tavily | ✅ | ✅ | Long-form research and content-heavy queries |
@@ -325,7 +325,7 @@ All provider keys are optional at install time. Configure only what you use:
 
 ```bash
 # Search-capable providers
-SERPER_API_KEY=***        # https://serper.dev
+SERPER_API_KEY=***        # https://serper.dev — search + extraction (webpage scraper)
 BRAVE_API_KEY=***         # https://brave.com/search/api/
 TAVILY_API_KEY=***        # https://tavily.com — search + extraction
 EXA_API_KEY=***           # https://exa.ai — search + extraction
