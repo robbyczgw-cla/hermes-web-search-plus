@@ -37,10 +37,12 @@ try:  # Package load path used by Hermes plugin discovery.
         DEFAULT_AUTO_ALLOW,
         DEFAULT_PROVIDER_PRIORITY,
         EXTRACT_PROVIDER_ENV_KEYS,
+        EXTRACT_PROVIDER_IDS,
         KEYLESS_EXTRACT_PROVIDER_IDS,
         KEYLESS_PROVIDER_IDS,
         PROVIDER_ENV_KEYS,
         PROVIDER_SPECS,
+        SEARCH_PROVIDER_IDS,
         keyless_public_env_var,
         plugin_catalog,
     )
@@ -52,10 +54,12 @@ except ImportError:  # Direct script/test imports from the plugin directory.
         DEFAULT_AUTO_ALLOW,
         DEFAULT_PROVIDER_PRIORITY,
         EXTRACT_PROVIDER_ENV_KEYS,
+        EXTRACT_PROVIDER_IDS,
         KEYLESS_EXTRACT_PROVIDER_IDS,
         KEYLESS_PROVIDER_IDS,
         PROVIDER_ENV_KEYS,
         PROVIDER_SPECS,
+        SEARCH_PROVIDER_IDS,
         keyless_public_env_var,
         plugin_catalog,
     )
@@ -1129,6 +1133,7 @@ def _load_search_module() -> Any:
             "http_client",
             "env_loader",
             "provider_health",
+            "provider_dispatch",
             "provider_registry",
         )
         stashed: dict[str, Any] = {}
@@ -1584,7 +1589,7 @@ def register(ctx: Any) -> None:
                 },
                 "provider": {
                     "type": "string",
-                    "enum": ["auto", "serper", "serpbase", "brave", "tavily", "exa", "querit", "linkup", "firecrawl", "parallel", "perplexity", "kilo-perplexity", "you", "searxng", "keenable"],
+                    "enum": ["auto", *SEARCH_PROVIDER_IDS],
                     "description": "Search provider. Use 'auto' for intelligent routing (default). Brave and Serper share generic web-search intents and ties are distributed deterministically per query.",
                     "default": "auto",
                 },
@@ -1714,7 +1719,7 @@ def register(ctx: Any) -> None:
             "type": "object",
             "properties": {
                 "urls": {"type": "array", "items": {"type": "string"}, "description": "URLs to extract"},
-                "provider": {"type": "string", "enum": ["auto", "firecrawl", "linkup", "parallel", "tavily", "exa", "you", "keenable"], "default": "auto"},
+                "provider": {"type": "string", "enum": ["auto", *EXTRACT_PROVIDER_IDS], "default": "auto"},
                 "format": {"type": "string", "enum": ["markdown", "html"], "default": "markdown"},
                 "include_images": {"type": "boolean", "default": False},
                 "include_raw_html": {"type": "boolean", "default": False},

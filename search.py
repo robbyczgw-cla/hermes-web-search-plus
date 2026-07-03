@@ -81,6 +81,7 @@ from quality import (  # noqa: F401 - re-exported for backward-compatible tests/
     rerank_results_for_intent,
     select_research_providers,
 )
+from provider_dispatch import SEARCH_DISPATCH
 from provider_registry import PROVIDER_SPECS, SEARCH_PROVIDER_IDS, doctor_catalog
 from env_loader import load_env_files
 from research import run_research_mode
@@ -1151,183 +1152,16 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
     if not eligible_providers:
         eligible_providers = providers_to_try[:1]
 
-    # Helper function to execute search for a provider
+    # Helper function to execute search for a provider. Provider-specific
+    # kwargs-building lives in provider_dispatch.SEARCH_DISPATCH; the caller
+    # namespace (globals()) is passed so adapters resolve search_<provider>
+    # late and honour monkeypatches on this module (search.search_you etc.).
     def execute_search(prov: str) -> Dict[str, Any]:
         key = validate_api_key(prov, config)
-        if prov == "serper":
-            return search_serper(
-                query=args.query,
-                api_key=key,
-                max_results=args.max_results,
-                country=args.country,
-                language=args.language,
-                search_type=args.search_type,
-                time_range=args.time_range or args.freshness,
-                include_images=args.images,
-            )
-        elif prov == "serpbase":
-            serpbase_config = config.get("serpbase", {})
-            return search_serpbase(
-                query=args.query,
-                api_key=key,
-                max_results=args.max_results,
-                country=serpbase_config.get("country", args.country),
-                language=serpbase_config.get("language", args.language),
-                page=int(serpbase_config.get("page", 1)),
-                api_url=serpbase_config.get("api_url", "https://api.serpbase.dev/google/search"),
-                timeout=int(serpbase_config.get("timeout", 30)),
-            )
-        elif prov == "brave":
-            brave_config = config.get("brave", {})
-            return search_brave(
-                query=args.query,
-                api_key=key,
-                max_results=args.max_results,
-                country=brave_config.get("country", args.country),
-                language=brave_config.get("search_lang", args.language),
-                time_range=args.time_range or args.freshness,
-                safesearch=brave_config.get("safesearch", "moderate"),
-            )
-        elif prov == "tavily":
-            return search_tavily(
-                query=args.query,
-                api_key=key,
-                max_results=args.max_results,
-                depth=args.depth,
-                topic=args.topic,
-                include_domains=args.include_domains,
-                exclude_domains=args.exclude_domains,
-                include_images=args.images,
-                include_raw_content=args.raw_content,
-            )
-        elif prov == "linkup":
-            linkup_config = config.get("linkup", {})
-            return search_linkup(
-                query=args.query,
-                api_key=key,
-                max_results=args.max_results,
-                depth=args.linkup_depth,
-                output_type=args.linkup_output_type,
-                include_domains=args.include_domains,
-                exclude_domains=args.exclude_domains,
-                api_url=linkup_config.get("api_url", "https://api.linkup.so/v1/search"),
-                timeout=int(linkup_config.get("timeout", 30)),
-            )
-        elif prov == "querit":
-            querit_config = config.get("querit", {})
-            return search_querit(
-                query=args.query,
-                api_key=key,
-                max_results=args.max_results,
-                language=args.language,
-                country=args.country,
-                time_range=args.time_range or args.freshness,
-                include_domains=args.include_domains,
-                exclude_domains=args.exclude_domains,
-                base_url=args.querit_base_url,
-                base_path=args.querit_base_path,
-                timeout=int(querit_config.get("timeout", 30)),
-            )
-        elif prov == "exa":
-            # CLI --exa-depth overrides; fallback to auto-routing suggestion
-            exa_depth = args.exa_depth
-            if exa_depth == "normal" and routing_info.get("exa_depth") in ("deep", "deep-reasoning"):
-                exa_depth = routing_info["exa_depth"]
-            return search_exa(
-                query=args.query or "",
-                api_key=key,
-                max_results=args.max_results,
-                search_type=args.exa_type,
-                exa_depth=exa_depth,
-                category=args.category,
-                start_date=args.start_date,
-                end_date=args.end_date,
-                similar_url=args.similar_url,
-                include_domains=args.include_domains,
-                exclude_domains=args.exclude_domains,
-                text_verbosity=args.exa_verbosity,
-            )
-        elif prov == "firecrawl":
-            firecrawl_config = config.get("firecrawl", {})
-            return search_firecrawl(
-                query=args.query,
-                api_key=key,
-                max_results=args.max_results,
-                country=firecrawl_config.get("country", args.country),
-                time_range=args.time_range or args.freshness,
-                sources=args.firecrawl_sources,
-                include_domains=args.include_domains,
-                exclude_domains=args.exclude_domains,
-                scrape_markdown=args.firecrawl_scrape or args.raw_content,
-                ignore_invalid_urls=firecrawl_config.get("ignore_invalid_urls", False),
-                api_url=firecrawl_config.get("api_url", "https://api.firecrawl.dev/v2/search"),
-                timeout_ms=int(firecrawl_config.get("timeout", 30000)),
-            )
-        elif prov == "parallel":
-            parallel_config = config.get("parallel", {})
-            return search_parallel(
-                query=args.query,
-                api_key=key,
-                max_results=args.max_results,
-                include_domains=args.include_domains,
-                exclude_domains=args.exclude_domains,
-                api_url=parallel_config.get("api_url", "https://api.parallel.ai/v1/search"),
-                timeout=int(parallel_config.get("timeout", 45)),
-                client_model=parallel_config.get("client_model"),
-            )
-        elif prov in {"perplexity", "kilo-perplexity"}:
-            perplexity_config = config.get(prov, {})
-            defaults = DEFAULT_CONFIG.get(prov, {})
-            return search_perplexity(
-                query=args.query,
-                api_key=key,
-                max_results=args.max_results,
-                model=perplexity_config.get("model", defaults.get("model", "sonar-pro")),
-                api_url=perplexity_config.get("api_url", defaults.get("api_url", "https://api.perplexity.ai/chat/completions")),
-                freshness=getattr(args, "freshness", None),
-                provider_name=prov,
-            )
-        elif prov == "you":
-            return search_you(
-                query=args.query,
-                api_key=key,
-                max_results=args.max_results,
-                country=args.country,
-                language=args.language,
-                freshness=args.freshness,
-                safesearch=args.you_safesearch,
-                include_news=not args.no_news,
-                livecrawl=args.livecrawl,
-            )
-        elif prov == "searxng":
-            # For SearXNG, 'key' is actually the instance URL
-            instance_url = args.searxng_url or key
-            if instance_url:
-                instance_url = _validate_searxng_url(instance_url)
-            return search_searxng(
-                query=args.query,
-                instance_url=instance_url,
-                max_results=args.max_results,
-                categories=args.categories,
-                engines=args.engines,
-                language=args.language,
-                time_range=args.time_range or args.freshness,
-                safesearch=args.searxng_safesearch,
-            )
-        elif prov == "keenable":
-            keenable_config = config.get("keenable", {})
-            return search_keenable(
-                query=args.query,
-                api_key=key,
-                max_results=args.max_results,
-                time_range=args.time_range or args.freshness,
-                include_domains=args.include_domains,
-                public=keyless_public_allowed(prov, config),
-                api_url=keenable_config.get("search_url", "https://api.keenable.ai/v1/search"),
-                timeout=int(keenable_config.get("timeout", 30)),
-            )
-        else:
+        adapter = SEARCH_DISPATCH.get(prov)
+        if adapter is None:
             raise ValueError(f"Unknown provider: {prov}")
+        return adapter(globals(), prov, args, key, config, routing_info)
 
     def execute_with_retry(prov: str) -> Dict[str, Any]:
         started = time.monotonic()

@@ -21,6 +21,8 @@ The plugin does not run a separate hosted backend. It does not add an analytics 
 - `plugin.yaml`: plugin manifest, optional environment variables, onboarding commands, and tool declarations.
 - `__init__.py`: Hermes plugin entrypoint, tool schemas, setup/onboarding helpers, and wrapper functions exposed to Hermes.
 - `search.py`: provider adapters, routing, caching, cooldowns, extraction, and CLI.
+- `provider_registry.py`: data-only provider metadata registry (single source of truth).
+- `provider_dispatch.py`: registry-driven `SEARCH_DISPATCH`/`EXTRACT_DISPATCH` adapter tables used by `search.py` and `extract.py`.
 - `setup.py`: thin standalone CLI entrypoint that loads setup helpers from `__init__.py`.
 - `tests/`: unit and regression coverage for providers, onboarding, routing, extraction, and docs-sensitive configuration.
 
@@ -215,15 +217,24 @@ The plugin does not promise “no data leaves your machine.” A more accurate s
 
 ## Extending with a new provider
 
+Provider wiring is registry-driven. `provider_registry.py` is the data-only
+single source of truth (id, env var, capabilities, onboarding metadata,
+`auto_allow` default), and `provider_dispatch.py` maps each provider id to a
+search/extract adapter in `SEARCH_DISPATCH` / `EXTRACT_DISPATCH`. CLI choices,
+tool-schema enums, doctor output, onboarding, and extraction priority all
+derive from the registry, and completeness tests
+(`tests/test_provider_dispatch.py`) fail if a registry entry has no dispatch
+adapter or vice versa — a new provider can no longer be silently forgotten on
+one surface.
+
 A provider addition should include:
 
-- provider adapter function in `search.py`
-- API key mapping in runtime and onboarding code
-- provider metadata in setup/list/status output
-- routing score/match behavior if it participates in auto-routing
-- explicit default `auto_allow` decision
-- docs in README, User Guide, FAQ, and Architecture when behavior is user-visible
-- tests for response normalization, missing-key behavior, routing eligibility, onboarding metadata, and CLI/provider choices
+- a `ProviderSpec` entry in `provider_registry.py` (id, env var, capabilities, `auto_allow` default)
+- provider function(s) in `providers.py` (`search_<provider>`, optionally `extract_<provider>`) plus the `search.py` seam wrapper
+- a dispatch adapter per capability in `provider_dispatch.py`, registered in `SEARCH_DISPATCH`/`EXTRACT_DISPATCH`
+- routing score/match behavior in `routing.py` if it participates in auto-routing
+- docs in README, User Guide, FAQ, and Architecture when behavior is user-visible (`docs/PROVIDERS.md` regenerates from the registry)
+- tests for response normalization and missing-key behavior (dispatch/enum/onboarding completeness is enforced by existing registry-driven tests)
 
 Default stance: new or surprising providers should start explicit-only until their cost and quality characteristics are boring enough for automatic fallback.
 

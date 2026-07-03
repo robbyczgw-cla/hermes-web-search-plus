@@ -12,7 +12,10 @@ from provider_health import (
     provider_in_cooldown,
     reset_provider_health,
 )
-from providers import (
+# These imports stay module-level attributes on purpose: search.py's
+# _sync_extract_dependencies() overwrites them for monkeypatch compatibility,
+# and provider_dispatch adapters resolve them late through this module.
+from providers import (  # noqa: F401 - resolved late via EXTRACT_DISPATCH/monkeypatch seams
     extract_exa,
     extract_firecrawl,
     extract_keenable,
@@ -21,6 +24,7 @@ from providers import (
     extract_tavily,
     extract_you,
 )
+from provider_dispatch import EXTRACT_DISPATCH
 from provider_registry import EXTRACT_PROVIDER_IDS
 
 
@@ -138,33 +142,14 @@ def extract_plus(
             continue
         try:
             def execute_extract() -> Dict[str, Any]:
-                if prov == "firecrawl":
-                    fc = config.get("firecrawl", {})
-                    return extract_firecrawl(urls, key, output_format, include_images, include_raw_html, render_js, api_url=fc.get("scrape_url", "https://api.firecrawl.dev/v2/scrape"), timeout=int(fc.get("extract_timeout", 60)))
-                if prov == "linkup":
-                    lu = config.get("linkup", {})
-                    return extract_linkup(urls, key, output_format, include_images, include_raw_html, render_js, api_url=lu.get("fetch_url", "https://api.linkup.so/v1/fetch"), timeout=int(lu.get("timeout", 30)))
-                if prov == "tavily":
-                    tv = config.get("tavily", {})
-                    return extract_tavily(urls, key, output_format, include_images, include_raw_html, render_js, api_url=tv.get("extract_url", "https://api.tavily.com/extract"), timeout=int(tv.get("timeout", 30)))
-                if prov == "exa":
-                    exa = config.get("exa", {})
-                    return extract_exa(urls, key, output_format, include_images, include_raw_html, render_js, api_url=exa.get("contents_url", "https://api.exa.ai/contents"), timeout=int(exa.get("timeout", 30)))
-                if prov == "parallel":
-                    parallel = config.get("parallel", {})
-                    return extract_parallel(
-                        urls, key, output_format, include_images, include_raw_html, render_js,
-                        api_url=parallel.get("extract_url", "https://api.parallel.ai/v1/extract"),
-                        timeout=int(parallel.get("extract_timeout", parallel.get("timeout", 60))),
-                        client_model=parallel.get("client_model"),
-                        max_chars_total=int(parallel.get("max_chars_total", 12000)),
-                        max_chars_per_result=int(parallel.get("max_chars_per_result", 6000)),
-                    )
-                if prov == "keenable":
-                    kn = config.get("keenable", {})
-                    return extract_keenable(urls, key, output_format, include_images, include_raw_html, render_js, public=keyless_allowed, api_url=kn.get("fetch_url", "https://api.keenable.ai/v1/fetch"), timeout=int(kn.get("timeout", 30)))
-                you = config.get("you", {})
-                return extract_you(urls, key, output_format, include_images, include_raw_html, render_js, api_url=you.get("contents_url", "https://ydc-index.io/v1/contents"), timeout=int(you.get("timeout", 30)))
+                # Provider-specific kwargs-building lives in
+                # provider_dispatch.EXTRACT_DISPATCH; the caller namespace
+                # (globals()) is passed so adapters resolve extract_<provider>
+                # late and honour monkeypatches synced onto this module.
+                adapter = EXTRACT_DISPATCH.get(prov)
+                if adapter is None:
+                    raise ValueError(f"Unknown extract provider: {prov}")
+                return adapter(globals(), prov, urls, key, output_format, include_images, include_raw_html, render_js, config, keyless_allowed)
 
             result = execute_provider_with_retry(prov, execute_extract)
             res_list = result.get("results") or []
