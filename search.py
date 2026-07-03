@@ -612,6 +612,8 @@ def run_provider_bench(config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
 
 
 format_bench_text = _bench.format_bench_text
+load_bench_history = _bench.load_bench_history
+format_bench_history_text = _bench.format_bench_history_text
 
 
 def _format_doctor_text(report: Dict[str, Any]) -> str:
@@ -704,6 +706,16 @@ Full docs: See README.md and SKILL.md
         "--bench",
         action="store_true",
         help="Benchmark configured search providers against a fixed live query suite and recommend an auto_routing.provider_priority (alias for the 'bench' command; spends real provider quota)",
+    )
+    parser.add_argument(
+        "--no-history",
+        action="store_true",
+        help="Do not record this bench run in the local bench history (cache/bench_history.jsonl)",
+    )
+    parser.add_argument(
+        "--bench-history",
+        action="store_true",
+        help="Show recent recorded bench runs (relative time, top providers by score) and exit; no provider calls",
     )
 
     # Common arguments
@@ -1018,8 +1030,19 @@ def main():
             print(_format_doctor_text(report))
         return
 
+    if args.bench_history:
+        records = load_bench_history()
+        if args.json or args.compact:
+            indent = None if args.compact else 2
+            print(json.dumps(records, indent=indent, ensure_ascii=False))
+        else:
+            print(format_bench_history_text(records))
+        return
+
     if args.command == "bench" or args.bench:
-        report = run_provider_bench(config, max_results=args.max_results)
+        report = run_provider_bench(
+            config, max_results=args.max_results, record_history=not args.no_history
+        )
         if args.json or args.compact:
             indent = None if args.compact else 2
             print(json.dumps(report, indent=indent, ensure_ascii=False))

@@ -76,6 +76,8 @@ Two guarantees worth knowing:
 
 Note that the bench makes a few real API calls per provider, so it spends a small amount of quota on every configured provider.
 
+Each bench run is also recorded (best-effort — a failed write never breaks the bench) as one compact line in `bench_history.jsonl` inside the cache directory, so you can compare runs over time. Print the recent history with `python3 search.py --bench-history` (relative time plus the top providers by score per run; `--json` for the raw records), or view it as a panel in the local web UI. Pass `--no-history` to a bench run to skip recording it.
+
 ## Provider setup
 
 Keys live in the active Hermes environment file, normally `~/.hermes/.env`. The setup helper preserves existing entries and does not print secret values. See the generated [provider reference](PROVIDERS.md) for every provider's capabilities, env var, auto-routing default, free tier, and signup link.
@@ -355,6 +357,7 @@ The command prints a URL of the form `http://127.0.0.1:8765/?token=...` — open
 
 - Provider table: configured/keyless status, auto-routing participation, active cooldowns, and adaptive stats (success rate, median latency) when fresh samples exist.
 - Routing config summary and cache stats.
+- **Bench history**: the most recent recorded bench runs with per-provider scores, and — once at least two runs exist — a score trend (▲/▼ delta versus the previous run) per provider. The panel only displays recorded history; starting a bench stays a deliberate CLI action (`python3 search.py --bench`) because it spends provider quota.
 - **Routing explainer**: type a query and see the Routing v2 decision — routing class, chosen provider, confidence, matched signals, and the full provider score table. This runs the offline scoring only; it never calls a provider and costs nothing.
 
 Security properties, in plain terms:

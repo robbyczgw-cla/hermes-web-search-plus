@@ -35,6 +35,8 @@
   button { padding: 7px 16px; border: 1px solid var(--accent); background: var(--accent); color: #fff; border-radius: 6px; font-size: 14px; cursor: pointer; }
   button:hover { filter: brightness(1.08); }
   #route-result { margin-top: 14px; display: none; }
+  .trend-up { color: var(--ok); font-weight: 600; }
+  .trend-down { color: var(--bad); font-weight: 600; }
   #error-banner { display: none; background: #ffebe9; border: 1px solid #ff8182; color: var(--bad); border-radius: 8px; padding: 12px 16px; }
   .grid-2 { display: grid; gap: 20px; grid-template-columns: 1fr 1fr; }
   @media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
@@ -67,6 +69,17 @@
       </tr></thead>
       <tbody></tbody>
     </table></div>
+  </section>
+
+  <section class="card">
+    <h2>Bench history <span class="muted">(recorded runs — the UI never starts a bench)</span></h2>
+    <div class="table-wrap"><table id="bench-history" style="display: none;">
+      <thead><tr>
+        <th>When</th><th>OK</th><th>Providers (score, trend vs. previous run)</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
+    <p id="bench-history-empty" class="muted" style="display: none;">No bench runs yet — run <code>python3 search.py --bench</code>.</p>
   </section>
 
   <div class="grid-2">
@@ -196,6 +209,66 @@ function renderRouteResult(decision) {
   }
 }
 
+function formatRelativeTime(timestamp) {
+  const seconds = Math.max(0, Math.floor(Date.now() / 1000 - timestamp));
+  if (seconds < 60) return seconds + "s ago";
+  if (seconds < 3600) return Math.floor(seconds / 60) + "m ago";
+  if (seconds < 86400) return Math.floor(seconds / 3600) + "h ago";
+  return Math.floor(seconds / 86400) + "d ago";
+}
+
+function renderBenchHistory(payload) {
+  const runs = (payload && payload.runs) || [];
+  const table = document.getElementById("bench-history");
+  const empty = document.getElementById("bench-history-empty");
+  const tbody = table.querySelector("tbody");
+  tbody.textContent = "";
+  if (!runs.length) {
+    table.style.display = "none";
+    empty.style.display = "block";
+    return;
+  }
+  empty.style.display = "none";
+  table.style.display = "";
+  // Trend: score delta per provider between the latest and the previous run.
+  const previousScores = {};
+  if (runs.length >= 2) {
+    for (const p of runs[1].providers || []) {
+      if (typeof p.score === "number") previousScores[p.provider] = p.score;
+    }
+  }
+  runs.forEach((run, runIndex) => {
+    const row = document.createElement("tr");
+    row.appendChild(el("td", typeof run.timestamp === "number" ? formatRelativeTime(run.timestamp) : "—", "muted"));
+    const okCell = document.createElement("td");
+    okCell.appendChild(badge(run.ok ? "ok" : "failed", run.ok ? "ok" : "bad"));
+    row.appendChild(okCell);
+
+    const providersCell = document.createElement("td");
+    const providers = (run.providers || [])
+      .slice()
+      .sort((a, b) => (b.score || 0) - (a.score || 0));
+    providers.forEach((p, i) => {
+      if (i > 0) providersCell.appendChild(el("span", ", "));
+      const score = typeof p.score === "number" ? p.score.toFixed(2) : "—";
+      providersCell.appendChild(el("span", p.provider + " " + score));
+      const prev = previousScores[p.provider];
+      if (runIndex === 0 && typeof prev === "number" && typeof p.score === "number") {
+        const delta = p.score - prev;
+        if (Math.abs(delta) >= 0.005) {
+          const arrow = delta > 0 ? "▲" : "▼";
+          const sign = delta > 0 ? "+" : "";
+          providersCell.appendChild(el("span", " " + arrow + sign + delta.toFixed(2),
+                                       delta > 0 ? "trend-up" : "trend-down"));
+        }
+      }
+    });
+    if (!providers.length) providersCell.appendChild(el("span", "—", "muted"));
+    row.appendChild(providersCell);
+    tbody.appendChild(row);
+  });
+}
+
 async function loadOverview() {
   const overview = await api("/api/overview");
   document.getElementById("version").textContent = "v" + overview.version;
@@ -217,6 +290,8 @@ async function loadOverview() {
     ["Size", (cache.total_size_kb || 0) + " KB"],
     ["Directory", cache.cache_dir],
   ]);
+
+  renderBenchHistory(await api("/api/bench-history"));
 }
 
 document.getElementById("route-form").addEventListener("submit", async (event) => {

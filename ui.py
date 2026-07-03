@@ -2,8 +2,8 @@
 """Local read-only web UI for Web Search Plus diagnostics.
 
 Serves a single-page dashboard on 127.0.0.1 with the doctor report, provider
-health/cooldowns, adaptive provider stats, cache stats, and an offline
-Routing v2 explainer.
+health/cooldowns, adaptive provider stats, cache stats, recorded bench-run
+history, and an offline Routing v2 explainer.
 
 Security model (see docs/USER_GUIDE.md, "Local web UI"):
 
@@ -53,7 +53,7 @@ def _assert_no_host_module_collision() -> None:
     ways later. The plugin's __init__ handles that via its module stash; ui
     deliberately does not duplicate that machinery and refuses instead.
     """
-    for name in ("search", "cache", "config", "providers", "routing", "provider_registry", "provider_stats"):
+    for name in ("search", "cache", "config", "providers", "routing", "provider_registry", "provider_stats", "bench"):
         existing = sys.modules.get(name)
         module_file = getattr(existing, "__file__", None) if existing is not None else None
         if module_file and Path(module_file).resolve().parent != _PLUGIN_DIR:
@@ -67,6 +67,7 @@ def _assert_no_host_module_collision() -> None:
 
 _assert_no_host_module_collision()
 
+import bench as _bench  # noqa: E402
 import cache as _cache  # noqa: E402
 import search as _search  # noqa: E402
 from config import load_config  # noqa: E402
@@ -122,6 +123,13 @@ def build_overview() -> Dict[str, Any]:
         "provider_stats": {name: get_provider_performance(name) for name in PROVIDER_SPECS},
         "cache": _cache.cache_stats(),
     }
+
+
+def build_bench_history() -> Dict[str, Any]:
+    """Recent recorded bench runs, most recent first. Read-only: the UI never
+    triggers a bench run itself — benching spends provider quota and stays a
+    deliberate CLI action (``python3 search.py --bench``)."""
+    return {"runs": _bench.load_bench_history()}
 
 
 def explain_route(query: str) -> Dict[str, Any]:
@@ -201,6 +209,8 @@ class _UIRequestHandler(BaseHTTPRequestHandler):
             self._serve_index()
         elif parsed.path == "/api/overview":
             self._send_json(200, build_overview())
+        elif parsed.path == "/api/bench-history":
+            self._send_json(200, build_bench_history())
         else:
             self._deny(404, "Unknown path.")
 

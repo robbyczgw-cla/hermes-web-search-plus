@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### ✨ Added
+- Bench history: every `--bench` run now appends a compact record (per-provider score, success rate, median latency, error count, plus the recommended priority) to `bench_history.jsonl` in the cache directory — best-effort, opt out with `--no-history`. Inspect past runs with `python3 search.py --bench-history` (compact table, `--json` for raw records) or via the new read-only bench-history panel in the local web UI, which shows recent runs and per-provider score trends versus the previous run. The UI never starts a bench; benching stays CLI-only because it spends provider quota.
 - Local read-only web UI (`python3 ui.py`): a stdlib-only dashboard on `127.0.0.1` showing the doctor report, provider health/cooldowns, adaptive provider stats, and cache stats, plus an offline Routing v2 explainer (query in → routing class, confidence, signals, and provider scores out — no provider calls, no cost). Every request requires the startup-generated token, the Host header is validated against localhost to block DNS rebinding, and responses never contain key values.
 
 ### 🔧 Improved

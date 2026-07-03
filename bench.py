@@ -15,17 +15,21 @@ Two deliberate properties:
   ``record_provider_outcome`` (provider_stats adaptive-routing memory).
 
 The bench never writes configuration. Applying the recommended priority is an
-explicit operator step (``setup.py config set-priority ...``).
+explicit operator step (``setup.py config set-priority ...``). The only state
+a run leaves behind is an optional, best-effort history record in
+``bench_history.jsonl`` (cache directory) so runs can be compared over time.
 """
 
 from __future__ import annotations
 
 import importlib
+import json
 import statistics
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from cache import CACHE_DIR
 from config import (
     _validate_searxng_url,
     keyless_public_allowed,
@@ -84,6 +88,16 @@ QUALITY_WEIGHT_SNIPPET_COVERAGE = 0.5
 MIN_SNIPPET_CHARS = 40
 # Bench output is often pasted into issues; keep captured error strings short.
 ERROR_MESSAGE_MAX_CHARS = 200
+
+# Bench history: one compact JSONL record per completed bench run, so runs can
+# be compared over time (CLI --bench-history, UI bench-history panel). Kept in
+# the cache directory next to the other operational state files.
+BENCH_HISTORY_FILE = CACHE_DIR / "bench_history.jsonl"
+BENCH_HISTORY_SCHEMA_VERSION = 1
+# Default number of most-recent history records surfaced by readers.
+DEFAULT_BENCH_HISTORY_LIMIT = 20
+# Compact history table shows at most this many providers per run.
+BENCH_HISTORY_TOP_PROVIDERS = 3
 
 RECOMMENDATION_CONFIG_KEY = "auto_routing.provider_priority"
 RECOMMENDATION_NOTE = (
@@ -288,6 +302,116 @@ def _build_recommendation(ranked: List[str], current_priority: List[str]) -> Dic
     }
 
 
+def _history_record_from_report(report: Dict[str, Any], now: Optional[float] = None) -> Dict[str, Any]:
+    """Compact per-run history record derived from a full bench report."""
+    providers = []
+    for row in report.get("providers", []):
+        providers.append({
+            "provider": row.get("provider"),
+            "score": row.get("score"),
+            "success_rate": row.get("success_rate"),
+            "median_latency_seconds": row.get("median_latency_seconds"),
+            "error_count": len(row.get("errors") or []),
+        })
+    recommendation = report.get("recommendation") or {}
+    return {
+        "schema_version": BENCH_HISTORY_SCHEMA_VERSION,
+        "timestamp": round(float(now if now is not None else time.time()), 3),
+        "ok": bool(report.get("ok")),
+        "providers": providers,
+        "recommended_priority": list(recommendation.get("provider_priority") or []),
+    }
+
+
+def append_bench_history(report: Dict[str, Any], now: Optional[float] = None) -> bool:
+    """Append one compact history record for a finished bench run.
+
+    Best-effort, mirroring ``provider_stats.record_provider_outcome``: history
+    persistence must never break a bench run, so every error is swallowed.
+    The record is written as a single line via ``open(..., "a")`` (O_APPEND
+    semantics), keeping concurrent appends line-atomic enough for JSONL.
+    """
+    try:
+        line = json.dumps(_history_record_from_report(report, now=now), ensure_ascii=False) + "\n"
+        BENCH_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with open(BENCH_HISTORY_FILE, "a", encoding="utf-8") as handle:
+            handle.write(line)
+        return True
+    except Exception:  # noqa: BLE001 - history is best-effort by contract
+        return False
+
+
+def load_bench_history(limit: int = DEFAULT_BENCH_HISTORY_LIMIT) -> List[Dict[str, Any]]:
+    """Return the last ``limit`` bench history records, most recent first.
+
+    Tolerant by design: a missing file yields an empty list and corrupt or
+    non-record lines are skipped, so one torn write never hides the rest of
+    the history.
+    """
+    try:
+        with open(BENCH_HISTORY_FILE, "r", encoding="utf-8") as handle:
+            lines = handle.readlines()
+    except OSError:
+        return []
+    records: List[Dict[str, Any]] = []
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            record = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if isinstance(record, dict) and isinstance(record.get("providers"), list):
+            records.append(record)
+    if limit is not None and limit > 0:
+        records = records[-int(limit):]
+    records.reverse()
+    return records
+
+
+def _format_relative_time(seconds_ago: float) -> str:
+    """Coarse '5m ago' style rendering for the history table."""
+    seconds = max(0, int(seconds_ago))
+    if seconds < 60:
+        return "{}s ago".format(seconds)
+    if seconds < 3600:
+        return "{}m ago".format(seconds // 60)
+    if seconds < 86400:
+        return "{}h ago".format(seconds // 3600)
+    return "{}d ago".format(seconds // 86400)
+
+
+def format_bench_history_text(records: List[Dict[str, Any]], now: Optional[float] = None) -> str:
+    """Compact human-readable table of past bench runs, newest first."""
+    if not records:
+        return "\n".join([
+            "Web Search Plus Bench History",
+            "No bench runs yet — run: python3 search.py --bench",
+        ])
+    now_ts = float(now if now is not None else time.time())
+    lines = [
+        "Web Search Plus Bench History",
+        "Showing {} run(s), newest first:".format(len(records)),
+        "",
+        "  {:<10} {:<4} {}".format("when", "ok", "top providers (score)"),
+    ]
+    for record in records:
+        top = sorted(
+            record.get("providers") or [],
+            key=lambda row: -(row.get("score") or 0.0),
+        )[:BENCH_HISTORY_TOP_PROVIDERS]
+        top_text = ", ".join(
+            "{} ({:.2f})".format(row.get("provider"), float(row.get("score") or 0.0))
+            for row in top
+        ) or "(no providers)"
+        when = _format_relative_time(now_ts - float(record.get("timestamp") or 0.0))
+        lines.append(
+            "  {:<10} {:<4} {}".format(when, "yes" if record.get("ok") else "no", top_text)
+        )
+    return "\n".join(lines)
+
+
 def run_bench(
     config: Dict[str, Any],
     queries: Optional[List[Dict[str, str]]] = None,
@@ -295,13 +419,16 @@ def run_bench(
     max_results: int = DEFAULT_BENCH_MAX_RESULTS,
     timeout_budget: float = DEFAULT_BENCH_TIMEOUT_BUDGET_SECONDS,
     search_module: Optional[Any] = None,
+    record_history: bool = True,
 ) -> Dict[str, Any]:
     """Bench configured search providers in-process and rank them.
 
     Returns a structured report with per-provider metrics (best score first)
     plus an ``auto_routing.provider_priority`` recommendation. Provider errors
     are captured per query; a failing provider ranks last but never aborts the
-    run. Health cooldowns and adaptive routing stats are untouched.
+    run. Health cooldowns and adaptive routing stats are untouched. Unless
+    ``record_history`` is false, a compact record of the finished run is
+    appended (best-effort) to ``bench_history.jsonl`` in the cache directory.
     """
     search = _resolve_search_module(search_module)
     config = config if isinstance(config, dict) else {}
@@ -336,7 +463,7 @@ def run_bench(
     )
     ranked = [row["provider"] for row in rows]
 
-    return {
+    report = {
         "ok": any(row["success_count"] for row in rows),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "query_count": len(suite),
@@ -351,6 +478,9 @@ def run_bench(
         "skipped_providers": skipped,
         "recommendation": _build_recommendation(ranked, current_priority),
     }
+    if record_history:
+        append_bench_history(report)
+    return report
 
 
 def format_bench_text(report: Dict[str, Any]) -> str:
