@@ -19,14 +19,20 @@ def _load_plugin_module():
 
 
 def test_release_version_surfaces_are_in_sync():
+    # The one deliberately hardcoded version gate. Bump every surface at once
+    # with: python3 scripts/prepare_release.py <new-version> --write
     plugin = _load_plugin_module()
     plugin_yaml = (ROOT / "plugin.yaml").read_text()
+    init_py = (ROOT / "__init__.py").read_text()
     search_py = (ROOT / "search.py").read_text()
+    http_client_py = (ROOT / "http_client.py").read_text()
     changelog = (ROOT / "CHANGELOG.md").read_text()
 
     assert plugin.__version__ == EXPECTED_VERSION
     assert f'version: "{EXPECTED_VERSION}"' in plugin_yaml
+    assert f"Hermes Plugin v{EXPECTED_VERSION}" in init_py
     assert f"Version: {EXPECTED_VERSION}" in search_py
+    assert f'DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/{EXPECTED_VERSION}"' in http_client_py
     assert re.search(rf"^## \[v{re.escape(EXPECTED_VERSION)}\] — \d{{4}}-\d{{2}}-\d{{2}}$", changelog, re.M)
 
 

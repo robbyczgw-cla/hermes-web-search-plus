@@ -1,12 +1,23 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import sys
 import types
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _plugin_yaml_version() -> str:
+    """These tests check import mechanics, not the release gate, so they read
+    the expected version dynamically; the single hardcoded gate lives in
+    test_release_metadata.py."""
+    text = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
+    match = re.search(r'^version:\s*"(\d+\.\d+\.\d+)"\s*$', text, re.MULTILINE)
+    assert match, "could not read version from plugin.yaml"
+    return match.group(1)
 
 
 def test_plugin_loads_with_hermes_package_style_import():
@@ -35,7 +46,7 @@ def test_plugin_loads_with_hermes_package_style_import():
 
         spec.loader.exec_module(module)
 
-        assert module.__version__ == "2.9.0"
+        assert module.__version__ == _plugin_yaml_version()
         assert module._get_provider_catalog()
     finally:
         sys.modules.pop(module_name, None)
@@ -56,7 +67,7 @@ def test_plugin_loads_from_foreign_cwd_without_package_context(tmp_path, monkeyp
 
         spec.loader.exec_module(module)
 
-        assert module.__version__ == "2.9.0"
+        assert module.__version__ == _plugin_yaml_version()
         assert module._get_provider_catalog()
     finally:
         sys.modules.pop(module_name, None)

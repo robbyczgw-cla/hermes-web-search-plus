@@ -53,7 +53,15 @@ def test_http_client_provider_request_error_exports_retry_metadata():
 
 
 def test_default_user_agent_uses_release_version():
-    assert http_client.DEFAULT_USER_AGENT == "ClawdBot-WebSearchPlus/2.9.0"
+    # Dynamic on purpose: the single hardcoded release gate lives in
+    # test_release_metadata.py and covers the User-Agent as well.
+    import re
+    from pathlib import Path
+
+    plugin_yaml = (Path(__file__).resolve().parents[1] / "plugin.yaml").read_text(encoding="utf-8")
+    match = re.search(r'^version:\s*"(\d+\.\d+\.\d+)"\s*$', plugin_yaml, re.MULTILINE)
+    assert match, "could not read version from plugin.yaml"
+    assert http_client.DEFAULT_USER_AGENT == f"ClawdBot-WebSearchPlus/{match.group(1)}"
 
 
 def _make_http_error(code: int, headers=None, body: bytes = b"{}") -> HTTPError:

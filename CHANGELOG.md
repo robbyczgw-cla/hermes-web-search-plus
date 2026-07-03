@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### 🔧 Improved
+- Added `scripts/prepare_release.py`: bumps every release-version surface in one step (plugin.yaml, `__version__`, header docstrings, User-Agent, the test gate, and the CHANGELOG section) with a dry-run default and loud failure on surface drift, so a half-done version bump can no longer turn CI red. The hardcoded release gate now lives in exactly one place (`tests/test_release_metadata.py`), and it also covers the User-Agent and `__init__.py` docstring; the package-import and http-client tests read the expected version dynamically from `plugin.yaml`.
+
 ## [v2.9.0] — 2026-07-03
 
 ### Credits
@@ -21,8 +26,6 @@
 ### 🐛 Fixed
 - Plugin discovery no longer depends on the current working directory when Hermes loads the flat plugin from outside the plugin directory. (#75)
 - `serper.type = "news"` (and the new `search_type="news"`) no longer returns silently empty results: Serper `/news` answers carry results under `news` instead of `organic`, and the parser now reads the right field, including `date`, `source`, thumbnail, and position metadata.
-
-## [Unreleased]
 
 ## [v2.8.1] — 2026-07-02
 
