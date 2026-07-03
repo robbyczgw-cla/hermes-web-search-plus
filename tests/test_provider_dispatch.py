@@ -89,6 +89,7 @@ EXPECTED_EXTRACT_KWARGS = {
     "parallel": {"api_url", "timeout", "client_model", "max_chars_total", "max_chars_per_result"},
     "keenable": {"public", "api_url", "timeout"},
     "you": {"api_url", "timeout"},
+    "serper": {"api_url", "timeout"},
 }
 
 

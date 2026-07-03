@@ -22,7 +22,8 @@ def test_provider_registry_is_the_complete_capability_source():
         "searxng",
         "keenable",
     )
-    assert registry.EXTRACT_PROVIDER_IDS == ("tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable")
+    assert registry.EXTRACT_PROVIDER_IDS == ("tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper")
+    assert registry.PROVIDER_SPECS["serper"].supports_extract is True
     assert registry.PROVIDER_SPECS["keenable"].supports_extract is True
     assert registry.PROVIDER_SPECS["keenable"].supports_search is True
     assert registry.PROVIDER_SPECS["keenable"].keyless is True

@@ -1199,6 +1199,7 @@ def _run_search(
     exa_depth: str = "normal",
     time_range: Optional[str] = None,
     freshness: Optional[str] = None,
+    search_type: Optional[str] = None,
     include_domains: Optional[List[str]] = None,
     exclude_domains: Optional[List[str]] = None,
     mode: str = "normal",
@@ -1219,7 +1220,8 @@ def _run_search(
     if search is None:
         return _run_search_subprocess(
             query=query, provider=provider, count=count, exa_depth=exa_depth,
-            time_range=time_range, freshness=freshness, include_domains=include_domains,
+            time_range=time_range, freshness=freshness, search_type=search_type,
+            include_domains=include_domains,
             exclude_domains=exclude_domains, mode=mode, quality_report=quality_report,
             research_time_budget=research_time_budget, language=language, country=country,
             subprocess_timeout=timeout,
@@ -1228,7 +1230,8 @@ def _run_search(
     def call() -> dict:
         return search.run_search_request(
             query=query, provider=provider, count=count, exa_depth=exa_depth,
-            time_range=time_range, freshness=freshness, include_domains=include_domains,
+            time_range=time_range, freshness=freshness, search_type=search_type,
+            include_domains=include_domains,
             exclude_domains=exclude_domains, mode=mode, quality_report=quality_report,
             research_time_budget=research_time_budget, language=language, country=country,
         )
@@ -1248,6 +1251,7 @@ def _run_search_subprocess(
     exa_depth: str = "normal",
     time_range: Optional[str] = None,
     freshness: Optional[str] = None,
+    search_type: Optional[str] = None,
     include_domains: Optional[List[str]] = None,
     exclude_domains: Optional[List[str]] = None,
     mode: str = "normal",
@@ -1272,6 +1276,8 @@ def _run_search_subprocess(
         cmd += ["--time-range", time_range]
     if freshness:
         cmd += ["--freshness", str(freshness)]
+    if search_type:
+        cmd += ["--search-type", str(search_type)]
     if include_domains:
         cmd += ["--include-domains"] + include_domains
     if exclude_domains:
@@ -1423,6 +1429,21 @@ def _format_results(data: dict) -> str:
         else:
             detail = f"not applied — {freshness_meta.get('reason', 'unsupported provider')}"
         lines.append(f"[Freshness: {freshness_meta['requested']} | {detail}]")
+
+    search_type_meta = (data.get("metadata") or {}).get("search_type")
+    if isinstance(search_type_meta, dict) and search_type_meta.get("requested"):
+        per_provider = search_type_meta.get("providers")
+        if isinstance(per_provider, list):
+            applied = [m.get("provider") for m in per_provider if m.get("applied")]
+            skipped = [m.get("provider") for m in per_provider if not m.get("applied")]
+            detail = "applied by: " + (", ".join(str(p) for p in applied) or "none")
+            if skipped:
+                detail += " | not supported: " + ", ".join(str(p) for p in skipped)
+        elif search_type_meta.get("applied"):
+            detail = "applied"
+        else:
+            detail = f"not applied — {search_type_meta.get('reason', 'unsupported provider')}"
+        lines.append(f"[Search type: {search_type_meta['requested']} | {detail}]")
 
     if answer:
         lines.append(f"\nAnswer: {answer}\n")
@@ -1621,6 +1642,16 @@ def register(ctx: Any) -> None:
                         "run the search and report freshness.applied=false in result metadata. Optional."
                     ),
                 },
+                "search_type": {
+                    "type": "string",
+                    "enum": ["search", "news"],
+                    "description": (
+                        "Result vertical: 'search' (default) or 'news'. Served natively by serper "
+                        "(google.serper.dev/news); other providers run the normal search and report "
+                        "search_type.applied=false in result metadata. Optional."
+                    ),
+                    "default": "search",
+                },
                 "include_domains": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -1656,6 +1687,7 @@ def register(ctx: Any) -> None:
 
     def handler(args_or_query, provider: str = "auto", count: int = 5, depth: str = "normal",
                 time_range: Optional[str] = None, freshness: Optional[str] = None,
+                search_type: Optional[str] = None,
                 include_domains: Optional[List[str]] = None,
                 exclude_domains: Optional[List[str]] = None, mode: str = "normal",
                 quality_report: bool = False, research_time_budget: float = 55.0, **kwargs) -> str:
@@ -1667,6 +1699,7 @@ def register(ctx: Any) -> None:
             depth = args_or_query.get("depth", depth)
             time_range = args_or_query.get("time_range", time_range)
             freshness = args_or_query.get("freshness", freshness)
+            search_type = args_or_query.get("search_type", search_type)
             include_domains = args_or_query.get("include_domains", include_domains)
             exclude_domains = args_or_query.get("exclude_domains", exclude_domains)
             mode = args_or_query.get("mode", mode)
@@ -1681,6 +1714,7 @@ def register(ctx: Any) -> None:
             exa_depth=depth,
             time_range=time_range,
             freshness=freshness,
+            search_type=search_type,
             include_domains=include_domains,
             exclude_domains=exclude_domains,
             mode=mode,
@@ -1712,7 +1746,7 @@ def register(ctx: Any) -> None:
         "name": "web_extract_plus",
         "description": (
             "Multi-provider URL content extraction. Auto tries Tavily, Exa, Linkup, "
-            "Firecrawl, You.com (plus keyless Keenable when its public endpoint is opted in); "
+            "Firecrawl, You.com, Serper (plus keyless Keenable when its public endpoint is opted in); "
             "force a provider for robust scraping, clean markdown, or explicit fallback tests."
         ),
         "parameters": {

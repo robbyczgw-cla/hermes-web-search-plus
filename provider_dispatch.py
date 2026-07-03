@@ -303,6 +303,11 @@ def _call_keenable_extract(extract_module, prov, urls, key, output_format, inclu
     return _resolve(extract_module, "extract_keenable")(urls, key, output_format, include_images, include_raw_html, render_js, public=keyless_allowed, api_url=kn.get("fetch_url", "https://api.keenable.ai/v1/fetch"), timeout=int(kn.get("timeout", 30)))
 
 
+def _call_serper_extract(extract_module, prov, urls, key, output_format, include_images, include_raw_html, render_js, config, keyless_allowed):
+    sp = config.get("serper", {})
+    return _resolve(extract_module, "extract_serper")(urls, key, output_format, include_images, include_raw_html, render_js, api_url=sp.get("scrape_url", "https://scrape.serper.dev"), timeout=int(sp.get("extract_timeout", sp.get("timeout", 30))))
+
+
 def _call_you_extract(extract_module, prov, urls, key, output_format, include_images, include_raw_html, render_js, config, keyless_allowed):
     you = config.get("you", {})
     return _resolve(extract_module, "extract_you")(urls, key, output_format, include_images, include_raw_html, render_js, api_url=you.get("contents_url", "https://ydc-index.io/v1/contents"), timeout=int(you.get("timeout", 30)))
@@ -318,4 +323,5 @@ EXTRACT_DISPATCH: Dict[str, Callable[..., Dict[str, Any]]] = {
     "parallel": _call_parallel_extract,
     "keenable": _call_keenable_extract,
     "you": _call_you_extract,
+    "serper": _call_serper_extract,
 }

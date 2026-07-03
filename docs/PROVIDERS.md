@@ -9,7 +9,7 @@ catalog; regenerate it with `python scripts/gen_provider_docs.py` after changing
 
 | Provider | Search | Extract | Env var | Keyless | Auto routing | Free tier | Signup |
 |---|---:|---:|---|---|---|---|---|
-| Serper | ✅ | — | `SERPER_API_KEY` | — | yes (priority 2) | 2,500 one-time credits | https://serper.dev/api-key |
+| Serper | ✅ | ✅ | `SERPER_API_KEY` | — | yes (priority 2) | 2,500 one-time credits | https://serper.dev/api-key |
 | SerpBase | ✅ | — | `SERPBASE_API_KEY` | — | explicit-only (`auto_allow=false`) | 100 free searches, paid packs available | https://www.serpbase.dev |
 | Brave Search | ✅ | — | `BRAVE_API_KEY` | — | explicit-only (`auto_allow=false`) | $5 free monthly credits | https://api.search.brave.com/app/keys |
 | Tavily | ✅ | ✅ | `TAVILY_API_KEY` | — | yes (priority 5) | 1,000 free searches/month | https://tavily.com |
@@ -32,7 +32,7 @@ until opted in with `setup.py config set-auto-allow <provider> on`.
 
 ### Serper
 
-Google-like SERP results for facts, shopping, local and news queries.
+Google-like SERP results for facts, shopping, local and news queries, plus webpage scraping.
 
 ### SerpBase
 

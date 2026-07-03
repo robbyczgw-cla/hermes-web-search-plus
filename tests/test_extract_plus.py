@@ -205,7 +205,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
         mock_linkup.assert_called_once()
 
     def test_extract_provider_priority_prefers_fast_clean_extractors(self):
-        self.assertEqual(search.EXTRACT_PROVIDER_PRIORITY, ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable"])
+        self.assertEqual(search.EXTRACT_PROVIDER_PRIORITY, ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper"])
 
     def test_extract_plus_auto_prefers_tavily_over_exa(self):
         with mock.patch.dict(os.environ, {"EXA_API_KEY": "exa-test", "TAVILY_API_KEY": "tvly-test"}, clear=True):
@@ -607,10 +607,18 @@ class ExtractPlusPluginTests(unittest.TestCase):
             def register_tool(self, **kwargs):
                 registered[kwargs["name"]] = kwargs
 
-        with mock.patch.dict(os.environ, {"SERPER_API_KEY": "serper-test"}, clear=True):
+        # Brave is search-only; a lone Brave key must not enable extraction.
+        with mock.patch.dict(os.environ, {"BRAVE_API_KEY": "brave-test"}, clear=True):
             plugin.register(Ctx())
             self.assertTrue(registered["web_search_plus"]["check_fn"]())
             self.assertFalse(registered["web_extract_plus"]["check_fn"]())
+
+        # A Serper key now enables both search and (webpage-scraper) extraction.
+        registered.clear()
+        with mock.patch.dict(os.environ, {"SERPER_API_KEY": "serper-test"}, clear=True):
+            plugin.register(Ctx())
+            self.assertTrue(registered["web_search_plus"]["check_fn"]())
+            self.assertTrue(registered["web_extract_plus"]["check_fn"]())
 
         registered.clear()
         with mock.patch.dict(os.environ, {"FIRECRAWL_API_KEY": "fc-test"}, clear=True):

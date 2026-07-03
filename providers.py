@@ -104,6 +104,58 @@ def freshness_metadata(provider: str, requested: str) -> Dict[str, Any]:
     }
 
 
+# =============================================================================
+# Unified search type (web vs. news vertical)
+# =============================================================================
+
+SEARCH_TYPE_VALUES = ("search", "news")
+
+# Providers whose API natively serves a Google-tab-style result vertical.
+# Maps provider -> {generic value -> native value}, mirroring
+# PROVIDER_FRESHNESS_FORMATS. Providers absent from this table always run
+# their normal web search and report search_type.applied=false in metadata.
+PROVIDER_SEARCH_TYPES: Dict[str, Dict[str, str]] = {
+    # search_serper: endpoint path https://google.serper.dev/<type>
+    "serper": {"search": "search", "news": "news"},
+}
+
+
+def normalize_search_type(value: Optional[str]) -> Optional[str]:
+    """Return the canonical lowercase search_type value, or None when unset.
+
+    Raises ValueError for values outside search|news so callers can surface
+    the standard error dict instead of silently running the wrong vertical.
+    """
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return None
+    if normalized not in SEARCH_TYPE_VALUES:
+        raise ValueError(
+            "Invalid search_type value: {!r}. Valid values: {}".format(value, ", ".join(SEARCH_TYPE_VALUES))
+        )
+    return normalized
+
+
+def provider_supports_search_type(provider: str, search_type: str) -> bool:
+    """Return whether a provider's current API call can serve the requested vertical."""
+    return search_type in PROVIDER_SEARCH_TYPES.get(provider, {})
+
+
+def search_type_metadata(provider: str, requested: str) -> Dict[str, Any]:
+    """Describe whether a provider applied the requested search type."""
+    native = PROVIDER_SEARCH_TYPES.get(provider, {}).get(requested)
+    if native is not None:
+        return {"requested": requested, "applied": True, "provider": provider, "native_value": native}
+    return {
+        "requested": requested,
+        "applied": False,
+        "provider": provider,
+        "reason": "provider {} does not support search_type {}".format(provider, requested),
+    }
+
+
 def search_serper(
     query: str,
     api_key: str,
@@ -143,15 +195,27 @@ def search_serper(
 
     data = make_request(endpoint, headers, body)
 
+    # /news answers carry results under "news" (title/link/snippet/date/source/
+    # imageUrl/position) instead of "organic"; reading only "organic" used to
+    # silently return zero results for serper.type="news".
+    raw_items = data.get("news", []) if search_type == "news" else data.get("organic", [])
     results = []
-    for i, item in enumerate(data.get("organic", [])[:max_results]):
-        results.append({
+    for i, item in enumerate(raw_items[:max_results]):
+        result = {
             "title": item.get("title", ""),
             "url": item.get("link", ""),
             "snippet": item.get("snippet", ""),
             "score": round(1.0 - i * 0.1, 2),
             "date": item.get("date"),
-        })
+        }
+        if search_type == "news":
+            if item.get("source") is not None:
+                result["source"] = item.get("source")
+            if item.get("imageUrl"):
+                result["thumbnail"] = item.get("imageUrl")
+            if item.get("position") is not None:
+                result["position"] = item.get("position")
+        results.append(result)
 
     answer = ""
     if data.get("answerBox", {}).get("answer"):
@@ -1731,3 +1795,53 @@ def extract_keenable(
         except Exception as e:
             results.append(_normalize_extract_result("keenable", url, error=str(e)))
     return {"provider": "keenable", "results": results}
+
+
+def extract_serper(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://scrape.serper.dev",
+    timeout: int = 30,
+) -> dict:
+    """Extract page content via Serper's webpage scraper.
+
+    Request/response shape verified against Serper API clients: POST
+    ``{"url": ..., "includeMarkdown": true}`` with the X-API-KEY header;
+    the answer carries ``text`` plus optional ``markdown``, ``metadata``,
+    ``jsonld`` and ``credits``. The endpoint accepts one URL per call, so
+    multi-URL requests loop with per-URL error items (extract_keenable
+    pattern). The scraper returns no raw HTML; html/raw-html/render-js
+    options are accepted for tool compatibility but have no upstream effect.
+    The endpoint is operator-overridable via config ``serper.scrape_url``.
+    """
+    headers = {"X-API-KEY": api_key, "Content-Type": "application/json"}
+    results: List[Dict[str, Any]] = []
+    for url in urls:
+        try:
+            data = make_request(api_url, headers, {"url": url, "includeMarkdown": True}, timeout=timeout)
+            if data.get("error"):
+                results.append(_normalize_extract_result("serper", url, error=str(data.get("error"))))
+                continue
+            # Field names are parsed tolerantly in case Serper renames them.
+            markdown = data.get("markdown") or ""
+            text = data.get("text") or data.get("content") or ""
+            content = markdown or text
+            metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+            title = metadata.get("title") or data.get("title") or ""
+            results.append(_normalize_extract_result(
+                "serper",
+                url,
+                title=title,
+                content=content,
+                raw_content=content,
+                metadata=metadata or None,
+                jsonld=data.get("jsonld"),
+                credits=data.get("credits"),
+            ))
+        except Exception as e:
+            results.append(_normalize_extract_result("serper", url, error=str(e)))
+    return {"provider": "serper", "results": results}

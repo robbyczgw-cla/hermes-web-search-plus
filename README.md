@@ -11,7 +11,7 @@
   <img alt="Hermes Plugin" src="https://img.shields.io/badge/Hermes-plugin-a78bfa.svg">
 </p>
 
-**Web Search Plus is the operator-grade web layer for Hermes: one search tool, one extraction tool, many providers, conservative routing, safe large-page handling, freshness controls, and provider benchmarking without locking you into a single API.** Routing v2 spans 14 search providers and 7 extraction-capable providers; `web_extract_plus(provider="auto")` defaults to Tavily-first extraction for fast, reliable fetches, with Exa, Linkup, Firecrawl, Parallel, and You.com as fallback paths when available.
+**Web Search Plus is the operator-grade web layer for Hermes: one search tool, one extraction tool, many providers, conservative routing, safe large-page handling, freshness controls, and provider benchmarking without locking you into a single API.** Routing v2 spans 14 search providers and 8 extraction-capable providers; `web_extract_plus(provider="auto")` defaults to Tavily-first extraction for fast, reliable fetches, with Exa, Linkup, Firecrawl, Parallel, You.com, and Serper as fallback paths when available.
 
 `web-search-plus` adds two Hermes tools:
 
@@ -247,6 +247,7 @@ Parameters:
 | `count` | integer | `5` | Results, 1–20 |
 | `time_range` | string | — | `day`, `week`, `month`, `year` |
 | `freshness` | string | — | Unified recency filter: `day`, `week`, `month`, `year` (case-insensitive). Applied natively by Serper, Brave, Querit, Firecrawl, Keenable, You.com, Perplexity/Kilo Perplexity, and SearXNG; other providers still search and report `freshness.applied=false` in result metadata |
+| `search_type` | string | `"search"` | Result vertical: `search` or `news`. Served natively by Serper (`google.serper.dev/news`, with article `date`/`source`); other providers run the normal search and report `search_type.applied=false` in result metadata |
 | `include_domains` | string[] | — | Restrict search to domains |
 | `exclude_domains` | string[] | — | Exclude domains |
 | `quality_report` | boolean | `false` | Include routing diagnostics, provider scores, result counts, authority signals, and extraction recommendation |

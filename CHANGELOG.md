@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### ✨ Added
+- Added a unified `search_type` parameter to `web_search_plus` (`search` or `news`). Serper serves the news vertical natively via `google.serper.dev/news` (the unified `freshness` filter keeps working there); all other providers run their normal search and report `search_type.applied=false` in result metadata, mirroring the `freshness` contract. CLI: `--search-type`.
+- Serper is now an extraction provider: `web_extract_plus(provider="serper")` scrapes pages via Serper's webpage scraper (`https://scrape.serper.dev`, markdown preferred, per-URL error items). It joins the auto-extraction fallback chain in last position — Tavily-first ordering is unchanged. The endpoint is operator-overridable via config `serper.scrape_url` (with `serper.extract_timeout`).
+
+### 🐛 Fixed
+- `serper.type = "news"` (and the new `search_type="news"`) no longer returns silently empty results: Serper `/news` answers carry results under `news` instead of `organic`, and the parser now reads the right field, including `date`, `source`, thumbnail, and position metadata.
+
 ## [v2.8.1] — 2026-07-02
 
 ### Credits

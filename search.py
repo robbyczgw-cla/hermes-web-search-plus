@@ -307,6 +307,23 @@ def freshness_metadata(*args, **kwargs):
     return _providers.freshness_metadata(*args, **kwargs)
 
 
+# Unified search_type helpers (re-exported for tests and callers).
+SEARCH_TYPE_VALUES = _providers.SEARCH_TYPE_VALUES
+PROVIDER_SEARCH_TYPES = _providers.PROVIDER_SEARCH_TYPES
+
+
+def normalize_search_type(*args, **kwargs):
+    return _providers.normalize_search_type(*args, **kwargs)
+
+
+def provider_supports_search_type(*args, **kwargs):
+    return _providers.provider_supports_search_type(*args, **kwargs)
+
+
+def search_type_metadata(*args, **kwargs):
+    return _providers.search_type_metadata(*args, **kwargs)
+
+
 def search_serper(*args, **kwargs):
     _sync_provider_dependencies()
     return _providers.search_serper(*args, **kwargs)
@@ -427,6 +444,11 @@ def extract_keenable(*args, **kwargs):
     return _providers.extract_keenable(*args, **kwargs)
 
 
+def extract_serper(*args, **kwargs):
+    _sync_provider_dependencies()
+    return _providers.extract_serper(*args, **kwargs)
+
+
 
 # =============================================================================
 # Exa (Neural/Semantic/Deep Search)
@@ -482,6 +504,7 @@ def _sync_extract_dependencies() -> None:
     _extract.extract_you = extract_you
     _extract.extract_parallel = extract_parallel
     _extract.extract_keenable = extract_keenable
+    _extract.extract_serper = extract_serper
 
 
 EXTRACT_PROVIDER_PRIORITY = _extract.EXTRACT_PROVIDER_PRIORITY
@@ -745,6 +768,20 @@ Full docs: See README.md and SKILL.md
         dest="search_type", 
         default=serper_config.get("type", "search"),
         choices=["search", "news", "images", "videos", "places", "shopping"]
+    )
+    parser.add_argument(
+        "--search-type",
+        dest="search_type",
+        type=str.lower,
+        choices=list(_providers.SEARCH_TYPE_VALUES),
+        # Shares dest with the legacy serper-only --type flag above; SUPPRESS
+        # keeps --type's config-driven default when neither flag is passed.
+        default=argparse.SUPPRESS,
+        help=(
+            "Unified result vertical (search or news; case-insensitive). Providers with a "
+            "native news vertical (currently serper) serve it directly; all other providers "
+            "run the normal search and result metadata reports search_type.applied=false"
+        )
     )
     parser.add_argument(
         "--time-range",
@@ -1255,6 +1292,14 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
                     _providers.freshness_metadata(p, args.freshness) for p in research_providers
                 ],
             }
+        research_search_type = getattr(args, "search_type", None)
+        if research_search_type in _providers.SEARCH_TYPE_VALUES and research_search_type != "search":
+            result.setdefault("metadata", {})["search_type"] = {
+                "requested": research_search_type,
+                "providers": [
+                    _providers.search_type_metadata(p, research_search_type) for p in research_providers
+                ],
+            }
         _apply_result_quality_pipeline(result, config, query=args.query or "", include_domains=args.include_domains)
         result["quality_report"] = build_quality_report(
             query=args.query,
@@ -1372,6 +1417,12 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
                 successful_provider or provider, args.freshness
             )
 
+        requested_search_type = getattr(args, "search_type", None)
+        if requested_search_type in _providers.SEARCH_TYPE_VALUES and requested_search_type != "search":
+            result.setdefault("metadata", {})["search_type"] = _providers.search_type_metadata(
+                successful_provider or provider, requested_search_type
+            )
+
         if not cache_hit and not args.no_cache and args.query:
             cache_put(
                 query=args.query,
@@ -1419,6 +1470,7 @@ def run_search_request(
     exa_depth: str = "normal",
     time_range: Optional[str] = None,
     freshness: Optional[str] = None,
+    search_type: Optional[str] = None,
     include_domains: Optional[List[str]] = None,
     exclude_domains: Optional[List[str]] = None,
     mode: str = "normal",
@@ -1438,6 +1490,7 @@ def run_search_request(
         return {"error": "query is required", "provider": provider, "query": query, "results": []}
     try:
         freshness = _providers.normalize_freshness(freshness)
+        search_type = _providers.normalize_search_type(search_type)
     except ValueError as exc:
         return {"error": str(exc), "provider": provider, "query": query, "results": []}
     config = config or load_config()
@@ -1452,6 +1505,8 @@ def run_search_request(
         argv += ["--time-range", time_range]
     if freshness:
         argv += ["--freshness", freshness]
+    if search_type:
+        argv += ["--search-type", search_type]
     if include_domains:
         argv += ["--include-domains", *include_domains]
     if exclude_domains:

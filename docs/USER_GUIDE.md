@@ -97,7 +97,7 @@ Presets:
 - `extract`: Firecrawl + Linkup + Exa + Tavily. Extraction-heavy setup.
 - `all`: prompt for every supported provider.
 
-Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, Perplexity, Kilo Perplexity, SearXNG, SerpBase, Querit, and Keenable. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, and Keenable.
+Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, Perplexity, Kilo Perplexity, SearXNG, SerpBase, Querit, and Keenable. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, Keenable, and Serper.
 
 Keenable is keyless: set `KEENABLE_API_KEY` for the authenticated endpoints, or opt into its public tier (off by default). In the wizard, skip the Keenable key prompt and answer yes, or run `setup.py setup keenable --keyless-public`; it writes `keenable.allow_public: true` to `config.json` (equivalently `KEENABLE_ALLOW_PUBLIC=1`).
 
@@ -267,6 +267,7 @@ Important parameters:
 - `count`: result count, from 1 to 20.
 - `time_range`: `day`, `week`, `month`, or `year` where supported.
 - `freshness`: unified recency filter with the values `day`, `week`, `month`, or `year` (case-insensitive; invalid values return a clear error). It is applied natively by Serper, Brave, Querit, Firecrawl, Keenable, You.com, Perplexity/Kilo Perplexity, and SearXNG, each translated into that provider's own format (for example Brave `pw` or Serper `tbs=qdr:w` for `week`). Providers without recency support (Tavily, Exa, Linkup, Parallel, SerpBase) still run the search normally; the result metadata then reports `"freshness": {"requested": "week", "applied": false, "reason": "provider tavily does not support freshness"}` instead of silently dropping the filter. In `mode="research"` the filter is passed to every participating provider and the applied status is reported per provider.
+- `search_type`: result vertical, `search` (default) or `news` (case-insensitive; invalid values return a clear error). Serper serves the news vertical natively via `google.serper.dev/news` and returns article `date` and `source` fields; the unified `freshness` filter keeps working there. Providers without a native news vertical still run the normal search; the result metadata then reports `"search_type": {"requested": "news", "applied": false, "reason": "provider tavily does not support search_type news"}` instead of silently ignoring the request. In `mode="research"` the applied status is reported per provider.
 - `include_domains` / `exclude_domains`: provider-dependent domain filters.
 - `quality_report`: include routing diagnostics, skipped providers, result quality hints, and extraction recommendation.
 - `mode="research"`: query multiple providers and optionally extract selected URLs within a best-effort wall-clock budget.
@@ -280,7 +281,7 @@ web_extract_plus(urls=["https://example.com"], provider="firecrawl")
 web_extract_plus(urls=["https://docs.linkup.so"], provider="linkup", render_js=False)
 ```
 
-Auto extraction currently tries Tavily, Exa, Linkup, Firecrawl, Parallel, and You.com when keys are available. Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form fallback; Firecrawl remains the robust scraper safety net.
+Auto extraction currently tries Tavily, Exa, Linkup, Firecrawl, Parallel, You.com, and Serper when keys are available. Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form fallback; Firecrawl remains the robust scraper safety net; Serper's webpage scraper (`https://scrape.serper.dev`, overridable via config `serper.scrape_url`) is the last-resort fallback so a Serper-only setup still gets extraction.
 
 Large extracted pages are not returned as raw token bombs. `web_extract_plus` sanitizes inline base64 images, stores the full cleaned text under `cache/web`, and returns a bounded head/tail preview with a footer containing the stored file path plus an exact `read_file(path=..., offset=..., limit=500)` call for paging into the omitted middle. Configure the inline budget in `config.json`:
 

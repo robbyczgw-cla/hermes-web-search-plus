@@ -61,7 +61,10 @@ DEFAULT_CONFIG = {
     "serper": {
         "country": "us",
         "language": "en",
-        "type": "search"
+        "type": "search",
+        # Webpage scraper endpoint; operator-overridable for compatible
+        # self-hosted/proxy services (firecrawl scrape_url pattern).
+        "scrape_url": "https://scrape.serper.dev"
     },
     "brave": {
         "country": "US",

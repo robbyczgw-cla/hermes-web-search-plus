@@ -36,11 +36,11 @@ _PROVIDER_SPECS = (
         provider="serper",
         env_var="SERPER_API_KEY",
         display_name="Serper",
-        description="Google-like SERP results for facts, shopping, local and news queries.",
+        description="Google-like SERP results for facts, shopping, local and news queries, plus webpage scraping.",
         config_section="serper",
         supports_search=True,
-        supports_extract=False,
-        capability_labels=("search", "news", "shopping", "local"),
+        supports_extract=True,
+        capability_labels=("search", "news", "shopping", "local", "extract"),
         free_tier="2,500 one-time credits",
         signup_url="https://serper.dev/api-key",
     ),
@@ -213,7 +213,9 @@ _PROVIDER_SPECS = (
 
 PROVIDER_SPECS: Dict[str, ProviderSpec] = {spec.provider: spec for spec in _PROVIDER_SPECS}
 SEARCH_PROVIDER_IDS = tuple(spec.provider for spec in _PROVIDER_SPECS if spec.supports_search)
-EXTRACT_PROVIDER_IDS = ("tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable")
+# Extraction fallback order: Tavily-first stays; serper's webpage scraper is a
+# last-resort fallback at the end of the list.
+EXTRACT_PROVIDER_IDS = ("tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper")
 DEFAULT_PROVIDER_PRIORITY = (
     "you",
     "serper",

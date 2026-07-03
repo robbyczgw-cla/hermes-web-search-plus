@@ -21,6 +21,7 @@ from providers import (  # noqa: F401 - resolved late via EXTRACT_DISPATCH/monke
     extract_keenable,
     extract_linkup,
     extract_parallel,
+    extract_serper,
     extract_tavily,
     extract_you,
 )
