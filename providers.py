@@ -996,14 +996,15 @@ def extract_parallel(
     api_url: str = "https://api.parallel.ai/v1/extract",
     timeout: int = 60,
     client_model: Optional[str] = None,
-    max_chars_total: int = 12000,
-    max_chars_per_result: int = 6000,
+    max_chars_total: int = 120000,
+    max_chars_per_result: int = 60000,
 ) -> dict:
     """Extract URL content using Parallel Extract.
 
-    Parallel returns excerpts by default; request full_content explicitly and
-    normalize it into the common markdown/content shape. HTML/raw-image options
-    are accepted for tool compatibility but ignored when unsupported upstream.
+    Parallel returns excerpts by default; request full_content explicitly with a
+    peer-level character budget so long pages are not unfairly truncated versus
+    other extraction providers. HTML/raw-image options are accepted for tool
+    compatibility but ignored when unsupported upstream.
     """
     headers = {"x-api-key": api_key, "Content-Type": "application/json"}
     body: Dict[str, Any] = {

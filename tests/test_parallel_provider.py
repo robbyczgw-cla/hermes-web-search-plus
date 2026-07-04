@@ -89,6 +89,15 @@ def test_extract_parallel_requests_full_content_and_normalizes_results():
     assert body["advanced_settings"]["full_content"]["max_chars_per_result"] == 567
 
 
+def test_extract_parallel_defaults_use_peer_level_full_content_budget():
+    with mock.patch.object(search, "make_request", return_value={"results": []}) as mock_request:
+        search.extract_parallel(["https://docs.parallel.ai/getting-started/overview"], "parallel-test-key")
+
+    body = mock_request.call_args.args[2]
+    assert body["max_chars_total"] == 120000
+    assert body["advanced_settings"]["full_content"]["max_chars_per_result"] == 60000
+
+
 def test_parallel_is_explicit_provider_but_blocked_from_auto_by_default():
     config = search._deepcopy_default_config()
     assert "parallel" in config["auto_routing"]["provider_priority"]

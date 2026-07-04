@@ -136,6 +136,27 @@ class ExtractAdapterKwargParityTests(unittest.TestCase):
             self.assertEqual(call_args, (["https://example.com"], "test-key", "markdown", False, False, False), provider)
             self.assertEqual(set(call_kwargs), EXPECTED_EXTRACT_KWARGS[provider], provider)
 
+    def test_parallel_adapter_uses_peer_level_default_full_content_budget(self):
+        config = search._deepcopy_default_config()
+        recorder = _Recorder()
+
+        provider_dispatch.EXTRACT_DISPATCH["parallel"](
+            {"extract_parallel": recorder},
+            "parallel",
+            ["https://example.com/long"],
+            "test-key",
+            "markdown",
+            False,
+            False,
+            False,
+            config,
+            False,
+        )
+
+        kwargs = recorder.calls[0][1]
+        self.assertEqual(kwargs["max_chars_total"], 120000)
+        self.assertEqual(kwargs["max_chars_per_result"], 60000)
+
 
 class DispatchMonkeypatchSeamTests(unittest.TestCase):
     """Dispatch must resolve provider functions late through search.py."""

@@ -111,8 +111,8 @@ DEFAULT_CONFIG = {
         "timeout": 45,
         "extract_timeout": 60,
         "client_model": None,
-        "max_chars_total": 12000,
-        "max_chars_per_result": 6000
+        "max_chars_total": 120000,
+        "max_chars_per_result": 60000
     },
     "kilo-perplexity": {
         "api_url": "https://api.kilo.ai/api/gateway/chat/completions",

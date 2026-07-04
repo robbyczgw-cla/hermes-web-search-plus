@@ -364,6 +364,8 @@ Parameters:
 
 Auto extraction currently tries Tavily, Exa, Linkup, Parallel, Firecrawl, and You.com when keys are available, then Keenable (only if a key is set or its public tier is opted in), and finally Serper as the last resort. Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form fallback; Firecrawl remains the robust scraper safety net; Serper's webpage scraper (`https://scrape.serper.dev`, overridable via config `serper.scrape_url`, timeout via `serper.extract_timeout`) closes the chain so a Serper-only setup still gets extraction.
 
+Parallel extraction explicitly requests `full_content`. Its default budget is 60,000 characters per result and 120,000 characters total so long documents are not unfairly shortened compared with other extraction providers. Operators can override those request-side limits in `config.json` with `parallel.max_chars_per_result` and `parallel.max_chars_total`.
+
 Large extracted pages are not returned as raw token bombs. `web_extract_plus` sanitizes inline base64 images, stores the full cleaned text under `cache/web`, and returns a bounded head/tail preview with a footer containing the stored file path plus an exact `read_file(path=..., offset=..., limit=500)` call for paging into the omitted middle. Configure the inline budget in `config.json`:
 
 ```json
