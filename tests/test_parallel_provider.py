@@ -94,8 +94,31 @@ def test_extract_parallel_defaults_use_peer_level_full_content_budget():
         search.extract_parallel(["https://docs.parallel.ai/getting-started/overview"], "parallel-test-key")
 
     body = mock_request.call_args.args[2]
-    assert body["max_chars_total"] == 120000
+    # Batch budget scales with the URL count: 1 URL * per-result budget.
+    assert body["max_chars_total"] == 60000
     assert body["advanced_settings"]["full_content"]["max_chars_per_result"] == 60000
+
+
+def test_extract_parallel_batch_budget_scales_with_url_count_and_reports_caps():
+    fake_response = {
+        "results": [
+            {"url": "https://a.example/1", "full_content": "x" * 60000},
+            {"url": "https://a.example/2", "full_content": "short"},
+        ],
+    }
+    with mock.patch.object(search, "make_request", return_value=fake_response) as mock_request:
+        result = search.extract_parallel(
+            ["https://a.example/1", "https://a.example/2"],
+            "parallel-test-key",
+        )
+
+    body = mock_request.call_args.args[2]
+    assert body["max_chars_total"] == 2 * 60000
+    assert result["metadata"]["content_caps"] == {"max_chars_total": 120000, "max_chars_per_result": 60000}
+
+    capped, uncapped = result["results"]
+    assert capped["metadata"]["content_capped"] is True
+    assert "content_capped" not in uncapped["metadata"]
 
 
 def test_parallel_is_explicit_provider_but_blocked_from_auto_by_default():

@@ -996,16 +996,21 @@ def extract_parallel(
     api_url: str = "https://api.parallel.ai/v1/extract",
     timeout: int = 60,
     client_model: Optional[str] = None,
-    max_chars_total: int = 120000,
+    max_chars_total: Optional[int] = None,
     max_chars_per_result: int = 60000,
 ) -> dict:
     """Extract URL content using Parallel Extract.
 
     Parallel returns excerpts by default; request full_content explicitly with a
     peer-level character budget so long pages are not unfairly truncated versus
-    other extraction providers. HTML/raw-image options are accepted for tool
-    compatibility but ignored when unsupported upstream.
+    other extraction providers. max_chars_total=None scales the batch budget
+    with the URL count so multi-URL extracts do not starve each page's share.
+    The applied caps are reported in metadata so capped output stays visible.
+    HTML/raw-image options are accepted for tool compatibility but ignored when
+    unsupported upstream.
     """
+    if max_chars_total is None:
+        max_chars_total = len(urls) * max_chars_per_result
     headers = {"x-api-key": api_key, "Content-Type": "application/json"}
     body: Dict[str, Any] = {
         "urls": urls,
@@ -1027,6 +1032,9 @@ def extract_parallel(
             for ex in excerpts
         ).strip()
         content = item.get("full_content") or item.get("markdown") or item.get("content") or excerpt_text
+        item_metadata = {k: v for k, v in item.items() if k not in {"url", "title", "full_content", "markdown", "content", "excerpts"}}
+        if len(content) >= max_chars_per_result:
+            item_metadata["content_capped"] = True
         results.append(_normalize_extract_result(
             "parallel",
             url,
@@ -1034,7 +1042,7 @@ def extract_parallel(
             content=content,
             raw_content=content,
             excerpts=excerpts or None,
-            metadata={k: v for k, v in item.items() if k not in {"url", "title", "full_content", "markdown", "content", "excerpts"}},
+            metadata=item_metadata,
         ))
     for failed in data.get("errors", []) or []:
         failed_url = failed.get("url", "") if isinstance(failed, dict) else ""
@@ -1045,6 +1053,10 @@ def extract_parallel(
         "metadata": {
             "search_id": data.get("search_id"),
             "session_id": data.get("session_id"),
+            "content_caps": {
+                "max_chars_total": max_chars_total,
+                "max_chars_per_result": max_chars_per_result,
+            },
         },
     }
 

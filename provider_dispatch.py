@@ -319,8 +319,10 @@ def _call_parallel_extract(extract_module, prov, urls, key, output_format, inclu
         api_url=parallel.get("extract_url", "https://api.parallel.ai/v1/extract"),
         timeout=int(parallel.get("extract_timeout", parallel.get("timeout", 60))),
         client_model=parallel.get("client_model"),
-        max_chars_total=int(parallel.get("max_chars_total", 120000)),
-        max_chars_per_result=int(parallel.get("max_chars_per_result", 60000)),
+        # None scales the batch budget with the URL count (len(urls) * per-result)
+        # inside extract_parallel; explicit config values pin exact limits.
+        max_chars_total=int(parallel["max_chars_total"]) if parallel.get("max_chars_total") else None,
+        max_chars_per_result=int(parallel.get("max_chars_per_result") or 60000),
     )
 
 

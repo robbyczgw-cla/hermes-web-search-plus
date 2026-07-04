@@ -4,6 +4,7 @@
 
 ### 🔧 Improved
 - Behavior change: raised Parallel extraction's default `full_content` budget to 60k characters per result / 120k total so long pages are evaluated fairly against other extraction providers instead of being silently capped at 6k. Operators that need smaller Parallel payloads can set `parallel.max_chars_per_result` and `parallel.max_chars_total` in `config.json`.
+- Parallel extraction's batch budget now scales with the URL count (`len(urls)` × per-result budget) instead of a fixed 120k total, so multi-URL extracts no longer starve each page's share (previously 10 URLs shared the fixed total, ~12k per page). The applied caps are reported in `metadata.content_caps` and results whose content hits the per-result budget are flagged `content_capped: true`, matching the truthful-metadata contract; explicit `parallel.max_chars_total` / `parallel.max_chars_per_result` config values still pin exact limits.
 - Added `scripts/prepare_release.py`: bumps every release-version surface in one step (plugin.yaml, `__version__`, header docstrings, User-Agent, the test gate, and the CHANGELOG section) with a dry-run default and loud failure on surface drift, so a half-done version bump can no longer turn CI red. The hardcoded release gate now lives in exactly one place (`tests/test_release_metadata.py`), and it also covers the User-Agent and `__init__.py` docstring; the package-import and http-client tests read the expected version dynamically from `plugin.yaml`.
 
 ## [v2.9.0] — 2026-07-03

@@ -154,8 +154,32 @@ class ExtractAdapterKwargParityTests(unittest.TestCase):
         )
 
         kwargs = recorder.calls[0][1]
-        self.assertEqual(kwargs["max_chars_total"], 120000)
+        # None = auto: extract_parallel scales the batch budget with len(urls).
+        self.assertIsNone(kwargs["max_chars_total"])
         self.assertEqual(kwargs["max_chars_per_result"], 60000)
+
+    def test_parallel_adapter_honours_explicit_cap_config(self):
+        config = search._deepcopy_default_config()
+        config["parallel"]["max_chars_total"] = 12000
+        config["parallel"]["max_chars_per_result"] = 6000
+        recorder = _Recorder()
+
+        provider_dispatch.EXTRACT_DISPATCH["parallel"](
+            {"extract_parallel": recorder},
+            "parallel",
+            ["https://example.com/long"],
+            "test-key",
+            "markdown",
+            False,
+            False,
+            False,
+            config,
+            False,
+        )
+
+        kwargs = recorder.calls[0][1]
+        self.assertEqual(kwargs["max_chars_total"], 12000)
+        self.assertEqual(kwargs["max_chars_per_result"], 6000)
 
 
 class DispatchMonkeypatchSeamTests(unittest.TestCase):
