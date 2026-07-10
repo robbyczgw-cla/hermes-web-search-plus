@@ -2,9 +2,25 @@
 
 ## [Unreleased]
 
+## [v2.9.1] — 2026-07-10
+
+### Credits
+- #82 by @robbyczgw-cla — synchronized the last stale v2.9.0 User-Agent version surface.
+- #83 by @robbyczgw-cla — added the atomic release-version preparation helper and regression tests.
+- #84 by @robbyczgw-cla — aligned Serper extraction documentation and streamlined the README.
+- #86 by @robbyczgw-cla — raised Parallel extraction content budgets for fair long-page handling.
+- v2.9.1 maintenance by @robbyczgw-cla — protected shared provider/usage state from cache stats and clear operations.
+
 ### 🔧 Improved
-- Behavior change: raised Parallel extraction's default `full_content` budget to 60k characters per result / 120k total so long pages are evaluated fairly against other extraction providers instead of being silently capped at 6k. Operators that need smaller Parallel payloads can set `parallel.max_chars_per_result` and `parallel.max_chars_total` in `config.json`.
-- Added `scripts/prepare_release.py`: bumps every release-version surface in one step (plugin.yaml, `__version__`, header docstrings, User-Agent, the test gate, and the CHANGELOG section) with a dry-run default and loud failure on surface drift, so a half-done version bump can no longer turn CI red. The hardcoded release gate now lives in exactly one place (`tests/test_release_metadata.py`), and it also covers the User-Agent and `__init__.py` docstring; the package-import and http-client tests read the expected version dynamically from `plugin.yaml`.
+- Raised Parallel extraction's default `full_content` budget to 60k characters per result / 120k total so long pages are evaluated fairly against other extraction providers instead of being silently capped at 6k. Operators that need smaller Parallel payloads can set `parallel.max_chars_per_result` and `parallel.max_chars_total` in `config.json`. (#86)
+- Added `scripts/prepare_release.py`: bumps every release-version surface in one step (plugin.yaml, `__version__`, header docstrings, User-Agent, the test gate, and the CHANGELOG section) with a dry-run default and loud failure on surface drift. The hardcoded release gate now lives in exactly one place (`tests/test_release_metadata.py`), while package-import and HTTP-client tests read the expected version dynamically from `plugin.yaml`. (#83)
+
+### 🐛 Fixed
+- Synchronized the default HTTP User-Agent with v2.9.0, closing the last stale release-version surface left after that tag. (#82)
+- Cache statistics and clearing now recognize only complete WSP search-cache envelopes. Shared state such as `provider_stats.json`, `provider_health.json`, host-written `usage_events.json`, unrelated JSON, and corrupt foreign files is ignored and preserved byte-for-byte instead of being counted, deleted, or crashing cache stats.
+
+### 📚 Docs
+- Marked Serper extraction consistently across the README, architecture, and user guide, and slimmed the README into a clearer product landing page. (#84)
 
 ## [v2.9.0] — 2026-07-03
 
