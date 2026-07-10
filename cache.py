@@ -156,6 +156,28 @@ def _atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
         raise
 
 
+_SEARCH_CACHE_MARKER_FIELDS = frozenset({
+    "_cache_timestamp",
+    "_cache_key",
+    "_cache_query",
+    "_cache_provider",
+})
+
+
+def _read_search_cache_envelope(path: Path) -> Optional[Dict[str, Any]]:
+    """Return a WSP search-cache envelope, or ``None`` for shared foreign state."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if not _SEARCH_CACHE_MARKER_FIELDS.issubset(payload):
+        return None
+    return payload
+
+
 def cache_get(query: str, provider: str, max_results: int, ttl: int = DEFAULT_CACHE_TTL, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """
     Retrieve cached search results if they exist and are not expired.
@@ -255,7 +277,8 @@ def cache_clear() -> Dict[str, Any]:
     web_text_tmp_size_freed = 0
 
     for cache_file in CACHE_DIR.glob("*.json"):
-        if cache_file.name == PROVIDER_HEALTH_FILENAME:
+        cached = _read_search_cache_envelope(cache_file)
+        if cached is None:
             continue
         try:
             size_freed += cache_file.stat().st_size
@@ -321,21 +344,22 @@ def cache_stats() -> Dict[str, Any]:
             "exists": False,
         }
 
-    entries = [p for p in CACHE_DIR.glob("*.json") if p.name != PROVIDER_HEALTH_FILENAME]
     total_size = 0
+    entry_count = 0
     oldest_time = None
     newest_time = None
     oldest_query = None
     newest_query = None
     provider_counts = {}
 
-    for cache_file in entries:
+    for cache_file in CACHE_DIR.glob("*.json"):
+        cached = _read_search_cache_envelope(cache_file)
+        if cached is None:
+            continue
         try:
             stat = cache_file.stat()
             total_size += stat.st_size
-
-            with open(cache_file, "r", encoding="utf-8") as f:
-                cached = json.load(f)
+            entry_count += 1
 
             ts = cached.get("_cache_timestamp", 0)
             query = cached.get("_cache_query", "unknown")
@@ -349,13 +373,13 @@ def cache_stats() -> Dict[str, Any]:
             if newest_time is None or ts > newest_time:
                 newest_time = ts
                 newest_query = query
-        except (json.JSONDecodeError, IOError):
+        except IOError:
             pass
 
     web_stats = _web_text_cache_stats()
     total_with_web = total_size + web_stats["web_text_size_bytes"]
     return {
-        "total_entries": len(entries),
+        "total_entries": entry_count,
         "total_size_bytes": total_size,
         "total_size_kb": round(total_size / 1024, 2),
         "total_size_bytes_including_web": total_with_web,

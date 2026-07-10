@@ -73,6 +73,44 @@ class CacheLifecycleTests(unittest.TestCase):
         self.assertEqual(result["web_text_cleared"], 0)
         self.assertEqual(result["web_text_errors"], 0)
 
+    def test_cache_stats_counts_only_marker_carrying_cache_envelopes(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir)
+            with mock.patch.object(cache, "CACHE_DIR", cache_dir):
+                cache.cache_put("query", "linkup", 3, {"results": ["ok"]})
+                (cache_dir / "usage_events.json").write_text('[{"event": "x"}]\n', encoding="utf-8")
+                (cache_dir / "provider_stats.json").write_text('{"linkup": []}\n', encoding="utf-8")
+                (cache_dir / "unrelated.json").write_text(
+                    '{"owner": "host", "_cache_timestamp": 1}\n', encoding="utf-8"
+                )
+                (cache_dir / "corrupt.json").write_text("{not json", encoding="utf-8")
+
+                stats = cache.cache_stats()
+
+        self.assertEqual(stats["total_entries"], 1)
+        self.assertEqual(stats["providers"], {"linkup": 1})
+
+    def test_cache_clear_preserves_foreign_json_state_byte_for_byte(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir)
+            foreign_payloads = {
+                "usage_events.json": '[{"event": "x"}]\n',
+                "provider_stats.json": '{"linkup": []}\n',
+                "provider_health.json": '{"keep": true}\n',
+                "unrelated.json": '{"owner": "host", "_cache_timestamp": 1}\n',
+                "corrupt.json": "{not json",
+            }
+            with mock.patch.object(cache, "CACHE_DIR", cache_dir):
+                cache.cache_put("query", "linkup", 3, {"results": ["ok"]})
+                for name, payload in foreign_payloads.items():
+                    (cache_dir / name).write_text(payload, encoding="utf-8")
+
+                result = cache.cache_clear()
+
+                self.assertEqual(result["cleared"], 1)
+                for name, payload in foreign_payloads.items():
+                    self.assertEqual((cache_dir / name).read_text(encoding="utf-8"), payload)
+
     def test_web_text_stats_ignore_but_clear_orphan_tmp_files(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = Path(tmpdir)
