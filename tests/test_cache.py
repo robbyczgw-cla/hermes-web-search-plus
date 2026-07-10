@@ -111,6 +111,34 @@ class CacheLifecycleTests(unittest.TestCase):
                 for name, payload in foreign_payloads.items():
                     self.assertEqual((cache_dir / name).read_text(encoding="utf-8"), payload)
 
+    def test_cache_stats_ignores_invalid_utf8_foreign_json(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir)
+            invalid_bytes = b"\xff\xfe\x00not-utf8"
+            with mock.patch.object(cache, "CACHE_DIR", cache_dir):
+                cache.cache_put("query", "linkup", 3, {"results": ["ok"]})
+                invalid = cache_dir / "binary.json"
+                invalid.write_bytes(invalid_bytes)
+
+                stats = cache.cache_stats()
+
+                self.assertEqual(stats["total_entries"], 1)
+                self.assertEqual(invalid.read_bytes(), invalid_bytes)
+
+    def test_cache_clear_preserves_invalid_utf8_foreign_json(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_dir = Path(tmpdir)
+            invalid_bytes = b"\xff\xfe\x00not-utf8"
+            with mock.patch.object(cache, "CACHE_DIR", cache_dir):
+                cache.cache_put("query", "linkup", 3, {"results": ["ok"]})
+                invalid = cache_dir / "binary.json"
+                invalid.write_bytes(invalid_bytes)
+
+                result = cache.cache_clear()
+
+                self.assertEqual(result["cleared"], 1)
+                self.assertEqual(invalid.read_bytes(), invalid_bytes)
+
     def test_web_text_stats_ignore_but_clear_orphan_tmp_files(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = Path(tmpdir)

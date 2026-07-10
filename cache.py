@@ -169,7 +169,7 @@ def _read_search_cache_envelope(path: Path) -> Optional[Dict[str, Any]]:
     try:
         with open(path, "r", encoding="utf-8") as f:
             payload = json.load(f)
-    except (json.JSONDecodeError, IOError):
+    except (ValueError, OSError):
         return None
     if not isinstance(payload, dict):
         return None
