@@ -63,7 +63,8 @@ Default routing config includes:
   "auto_routing": {
     "enabled": true,
     "fallback_provider": "serper",
-    "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng"],
+    "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng", "keenable"],
+    "extract_provider_priority": ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper"],
     "disabled_providers": [],
     "auto_allow": {
       "serpbase": false,
@@ -78,7 +79,7 @@ Default routing config includes:
 }
 ```
 
-Secrets and routing are separate so users can configure a provider key without automatically letting that provider receive automatic traffic.
+Secrets and routing are separate so users can configure a provider key without automatically letting that provider receive automatic traffic. Search `provider_priority` and `extract_provider_priority` are independent: search ranking does not silently reorder URL extraction. A partial extraction list is normalized and completed with missing extract-capable providers in registry order.
 
 ## Routing engine
 

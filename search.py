@@ -509,6 +509,7 @@ def _sync_extract_dependencies() -> None:
 
 
 EXTRACT_PROVIDER_PRIORITY = _extract.EXTRACT_PROVIDER_PRIORITY
+resolve_extract_provider_priority = _extract.resolve_extract_provider_priority
 
 
 PROVIDER_DOCTOR_CATALOG = doctor_catalog()

@@ -168,6 +168,7 @@ def _get_hermes_env_path() -> Path:
 
 _SETUP_PROVIDER_NAMES = set(PROVIDER_SPECS)
 _DEFAULT_PROVIDER_PRIORITY = list(DEFAULT_PROVIDER_PRIORITY)
+_DEFAULT_EXTRACT_PROVIDER_PRIORITY = list(EXTRACT_PROVIDER_IDS)
 _DEFAULT_AUTO_ALLOW = dict(DEFAULT_AUTO_ALLOW)
 _ROUTING_PROVIDER_NAMES = set(PROVIDER_SPECS)
 
@@ -360,6 +361,7 @@ def _default_behavior_config() -> Dict[str, Any]:
             "enabled": True,
             "fallback_provider": "serper",
             "provider_priority": list(_DEFAULT_PROVIDER_PRIORITY),
+            "extract_provider_priority": list(_DEFAULT_EXTRACT_PROVIDER_PRIORITY),
             "disabled_providers": [],
             "auto_allow": dict(_DEFAULT_AUTO_ALLOW),
             "confidence_threshold": 0.3,
@@ -406,6 +408,26 @@ def _normalize_provider_csv(value: str, *, routing: bool = True) -> List[str]:
     return providers
 
 
+def _normalize_extract_provider_csv(value: str) -> List[str]:
+    providers: List[str] = []
+    seen = set()
+    extract_providers = set(_DEFAULT_EXTRACT_PROVIDER_PRIORITY)
+    for raw in (value or "").split(","):
+        if not raw.strip():
+            continue
+        provider = _normalize_routing_provider(raw)
+        if provider not in extract_providers:
+            raise SystemExit(f"Provider does not support extraction: {provider}")
+        if provider in seen:
+            print(f"warning: duplicate extract provider ignored: {provider}", file=sys.stderr)
+            continue
+        seen.add(provider)
+        providers.append(provider)
+    if not providers:
+        raise SystemExit("At least one extract provider is required.")
+    return providers
+
+
 def _append_missing_default_providers(providers: List[str]) -> List[str]:
     seen = set(providers)
     merged = list(providers)
@@ -414,6 +436,11 @@ def _append_missing_default_providers(providers: List[str]) -> List[str]:
             seen.add(provider)
             merged.append(provider)
     return merged
+
+
+def _append_missing_extract_providers(providers: List[str]) -> List[str]:
+    seen = set(providers)
+    return list(providers) + [provider for provider in _DEFAULT_EXTRACT_PROVIDER_PRIORITY if provider not in seen]
 
 
 def _merge_behavior_config(user_config: Mapping[str, Any]) -> Dict[str, Any]:
@@ -436,6 +463,12 @@ def _merge_behavior_config(user_config: Mapping[str, Any]) -> Dict[str, Any]:
         else:
             priority = _normalize_provider_csv(",".join(str(p) for p in auto_user["provider_priority"]), routing=True)
         auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
+    if auto_user.get("extract_provider_priority"):
+        if isinstance(auto_user["extract_provider_priority"], str):
+            extract_priority = _normalize_extract_provider_csv(auto_user["extract_provider_priority"])
+        else:
+            extract_priority = _normalize_extract_provider_csv(",".join(str(p) for p in auto_user["extract_provider_priority"]))
+        auto["extract_provider_priority"] = _append_missing_extract_providers(extract_priority)
     if "disabled_providers" in auto_user:
         disabled = auto_user.get("disabled_providers") or []
         if isinstance(disabled, str):
@@ -543,7 +576,8 @@ def _routing_summary(config: Mapping[str, Any]) -> str:
         f"  auto-routing: {'on' if auto.get('enabled', True) else 'off'}",
         f"  default provider: {config.get('default_provider') or 'none'}",
         f"  fallback provider: {auto.get('fallback_provider', 'serper')}",
-        "  priority: " + ", ".join(auto.get("provider_priority", _DEFAULT_PROVIDER_PRIORITY)),
+        "  search priority: " + ", ".join(auto.get("provider_priority", _DEFAULT_PROVIDER_PRIORITY)),
+        "  extract priority: " + ", ".join(auto.get("extract_provider_priority", _DEFAULT_EXTRACT_PROVIDER_PRIORITY)),
         "  disabled: " + (", ".join(auto.get("disabled_providers", [])) or "none"),
         "  auto-allow false: " + (
             ", ".join(p for p, allowed in sorted((auto.get("auto_allow") or {}).items()) if allowed is False) or "none"
@@ -819,10 +853,14 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     set_fallback.add_argument("provider")
     set_fallback.add_argument("--config-path")
     set_fallback.add_argument("--dry-run", action="store_true")
-    set_priority = config_subs.add_parser("set-priority", help="Set comma-separated auto-routing priority")
+    set_priority = config_subs.add_parser("set-priority", help="Set comma-separated search auto-routing priority")
     set_priority.add_argument("providers")
     set_priority.add_argument("--config-path")
     set_priority.add_argument("--dry-run", action="store_true")
+    set_extract_priority = config_subs.add_parser("set-extract-priority", help="Set comma-separated extraction auto-routing priority")
+    set_extract_priority.add_argument("providers")
+    set_extract_priority.add_argument("--config-path")
+    set_extract_priority.add_argument("--dry-run", action="store_true")
     disable = config_subs.add_parser("disable", help="Disable a provider for auto-routing")
     disable.add_argument("provider")
     disable.add_argument("--config-path")
@@ -901,6 +939,8 @@ def _handle_config_command(args: Any) -> None:
         config["auto_routing"]["fallback_provider"] = _normalize_routing_provider(getattr(args, "provider"))
     elif subcommand == "set-priority":
         config["auto_routing"]["provider_priority"] = _normalize_provider_csv(getattr(args, "providers"), routing=True)
+    elif subcommand == "set-extract-priority":
+        config["auto_routing"]["extract_provider_priority"] = _normalize_extract_provider_csv(getattr(args, "providers"))
     elif subcommand == "disable":
         provider = _normalize_routing_provider(getattr(args, "provider"))
         disabled = list(config["auto_routing"].get("disabled_providers", []))

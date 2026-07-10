@@ -30,7 +30,7 @@ Most web-search tools fail in one of two boring ways: they hard-code a single pr
 - **Routing v2 is conservative.** You.com, Serper, Exa, Firecrawl, Tavily, and Linkup form the default auto-search pool; everything else stays explicit/guarded until you opt in.
 - **Large pages stay usable.** Long extracts return a compact head/tail preview plus a `read_file` footer for the full cleaned text, instead of dumping token bombs into the agent context.
 - **Freshness, verticals, and locale are explicit.** `day`/`week`/`month`/`year` recency, `search_type="news"`, and `country`/`language` defaults with query-language auto-detection — providers that cannot apply a filter report that in metadata instead of silently dropping it.
-- **Provider quality is measurable.** The built-in bench compares configured providers on success rate, latency, result volume, and snippet coverage, then suggests a provider-priority order without writing config automatically.
+- **Provider quality is measurable.** The built-in bench compares configured search providers on success rate, latency, result volume, and snippet coverage, then suggests a search-provider priority order without writing config automatically.
 - **Costs and safety stay bounded.** Research mode caps provider work and keeps partial results, failed providers go on cooldown, and extraction rejects private/internal target URLs before provider dispatch.
 
 ---
@@ -122,7 +122,7 @@ web_extract_plus(urls=["https://docs.linkup.so"], provider="linkup", render_js=F
 # → Linkup fetch endpoint
 ```
 
-Auto extraction tries Tavily → Exa → Linkup → Parallel → Firecrawl → You.com for configured keys, then Keenable (only if configured), and finally Serper's webpage scraper as the last-resort safety net. Large pages use truncate-and-store output handling: a bounded head/tail preview inline, the full cleaned text stored under `cache/web/`, and a ready-to-run `read_file` call in the footer for paging into the omitted middle.
+Auto extraction defaults to Tavily → Exa → Linkup → Parallel → Firecrawl → You.com → Keenable → Serper for configured providers. Operators can change only the extraction order with `setup.py config set-extract-priority serper,parallel,...`; omitted extraction providers are appended in the default registry order. This is separate from search `provider_priority`. Large pages use truncate-and-store output handling: a bounded head/tail preview inline, the full cleaned text stored under `cache/web/`, and a ready-to-run `read_file` call in the footer for paging into the omitted middle.
 
 Full parameter tables for both tools, freshness/vertical/locale semantics, and cache management live in the [User Guide](docs/USER_GUIDE.md#using-web_search_plus).
 

@@ -142,10 +142,11 @@ Turn query-based auto-routing back on:
 python ~/.hermes/plugins/web-search-plus/setup.py config set-routing on
 ```
 
-Tune automatic routing and fallback:
+Tune automatic search routing, extraction routing, and fallback:
 
 ```bash
 python ~/.hermes/plugins/web-search-plus/setup.py config set-priority you,serper,exa,firecrawl,tavily,linkup
+python ~/.hermes/plugins/web-search-plus/setup.py config set-extract-priority serper,parallel,tavily,exa,linkup,firecrawl,you,keenable
 python ~/.hermes/plugins/web-search-plus/setup.py config set-fallback serper
 python ~/.hermes/plugins/web-search-plus/setup.py config disable perplexity
 python ~/.hermes/plugins/web-search-plus/setup.py config enable perplexity
@@ -161,7 +162,8 @@ python ~/.hermes/plugins/web-search-plus/setup.py config set-default you --dry-r
 Semantics worth knowing:
 
 - `set-default <provider>` disables auto-routing and makes `--provider auto` resolve to that provider; `set-routing on` restores query-based routing while keeping the saved default for later.
-- `set-priority` accepts comma-separated provider names, normalizes case/whitespace, and ignores duplicates with a warning.
+- `set-priority` changes search auto-routing and fallback priority only.
+- `set-extract-priority` changes `provider="auto"` extraction order only. It accepts extract-capable providers, removes duplicates, and appends omitted extract providers in registry order.
 - `set-auto-allow <provider> off` keeps a configured provider available for explicit calls while preventing auto-routing/fallback from selecting it.
 - `config reset --yes` backs up the existing file before writing fresh defaults.
 
@@ -362,7 +364,7 @@ Parameters:
 | `include_raw_html` | boolean | `false` | Include raw HTML when supported |
 | `render_js` | boolean | `false` | Render JavaScript before extraction when supported |
 
-Auto extraction currently tries Tavily, Exa, Linkup, Parallel, Firecrawl, and You.com when keys are available, then Keenable (only if a key is set or its public tier is opted in), and finally Serper as the last resort. Tavily is the fast reliable default; Exa is the fast docs/academic backup; Linkup stays the clean long-form fallback; Firecrawl remains the robust scraper safety net; Serper's webpage scraper (`https://scrape.serper.dev`, overridable via config `serper.scrape_url`, timeout via `serper.extract_timeout`) closes the chain so a Serper-only setup still gets extraction.
+Auto extraction defaults to Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, then Serper when those providers are configured. Change only this order with `setup.py config set-extract-priority ...`; the setting is stored as `auto_routing.extract_provider_priority` and does not inherit search `provider_priority`. Partial lists are completed with missing extract providers in registry order. Serper's webpage scraper (`https://scrape.serper.dev`, overridable via config `serper.scrape_url`, timeout via `serper.extract_timeout`) remains the public default's last-resort fallback. Each URL is returned independently; one failed URL does not discard successful results from the same call.
 
 Parallel extraction explicitly requests `full_content`. Its default budget is 60,000 characters per result and 120,000 characters total so long documents are not unfairly shortened compared with other extraction providers. Operators can override those request-side limits in `config.json` with `parallel.max_chars_per_result` and `parallel.max_chars_total`.
 

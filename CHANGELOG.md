@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### ✨ Added
+- Added independent `auto_routing.extract_provider_priority` configuration for `web_extract_plus(provider="auto")`, with `setup.py config set-extract-priority ...`. The existing Tavily-first registry order remains the public default; partial lists append missing extract-capable providers, and search `provider_priority` remains independent.
+
 ## [v2.9.1] — 2026-07-10
 
 ### Credits

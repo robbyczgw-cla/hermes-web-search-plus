@@ -207,6 +207,58 @@ class ExtractPlusCoreTests(unittest.TestCase):
     def test_extract_provider_priority_prefers_fast_clean_extractors(self):
         self.assertEqual(search.EXTRACT_PROVIDER_PRIORITY, ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper"])
 
+    def test_extract_plus_auto_honors_extract_provider_priority(self):
+        config = {
+            "auto_routing": {
+                "extract_provider_priority": ["serper", "parallel"],
+                "disabled_providers": [],
+            }
+        }
+        with mock.patch.dict(os.environ, {"SERPER_API_KEY": "serper-test", "PARALLEL_API_KEY": "parallel-test"}, clear=True):
+            with mock.patch("search.extract_serper", return_value={"provider": "serper", "results": []}) as mock_serper:
+                with mock.patch("search.extract_parallel") as mock_parallel:
+                    result = search.extract_plus(["https://example.com"], provider="auto", config=config)
+
+        self.assertEqual(result["provider"], "serper")
+        mock_serper.assert_called_once()
+        mock_parallel.assert_not_called()
+
+    def test_extract_priority_partial_invalid_values_are_ignored_and_filled(self):
+        config = {
+            "auto_routing": {
+                "extract_provider_priority": ["serper", "not-a-provider", "serper"],
+                "disabled_providers": [],
+            }
+        }
+
+        self.assertEqual(
+            search.resolve_extract_provider_priority(config),
+            ["serper", "tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable"],
+        )
+
+    def test_extract_priority_ignores_search_only_providers(self):
+        config = {
+            "auto_routing": {
+                "extract_provider_priority": ["serper", "brave", "parallel"],
+                "disabled_providers": [],
+            }
+        }
+
+        self.assertEqual(
+            search.resolve_extract_provider_priority(config),
+            ["serper", "parallel", "tavily", "exa", "linkup", "firecrawl", "you", "keenable"],
+        )
+
+    def test_search_provider_priority_does_not_change_extract_order(self):
+        config = {
+            "auto_routing": {
+                "provider_priority": ["serper", "tavily"],
+                "disabled_providers": [],
+            }
+        }
+
+        self.assertEqual(search.resolve_extract_provider_priority(config), search.EXTRACT_PROVIDER_PRIORITY)
+
     def test_extract_plus_auto_prefers_tavily_over_exa(self):
         with mock.patch.dict(os.environ, {"EXA_API_KEY": "exa-test", "TAVILY_API_KEY": "tvly-test"}, clear=True):
             with mock.patch("search.extract_exa", return_value={"provider": "exa", "results": []}) as mock_exa:

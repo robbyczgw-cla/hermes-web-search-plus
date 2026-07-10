@@ -28,7 +28,7 @@ The default auto-search pool is conservative: You.com, Serper, Exa, Firecrawl, T
 
 For the exact flow, see [Architecture](ARCHITECTURE.md#routing-engine).
 
-## Which provider order should I use?
+## Which search or extraction provider order should I use?
 
 Measure instead of guessing: run the built-in provider bench, which races your configured providers against a small fixed query suite and recommends an `auto_routing.provider_priority` order ranked by success rate, median latency, and simple quality signals:
 
@@ -38,7 +38,15 @@ python ~/.hermes/plugins/web-search-plus/setup.py bench
 python3 search.py --bench
 ```
 
-The bench never changes your config — it prints the recommended priority plus the exact `config set-priority` command to apply it. Bench runs call providers directly, so they do not trigger cooldowns or feed adaptive routing statistics, but they do spend a few real API calls per provider. See [User Guide → Bench your providers](USER_GUIDE.md#bench-your-providers).
+The bench never changes your config — it prints the recommended **search** priority plus the exact `config set-priority` command to apply it. Bench runs call providers directly, so they do not trigger cooldowns or feed adaptive routing statistics, but they do spend a few real API calls per provider.
+
+Extraction has a separate order because search quality and extraction quality are different jobs. Configure it independently:
+
+```bash
+python ~/.hermes/plugins/web-search-plus/setup.py config set-extract-priority serper,parallel,tavily,exa,linkup,firecrawl,you,keenable
+```
+
+This writes `auto_routing.extract_provider_priority`; it never changes search `provider_priority`. Omitted extract-capable providers are appended in registry order. See [User Guide → Bench your providers](USER_GUIDE.md#bench-your-providers).
 
 ## How do I force one provider?
 

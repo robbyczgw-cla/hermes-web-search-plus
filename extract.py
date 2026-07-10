@@ -32,6 +32,39 @@ from provider_registry import EXTRACT_PROVIDER_IDS
 EXTRACT_PROVIDER_PRIORITY = list(EXTRACT_PROVIDER_IDS)
 
 
+def resolve_extract_provider_priority(config: Optional[Dict[str, Any]] = None) -> List[str]:
+    """Return the configured extract order, completed with registry defaults.
+
+    Runtime callers may pass hand-built config dictionaries, so invalid,
+    duplicate, and search-only entries are ignored defensively here. Persisted
+    config is validated more strictly by config.py and setup.py.
+    """
+    auto_config = config.get("auto_routing", {}) if isinstance(config, dict) else {}
+    if not isinstance(auto_config, dict):
+        auto_config = {}
+    raw_priority = auto_config.get("extract_provider_priority")
+    if isinstance(raw_priority, str):
+        raw_values = raw_priority.split(",")
+    elif isinstance(raw_priority, (list, tuple)):
+        raw_values = raw_priority
+    else:
+        raw_values = []
+
+    providers: List[str] = []
+    seen = set()
+    allowed = set(EXTRACT_PROVIDER_PRIORITY)
+    for raw_provider in raw_values:
+        provider = str(raw_provider).strip().lower()
+        if provider not in allowed or provider in seen:
+            continue
+        seen.add(provider)
+        providers.append(provider)
+    for provider in EXTRACT_PROVIDER_PRIORITY:
+        if provider not in seen:
+            providers.append(provider)
+    return providers
+
+
 class ExtractUrlSecurityError(ValueError):
     """Raised when an extraction target URL points at an internal resource."""
 
@@ -124,7 +157,7 @@ def extract_plus(
         }
     auto_config = config.get("auto_routing", {})
     disabled_providers = set(auto_config.get("disabled_providers", []))
-    base_providers = EXTRACT_PROVIDER_PRIORITY if selected == "auto" else [selected] + [p for p in EXTRACT_PROVIDER_PRIORITY if p != selected]
+    base_providers = resolve_extract_provider_priority(config) if selected == "auto" else [selected] + [p for p in EXTRACT_PROVIDER_PRIORITY if p != selected]
     providers = [p for p in base_providers if p == selected or p not in disabled_providers]
     errors = []
     cooldown_skips = []

@@ -401,6 +401,7 @@ def test_default_behavior_config_blocks_low_trust_auto_providers():
     config = wsp._default_behavior_config()
 
     assert config["auto_routing"]["provider_priority"][:6] == ["you", "serper", "exa", "firecrawl", "tavily", "linkup"]
+    assert config["auto_routing"]["extract_provider_priority"] == list(wsp.EXTRACT_PROVIDER_IDS)
     assert config["auto_routing"]["auto_allow"]["serpbase"] is False
     assert config["auto_routing"]["auto_allow"]["querit"] is False
     assert config["auto_routing"]["auto_allow"]["brave"] is False
@@ -568,6 +569,41 @@ def test_config_show_human_contains_routing_summary(tmp_path, capsys):
     assert "Routing:" in out
     assert "auto-routing: on" in out
     assert "fallback provider: linkup" in out
+    assert "search priority:" in out
+    assert "extract priority:" in out
+
+
+def test_config_set_extract_priority_writes_isolated_complete_order(tmp_path):
+    config_path = tmp_path / "config.json"
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args([
+        "config", "set-extract-priority", "serper,parallel",
+        "--config-path", str(config_path),
+    ])
+
+    args.func(args)
+
+    data = json.loads(config_path.read_text())
+    assert data["auto_routing"]["extract_provider_priority"] == [
+        "serper", "parallel", "tavily", "exa", "linkup", "firecrawl", "you", "keenable"
+    ]
+    assert data["auto_routing"]["provider_priority"] == list(wsp._DEFAULT_PROVIDER_PRIORITY)
+
+
+def test_config_set_extract_priority_rejects_search_only_provider_without_writing(tmp_path):
+    config_path = tmp_path / "config.json"
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args([
+        "config", "set-extract-priority", "serper,brave",
+        "--config-path", str(config_path),
+    ])
+
+    with pytest.raises(SystemExit, match="does not support extraction"):
+        args.func(args)
+
+    assert not config_path.exists()
 
 
 def test_no_secret_leaks_across_status_and_config_commands(tmp_path, capsys):
