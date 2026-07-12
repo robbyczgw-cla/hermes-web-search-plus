@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "receipts": [
+    {
+      "schema_version": 1,
+      "timestamp": 1783890300.0,
+      "execution_id": "exec_cache_current",
+      "capability": "search",
+      "status": "ok",
+      "routing": {
+        "policy_id": "classic",
+        "policy_revision": "v2.9.1",
+        "mode": "classic",
+        "authority": "classic",
+        "execution_scope": "current",
+        "candidate_order": [],
+        "selected_provider": null,
+        "fallback_reason": "none",
+        "candidate_decisions": [],
+        "cache_origin": {
+          "execution_id": "exec_origin",
+          "policy_id": "classic",
+          "policy_revision": "v2.9.1",
+          "candidate_order": ["serper"],
+          "selected_provider": "serper",
+          "fallback_reason": "none",
+          "candidate_decisions": [
+            {
+              "provider": "serper",
+              "position": 1,
+              "decision": "origin_selected",
+              "reason_code": "cache_origin_selected",
+              "attempt_id": null
+            }
+          ]
+        },
+        "shadow_observation": null
+      },
+      "current_provider_attempts": [],
+      "cache": {
+        "disposition": "fresh_hit",
+        "origin_execution_id": "exec_origin"
+      },
+      "limits": {
+        "requested_url_count": 0,
+        "processed_url_count": 0,
+        "omitted_url_count": 0,
+        "max_urls": 10,
+        "max_context_chars": 60000,
+        "context_chars_returned": 0,
+        "truncated": false
+      },
+      "warning_codes": [],
+      "error_code": null
+    },
+    {
+      "schema_version": 1,
+      "timestamp": 1783890200.0,
+      "execution_id": "exec_fallback",
+      "capability": "extract",
+      "status": "degraded",
+      "routing": {
+        "policy_id": "classic",
+        "policy_revision": "v2.9.1",
+        "mode": "classic",
+        "authority": "classic",
+        "execution_scope": "current",
+        "candidate_order": ["tavily", "serper"],
+        "selected_provider": "serper",
+        "fallback_reason": "provider_error",
+        "candidate_decisions": [
+          {
+            "provider": "tavily",
+            "position": 1,
+            "decision": "attempted_failed",
+            "reason_code": "attempt_failed",
+            "attempt_id": "attempt_tavily"
+          },
+          {
+            "provider": "serper",
+            "position": 2,
+            "decision": "selected",
+            "reason_code": "fallback_selected",
+            "attempt_id": "attempt_serper"
+          }
+        ],
+        "cache_origin": null,
+        "shadow_observation": {
+          "observed": true,
+          "policy_id": "shadow-quality",
+          "policy_revision": "1",
+          "selected_provider": "linkup",
+          "affected_execution": false
+        }
+      },
+      "current_provider_attempts": ["attempt_tavily", "attempt_serper"],
+      "cache": {
+        "disposition": "miss",
+        "origin_execution_id": null
+      },
+      "limits": {
+        "requested_url_count": 1,
+        "processed_url_count": 1,
+        "omitted_url_count": 0,
+        "max_urls": 10,
+        "max_context_chars": 1000,
+        "context_chars_returned": 1000,
+        "truncated": true
+      },
+      "warning_codes": ["wsp.content.truncated"],
+      "error_code": null
+    }
+  ]
+}

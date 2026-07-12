@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "engine": {
+    "contract_version": "3.0",
+    "plugin_version": "3.0.0-dev",
+    "state_available": true
+  },
+  "providers": [
+    {
+      "provider": "serper",
+      "display_name": "Serper",
+      "capabilities": ["search", "extract"],
+      "configured": true,
+      "key_present": true,
+      "disabled": false,
+      "auto_allowed": true,
+      "cooldown_active": false
+    }
+  ],
+  "bounds": {
+    "max_urls_default": 10,
+    "max_urls_hard": 50,
+    "max_context_chars_default": 60000,
+    "max_context_chars_min": 1000,
+    "max_context_chars_hard": 200000,
+    "full_text_ttl_seconds": 604800,
+    "full_text_max_bytes": 268435456
+  },
+  "cache": {
+    "response_entries": 3,
+    "response_bytes": 4096,
+    "full_text_entries": 1,
+    "full_text_bytes": 8141,
+    "oldest_timestamp": 1783890000.0,
+    "newest_timestamp": 1783890300.0
+  },
+  "circuits": {
+    "closed": 8,
+    "open": 1,
+    "blocked_auth": 0,
+    "blocked_quota": 1,
+    "unknown": 0
+  },
+  "receipts_summary": {
+    "count": 2,
+    "latest_timestamp": 1783890300.0
+  },
+  "benchmark_summary": {
+    "count": 1,
+    "latest_timestamp": 1783880000.0,
+    "kinds": ["search"],
+    "extract_collected": false
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "runs": [
+    {
+      "schema_version": 1,
+      "kind": "search",
+      "timestamp": 1783880000.0,
+      "status": "completed",
+      "ok": true,
+      "providers": [
+        {
+          "provider": "serper",
+          "score": 0.91,
+          "success_rate": 1.0,
+          "median_latency_seconds": 0.42,
+          "error_count": 0
+        }
+      ],
+      "recommended_priority": ["serper"]
+    }
+  ],
+  "availability": {
+    "search": "collected",
+    "extract": "not_collected"
+  }
+}
