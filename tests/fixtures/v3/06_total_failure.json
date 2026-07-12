@@ -24,8 +24,53 @@
         "retryable": false,
         "provider": "serper",
         "http_status": 401,
-        "details": { "provider_code": "E_SERPER_AUTH_42" }
-      }
+        "details": {
+          "provider_code": "E_SERPER_AUTH_42"
+        }
+      },
+      "endpoint_id": "serper:search",
+      "decision": "attempted",
+      "tries": [
+        {
+          "try_number": 1,
+          "started_at": "2026-07-12T08:34:00Z",
+          "duration_ms": 1000,
+          "outcome": "error",
+          "error": {
+            "error_class": "auth",
+            "code": "wsp.auth.invalid_key",
+            "http_status": 401,
+            "retryable": false,
+            "retry_after_ms": null
+          }
+        },
+        {
+          "try_number": 2,
+          "started_at": "2026-07-12T08:34:00Z",
+          "duration_ms": 1000,
+          "outcome": "error",
+          "error": {
+            "error_class": "auth",
+            "code": "wsp.auth.invalid_key",
+            "http_status": 401,
+            "retryable": false,
+            "retry_after_ms": null
+          }
+        },
+        {
+          "try_number": 3,
+          "started_at": "2026-07-12T08:34:00Z",
+          "duration_ms": 1000,
+          "outcome": "error",
+          "error": {
+            "error_class": "auth",
+            "code": "wsp.auth.invalid_key",
+            "http_status": 401,
+            "retryable": false,
+            "retry_after_ms": null
+          }
+        }
+      ]
     },
     {
       "attempt_id": "att_2",
@@ -37,28 +82,55 @@
       "skip_reason": "circuit_open",
       "budget_decision": "unknown",
       "circuit_state_before": "open",
-      "circuit_state_after": "open"
+      "circuit_state_after": "open",
+      "endpoint_id": "brave:search",
+      "decision": "skipped",
+      "tries": []
     }
   ],
   "routing_receipt": {
     "policy_id": "classic",
     "policy_revision": "1",
     "mode": "classic",
-    "candidate_order": ["serper", "brave"],
+    "candidate_order": [
+      "serper",
+      "brave"
+    ],
     "selected_provider": null,
     "fallback_reason": "selected_failed"
   },
-  "cache_status": { "disposition": "miss" },
-  "limits_applied": { "max_results": 10 },
+  "cache_status": {
+    "disposition": "miss"
+  },
+  "limits_applied": {
+    "max_results": 10
+  },
   "dedup_clusters": [],
   "warnings": [
-    { "code": "wsp.search.no_results", "message": "All providers failed or were skipped." }
+    {
+      "code": "wsp.search.no_results",
+      "message": "All providers failed or were skipped."
+    }
   ],
   "error": {
     "error_class": "transient",
     "code": "wsp.search.all_providers_failed",
     "message": "No provider produced results (serper auth-failed, brave circuit-open).",
     "retryable": true,
-    "details": { "attempts": 2 }
+    "details": {
+      "attempts": 2
+    }
+  },
+  "execution_id": "exec_failure_0001",
+  "observations": [],
+  "policy_actions": [],
+  "source_diversity": {
+    "method": "component_count",
+    "method_version": "1",
+    "method_degraded": false,
+    "provider_count": 0,
+    "host_count": 0,
+    "source_family_count": 0,
+    "unique_cluster_count": 0
   }
 }

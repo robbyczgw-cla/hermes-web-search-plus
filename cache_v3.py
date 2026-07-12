@@ -9,6 +9,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 from contract_v3 import RequestV3
 
@@ -239,3 +240,80 @@ def peek_legacy_search(
         source_contract_version="2.x",
         legacy_payload=legacy_payload,
     )
+
+
+def _legacy_canonical_url(value: str) -> str:
+    parsed = urlsplit(value)
+    return urlunsplit(
+        (
+            parsed.scheme.lower(),
+            (parsed.hostname or "").lower(),
+            parsed.path or "/",
+            parsed.query,
+            "",
+        )
+    )
+
+
+def sanitize_legacy_search(path: str | Path) -> Dict[str, Any]:
+    """Read and sanitize a v2 search entry without ever modifying its bytes."""
+    source = Path(path)
+    try:
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"cache_status": "legacy_rejected", "observations": [], "warnings": []}
+    if not isinstance(payload, dict):
+        return {"cache_status": "legacy_rejected", "observations": [], "warnings": []}
+
+    banned = {"answer", "full_synthesis", "claim", "verification", "truth_confidence"}
+    dropped = sorted(key for key in payload if key in banned)
+    provider = str(payload.get("_cache_provider") or "legacy")
+    observations = []
+    for index, raw in enumerate(payload.get("results") or []):
+        if not isinstance(raw, dict):
+            continue
+        result = dict(raw)
+        for key in banned:
+            if key in result:
+                dropped.append(key)
+                result.pop(key, None)
+        if result.get("type") == "synthesis":
+            dropped.append("type:synthesis")
+            result.pop("type", None)
+        url = result.get("url")
+        snippet = result.get("snippet")
+        if not isinstance(url, str) or not url or not isinstance(snippet, str):
+            continue
+        observations.append(
+            {
+                "observation_id": f"obs_legacy_{index}",
+                "provider_attempt_id": "attempt_legacy_cache",
+                "provider_result_index": index,
+                "provider": provider,
+                "endpoint_id": f"{provider}:search",
+                "kind": "search_result",
+                "url": {"observed": url, "canonical": _legacy_canonical_url(url)},
+                "title": str(result.get("title")) if result.get("title") is not None else None,
+                "snippet": snippet,
+                "text": None,
+                "provider_rank": index + 1,
+                "provider_score": None,
+                "published_at": None,
+                "provider_fields": {},
+            }
+        )
+
+    warnings = []
+    if dropped:
+        warnings.append(
+            {
+                "code": "wsp.cache.legacy_field_dropped",
+                "reason": "LEGACY_FIELD_DROPPED",
+                "details": {"fields": sorted(set(dropped))},
+            }
+        )
+    return {
+        "cache_status": "legacy_hit" if observations else "legacy_rejected",
+        "observations": observations,
+        "warnings": warnings,
+    }

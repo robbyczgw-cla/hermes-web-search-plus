@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-import unicodedata
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, List, Mapping
 from urllib.parse import urlsplit, urlunsplit
 
@@ -22,7 +21,6 @@ from contract_v3 import (
     ResponseV3,
 )
 from orchestrator_v3 import ProviderPlan
-from independence_v3 import analyze_source_independence
 
 
 def _canonical_url(value: str) -> str:
@@ -138,87 +136,155 @@ def _attempts(
     return attempts
 
 
-def _provenance(
-    provider: str, url: str, rank: int, retrieved_at: str
+PROJECTION_REQUIRED_PROVIDERS = frozenset({"parallel", "you"})
+
+
+def segment_canonical_text(text: str) -> List[Dict[str, Any]]:
+    """Return contiguous NFC unicode-codepoint segments without rewriting text."""
+    if not text:
+        return []
+    return [{"start": 0, "end": len(text), "text": text}]
+
+
+def _projected_text(observation: Mapping[str, Any], source_field: str) -> Dict[str, Any] | None:
+    value = observation.get(source_field)
+    if not isinstance(value, str):
+        return None
+    return {
+        "text": value,
+        "text_sha256": hashlib.sha256(value.encode("utf-8")).hexdigest(),
+        "origin": "provider",
+        "provenance": {
+            "observation_id": observation["observation_id"],
+            "source_field": source_field,
+            "transformations": ["mechanical_segmentation"],
+        },
+        "segments": segment_canonical_text(value),
+    }
+
+
+def _observation(
+    item: Mapping[str, Any],
+    *,
+    provider: str,
+    endpoint_id: str,
+    attempt_id: str,
+    index: int,
+    capability: Capability,
+) -> Dict[str, Any] | None:
+    observed_url = str(item.get("url") or "")
+    if not observed_url:
+        return None
+    kind = "search_result" if capability is Capability.SEARCH else "extracted_document"
+    snippet = str(item.get("snippet") or "") if capability is Capability.SEARCH else None
+    text = None
+    if capability is Capability.EXTRACT and not item.get("error"):
+        text = str(item.get("content") or item.get("raw_content") or "")
+    score = item.get("score")
+    provider_score = None
+    if isinstance(score, (int, float)) and not isinstance(score, bool):
+        provider_score = {"value": float(score), "semantics": "unknown"}
+    raw_date = item.get("published_at") or item.get("published_date") or item.get("date")
+    published_at = None
+    if isinstance(raw_date, str):
+        published_at = {"raw": raw_date, "normalized": _valid_rfc3339(raw_date)}
+    return {
+        "observation_id": _stable_id("obs", attempt_id, index),
+        "provider_attempt_id": attempt_id,
+        "provider_result_index": index,
+        "provider": provider,
+        "endpoint_id": endpoint_id,
+        "kind": kind,
+        "url": {"observed": observed_url, "canonical": _canonical_url(observed_url)},
+        "title": str(item.get("title")) if item.get("title") is not None else None,
+        "snippet": snippet,
+        "text": text,
+        "provider_rank": index + 1,
+        "provider_score": provider_score,
+        "published_at": published_at,
+        "provider_fields": {},
+    }
+
+
+def observations_from_legacy(
+    payload: Mapping[str, Any],
+    provider: str,
+    capability: Capability,
+    attempt_id: str,
 ) -> List[Dict[str, Any]]:
-    return [
-        {
-            "provider": provider,
-            "source_url": url,
-            "retrieved_at": retrieved_at,
-            "provider_rank": rank,
-        }
-    ]
+    endpoint_id = f"{provider}:{capability.value}"
+    observations = []
+    for index, item in enumerate(payload.get("results") or []):
+        observation = _observation(
+            item,
+            provider=provider,
+            endpoint_id=endpoint_id,
+            attempt_id=attempt_id,
+            index=index,
+            capability=capability,
+        )
+        if observation is not None:
+            observations.append(observation)
+    return observations
 
 
-def _search_results(
-    payload: Mapping[str, Any], provider: str, retrieved_at: str
+def project_results_from_observations(
+    observations: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    normalized = []
-    for rank, item in enumerate(payload.get("results") or [], 1):
-        url = str(item.get("url") or "")
-        if not url:
-            continue
-        canonical = _canonical_url(url)
-        result = {
-            "result_id": _stable_id("search", canonical, rank),
-            "status": "ok",
-            "title": str(item.get("title") or ""),
-            "url": url,
-            "canonical_url": canonical,
-            "provenance": _provenance(provider, url, rank, retrieved_at),
-        }
-        if item.get("snippet") is not None:
-            result["snippet"] = str(item["snippet"])
-        published_at = _valid_rfc3339(item.get("published_at"))
-        if published_at:
-            result["published_at"] = published_at
-        normalized.append(result)
-    return normalized
+    """Create one representative projection per observation without composition."""
+    results = []
+    for rank, observation in enumerate(observations, 1):
+        observation_id = observation["observation_id"]
+        cluster_id = _stable_id("cluster", observation["url"]["canonical"])
+        results.append(
+            {
+                "result_id": _stable_id("result", observation_id),
+                "kind": observation["kind"],
+                "engine_rank": rank,
+                "representative_observation_id": observation_id,
+                "observation_ids": [observation_id],
+                "dedup_cluster_id": cluster_id,
+                "url": dict(observation["url"]),
+                "title": _projected_text(observation, "title"),
+                "snippet": _projected_text(observation, "snippet"),
+                "text": _projected_text(observation, "text"),
+            }
+        )
+    return results
 
 
-def _extract_results(
-    payload: Mapping[str, Any], provider: str, retrieved_at: str
-) -> List[Dict[str, Any]]:
-    normalized = []
-    for rank, item in enumerate(payload.get("results") or [], 1):
-        url = str(item.get("url") or "")
-        if not url:
-            continue
-        canonical = _canonical_url(url)
-        base = {
-            "result_id": _stable_id("extract", canonical, rank),
-            "title": str(item.get("title") or ""),
-            "url": url,
-            "canonical_url": canonical,
-            "provenance": _provenance(provider, url, rank, retrieved_at),
-        }
-        if item.get("error"):
-            base.update(
-                {
-                    "status": "failed",
-                    "error": _error(str(item["error"]), provider).to_dict(),
-                }
-            )
-        else:
-            text = unicodedata.normalize(
-                "NFC", str(item.get("content") or item.get("raw_content") or "")
-            )
-            base.update(
-                {
-                    "status": "ok",
-                    "text": text,
-                    "offset_unit": "unicode_codepoint",
-                    "text_normalization": "NFC",
-                    "segments": (
-                        [{"segment_id": "segment-1", "start": 0, "end": len(text)}]
-                        if text
-                        else []
-                    ),
-                }
-            )
-        normalized.append(base)
-    return normalized
+def _source_diversity(observations: List[Dict[str, Any]], results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    providers = {item["provider"] for item in observations}
+    hosts = {
+        urlsplit(item["url"]["canonical"]).hostname
+        for item in observations
+        if urlsplit(item["url"]["canonical"]).hostname
+    }
+    clusters = {item["dedup_cluster_id"] for item in results}
+    return {
+        "method": "component_count",
+        "method_version": "1",
+        "method_degraded": False,
+        "provider_count": len(providers),
+        "host_count": len(hosts),
+        "source_family_count": len(providers),
+        "unique_cluster_count": len(clusters),
+    }
+
+
+def render_response_v3(response: ResponseV3) -> str:
+    """Render source projections only; this formatter has no answer concept."""
+    lines = []
+    for result in response.results:
+        title = (result.get("title") or {}).get("text") or "Untitled source"
+        url = (result.get("url") or {}).get("observed") or ""
+        snippet = (result.get("snippet") or result.get("text") or {}).get("text") or ""
+        lines.append(title)
+        if url:
+            lines.append(url)
+        if snippet:
+            lines.append(snippet)
+    return "\n".join(lines)
 
 
 def response_from_legacy(
@@ -232,13 +298,24 @@ def response_from_legacy(
     selected = (
         routing.get("provider") or payload.get("provider") or plan.selected_provider
     )
-    retrieved_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    if request.capability is Capability.SEARCH:
-        results = _search_results(payload, str(selected), retrieved_at)
-    else:
-        results = _extract_results(payload, str(selected), retrieved_at)
-
-    failed_items = [item for item in results if item.get("status") == "failed"]
+    raw_items = [item for item in (payload.get("results") or []) if item.get("url")]
+    provider_attempts = _attempts(request, plan, payload, selected, len(raw_items))
+    successful_attempt = next(
+        (attempt for attempt in reversed(provider_attempts) if attempt.outcome is AttemptOutcome.SUCCESS),
+        None,
+    )
+    observations = (
+        observations_from_legacy(
+            payload,
+            str(selected),
+            request.capability,
+            successful_attempt.attempt_id,
+        )
+        if selected and successful_attempt
+        else []
+    )
+    results = project_results_from_observations(observations)
+    failed_items = [item for item in raw_items if item.get("error")]
     top_error = payload.get("error")
     warnings: List[Dict[str, Any]] = []
     error = None
@@ -275,13 +352,32 @@ def response_from_legacy(
     else:
         cache_status = {"disposition": "miss"}
 
-    clusters, independence_estimate = analyze_source_independence(results)
+    clusters = [
+        {
+            "dedup_cluster_id": result["dedup_cluster_id"],
+            "observation_ids": list(result["observation_ids"]),
+            "representative_observation_id": result["representative_observation_id"],
+        }
+        for result in results
+    ]
+    policy_actions = [
+        {
+            "action": "selected_as_representative",
+            "observation_id": result["representative_observation_id"],
+            "reason": "dedup_representative",
+        }
+        for result in results
+    ]
     return ResponseV3(
         request_id=request_id,
+        execution_id=plan.execution_id,
         capability=request.capability,
         status=status,
         results=results,
-        provider_attempts=_attempts(request, plan, payload, selected, len(results)),
+        observations=observations,
+        policy_actions=policy_actions,
+        source_diversity=_source_diversity(observations, results),
+        provider_attempts=provider_attempts,
         routing_receipt={
             "policy_id": "classic",
             "policy_revision": str(routing.get("routing_policy") or "v2.9.1"),
@@ -295,7 +391,6 @@ def response_from_legacy(
         if request.capability is Capability.SEARCH
         else {},
         dedup_clusters=clusters,
-        source_independence_estimate=independence_estimate,
         warnings=warnings,
         error=error,
     )

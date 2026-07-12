@@ -7,9 +7,13 @@
   "required": [
     "contract_version",
     "request_id",
+    "execution_id",
     "capability",
     "status",
     "results",
+    "observations",
+    "policy_actions",
+    "source_diversity",
     "provider_attempts",
     "routing_receipt",
     "cache_status",
@@ -25,6 +29,10 @@
       "type": "string",
       "minLength": 1
     },
+    "execution_id": {
+      "type": "string",
+      "minLength": 1
+    },
     "capability": {
       "$ref": "#/$defs/Capability"
     },
@@ -32,7 +40,28 @@
       "$ref": "#/$defs/ResponseStatus"
     },
     "results": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ResultV3"
+      }
+    },
+    "observations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ObservationV3"
+      }
+    },
+    "policy_actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/PolicyActionV3"
+      }
+    },
+    "source_diversity": {
+      "$ref": "#/$defs/SourceDiversityV3"
+    },
+    "engine": {
+      "$ref": "#/$defs/EngineV3"
     },
     "provider_attempts": {
       "type": "array",
@@ -55,9 +84,6 @@
         "type": "object"
       }
     },
-    "source_independence_estimate": {
-      "$ref": "#/$defs/IndependenceEstimate"
-    },
     "warnings": {
       "type": "array",
       "items": {
@@ -69,50 +95,6 @@
     }
   },
   "allOf": [
-    {
-      "if": {
-        "properties": {
-          "capability": {
-            "const": "search"
-          }
-        },
-        "required": [
-          "capability"
-        ]
-      },
-      "then": {
-        "properties": {
-          "results": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/SearchResultV3"
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "capability": {
-            "const": "extract"
-          }
-        },
-        "required": [
-          "capability"
-        ]
-      },
-      "then": {
-        "properties": {
-          "results": {
-            "type": "array",
-            "items": {
-              "$ref": "#/$defs/ExtractResultV3"
-            }
-          }
-        }
-      }
-    },
     {
       "if": {
         "properties": {
@@ -314,6 +296,86 @@
         "retryable"
       ]
     },
+    "ProviderTryErrorV3": {
+      "type": "object",
+      "properties": {
+        "error_class": {
+          "$ref": "#/$defs/ErrorClass"
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^wsp\\.[a-z0-9_]+(?:\\.[a-z0-9_]+)*$"
+        },
+        "http_status": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 100,
+          "maximum": 599
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "retry_after_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "error_class",
+        "code",
+        "http_status",
+        "retryable",
+        "retry_after_ms"
+      ]
+    },
+    "ProviderTryV3": {
+      "type": "object",
+      "properties": {
+        "try_number": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "success",
+            "error"
+          ]
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderTryErrorV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "try_number",
+        "started_at",
+        "duration_ms",
+        "outcome",
+        "error"
+      ]
+    },
     "ProviderAttemptV3": {
       "type": "object",
       "properties": {
@@ -367,6 +429,23 @@
         },
         "circuit_state_after": {
           "$ref": "#/$defs/CircuitState"
+        },
+        "endpoint_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "attempted",
+            "skipped"
+          ]
+        },
+        "tries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProviderTryV3"
+          }
         }
       },
       "additionalProperties": false,
@@ -378,7 +457,10 @@
         "retry_count",
         "result_count",
         "circuit_state_before",
-        "circuit_state_after"
+        "circuit_state_after",
+        "endpoint_id",
+        "decision",
+        "tries"
       ],
       "allOf": [
         {
@@ -414,208 +496,387 @@
               "skip_reason"
             ]
           }
+        },
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "skipped"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          },
+          "then": {
+            "required": [
+              "skip_reason"
+            ],
+            "properties": {
+              "tries": {
+                "maxItems": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "decision": {
+                "const": "attempted"
+              }
+            },
+            "required": [
+              "decision"
+            ]
+          },
+          "then": {
+            "properties": {
+              "tries": {
+                "minItems": 1
+              }
+            }
+          }
         }
       ]
     },
-    "ProvenanceObservation": {
+    "UrlV3": {
       "type": "object",
       "properties": {
-        "provider": {
-          "type": "string",
-          "minLength": 1
-        },
-        "source_url": {
+        "observed": {
           "type": "string",
           "format": "uri"
         },
-        "retrieved_at": {
+        "canonical": {
           "type": "string",
-          "format": "date-time"
-        },
-        "provider_rank": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "provider_result_id": {
-          "type": "string"
+          "format": "uri"
         }
       },
       "additionalProperties": false,
       "required": [
-        "provider",
-        "source_url",
-        "retrieved_at"
+        "observed",
+        "canonical"
       ]
     },
-    "TextSegmentV3": {
+    "ProviderScoreV3": {
       "type": "object",
       "properties": {
-        "segment_id": {
+        "value": {
+          "type": "number"
+        },
+        "semantics": {
+          "type": "string",
+          "enum": [
+            "provider_local_relevance",
+            "unknown"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "value",
+        "semantics"
+      ]
+    },
+    "PublishedAtV3": {
+      "type": "object",
+      "properties": {
+        "raw": {
+          "type": "string"
+        },
+        "normalized": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "raw",
+        "normalized"
+      ]
+    },
+    "ObservationV3": {
+      "type": "object",
+      "properties": {
+        "observation_id": {
+          "type": "string",
+          "pattern": "^obs_"
+        },
+        "provider_attempt_id": {
           "type": "string",
           "minLength": 1
         },
+        "provider_result_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "endpoint_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "search_result",
+            "extracted_document"
+          ]
+        },
+        "url": {
+          "$ref": "#/$defs/UrlV3"
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "snippet": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "provider_rank": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "provider_score": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProviderScoreV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "published_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PublishedAtV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "provider_fields": {
+          "type": "object",
+          "maxProperties": 1,
+          "additionalProperties": {
+            "type": "object"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "observation_id",
+        "provider_attempt_id",
+        "provider_result_index",
+        "provider",
+        "endpoint_id",
+        "kind",
+        "url",
+        "title",
+        "snippet",
+        "text",
+        "provider_rank",
+        "provider_score",
+        "published_at",
+        "provider_fields"
+      ]
+    },
+    "SegmentV3": {
+      "type": "object",
+      "properties": {
         "start": {
           "type": "integer",
           "minimum": 0
         },
         "end": {
           "type": "integer",
-          "minimum": 0
+          "minimum": 1
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
         }
       },
       "additionalProperties": false,
       "required": [
-        "segment_id",
         "start",
-        "end"
+        "end",
+        "text"
       ]
     },
-    "SearchResultV3": {
+    "ProjectedProvenanceV3": {
       "type": "object",
       "properties": {
-        "result_id": {
+        "observation_id": {
           "type": "string",
-          "minLength": 1
+          "pattern": "^obs_"
         },
-        "status": {
-          "const": "ok"
-        },
-        "title": {
-          "type": "string"
-        },
-        "url": {
+        "source_field": {
           "type": "string",
-          "format": "uri"
+          "enum": [
+            "title",
+            "snippet",
+            "text"
+          ]
         },
-        "canonical_url": {
-          "type": "string",
-          "format": "uri"
-        },
-        "snippet": {
-          "type": "string"
-        },
-        "published_at": {
-          "type": "string",
-          "format": "date-time"
-        },
-        "cluster_id": {
-          "type": "string"
-        },
-        "provenance": {
+        "transformations": {
           "type": "array",
-          "minItems": 1,
           "items": {
-            "$ref": "#/$defs/ProvenanceObservation"
+            "type": "string",
+            "enum": [
+              "whitespace_norm",
+              "deterministic_truncation",
+              "mechanical_segmentation",
+              "image_base64_replace"
+            ]
           }
         }
       },
       "additionalProperties": false,
       "required": [
-        "result_id",
-        "status",
-        "title",
-        "url",
-        "canonical_url",
-        "provenance"
+        "observation_id",
+        "source_field",
+        "transformations"
       ]
     },
-    "ExtractResultV3": {
+    "ProjectedTextV3": {
       "type": "object",
       "properties": {
-        "result_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "status": {
-          "type": "string",
-          "enum": [
-            "ok",
-            "failed"
-          ]
-        },
-        "title": {
-          "type": "string"
-        },
-        "url": {
-          "type": "string",
-          "format": "uri"
-        },
-        "canonical_url": {
-          "type": "string",
-          "format": "uri"
-        },
         "text": {
           "type": "string"
         },
-        "offset_unit": {
-          "const": "unicode_codepoint"
+        "text_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
         },
-        "text_normalization": {
-          "const": "NFC"
+        "origin": {
+          "type": "string",
+          "enum": [
+            "provider",
+            "engine"
+          ]
+        },
+        "provenance": {
+          "$ref": "#/$defs/ProjectedProvenanceV3"
         },
         "segments": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/TextSegmentV3"
+            "$ref": "#/$defs/SegmentV3"
           }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "text_sha256",
+        "origin",
+        "provenance",
+        "segments"
+      ]
+    },
+    "ResultV3": {
+      "type": "object",
+      "properties": {
+        "result_id": {
+          "type": "string",
+          "minLength": 1
         },
-        "provenance": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "search_result",
+            "extracted_document"
+          ]
+        },
+        "engine_rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "representative_observation_id": {
+          "type": "string",
+          "pattern": "^obs_"
+        },
+        "observation_ids": {
           "type": "array",
           "minItems": 1,
+          "uniqueItems": true,
           "items": {
-            "$ref": "#/$defs/ProvenanceObservation"
+            "type": "string",
+            "pattern": "^obs_"
           }
         },
-        "error": {
-          "$ref": "#/$defs/ErrorV3"
+        "dedup_cluster_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "$ref": "#/$defs/UrlV3"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectedTextV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "snippet": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectedTextV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "text": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProjectedTextV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
       "required": [
         "result_id",
-        "status",
+        "kind",
+        "engine_rank",
+        "representative_observation_id",
+        "observation_ids",
+        "dedup_cluster_id",
         "url",
-        "canonical_url",
-        "provenance"
-      ],
-      "allOf": [
-        {
-          "if": {
-            "properties": {
-              "status": {
-                "const": "ok"
-              }
-            },
-            "required": [
-              "status"
-            ]
-          },
-          "then": {
-            "required": [
-              "text",
-              "offset_unit",
-              "text_normalization",
-              "segments"
-            ]
-          }
-        },
-        {
-          "if": {
-            "properties": {
-              "status": {
-                "const": "failed"
-              }
-            },
-            "required": [
-              "status"
-            ]
-          },
-          "then": {
-            "required": [
-              "error"
-            ]
-          }
-        }
+        "title",
+        "snippet",
+        "text"
       ]
     },
     "CacheStatus": {
@@ -644,6 +905,10 @@
             "3.0",
             "2.x"
           ]
+        },
+        "origin_execution_id": {
+          "type": "string",
+          "minLength": 1
         },
         "write_error": {
           "type": "string"
@@ -701,19 +966,25 @@
         "fallback_reason"
       ]
     },
-    "IndependenceEstimate": {
+    "SourceDiversityV3": {
       "type": "object",
       "properties": {
-        "score": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
+        "method": {
+          "type": "string",
+          "minLength": 1
         },
-        "unique_cluster_count": {
+        "method_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "method_degraded": {
+          "type": "boolean"
+        },
+        "provider_count": {
           "type": "integer",
           "minimum": 0
         },
-        "result_count": {
+        "host_count": {
           "type": "integer",
           "minimum": 0
         },
@@ -721,42 +992,79 @@
           "type": "integer",
           "minimum": 0
         },
-        "provider_count": {
+        "unique_cluster_count": {
           "type": "integer",
           "minimum": 0
-        },
-        "method": {
-          "type": "string"
-        },
-        "confidence": {
-          "type": "string",
-          "enum": [
-            "low",
-            "medium",
-            "high"
-          ]
-        },
-        "method_degraded": {
-          "type": "boolean"
-        },
-        "limitations": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
         }
       },
       "additionalProperties": false,
       "required": [
-        "score",
-        "unique_cluster_count",
-        "result_count",
-        "source_family_count",
-        "provider_count",
         "method",
-        "confidence",
+        "method_version",
         "method_degraded",
-        "limitations"
+        "provider_count",
+        "host_count",
+        "source_family_count",
+        "unique_cluster_count"
+      ]
+    },
+    "PolicyActionV3": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "excluded",
+            "reranked",
+            "demoted",
+            "selected_as_representative",
+            "truncated_by_limit"
+          ]
+        },
+        "observation_id": {
+          "type": "string",
+          "pattern": "^obs_"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "spam_domain",
+            "intent_authority",
+            "domain_diversity",
+            "dedup_representative",
+            "max_results",
+            "max_content_bytes"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "observation_id",
+        "reason"
+      ]
+    },
+    "EngineV3": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "build_commit": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "build_commit"
       ]
     },
     "WarningV3": {
@@ -769,6 +1077,9 @@
         "message": {
           "type": "string",
           "minLength": 1
+        },
+        "reason": {
+          "type": "string"
         },
         "details": {
           "type": "object"

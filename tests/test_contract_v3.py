@@ -269,11 +269,12 @@ class ContractV3Tests(unittest.TestCase):
         extract_payload = json.loads(
             (fixture_dir / "02_extract_success.json").read_text()
         )
+        projected = extract_payload["results"][0]["text"]
         self.assertEqual(
-            unicodedata.normalize("NFC", extract_payload["results"][0]["text"]),
-            extract_payload["results"][0]["text"],
+            unicodedata.normalize("NFC", projected["text"]),
+            projected["text"],
         )
-        extract_payload["results"][0].pop("text_normalization")
+        projected["segments"][0].pop("start")
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(extract_payload, response_schema)
 

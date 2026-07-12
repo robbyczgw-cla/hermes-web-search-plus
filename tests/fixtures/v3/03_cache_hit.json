@@ -6,20 +6,52 @@
   "results": [
     {
       "result_id": "res_1",
-      "status": "ok",
-      "title": "Cached Result",
-      "url": "https://example.com/",
-      "canonical_url": "https://example.com/",
-      "snippet": "Served from a fresh cache entry.",
-      "cluster_id": "dc_1",
-      "provenance": [
-        {
-          "provider": "serper",
-          "source_url": "https://example.com/",
-          "retrieved_at": "2026-07-12T08:00:00Z",
-          "provider_rank": 1
-        }
-      ]
+      "kind": "search_result",
+      "engine_rank": 1,
+      "representative_observation_id": "obs_1",
+      "observation_ids": [
+        "obs_1"
+      ],
+      "url": {
+        "observed": "https://example.com/",
+        "canonical": "https://example.com/"
+      },
+      "title": {
+        "text": "Cached Result",
+        "text_sha256": "15fb502abb7d766ab6f987bcb55a42beed8f88a4d62950747185596460d4959d",
+        "origin": "provider",
+        "provenance": {
+          "observation_id": "obs_1",
+          "source_field": "title",
+          "transformations": []
+        },
+        "segments": [
+          {
+            "start": 0,
+            "end": 13,
+            "text": "Cached Result"
+          }
+        ]
+      },
+      "snippet": {
+        "text": "Served from a fresh cache entry.",
+        "text_sha256": "81be9f62d368b05576bb2b280983a2ba1d2645b76930733b4a714421c8239fc0",
+        "origin": "provider",
+        "provenance": {
+          "observation_id": "obs_1",
+          "source_field": "snippet",
+          "transformations": []
+        },
+        "segments": [
+          {
+            "start": 0,
+            "end": 32,
+            "text": "Served from a fresh cache entry."
+          }
+        ]
+      },
+      "text": null,
+      "dedup_cluster_id": "dc_1"
     }
   ],
   "provider_attempts": [],
@@ -37,11 +69,61 @@
     "age_seconds": 120,
     "ttl_seconds": 3600,
     "served_stale": false,
-    "source_contract_version": "3.0"
+    "source_contract_version": "3.0",
+    "origin_execution_id": "exec_origin_0001"
   },
-  "limits_applied": { "max_results": 10 },
+  "limits_applied": {
+    "max_results": 10
+  },
   "dedup_clusters": [
-    { "cluster_id": "dc_1", "canonical_result_id": "res_1", "member_result_ids": ["res_1"], "providers": ["serper"] }
+    {
+      "cluster_id": "dc_1",
+      "canonical_result_id": "res_1",
+      "member_result_ids": [
+        "res_1"
+      ],
+      "providers": [
+        "serper"
+      ]
+    }
   ],
-  "warnings": []
+  "warnings": [],
+  "execution_id": "exec_cache_0001",
+  "observations": [
+    {
+      "observation_id": "obs_1",
+      "provider_attempt_id": "att_origin_1",
+      "provider_result_index": 0,
+      "provider": "serper",
+      "endpoint_id": "serper:search",
+      "kind": "search_result",
+      "url": {
+        "observed": "https://example.com/",
+        "canonical": "https://example.com/"
+      },
+      "title": "Cached Result",
+      "snippet": "Served from a fresh cache entry.",
+      "text": null,
+      "provider_rank": 1,
+      "provider_score": null,
+      "published_at": null,
+      "provider_fields": {}
+    }
+  ],
+  "policy_actions": [
+    {
+      "action": "selected_as_representative",
+      "observation_id": "obs_1",
+      "reason": "dedup_representative"
+    }
+  ],
+  "source_diversity": {
+    "method": "component_count",
+    "method_version": "1",
+    "method_degraded": false,
+    "provider_count": 1,
+    "host_count": 1,
+    "source_family_count": 1,
+    "unique_cluster_count": 1
+  }
 }

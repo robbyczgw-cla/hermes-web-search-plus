@@ -6,20 +6,52 @@
   "results": [
     {
       "result_id": "res_1",
-      "status": "ok",
-      "title": "Stale cached result",
-      "url": "https://example.com/old",
-      "canonical_url": "https://example.com/old",
-      "snippet": "Live fetch failed; served from stale cache.",
-      "cluster_id": "dc_1",
-      "provenance": [
-        {
-          "provider": "serper",
-          "source_url": "https://example.com/old",
-          "retrieved_at": "2026-07-12T06:00:00Z",
-          "provider_rank": 1
-        }
-      ]
+      "kind": "search_result",
+      "engine_rank": 1,
+      "representative_observation_id": "obs_1",
+      "observation_ids": [
+        "obs_1"
+      ],
+      "url": {
+        "observed": "https://example.com/old",
+        "canonical": "https://example.com/old"
+      },
+      "title": {
+        "text": "Stale cached result",
+        "text_sha256": "572a6678d4f362da222c24e87eb6918a21ae17793fbc6003bfe1222eabaa0c11",
+        "origin": "provider",
+        "provenance": {
+          "observation_id": "obs_1",
+          "source_field": "title",
+          "transformations": []
+        },
+        "segments": [
+          {
+            "start": 0,
+            "end": 19,
+            "text": "Stale cached result"
+          }
+        ]
+      },
+      "snippet": {
+        "text": "Live fetch failed; served from stale cache.",
+        "text_sha256": "35e81f371de8faaf92c3e8e499e02291e6d31ac42730f6ff3425b0625ce77aa5",
+        "origin": "provider",
+        "provenance": {
+          "observation_id": "obs_1",
+          "source_field": "snippet",
+          "transformations": []
+        },
+        "segments": [
+          {
+            "start": 0,
+            "end": 43,
+            "text": "Live fetch failed; served from stale cache."
+          }
+        ]
+      },
+      "text": null,
+      "dedup_cluster_id": "dc_1"
     }
   ],
   "provider_attempts": [
@@ -41,14 +73,46 @@
         "message": "Provider exceeded the wall-time deadline.",
         "retryable": true,
         "provider": "serper"
-      }
+      },
+      "endpoint_id": "serper:search",
+      "decision": "attempted",
+      "tries": [
+        {
+          "try_number": 1,
+          "started_at": "2026-07-12T08:33:00Z",
+          "duration_ms": 1000,
+          "outcome": "error",
+          "error": {
+            "error_class": "timeout",
+            "code": "wsp.timeout.provider_deadline",
+            "http_status": null,
+            "retryable": true,
+            "retry_after_ms": null
+          }
+        },
+        {
+          "try_number": 2,
+          "started_at": "2026-07-12T08:33:00Z",
+          "duration_ms": 1000,
+          "outcome": "error",
+          "error": {
+            "error_class": "timeout",
+            "code": "wsp.timeout.provider_deadline",
+            "http_status": null,
+            "retryable": true,
+            "retry_after_ms": null
+          }
+        }
+      ]
     }
   ],
   "routing_receipt": {
     "policy_id": "classic",
     "policy_revision": "1",
     "mode": "classic",
-    "candidate_order": ["serper"],
+    "candidate_order": [
+      "serper"
+    ],
     "selected_provider": null,
     "fallback_reason": "selected_failed"
   },
@@ -58,17 +122,70 @@
     "age_seconds": 9000,
     "ttl_seconds": 3600,
     "served_stale": true,
-    "source_contract_version": "3.0"
+    "source_contract_version": "3.0",
+    "origin_execution_id": "exec_origin_0001"
   },
-  "limits_applied": { "max_results": 10 },
+  "limits_applied": {
+    "max_results": 10
+  },
   "dedup_clusters": [
-    { "cluster_id": "dc_1", "canonical_result_id": "res_1", "member_result_ids": ["res_1"], "providers": ["serper"] }
+    {
+      "cluster_id": "dc_1",
+      "canonical_result_id": "res_1",
+      "member_result_ids": [
+        "res_1"
+      ],
+      "providers": [
+        "serper"
+      ]
+    }
   ],
   "warnings": [
     {
       "code": "wsp.cache.served_stale",
       "message": "Live fetch failed; served stale cache entry (age 9000s exceeds ttl 3600s).",
-      "details": { "age_seconds": 9000, "ttl_seconds": 3600 }
+      "details": {
+        "age_seconds": 9000,
+        "ttl_seconds": 3600
+      }
     }
-  ]
+  ],
+  "execution_id": "exec_degraded_0001",
+  "observations": [
+    {
+      "observation_id": "obs_1",
+      "provider_attempt_id": "att_origin_1",
+      "provider_result_index": 0,
+      "provider": "serper",
+      "endpoint_id": "serper:search",
+      "kind": "search_result",
+      "url": {
+        "observed": "https://example.com/old",
+        "canonical": "https://example.com/old"
+      },
+      "title": "Stale cached result",
+      "snippet": "Live fetch failed; served from stale cache.",
+      "text": null,
+      "provider_rank": 1,
+      "provider_score": null,
+      "published_at": null,
+      "provider_fields": {}
+    }
+  ],
+  "policy_actions": [
+    {
+      "action": "selected_as_representative",
+      "observation_id": "obs_1",
+      "reason": "dedup_representative"
+    }
+  ],
+  "source_diversity": {
+    "method": "component_count",
+    "method_version": "1",
+    "method_degraded": false,
+    "provider_count": 1,
+    "host_count": 1,
+    "source_family_count": 1,
+    "unique_cluster_count": 1
+  }
 }

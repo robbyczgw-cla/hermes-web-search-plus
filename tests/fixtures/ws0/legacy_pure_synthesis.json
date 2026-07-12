@@ -1,0 +1,9 @@
+{
+  "_cache_timestamp": 1720000000,
+  "_cache_key": "legacy-ws0-pure",
+  "_cache_query": "test query",
+  "_cache_provider": "perplexity",
+  "answer": "only a synthesized claim, no source results",
+  "type": "synthesis",
+  "results": []
+}

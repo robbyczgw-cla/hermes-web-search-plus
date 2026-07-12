@@ -6,24 +6,59 @@
   "results": [
     {
       "result_id": "ex_1",
-      "status": "ok",
-      "title": "Example Document",
-      "url": "https://example.com/doc",
-      "canonical_url": "https://example.com/doc",
-      "text": "Hello world. This is a document.",
-      "offset_unit": "unicode_codepoint",
-      "text_normalization": "NFC",
-      "segments": [
-        { "segment_id": "seg_1", "start": 0, "end": 12 },
-        { "segment_id": "seg_2", "start": 12, "end": 32 }
+      "kind": "extracted_document",
+      "engine_rank": 1,
+      "representative_observation_id": "obs_1",
+      "observation_ids": [
+        "obs_1"
       ],
-      "provenance": [
-        {
-          "provider": "tavily",
-          "source_url": "https://example.com/doc",
-          "retrieved_at": "2026-07-12T08:31:00Z"
-        }
-      ]
+      "dedup_cluster_id": "dc_1",
+      "url": {
+        "observed": "https://example.com/doc",
+        "canonical": "https://example.com/doc"
+      },
+      "title": {
+        "text": "Example Document",
+        "text_sha256": "a4bd06f5245127ec4485761afb71ca74abe431864a19a20aa5dbe14bbc17209b",
+        "origin": "provider",
+        "provenance": {
+          "observation_id": "obs_1",
+          "source_field": "title",
+          "transformations": []
+        },
+        "segments": [
+          {
+            "start": 0,
+            "end": 16,
+            "text": "Example Document"
+          }
+        ]
+      },
+      "snippet": null,
+      "text": {
+        "text": "Hello world. This is a document.",
+        "text_sha256": "50cee61c96850d6145af887d4753481eae155bfe04504883eca74866bd31a21f",
+        "origin": "provider",
+        "provenance": {
+          "observation_id": "obs_1",
+          "source_field": "text",
+          "transformations": [
+            "mechanical_segmentation"
+          ]
+        },
+        "segments": [
+          {
+            "start": 0,
+            "end": 12,
+            "text": "Hello world."
+          },
+          {
+            "start": 12,
+            "end": 32,
+            "text": " This is a document."
+          }
+        ]
+      }
     }
   ],
   "provider_attempts": [
@@ -38,19 +73,73 @@
       "duration_ms": 800,
       "budget_decision": "allowed",
       "circuit_state_before": "closed",
-      "circuit_state_after": "closed"
+      "circuit_state_after": "closed",
+      "endpoint_id": "tavily:extract",
+      "decision": "attempted",
+      "tries": [
+        {
+          "try_number": 1,
+          "started_at": "2026-07-12T08:31:00Z",
+          "duration_ms": 800,
+          "outcome": "success",
+          "error": null
+        }
+      ]
     }
   ],
   "routing_receipt": {
     "policy_id": "classic",
     "policy_revision": "1",
     "mode": "classic",
-    "candidate_order": ["tavily"],
+    "candidate_order": [
+      "tavily"
+    ],
     "selected_provider": "tavily",
     "fallback_reason": "none"
   },
-  "cache_status": { "disposition": "miss" },
+  "cache_status": {
+    "disposition": "miss"
+  },
   "limits_applied": {},
-  "dedup_clusters": [],
-  "warnings": []
+  "dedup_clusters": [
+    {
+      "cluster_id": "dc_1",
+      "canonical_result_id": "ex_1",
+      "member_result_ids": ["ex_1"],
+      "providers": ["tavily"]
+    }
+  ],
+  "warnings": [],
+  "execution_id": "exec_extract_0001",
+  "observations": [
+    {
+      "observation_id": "obs_1",
+      "provider_attempt_id": "att_1",
+      "provider_result_index": 0,
+      "provider": "tavily",
+      "endpoint_id": "tavily:extract",
+      "kind": "extracted_document",
+      "url": {
+        "observed": "https://example.com/doc",
+        "canonical": "https://example.com/doc"
+      },
+      "title": "Example Document",
+      "snippet": null,
+      "text": "Hello world. This is a document.",
+      "provider_rank": null,
+      "provider_score": null,
+      "published_at": null,
+      "provider_fields": {}
+    }
+  ],
+  "policy_actions": [],
+  "source_diversity": {
+    "method": "component_count",
+    "method_version": "1",
+    "method_degraded": false,
+    "provider_count": 1,
+    "host_count": 1,
+    "source_family_count": 1,
+    "unique_cluster_count": 1
+  }
 }

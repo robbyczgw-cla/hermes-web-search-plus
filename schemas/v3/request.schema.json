@@ -161,9 +161,7 @@
         "depth": {
           "type": "string",
           "enum": [
-            "normal",
-            "deep",
-            "deep-reasoning"
+            "normal"
           ]
         },
         "mode": {
@@ -326,7 +324,9 @@
             "enum": [
               "provider_attempts",
               "dedup_clusters",
-              "source_independence_estimate",
+              "observations",
+              "policy_actions",
+              "source_diversity",
               "mechanical_text_offsets",
               "stale_cache"
             ]

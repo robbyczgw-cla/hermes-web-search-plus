@@ -334,7 +334,7 @@ def test_search_legacy_and_native_use_same_v3_entry_and_one_core_call(monkeypatc
     assert native.request_id == "native-search"
     assert native.routing_receipt["candidate_order"] == ["serper"]
     assert native.routing_receipt["selected_provider"] == "serper"
-    assert native.results[0]["url"] == "https://example.com/a"
+    assert native.results[0]["url"]["observed"] == "https://example.com/a"
     assert "published_at" not in native.results[0]
     jsonschema.validate(
         native.to_dict(), RESPONSE_SCHEMA, format_checker=jsonschema.FormatChecker()
@@ -367,8 +367,10 @@ def test_extract_legacy_and_native_use_same_v3_entry_and_one_core_call(monkeypat
     assert isinstance(native, ResponseV3)
     assert native.request_id == "native-extract"
     assert native.routing_receipt["candidate_order"][0] == "linkup"
-    assert native.results[0]["text"] == "Café"
-    assert native.results[0]["text_normalization"] == "NFC"
+    assert native.results[0]["text"]["text"] == "Café"
+    assert native.results[0]["text"]["segments"] == [
+        {"start": 0, "end": 4, "text": "Café"}
+    ]
     jsonschema.validate(
         native.to_dict(), RESPONSE_SCHEMA, format_checker=jsonschema.FormatChecker()
     )

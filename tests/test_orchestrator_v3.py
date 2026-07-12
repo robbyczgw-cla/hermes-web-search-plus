@@ -50,7 +50,7 @@ def test_m1_search_projection_validates_against_request_schema():
         "search",
         {
             "query": "models",
-            "depth": "deep-reasoning",
+            "depth": "normal",
             "mode": "research",
             "quality_report": True,
             "research_time_budget": 40,
