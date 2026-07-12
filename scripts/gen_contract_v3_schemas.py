@@ -148,7 +148,7 @@ request_defs = {
             "urls": {
                 "type": "array",
                 "minItems": 1,
-                "maxItems": 32,
+                "maxItems": 50,
                 "items": {"type": "string", "format": "uri"},
                 "uniqueItems": True,
             }
@@ -196,6 +196,8 @@ request_defs = {
             "include_images": {"type": "boolean"},
             "include_raw_html": {"type": "boolean"},
             "render_js": {"type": "boolean"},
+            "max_urls": {"type": "integer"},
+            "max_context_chars": {"type": "integer"},
         }
     ),
     "CacheRequest": obj(
@@ -468,6 +470,67 @@ response_defs = {
             "host_count", "source_family_count", "unique_cluster_count",
         ),
     ),
+    "ExtractLimitsV3": obj(
+        {
+            "requested_url_count": {"type": "integer", "minimum": 1},
+            "processed_urls": {
+                "type": "array",
+                "items": {"type": "string", "format": "uri"},
+            },
+            "omitted_urls": {
+                "type": "array",
+                "items": {"type": "string", "format": "uri"},
+            },
+            "omitted_url_count": {"type": "integer", "minimum": 0},
+            "max_urls": {"type": "integer", "minimum": 1, "maximum": 50},
+            "max_context_chars": {
+                "type": "integer", "minimum": 1000, "maximum": 200000,
+            },
+            "context_chars_returned": {"type": "integer", "minimum": 0},
+            "truncated": {"type": "boolean"},
+        },
+        (
+            "requested_url_count", "processed_urls", "omitted_urls",
+            "omitted_url_count", "max_urls", "max_context_chars",
+            "context_chars_returned", "truncated",
+        ),
+    ),
+    "LimitsAppliedV3": obj(
+        {
+            "max_results": {"type": ["integer", "null"], "minimum": 1},
+            "extract": {"$ref": "#/$defs/ExtractLimitsV3"},
+        }
+    ),
+    "StoredContentReferenceV3": obj(
+        {
+            "store": {"const": "web_text_v3"},
+            "key": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "media_type": {"const": "text/markdown"},
+        },
+        ("store", "key", "media_type"),
+    ),
+    "StoredContentV3": obj(
+        {
+            "observation_id": {"type": "string", "pattern": "^obs_"},
+            "storage_attempted": {"const": True},
+            "storage_succeeded": {"type": "boolean"},
+            "reference": {
+                "anyOf": [
+                    {"$ref": "#/$defs/StoredContentReferenceV3"},
+                    {"type": "null"},
+                ]
+            },
+            "full_text_sha256": {
+                "type": ["string", "null"],
+                "pattern": "^[a-f0-9]{64}$",
+            },
+            "full_text_chars": {"type": ["integer", "null"], "minimum": 0},
+        },
+        (
+            "observation_id", "storage_attempted", "storage_succeeded",
+            "reference", "full_text_sha256", "full_text_chars",
+        ),
+    ),
     "PolicyActionV3": obj(
         {
             "action": {
@@ -483,6 +546,7 @@ response_defs = {
                 "enum": [
                     "spam_domain", "intent_authority", "domain_diversity",
                     "dedup_representative", "max_results", "max_content_bytes",
+                    "max_context_chars",
                 ],
             },
         },
@@ -509,6 +573,31 @@ response_defs = {
         ("code", "message"),
     ),
 }
+
+response_defs["StoredContentV3"]["allOf"] = [
+    {
+        "if": {
+            "properties": {"storage_succeeded": {"const": True}},
+            "required": ["storage_succeeded"],
+        },
+        "then": {
+            "properties": {
+                "reference": {"$ref": "#/$defs/StoredContentReferenceV3"},
+                "full_text_sha256": {
+                    "type": "string", "pattern": "^[a-f0-9]{64}$",
+                },
+                "full_text_chars": {"type": "integer", "minimum": 0},
+            }
+        },
+        "else": {
+            "properties": {
+                "reference": {"type": "null"},
+                "full_text_sha256": {"type": "null"},
+                "full_text_chars": {"type": "null"},
+            }
+        },
+    }
+]
 
 response_schema = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -550,7 +639,10 @@ response_schema = {
         },
         "routing_receipt": {"$ref": "#/$defs/RoutingReceipt"},
         "cache_status": {"$ref": "#/$defs/CacheStatus"},
-        "limits_applied": {"type": "object"},
+        "limits_applied": {"$ref": "#/$defs/LimitsAppliedV3"},
+        "stored_content": {
+            "type": "array", "items": {"$ref": "#/$defs/StoredContentV3"},
+        },
         "dedup_clusters": {"type": "array", "items": {"type": "object"}},
         "warnings": {"type": "array", "items": {"$ref": "#/$defs/WarningV3"}},
         "error": {"$ref": "#/$defs/ErrorV3"},

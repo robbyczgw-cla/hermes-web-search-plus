@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from bounded_context_v3 import (
     apply_bounded_context,
     prepare_extract_request,
 )
+from config import DEFAULT_CONFIG, _validate_runtime_config
 from contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
 from runtime_v3 import observations_from_legacy, project_results_from_observations
 
@@ -139,6 +141,46 @@ def test_operator_url_ceiling_beats_request_and_hard_max() -> None:
     assert len(plan.omitted_urls) == 23
 
 
+def test_operator_default_content_budget_applies_when_request_omits_it() -> None:
+    request = RequestV3.extract(["https://a.example/doc"])
+    plan = prepare_extract_request(
+        request,
+        {"bounded_context": {"max_urls": 10, "max_context_chars": 1200}},
+    )
+    assert plan.max_context_chars == 1200
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("max_urls", 0),
+        ("max_urls", 51),
+        ("max_urls", True),
+        ("max_context_chars", 999),
+        ("max_context_chars", 200001),
+        ("full_text_ttl_seconds", -1),
+        ("full_text_max_bytes", -1),
+    ],
+)
+def test_operator_bounded_context_config_rejects_invalid_values(
+    field: str, value: object
+) -> None:
+    config = deepcopy(DEFAULT_CONFIG)
+    config["bounded_context"][field] = value
+    with pytest.raises(ValueError, match=f"bounded_context.{field}"):
+        _validate_runtime_config(config)
+
+
+def test_operator_bounded_context_defaults_validate() -> None:
+    config = _validate_runtime_config(deepcopy(DEFAULT_CONFIG))
+    assert config["bounded_context"] == {
+        "max_urls": 10,
+        "max_context_chars": 60000,
+        "full_text_ttl_seconds": 604800,
+        "full_text_max_bytes": 268435456,
+    }
+
+
 def test_within_limits_stays_ok_without_storage(tmp_path: Path) -> None:
     fixture = load_fixture("01_extract_within_limits.json")
     request = RequestV3.from_dict(fixture["request"])
@@ -259,6 +301,19 @@ def test_long_result_cannot_starve_later_results() -> None:
         1000,
         1000,
     ]
+
+
+def test_provider_text_is_nfc_before_budget_accounting() -> None:
+    decomposed = "e\u0301" * 600
+    raw = [{"url": "https://unicode.example/doc", "content": decomposed}]
+    observations = observations_from_legacy(
+        {"results": raw}, "fixture", Capability.EXTRACT, "attempt_unicode"
+    )
+    results = project_results_from_observations(observations, raw)
+
+    assert observations[0]["text"] == "é" * 600
+    assert results[0]["text"]["text"] == "é" * 600
+    assert len(results[0]["text"]["text"]) == 600
 
 
 def test_truncation_preserves_single_source_prefix_segments_and_hash() -> None:

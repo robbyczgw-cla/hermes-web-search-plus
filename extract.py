@@ -3,11 +3,19 @@
 import ipaddress
 import os
 import socket
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
 from config import ProviderConfigError, get_api_key, keyless_public_allowed, load_config
 from cache import CACHE_DIR
+from bounded_context_v3 import (
+    DEFAULT_FULL_TEXT_MAX_BYTES,
+    DEFAULT_FULL_TEXT_TTL_SECONDS,
+    FullTextStore,
+    apply_bounded_context,
+    prepare_extract_request,
+)
 from attempt_engine_v3 import AttemptContext, AttemptEngine
 from errors_v3 import ProviderContractFailure
 from http_client import ProviderRequestError
@@ -408,7 +416,24 @@ def run_extract_request_v3(
 ) -> ResponseV3:
     """Execute a native extract RequestV3 through the canonical orchestrator."""
     runtime_config = config or load_config()
-    return execute_v3_request(request, _extract_adapter(), runtime_config).response
+    bounded_plan = prepare_extract_request(request, runtime_config)
+    response = execute_v3_request(
+        bounded_plan.request, _extract_adapter(), runtime_config
+    ).response
+    policy = runtime_config.get("bounded_context") or {}
+    if not isinstance(policy, dict):
+        policy = {}
+    cache_root = Path(policy.get("cache_root") or CACHE_DIR)
+    store = FullTextStore(
+        cache_root,
+        ttl_seconds=int(
+            policy.get("full_text_ttl_seconds", DEFAULT_FULL_TEXT_TTL_SECONDS)
+        ),
+        max_bytes=int(
+            policy.get("full_text_max_bytes", DEFAULT_FULL_TEXT_MAX_BYTES)
+        ),
+    )
+    return apply_bounded_context(response, request, bounded_plan, store=store)
 
 
 def extract_plus(
@@ -436,5 +461,8 @@ def extract_plus(
             "render_js": render_js,
         },
     )
-    execution = execute_v3_request(request, _extract_adapter(), runtime_config)
+    bounded_plan = prepare_extract_request(request, runtime_config)
+    execution = execute_v3_request(
+        bounded_plan.request, _extract_adapter(), runtime_config
+    )
     return v3_response_to_legacy_extract(execution)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import unicodedata
 from datetime import datetime
 from typing import Any, Dict, List, Mapping
 from urllib.parse import urlsplit, urlunsplit
@@ -141,6 +142,7 @@ PROJECTION_REQUIRED_PROVIDERS = frozenset({"parallel", "you"})
 
 def segment_canonical_text(text: str) -> List[Dict[str, Any]]:
     """Return contiguous NFC unicode-codepoint segments without rewriting text."""
+    text = unicodedata.normalize("NFC", text)
     if not text:
         return []
     return [{"start": 0, "end": len(text), "text": text}]
@@ -150,6 +152,7 @@ def _projected_text(observation: Mapping[str, Any], source_field: str) -> Dict[s
     value = observation.get(source_field)
     if not isinstance(value, str):
         return None
+    value = unicodedata.normalize("NFC", value)
     return {
         "text": value,
         "text_sha256": hashlib.sha256(value.encode("utf-8")).hexdigest(),
@@ -176,10 +179,16 @@ def _observation(
     if not observed_url:
         return None
     kind = "search_result" if capability is Capability.SEARCH else "extracted_document"
-    snippet = str(item.get("snippet") or "") if capability is Capability.SEARCH else None
+    snippet = (
+        unicodedata.normalize("NFC", str(item.get("snippet") or ""))
+        if capability is Capability.SEARCH
+        else None
+    )
     text = None
     if capability is Capability.EXTRACT and not item.get("error"):
-        text = str(item.get("content") or item.get("raw_content") or "")
+        text = unicodedata.normalize(
+            "NFC", str(item.get("content") or item.get("raw_content") or "")
+        )
     score = item.get("score")
     provider_score = None
     if isinstance(score, (int, float)) and not isinstance(score, bool):
@@ -196,7 +205,11 @@ def _observation(
         "endpoint_id": endpoint_id,
         "kind": kind,
         "url": {"observed": observed_url, "canonical": _canonical_url(observed_url)},
-        "title": str(item.get("title")) if item.get("title") is not None else None,
+        "title": (
+            unicodedata.normalize("NFC", str(item.get("title")))
+            if item.get("title") is not None
+            else None
+        ),
         "snippet": snippet,
         "text": text,
         "provider_rank": index + 1,

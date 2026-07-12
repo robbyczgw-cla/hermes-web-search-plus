@@ -76,7 +76,13 @@
       "$ref": "#/$defs/CacheStatus"
     },
     "limits_applied": {
-      "type": "object"
+      "$ref": "#/$defs/LimitsAppliedV3"
+    },
+    "stored_content": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/StoredContentV3"
+      }
     },
     "dedup_clusters": {
       "type": "array",
@@ -1008,6 +1014,188 @@
         "unique_cluster_count"
       ]
     },
+    "ExtractLimitsV3": {
+      "type": "object",
+      "properties": {
+        "requested_url_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "processed_urls": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "omitted_urls": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        },
+        "omitted_url_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_urls": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "max_context_chars": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 200000
+        },
+        "context_chars_returned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "requested_url_count",
+        "processed_urls",
+        "omitted_urls",
+        "omitted_url_count",
+        "max_urls",
+        "max_context_chars",
+        "context_chars_returned",
+        "truncated"
+      ]
+    },
+    "LimitsAppliedV3": {
+      "type": "object",
+      "properties": {
+        "max_results": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "extract": {
+          "$ref": "#/$defs/ExtractLimitsV3"
+        }
+      },
+      "additionalProperties": false
+    },
+    "StoredContentReferenceV3": {
+      "type": "object",
+      "properties": {
+        "store": {
+          "const": "web_text_v3"
+        },
+        "key": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "media_type": {
+          "const": "text/markdown"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "store",
+        "key",
+        "media_type"
+      ]
+    },
+    "StoredContentV3": {
+      "type": "object",
+      "properties": {
+        "observation_id": {
+          "type": "string",
+          "pattern": "^obs_"
+        },
+        "storage_attempted": {
+          "const": true
+        },
+        "storage_succeeded": {
+          "type": "boolean"
+        },
+        "reference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StoredContentReferenceV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "full_text_sha256": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "full_text_chars": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "observation_id",
+        "storage_attempted",
+        "storage_succeeded",
+        "reference",
+        "full_text_sha256",
+        "full_text_chars"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "storage_succeeded": {
+                "const": true
+              }
+            },
+            "required": [
+              "storage_succeeded"
+            ]
+          },
+          "then": {
+            "properties": {
+              "reference": {
+                "$ref": "#/$defs/StoredContentReferenceV3"
+              },
+              "full_text_sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "full_text_chars": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "reference": {
+                "type": "null"
+              },
+              "full_text_sha256": {
+                "type": "null"
+              },
+              "full_text_chars": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
     "PolicyActionV3": {
       "type": "object",
       "properties": {
@@ -1033,7 +1221,8 @@
             "domain_diversity",
             "dedup_representative",
             "max_results",
-            "max_content_bytes"
+            "max_content_bytes",
+            "max_context_chars"
           ]
         }
       },

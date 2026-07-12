@@ -41,7 +41,7 @@ Required invariants:
 - `context_chars_returned` equals the sum of inline `result.text.text` codepoints.
 - `truncated` is true iff at least one inline text was deterministically truncated.
 
-Top-level `stored_content[]` is additive and required as an empty array on the wire. A truncated observation requires one entry:
+Top-level `stored_content[]` is optional for Amendment-002 compatibility; Amendment-003 runtimes emit it as an empty array when no content was truncated. A truncated observation requires one entry:
 
 ```json
 {

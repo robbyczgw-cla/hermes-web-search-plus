@@ -272,6 +272,12 @@ class RequestV3:
                 raise ValueError(
                     "extract input requires non-empty urls and forbids query"
                 )
+            for option_name in ("max_urls", "max_context_chars"):
+                option_value = self.options.get(option_name)
+                if option_value is not None and (
+                    isinstance(option_value, bool) or not isinstance(option_value, int)
+                ):
+                    raise ValueError(f"{option_name} must be an integer")
 
     @classmethod
     def search(
@@ -306,12 +312,22 @@ class RequestV3:
         request_id: Optional[str] = None,
         output_format: str = "markdown",
         include_images: bool = False,
+        max_urls: Optional[int] = None,
+        max_context_chars: Optional[int] = None,
     ) -> "RequestV3":
+        options: Dict[str, Any] = {
+            "output_format": output_format,
+            "include_images": include_images,
+        }
+        if max_urls is not None:
+            options["max_urls"] = max_urls
+        if max_context_chars is not None:
+            options["max_context_chars"] = max_context_chars
         return cls(
             Capability.EXTRACT,
             {"urls": list(urls)},
             request_id=request_id,
-            options={"output_format": output_format, "include_images": include_images},
+            options=options,
             client={
                 "accept_contract_versions": [CONTRACT_VERSION],
                 "accept_features": [],
@@ -378,7 +394,9 @@ _POLICY_ACTION_REASONS = {
     "reranked": {"intent_authority"},
     "demoted": {"domain_diversity"},
     "selected_as_representative": {"dedup_representative"},
-    "truncated_by_limit": {"max_results", "max_content_bytes"},
+    "truncated_by_limit": {
+        "max_results", "max_content_bytes", "max_context_chars",
+    },
 }
 _BASE64_IMAGE_RE = re.compile(r"data:image/[^;]+;base64,[A-Za-z0-9+/=]+")
 
@@ -505,6 +523,7 @@ class ResponseV3:
     source_diversity: Dict[str, Any] = field(default_factory=_default_diversity)
     engine: Optional[Dict[str, str]] = None
     limits_applied: Dict[str, Any] = field(default_factory=dict)
+    stored_content: List[Dict[str, Any]] = field(default_factory=list)
     dedup_clusters: List[Dict[str, Any]] = field(default_factory=list)
     warnings: List[Dict[str, Any]] = field(default_factory=list)
     error: Optional[ErrorV3] = None
@@ -563,6 +582,77 @@ class ResponseV3:
                 raise ValueError("invalid policy action/reason combination")
             if action.get("observation_id") not in observations:
                 raise ValueError("policy action references missing observation")
+        extract_limits = self.limits_applied.get("extract")
+        if extract_limits is not None:
+            required_limit_fields = {
+                "requested_url_count", "processed_urls", "omitted_urls",
+                "omitted_url_count", "max_urls", "max_context_chars",
+                "context_chars_returned", "truncated",
+            }
+            if not isinstance(extract_limits, dict) or set(extract_limits) != required_limit_fields:
+                raise ValueError("limits_applied.extract has invalid fields")
+            processed_urls = extract_limits["processed_urls"]
+            omitted_urls = extract_limits["omitted_urls"]
+            if not isinstance(processed_urls, list) or not all(
+                isinstance(url, str) and url for url in processed_urls
+            ):
+                raise ValueError("processed_urls must be non-empty URL strings")
+            if not isinstance(omitted_urls, list) or not all(
+                isinstance(url, str) and url for url in omitted_urls
+            ):
+                raise ValueError("omitted_urls must be URL strings")
+            if extract_limits["omitted_url_count"] != len(omitted_urls):
+                raise ValueError("omitted_url_count mismatch")
+            if extract_limits["requested_url_count"] != len(processed_urls) + len(omitted_urls):
+                raise ValueError("requested_url_count mismatch")
+            for name in (
+                "requested_url_count", "omitted_url_count", "max_urls",
+                "max_context_chars", "context_chars_returned",
+            ):
+                value = extract_limits[name]
+                if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                    raise ValueError(
+                        f"limits_applied.extract.{name} must be non-negative integer"
+                    )
+            if not isinstance(extract_limits["truncated"], bool):
+                raise ValueError("limits_applied.extract.truncated must be boolean")
+        stored_observations = set()
+        required_stored_fields = {
+            "observation_id", "storage_attempted", "storage_succeeded",
+            "reference", "full_text_sha256", "full_text_chars",
+        }
+        for stored in self.stored_content:
+            if not isinstance(stored, dict) or set(stored) != required_stored_fields:
+                raise ValueError("stored_content has invalid fields")
+            observation_id = stored["observation_id"]
+            if observation_id not in observations or observation_id in stored_observations:
+                raise ValueError("stored_content observation reference is invalid")
+            stored_observations.add(observation_id)
+            if stored["storage_attempted"] is not True or not isinstance(
+                stored["storage_succeeded"], bool
+            ):
+                raise ValueError("stored_content storage flags are invalid")
+            if stored["storage_succeeded"]:
+                reference = stored["reference"]
+                if (
+                    not isinstance(reference, dict)
+                    or set(reference) != {"store", "key", "media_type"}
+                    or reference["store"] != "web_text_v3"
+                    or reference["media_type"] != "text/markdown"
+                    or not re.fullmatch(r"[a-f0-9]{64}", str(reference["key"]))
+                    or not re.fullmatch(r"[a-f0-9]{64}", str(stored["full_text_sha256"]))
+                    or isinstance(stored["full_text_chars"], bool)
+                    or not isinstance(stored["full_text_chars"], int)
+                    or stored["full_text_chars"] < 0
+                ):
+                    raise ValueError("successful stored_content metadata is invalid")
+            elif any(
+                stored[field] is not None
+                for field in ("reference", "full_text_sha256", "full_text_chars")
+            ):
+                raise ValueError(
+                    "failed stored_content must not expose reference metadata"
+                )
         if self.status is ResponseStatus.DEGRADED:
             accepted_codes = {reason.value for reason in DegradedReason}
             warning_codes = {
@@ -591,6 +681,7 @@ class ResponseV3:
             "routing_receipt": self.routing_receipt,
             "cache_status": self.cache_status,
             "limits_applied": self.limits_applied,
+            "stored_content": self.stored_content,
             "dedup_clusters": self.dedup_clusters,
             "warnings": self.warnings,
             "error": self.error,
@@ -598,7 +689,7 @@ class ResponseV3:
         required_empty_fields = {
             "results", "observations", "policy_actions", "provider_attempts",
             "routing_receipt", "cache_status", "limits_applied", "dedup_clusters",
-            "warnings",
+            "stored_content", "warnings",
         }
         return {
             key: _wire_plain(value)
@@ -624,6 +715,7 @@ class ResponseV3:
             routing_receipt=dict(payload["routing_receipt"]),
             cache_status=dict(payload["cache_status"]),
             limits_applied=dict(payload.get("limits_applied") or {}),
+            stored_content=[dict(item) for item in payload.get("stored_content", [])],
             dedup_clusters=[dict(item) for item in payload.get("dedup_clusters", [])],
             warnings=[dict(item) for item in payload.get("warnings", [])],
             error=ErrorV3.from_dict(payload["error"]) if payload.get("error") else None,

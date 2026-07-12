@@ -53,6 +53,7 @@ def cache_material_from_response(payload: Dict[str, Any]) -> Dict[str, Any]:
         "projection": list(payload.get("results") or []),
         "routing_receipt": dict(routing),
         "limits_applied": dict(payload.get("limits_applied") or {}),
+        "stored_content": list(payload.get("stored_content") or []),
         "dedup_clusters": list(payload.get("dedup_clusters") or []),
         "warnings": list(payload.get("warnings") or []),
         "engine": payload.get("engine"),
@@ -106,6 +107,7 @@ def response_payload_from_cache_material(
             "origin_execution_id": material.get("origin_execution_id"),
         },
         "limits_applied": dict(material.get("limits_applied") or {}),
+        "stored_content": list(material.get("stored_content") or []),
         "dedup_clusters": list(material.get("dedup_clusters") or []),
         "warnings": list(material.get("warnings") or []),
     }

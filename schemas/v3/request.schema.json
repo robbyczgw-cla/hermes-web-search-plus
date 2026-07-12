@@ -112,7 +112,7 @@
         "urls": {
           "type": "array",
           "minItems": 1,
-          "maxItems": 32,
+          "maxItems": 50,
           "items": {
             "type": "string",
             "format": "uri"
@@ -230,6 +230,12 @@
         },
         "render_js": {
           "type": "boolean"
+        },
+        "max_urls": {
+          "type": "integer"
+        },
+        "max_context_chars": {
+          "type": "integer"
         }
       },
       "additionalProperties": false
