@@ -88,6 +88,7 @@ from search_locale import provider_supports_locale, resolve_locale
 from env_loader import load_env_files
 from research import run_research_mode
 from attempt_engine_v3 import AttemptContext, AttemptEngine
+from cache_v3 import peek_legacy_search
 from compat_v3 import legacy_request_to_v3, v3_response_to_legacy_search
 from contract_v3 import Capability, RequestV3, ResponseV3
 from orchestrator_v3 import (
@@ -1133,6 +1134,40 @@ def _apply_result_quality_pipeline(
             result.setdefault("metadata", {})["domain_diversity_demoted"] = demoted
 
 
+def _legacy_search_cache_context(
+    args, provider: str, config: Dict[str, Any]
+) -> Dict[str, Any]:
+    locale_country, locale_language, _locale_meta = resolve_locale(
+        provider,
+        config,
+        args.query,
+        cli_country=args.country,
+        cli_language=args.language,
+    )
+    return {
+        "locale": f"{locale_country}:{locale_language}",
+        "freshness": args.freshness,
+        "time_range": args.time_range,
+        "include_domains": sorted(args.include_domains)
+        if args.include_domains
+        else None,
+        "exclude_domains": sorted(args.exclude_domains)
+        if args.exclude_domains
+        else None,
+        "topic": args.topic,
+        "search_engines": sorted(args.engines) if args.engines else None,
+        "include_news": not args.no_news,
+        "search_type": args.search_type,
+        "exa_type": args.exa_type,
+        "exa_depth": args.exa_depth,
+        "exa_verbosity": args.exa_verbosity,
+        "category": args.category,
+        "similar_url": args.similar_url,
+        "mode": args.mode,
+        "quality_report": args.quality_report,
+    }
+
+
 def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
     """Run the search/research pipeline for parsed args.
 
@@ -1246,31 +1281,7 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         )
         return provider_result
 
-    # Resolved locale for the selected provider: config-first country,
-    # query-aware language (see search_locale.resolve_locale). Defaults stay
-    # us/en, so cache keys are unchanged for unconfigured setups.
-    locale_country, locale_language, _locale_meta = resolve_locale(
-        provider or "", config, args.query, cli_country=args.country, cli_language=args.language
-    )
-
-    cache_context = {
-        "locale": f"{locale_country}:{locale_language}",
-        "freshness": args.freshness,
-        "time_range": args.time_range,
-        "include_domains": sorted(args.include_domains) if args.include_domains else None,
-        "exclude_domains": sorted(args.exclude_domains) if args.exclude_domains else None,
-        "topic": args.topic,
-        "search_engines": sorted(args.engines) if args.engines else None,
-        "include_news": not args.no_news,
-        "search_type": args.search_type,
-        "exa_type": args.exa_type,
-        "exa_depth": args.exa_depth,
-        "exa_verbosity": args.exa_verbosity,
-        "category": args.category,
-        "similar_url": args.similar_url,
-        "mode": args.mode,
-        "quality_report": args.quality_report,
-    }
+    cache_context = _legacy_search_cache_context(args, provider or "", config)
 
     providers_considered = providers_to_try.copy()
 
@@ -1588,6 +1599,33 @@ def _search_args_from_v3(request: RequestV3, config: Dict[str, Any]):
     return args
 
 
+def _lookup_legacy_search_v3(
+    request: RequestV3, plan: ProviderPlan, config: Dict[str, Any]
+) -> CapabilityExecution | None:
+    legacy_args = _search_args_from_v3(request, config)
+    legacy_args.provider = plan.selected_provider
+    if legacy_args.mode == "research":
+        return None
+    legacy_lookup = peek_legacy_search(
+        CACHE_DIR,
+        query=legacy_args.query,
+        provider=plan.selected_provider,
+        max_results=legacy_args.max_results,
+        params=_legacy_search_cache_context(
+            legacy_args, plan.selected_provider, config
+        ),
+        ttl_seconds=int(request.cache.get("ttl_seconds", 3600)),
+        now=int(time.time()),
+    )
+    if legacy_lookup.legacy_payload is None:
+        return None
+    return CapabilityExecution(
+        payload=legacy_lookup.legacy_payload,
+        provider_attempts=(),
+        stages=("dedup_fingerprint",),
+    )
+
+
 def _execute_search_v3(
     request: RequestV3, plan: ProviderPlan, config: Dict[str, Any]
 ) -> CapabilityExecution:
@@ -1708,6 +1746,7 @@ def _search_adapter() -> CapabilityAdapter:
         plan=_plan_search_v3,
         execute=_execute_search_v3,
         normalize=response_from_legacy,
+        legacy_cache_lookup=_lookup_legacy_search_v3,
     )
 
 

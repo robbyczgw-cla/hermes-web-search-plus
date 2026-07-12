@@ -208,14 +208,23 @@ def test_b6_same_request_has_same_plan_and_one_execution_path():
         legacy_execution.response.routing_receipt
         == native_execution.response.routing_receipt
     )
-    assert calls == {"plan": 2, "execute": 2, "normalize": 2}
-    assert legacy_execution.stage_trace == native_execution.stage_trace
+    assert calls == {"plan": 2, "execute": 1, "normalize": 1}
+    assert native_execution.response.cache_status["disposition"] == "fresh_hit"
     assert legacy_execution.stage_trace == (
         "normalize",
         "validate",
+        "cache_lookup",
         "candidate_plan",
         "provider_attempt",
         "result_normalization",
+        "cache_write",
+        "response_v3",
+    )
+    assert native_execution.stage_trace == (
+        "normalize",
+        "validate",
+        "cache_lookup",
+        "candidate_plan",
         "response_v3",
     )
 
@@ -251,11 +260,13 @@ def test_orchestrator_uses_actual_attempt_receipts_and_stages():
     assert execution.stage_trace == (
         "normalize",
         "validate",
+        "cache_lookup",
         "candidate_plan",
         "admission",
         "provider_attempt",
         "retry_circuit_update",
         "result_normalization",
+        "cache_write",
         "response_v3",
     )
 

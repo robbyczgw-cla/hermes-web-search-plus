@@ -215,12 +215,14 @@ def test_search_adapter_emits_engine_attempt_receipt(tmp_path, monkeypatch):
     assert execution.stage_trace == (
         "normalize",
         "validate",
+        "cache_lookup",
         "candidate_plan",
         "admission",
         "provider_attempt",
         "retry_circuit_update",
         "result_normalization",
         "dedup_fingerprint",
+        "cache_write",
         "response_v3",
     )
 
@@ -303,7 +305,8 @@ def test_b6_engine_adapter_plan_is_identical_for_legacy_and_native(monkeypatch):
         legacy_execution.response.routing_receipt
         == native_execution.response.routing_receipt
     )
-    assert calls == [("same", "serper"), ("same", "serper")]
+    assert calls == [("same", "serper")]
+    assert native_execution.response.cache_status["disposition"] == "fresh_hit"
 
 
 def test_search_legacy_and_native_use_same_v3_entry_and_one_core_call(monkeypatch):
@@ -336,7 +339,8 @@ def test_search_legacy_and_native_use_same_v3_entry_and_one_core_call(monkeypatc
     jsonschema.validate(
         native.to_dict(), RESPONSE_SCHEMA, format_checker=jsonschema.FormatChecker()
     )
-    assert len(calls) == 2
+    assert len(calls) == 1
+    assert native.cache_status["disposition"] == "fresh_hit"
 
 
 def test_extract_legacy_and_native_use_same_v3_entry_and_one_core_call(monkeypatch):
@@ -368,4 +372,5 @@ def test_extract_legacy_and_native_use_same_v3_entry_and_one_core_call(monkeypat
     jsonschema.validate(
         native.to_dict(), RESPONSE_SCHEMA, format_checker=jsonschema.FormatChecker()
     )
-    assert len(calls) == 2
+    assert len(calls) == 1
+    assert native.cache_status["disposition"] == "fresh_hit"

@@ -22,6 +22,7 @@ from contract_v3 import (
     ResponseV3,
 )
 from orchestrator_v3 import ProviderPlan
+from independence_v3 import analyze_source_independence
 
 
 def _canonical_url(value: str) -> str:
@@ -274,14 +275,7 @@ def response_from_legacy(
     else:
         cache_status = {"disposition": "miss"}
 
-    clusters = [
-        {
-            "cluster_id": _stable_id("cluster", item["canonical_url"]),
-            "member_result_ids": [item["result_id"]],
-            "canonical_url": item["canonical_url"],
-        }
-        for item in results
-    ]
+    clusters, independence_estimate = analyze_source_independence(results)
     return ResponseV3(
         request_id=request_id,
         capability=request.capability,
@@ -301,6 +295,7 @@ def response_from_legacy(
         if request.capability is Capability.SEARCH
         else {},
         dedup_clusters=clusters,
+        source_independence_estimate=independence_estimate,
         warnings=warnings,
         error=error,
     )
