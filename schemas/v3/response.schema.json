@@ -1,0 +1,738 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://websearchplus.xyz/schema/v3/response.schema.json",
+  "title": "ResponseV3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "request_id",
+    "capability",
+    "status",
+    "results",
+    "provider_attempts",
+    "routing_receipt",
+    "cache_status",
+    "limits_applied",
+    "warnings"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "3.0"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capability": {
+      "$ref": "#/$defs/Capability"
+    },
+    "status": {
+      "$ref": "#/$defs/ResponseStatus"
+    },
+    "results": {
+      "type": "array"
+    },
+    "provider_attempts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ProviderAttemptV3"
+      }
+    },
+    "routing_receipt": {
+      "$ref": "#/$defs/RoutingReceipt"
+    },
+    "cache_status": {
+      "$ref": "#/$defs/CacheStatus"
+    },
+    "limits_applied": {
+      "type": "object"
+    },
+    "dedup_clusters": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "source_independence_estimate": {
+      "$ref": "#/$defs/IndependenceEstimate"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/WarningV3"
+      }
+    },
+    "error": {
+      "$ref": "#/$defs/ErrorV3"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "search"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/SearchResultV3"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "extract"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ExtractResultV3"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "required": [
+          "error"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "error"
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "Capability": {
+      "type": "string",
+      "enum": [
+        "search",
+        "extract"
+      ]
+    },
+    "ResponseStatus": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "degraded",
+        "failed"
+      ]
+    },
+    "ErrorClass": {
+      "type": "string",
+      "enum": [
+        "invalid_request",
+        "unsupported",
+        "config",
+        "auth",
+        "quota",
+        "rate_limit",
+        "transient",
+        "timeout",
+        "provider_contract",
+        "content",
+        "security",
+        "budget",
+        "cancelled",
+        "internal"
+      ]
+    },
+    "AttemptOutcome": {
+      "type": "string",
+      "enum": [
+        "success",
+        "partial",
+        "skipped",
+        "failed",
+        "cancelled"
+      ]
+    },
+    "SkipReason": {
+      "type": "string",
+      "enum": [
+        "disabled",
+        "unsupported_capability",
+        "not_configured",
+        "missing_credentials",
+        "auth_blocked",
+        "quota_blocked",
+        "rate_limited",
+        "circuit_open",
+        "budget_blocked",
+        "policy_excluded",
+        "deadline_exceeded"
+      ]
+    },
+    "FallbackReason": {
+      "type": "string",
+      "enum": [
+        "none",
+        "selected_failed",
+        "selected_skipped",
+        "insufficient_results",
+        "partial_content",
+        "budget_chain"
+      ]
+    },
+    "CacheDisposition": {
+      "type": "string",
+      "enum": [
+        "fresh_hit",
+        "stale_hit",
+        "miss",
+        "bypassed",
+        "unavailable"
+      ]
+    },
+    "CircuitState": {
+      "type": "string",
+      "enum": [
+        "closed",
+        "open",
+        "half_open",
+        "blocked_auth",
+        "blocked_quota",
+        "unknown"
+      ]
+    },
+    "ErrorV3": {
+      "type": "object",
+      "properties": {
+        "error_class": {
+          "$ref": "#/$defs/ErrorClass"
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^wsp\\.[a-z0-9_]+(?:\\.[a-z0-9_]+)*$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "http_status": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599
+        },
+        "retry_after_seconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "details": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "error_class",
+        "code",
+        "message",
+        "retryable"
+      ]
+    },
+    "ProviderAttemptV3": {
+      "type": "object",
+      "properties": {
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "capability": {
+          "$ref": "#/$defs/Capability"
+        },
+        "outcome": {
+          "$ref": "#/$defs/AttemptOutcome"
+        },
+        "retry_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "result_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "error": {
+          "$ref": "#/$defs/ErrorV3"
+        },
+        "skip_reason": {
+          "$ref": "#/$defs/SkipReason"
+        },
+        "budget_decision": {
+          "type": "string",
+          "enum": [
+            "allowed",
+            "reserved",
+            "blocked",
+            "unknown"
+          ]
+        },
+        "circuit_state_before": {
+          "$ref": "#/$defs/CircuitState"
+        },
+        "circuit_state_after": {
+          "$ref": "#/$defs/CircuitState"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "attempt_id",
+        "provider",
+        "capability",
+        "outcome",
+        "retry_count",
+        "result_count",
+        "circuit_state_before",
+        "circuit_state_after"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "required": [
+              "error"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "outcome": {
+                "const": "skipped"
+              }
+            },
+            "required": [
+              "outcome"
+            ]
+          },
+          "then": {
+            "required": [
+              "skip_reason"
+            ]
+          }
+        }
+      ]
+    },
+    "ProvenanceObservation": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "retrieved_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "provider_rank": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "provider_result_id": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "source_url",
+        "retrieved_at"
+      ]
+    },
+    "TextSegmentV3": {
+      "type": "object",
+      "properties": {
+        "segment_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "segment_id",
+        "start",
+        "end"
+      ]
+    },
+    "SearchResultV3": {
+      "type": "object",
+      "properties": {
+        "result_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "const": "ok"
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "canonical_url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "snippet": {
+          "type": "string"
+        },
+        "published_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "cluster_id": {
+          "type": "string"
+        },
+        "provenance": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ProvenanceObservation"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "result_id",
+        "status",
+        "title",
+        "url",
+        "canonical_url",
+        "provenance"
+      ]
+    },
+    "ExtractResultV3": {
+      "type": "object",
+      "properties": {
+        "result_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "failed"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "canonical_url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "text": {
+          "type": "string"
+        },
+        "offset_unit": {
+          "const": "unicode_codepoint"
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/TextSegmentV3"
+          }
+        },
+        "provenance": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ProvenanceObservation"
+          }
+        },
+        "error": {
+          "$ref": "#/$defs/ErrorV3"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "result_id",
+        "status",
+        "url",
+        "canonical_url",
+        "provenance"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "ok"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "text",
+              "offset_unit",
+              "segments"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "failed"
+              }
+            },
+            "required": [
+              "status"
+            ]
+          },
+          "then": {
+            "required": [
+              "error"
+            ]
+          }
+        }
+      ]
+    },
+    "CacheStatus": {
+      "type": "object",
+      "properties": {
+        "disposition": {
+          "$ref": "#/$defs/CacheDisposition"
+        },
+        "entry_id": {
+          "type": "string"
+        },
+        "age_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ttl_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "served_stale": {
+          "type": "boolean"
+        },
+        "source_contract_version": {
+          "type": "string",
+          "enum": [
+            "3.0",
+            "2.x"
+          ]
+        },
+        "write_error": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "disposition"
+      ]
+    },
+    "RoutingReceipt": {
+      "type": "object",
+      "properties": {
+        "policy_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policy_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "classic",
+            "shadow"
+          ]
+        },
+        "candidate_order": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "selected_provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fallback_reason": {
+          "$ref": "#/$defs/FallbackReason"
+        },
+        "shadow": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "policy_id",
+        "policy_revision",
+        "mode",
+        "candidate_order",
+        "selected_provider",
+        "fallback_reason"
+      ]
+    },
+    "IndependenceEstimate": {
+      "type": "object",
+      "properties": {
+        "score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "unique_cluster_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "result_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "source_family_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "provider_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "method": {
+          "type": "string"
+        },
+        "confidence": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "method_degraded": {
+          "type": "boolean"
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "score",
+        "unique_cluster_count",
+        "result_count",
+        "source_family_count",
+        "provider_count",
+        "method",
+        "confidence",
+        "method_degraded",
+        "limitations"
+      ]
+    },
+    "WarningV3": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^wsp\\.[a-z0-9_]+(?:\\.[a-z0-9_]+)*$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "details": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message"
+      ]
+    }
+  }
+}

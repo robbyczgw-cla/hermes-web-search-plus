@@ -1,0 +1,317 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://websearchplus.xyz/schema/v3/request.schema.json",
+  "title": "RequestV3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "capability",
+    "input"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "3.0"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "capability": {
+      "$ref": "#/$defs/Capability"
+    },
+    "input": {
+      "type": "object"
+    },
+    "options": {
+      "type": "object"
+    },
+    "cache": {
+      "$ref": "#/$defs/CacheRequest"
+    },
+    "routing": {
+      "$ref": "#/$defs/RoutingRequest"
+    },
+    "budget": {
+      "$ref": "#/$defs/BudgetRequest"
+    },
+    "client": {
+      "$ref": "#/$defs/ClientNegotiation"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "search"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "input": {
+            "$ref": "#/$defs/SearchInput"
+          },
+          "options": {
+            "$ref": "#/$defs/SearchOptions"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "capability": {
+            "const": "extract"
+          }
+        },
+        "required": [
+          "capability"
+        ]
+      },
+      "then": {
+        "properties": {
+          "input": {
+            "$ref": "#/$defs/ExtractInput"
+          },
+          "options": {
+            "$ref": "#/$defs/ExtractOptions"
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "Capability": {
+      "type": "string",
+      "enum": [
+        "search",
+        "extract"
+      ]
+    },
+    "SearchInput": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "query"
+      ]
+    },
+    "ExtractInput": {
+      "type": "object",
+      "properties": {
+        "urls": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "format": "uri"
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "urls"
+      ]
+    },
+    "SearchOptions": {
+      "type": "object",
+      "properties": {
+        "max_results": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "freshness": {
+          "type": "string",
+          "enum": [
+            "day",
+            "week",
+            "month",
+            "year"
+          ]
+        },
+        "time_range": {
+          "type": "string",
+          "enum": [
+            "day",
+            "week",
+            "month",
+            "year"
+          ]
+        },
+        "search_type": {
+          "type": "string",
+          "enum": [
+            "search",
+            "news"
+          ]
+        },
+        "include_domains": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "exclude_domains": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "locale": {
+          "type": "object",
+          "properties": {
+            "country": {
+              "type": "string",
+              "pattern": "^[A-Za-z]{2}$"
+            },
+            "language": {
+              "type": "string",
+              "pattern": "^[A-Za-z]{2}$"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "ExtractOptions": {
+      "type": "object",
+      "properties": {
+        "output_format": {
+          "type": "string",
+          "enum": [
+            "markdown",
+            "html"
+          ]
+        },
+        "include_images": {
+          "type": "boolean"
+        },
+        "include_raw_html": {
+          "type": "boolean"
+        },
+        "render_js": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "CacheRequest": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "prefer",
+            "bypass",
+            "only"
+          ]
+        },
+        "ttl_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "allow_stale_seconds": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "RoutingRequest": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "fixed"
+          ]
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "allow_fallback": {
+          "type": "boolean"
+        },
+        "policy_mode": {
+          "type": "string",
+          "enum": [
+            "classic",
+            "shadow"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "BudgetRequest": {
+      "type": "object",
+      "properties": {
+        "max_provider_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "max_wall_time_ms": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_cost_microunits": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "ClientNegotiation": {
+      "type": "object",
+      "properties": {
+        "accept_contract_versions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "3.0",
+              "2.x"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "accept_features": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "provider_attempts",
+              "dedup_clusters",
+              "source_independence_estimate",
+              "mechanical_text_offsets",
+              "stale_cache"
+            ]
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
