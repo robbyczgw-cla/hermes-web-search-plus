@@ -27,6 +27,10 @@ from providers import (  # noqa: F401 - resolved late via EXTRACT_DISPATCH/monke
 )
 from provider_dispatch import EXTRACT_DISPATCH
 from provider_registry import EXTRACT_PROVIDER_IDS
+from compat_v3 import legacy_request_to_v3, v3_response_to_legacy_extract
+from contract_v3 import Capability, RequestV3, ResponseV3
+from orchestrator_v3 import CapabilityAdapter, ProviderPlan, execute_v3_request
+from runtime_v3 import response_from_legacy
 
 
 EXTRACT_PROVIDER_PRIORITY = list(EXTRACT_PROVIDER_IDS)
@@ -132,7 +136,7 @@ def _validate_extract_urls(urls: List[str], config: Optional[Dict[str, Any]] = N
     return urls
 
 
-def extract_plus(
+def _extract_plus_core(
     urls: List[str],
     provider: str = "auto",
     output_format: str = "markdown",
@@ -209,3 +213,78 @@ def extract_plus(
     if cooldown_skips:
         error_result["cooldown_skips"] = cooldown_skips
     return error_result
+
+
+def _plan_extract_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
+    selected = str(request.routing.get("provider") or "auto")
+    disabled = set((config.get("auto_routing") or {}).get("disabled_providers", []))
+    if selected == "auto":
+        candidates = [provider for provider in resolve_extract_provider_priority(config) if provider not in disabled]
+        chosen = candidates[0] if candidates else EXTRACT_PROVIDER_PRIORITY[0]
+    else:
+        candidates = [selected] + [provider for provider in EXTRACT_PROVIDER_PRIORITY if provider != selected and provider not in disabled]
+        chosen = selected
+    if not request.routing.get("allow_fallback", True):
+        candidates = [chosen]
+    return ProviderPlan(tuple(candidates or [chosen]), chosen)
+
+
+def _execute_extract_v3(request: RequestV3, _plan: ProviderPlan, config: Dict[str, Any]) -> Dict[str, Any]:
+    options = request.options
+    return _extract_plus_core(
+        urls=list(request.input["urls"]),
+        provider=str(request.routing.get("provider") or "auto"),
+        output_format=str(options.get("output_format", "markdown")),
+        include_images=bool(options.get("include_images", False)),
+        include_raw_html=bool(options.get("include_raw_html", False)),
+        render_js=bool(options.get("render_js", False)),
+        config=dict(config),
+    )
+
+
+def _extract_adapter() -> CapabilityAdapter:
+    return CapabilityAdapter(
+        capability=Capability.EXTRACT,
+        plan=_plan_extract_v3,
+        execute=_execute_extract_v3,
+        normalize=response_from_legacy,
+    )
+
+
+def run_extract_request_v3(
+    request: RequestV3,
+    *,
+    config: Optional[Dict[str, Any]] = None,
+) -> ResponseV3:
+    """Execute a native extract RequestV3 through the canonical orchestrator."""
+    runtime_config = config or load_config()
+    return execute_v3_request(request, _extract_adapter(), runtime_config).response
+
+
+def extract_plus(
+    urls: List[str],
+    provider: str = "auto",
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    config: Optional[Dict[str, Any]] = None,
+) -> dict:
+    """Legacy extract projection over the sole native v3 execution path."""
+    selected = provider or "auto"
+    if not urls:
+        return {"provider": selected, "results": [], "error": "No URLs provided", "requested_provider": selected}
+    runtime_config = config or load_config()
+    request = legacy_request_to_v3(
+        Capability.EXTRACT,
+        {
+            "urls": urls,
+            "provider": provider,
+            "output_format": output_format,
+            "include_images": include_images,
+            "include_raw_html": include_raw_html,
+            "render_js": render_js,
+        },
+    )
+    execution = execute_v3_request(request, _extract_adapter(), runtime_config)
+    return v3_response_to_legacy_extract(execution)

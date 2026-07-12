@@ -118,6 +118,17 @@ request_defs = {
             "freshness": {"type": "string", "enum": ["day", "week", "month", "year"]},
             "time_range": {"type": "string", "enum": ["day", "week", "month", "year"]},
             "search_type": {"type": "string", "enum": ["search", "news"]},
+            "depth": {
+                "type": "string",
+                "enum": ["normal", "deep", "deep-reasoning"],
+            },
+            "mode": {"type": "string", "enum": ["normal", "research"]},
+            "quality_report": {"type": "boolean"},
+            "research_time_budget": {
+                "type": "number",
+                "minimum": 1,
+                "maximum": 75,
+            },
             "include_domains": {
                 "type": "array",
                 "items": {"type": "string", "minLength": 1},

@@ -67,6 +67,10 @@ All optional:
 - `freshness: day | week | month | year`
 - `time_range: day | week | month | year`
 - `search_type: search | news`
+- `depth: normal | deep | deep-reasoning`
+- `mode: normal | research`
+- `quality_report: boolean`
+- `research_time_budget: number`, 1–75 seconds
 - `include_domains: string[]`
 - `exclude_domains: string[]`
 - `locale.country: ISO-3166 alpha-2`

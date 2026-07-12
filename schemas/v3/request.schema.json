@@ -158,6 +158,29 @@
             "news"
           ]
         },
+        "depth": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "deep",
+            "deep-reasoning"
+          ]
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "research"
+          ]
+        },
+        "quality_report": {
+          "type": "boolean"
+        },
+        "research_time_budget": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 75
+        },
         "include_domains": {
           "type": "array",
           "items": {

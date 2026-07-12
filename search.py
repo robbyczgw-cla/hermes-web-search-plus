@@ -87,6 +87,10 @@ from request_gate_v3 import validate_provider_mode
 from search_locale import provider_supports_locale, resolve_locale
 from env_loader import load_env_files
 from research import run_research_mode
+from compat_v3 import legacy_request_to_v3, v3_response_to_legacy_search
+from contract_v3 import Capability, RequestV3, ResponseV3
+from orchestrator_v3 import CapabilityAdapter, ProviderPlan, execute_v3_request
+from runtime_v3 import response_from_legacy
 import providers as _providers
 import routing as _routing
 import extract as _extract
@@ -1065,7 +1069,7 @@ def main():
         print(json.dumps(explanation, indent=indent, ensure_ascii=False))
         return
 
-    payload, exit_code = execute_search_request(args, config)
+    payload, exit_code = _execute_search_request_core(args, config)
     if exit_code == 0:
         indent = None if args.compact else 2
         print(json.dumps(payload, indent=indent, ensure_ascii=False))
@@ -1122,7 +1126,7 @@ def _apply_result_quality_pipeline(
             result.setdefault("metadata", {})["domain_diversity_demoted"] = demoted
 
 
-def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
+def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
     """Run the search/research pipeline for parsed args.
 
     Returns ``(payload, exit_code)`` where exit_code 0 means a success payload bound
@@ -1452,7 +1456,12 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
             )
             result.setdefault("metadata", {})["locale"] = locale_meta
 
-        if not cache_hit and not args.no_cache and args.query:
+        if (
+            not cache_hit
+            and not args.no_cache
+            and args.query
+            and not getattr(args, "_v3_no_legacy_cache_write", False)
+        ):
             cache_put(
                 query=args.query,
                 provider=successful_provider or provider,
@@ -1491,6 +1500,98 @@ def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any]
         return error_result, 1
 
 
+def execute_search_request(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
+    """Backward-compatible standalone CLI seam over the unchanged provider core."""
+    return _execute_search_request_core(args, config)
+
+
+def _plan_search_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
+    routing_request = request.routing
+    requested = str(routing_request.get("provider") or "auto")
+    auto_config = config.get("auto_routing", {})
+    if requested == "auto":
+        routed = auto_route_provider(request.input["query"], config)
+        selected = str(routed["provider"])
+    else:
+        selected = requested
+    candidates = [selected]
+    if routing_request.get("allow_fallback", requested == "auto"):
+        disabled = set(auto_config.get("disabled_providers", []))
+        for provider in auto_config.get("provider_priority", list(SEARCH_PROVIDER_IDS)):
+            if (
+                provider not in candidates
+                and provider not in disabled
+                and _provider_auto_allowed(provider, auto_config)
+                and provider_configured(provider, config)
+            ):
+                candidates.append(provider)
+    return ProviderPlan(tuple(candidates), selected)
+
+
+def _search_args_from_v3(request: RequestV3, config: Dict[str, Any]):
+    options = request.options
+    routing_request = request.routing
+    argv: List[str] = [
+        "--query", request.input["query"],
+        "--provider", str(routing_request.get("provider") or "auto"),
+        "--max-results", str(options.get("max_results", 5)),
+    ]
+    if options.get("depth", "normal") != "normal":
+        argv += ["--exa-depth", str(options["depth"])]
+    if options.get("time_range"):
+        argv += ["--time-range", str(options["time_range"])]
+    if options.get("freshness"):
+        argv += ["--freshness", str(options["freshness"])]
+    if options.get("search_type"):
+        argv += ["--search-type", str(options["search_type"])]
+    if options.get("include_domains"):
+        argv += ["--include-domains", *options["include_domains"]]
+    if options.get("exclude_domains"):
+        argv += ["--exclude-domains", *options["exclude_domains"]]
+    if options.get("mode", "normal") != "normal":
+        argv += ["--mode", str(options["mode"]), "--research-time-budget", str(options.get("research_time_budget", 55.0))]
+    if options.get("quality_report"):
+        argv += ["--quality-report"]
+    locale = options.get("locale") or {}
+    if locale.get("language"):
+        argv += ["--language", str(locale["language"])]
+    if locale.get("country"):
+        argv += ["--country", str(locale["country"])]
+    if routing_request.get("allow_fallback") and routing_request.get("mode") == "fixed":
+        argv += ["--allow-fallback"]
+    if request.cache.get("mode") == "bypass":
+        argv += ["--no-cache"]
+    if "ttl_seconds" in request.cache:
+        argv += ["--cache-ttl", str(request.cache["ttl_seconds"])]
+    args = build_parser(config).parse_args(argv)
+    args._v3_no_legacy_cache_write = True
+    return args
+
+
+def _execute_search_v3(request: RequestV3, _plan: ProviderPlan, config: Dict[str, Any]) -> Dict[str, Any]:
+    payload, _exit_code = _execute_search_request_core(_search_args_from_v3(request, config), config)
+    return payload
+
+
+def _search_adapter() -> CapabilityAdapter:
+    return CapabilityAdapter(
+        capability=Capability.SEARCH,
+        plan=_plan_search_v3,
+        execute=_execute_search_v3,
+        normalize=response_from_legacy,
+    )
+
+
+def run_search_request_v3(
+    request: RequestV3,
+    *,
+    config: Optional[Dict[str, Any]] = None,
+) -> ResponseV3:
+    """Execute a native search RequestV3 through the canonical orchestrator."""
+    runtime_config = config or load_config()
+    return execute_v3_request(request, _search_adapter(), runtime_config).response
+
+
 def run_search_request(
     *,
     query: str,
@@ -1523,36 +1624,37 @@ def run_search_request(
     except ValueError as exc:
         return {"error": str(exc), "provider": provider, "query": query, "results": []}
     config = config or load_config()
-    argv: List[str] = [
-        "--query", query or "",
-        "--provider", provider or "auto",
-        "--max-results", str(count),
-    ]
-    if exa_depth and exa_depth != "normal":
-        argv += ["--exa-depth", exa_depth]
-    if time_range and time_range != "none":
-        argv += ["--time-range", time_range]
-    if freshness:
-        argv += ["--freshness", freshness]
-    if search_type:
-        argv += ["--search-type", search_type]
-    if include_domains:
-        argv += ["--include-domains", *include_domains]
-    if exclude_domains:
-        argv += ["--exclude-domains", *exclude_domains]
-    if mode and mode != "normal":
-        argv += ["--mode", mode, "--research-time-budget", str(research_time_budget)]
-    if quality_report:
-        argv += ["--quality-report"]
-    if language and language != "auto":
-        argv += ["--language", language]
-    if country and country != "auto":
-        argv += ["--country", country]
+    request = legacy_request_to_v3(
+        Capability.SEARCH,
+        {
+            "query": query,
+            "provider": provider or "auto",
+            "count": count,
+            "depth": exa_depth,
+            "time_range": time_range,
+            "freshness": freshness,
+            "search_type": search_type,
+            "include_domains": include_domains,
+            "exclude_domains": exclude_domains,
+            "mode": mode,
+            "quality_report": quality_report,
+            "research_time_budget": research_time_budget,
+            "language": language,
+            "country": country,
+        },
+    )
+    execution = execute_v3_request(request, _search_adapter(), config)
+    return v3_response_to_legacy_search(execution)
 
-    parser = build_parser(config)
-    args = parser.parse_args(argv)
-    payload, _exit_code = execute_search_request(args, config)
-    return payload
+
+def run_extract_request_v3(
+    request: RequestV3,
+    *,
+    config: Optional[Dict[str, Any]] = None,
+) -> ResponseV3:
+    """Execute a native extract RequestV3 through the canonical orchestrator."""
+    _sync_extract_dependencies()
+    return _extract.run_extract_request_v3(request, config=config or load_config())
 
 
 def run_extract_request(
