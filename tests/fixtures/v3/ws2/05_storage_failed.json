@@ -1,0 +1,6 @@
+{
+  "request": {"contract_version":"3.0","capability":"extract","input":{"urls":["https://a.example/large"]},"options":{"max_context_chars":1000},"request_id":"req_ws2_05"},
+  "source_lengths": [1500],
+  "simulate_storage_failure": true,
+  "expected": {"status":"degraded","warning_codes":["wsp.content.truncated","wsp.storage.full_text_unavailable"],"storage_attempted":true,"storage_succeeded":false,"reference":null,"full_text_sha256":null,"full_text_chars":null}
+}

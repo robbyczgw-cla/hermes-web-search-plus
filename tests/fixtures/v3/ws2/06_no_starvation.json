@@ -1,0 +1,5 @@
+{
+  "request": {"contract_version":"3.0","capability":"extract","input":{"urls":["https://a.example/huge","https://b.example/two","https://c.example/three"]},"options":{"max_context_chars":3000},"request_id":"req_ws2_06"},
+  "source_lengths": [5000,1000,1000],
+  "expected": {"allocations":[1000,1000,1000],"context_chars_returned":3000,"all_results_nonempty":true}
+}

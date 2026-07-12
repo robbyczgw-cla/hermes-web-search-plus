@@ -1,0 +1,8 @@
+{
+  "cases": [
+    {"input":500,"expected_effective":1000},
+    {"input":999999,"expected_effective":200000},
+    {"input":"invalid","expected_error":"max_context_chars must be an integer"},
+    {"input":true,"expected_error":"max_context_chars must be an integer"}
+  ]
+}

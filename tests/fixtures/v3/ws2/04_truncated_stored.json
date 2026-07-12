@@ -1,0 +1,5 @@
+{
+  "request": {"contract_version":"3.0","capability":"extract","input":{"urls":["https://a.example/large"]},"options":{"max_context_chars":1000},"request_id":"req_ws2_04"},
+  "source_lengths": [1500],
+  "expected": {"status":"degraded","allocation":1000,"storage_attempted":true,"storage_succeeded":true,"reference_store":"web_text_v3","reference_key_pattern":"^[a-f0-9]{64}$","reference_has_absolute_path":false,"full_text_chars":1500}
+}

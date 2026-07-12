@@ -1,0 +1,5 @@
+{
+  "request": {"contract_version":"3.0","capability":"extract","input":{"urls":["https://a.example/source"]},"options":{"max_context_chars":1000},"request_id":"req_ws2_09"},
+  "source_lengths": [1500],
+  "expected": {"inline_is_nfc_prefix":true,"inline_sha_is_inline_text":true,"stored_sha_is_full_text":true,"transformations":["mechanical_segmentation","deterministic_truncation"],"segment_range":[0,1000]}
+}

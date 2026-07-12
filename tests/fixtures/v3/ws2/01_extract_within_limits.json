@@ -1,0 +1,5 @@
+{
+  "request": {"contract_version":"3.0","capability":"extract","input":{"urls":["https://a.example/doc"]},"options":{"max_urls":10,"max_context_chars":60000},"request_id":"req_ws2_01"},
+  "source_lengths": [42],
+  "expected": {"status":"ok","requested_url_count":1,"processed_urls":["https://a.example/doc"],"omitted_urls":[],"omitted_url_count":0,"max_urls":10,"max_context_chars":60000,"context_chars_returned":42,"truncated":false,"stored_content_count":0}
+}

@@ -1,0 +1,4 @@
+{
+  "request": {"contract_version":"3.0","capability":"extract","input":{"urls":["https://e.example/01","https://e.example/02","https://e.example/03","https://e.example/04","https://e.example/05","https://e.example/06","https://e.example/07","https://e.example/08","https://e.example/09","https://e.example/10","https://e.example/11","https://e.example/12"]},"options":{"max_urls":10,"max_context_chars":60000},"request_id":"req_ws2_02"},
+  "expected": {"status":"degraded","warning_codes":["wsp.extract.urls_omitted"],"requested_url_count":12,"processed_url_count":10,"omitted_urls":["https://e.example/11","https://e.example/12"],"omitted_url_count":2,"max_urls":10,"truncated":false}
+}

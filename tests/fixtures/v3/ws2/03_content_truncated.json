@@ -1,0 +1,5 @@
+{
+  "request": {"contract_version":"3.0","capability":"extract","input":{"urls":["https://a.example/long","https://b.example/short","https://c.example/long"]},"options":{"max_context_chars":1000},"request_id":"req_ws2_03"},
+  "source_lengths": [1500,200,1500],
+  "expected": {"status":"degraded","warning_codes":["wsp.content.truncated"],"allocations":[400,200,400],"context_chars_returned":1000,"truncated":true,"storage_entries":2}
+}
