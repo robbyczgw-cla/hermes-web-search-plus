@@ -2,7 +2,7 @@
 
 **Branch:** `feat/v3-evidence-spine`  
 **Review base:** `fix/source-only-charter-purge` at `41fb087`  
-**Status:** PASS candidate pending independent Andy implementation recheck  
+**Status:** PASS candidate after independent-review blocker fix; final Andy recheck pending
 **Date:** 2026-07-12  
 **Active plugin:** unchanged
 
@@ -99,7 +99,8 @@ GREEN after implementation:
 
 Implementation: `bounded_context_v3.FullTextStore`.
 
-- Namespace: `web_text_v3` under the configured cache root's `web/` directory.
+- Namespace: `web_text_v3` under the configured cache root's dedicated `web/v3/` directory.
+- A second marker-based ownership check runs before lookup eviction and before replacing any existing key path.
 - Public reference contains only `store`, opaque SHA-256 key, and media type.
 - No absolute filesystem path appears on the wire.
 - Default TTL: 604,800 seconds.
@@ -141,12 +142,23 @@ Validation is fail-fast:
 
 `max_urls` is an operator ceiling. `max_context_chars` is the operator default used when a request omits its per-call budget.
 
+## Independent-review blocker fix
+
+Andy's first implementation review returned **BLOCK** on one concrete ownership bug: `lookup()` evaluated TTL before checking the v3 marker, and `store()` could replace an unmarked file at a colliding URL hash in the shared legacy `web/` directory.
+
+Two regression tests were written first and reproduced the defect **2/2 RED**:
+
+- expired unmarked key file survives lookup byte-identical;
+- store never overwrites an unmarked key file.
+
+The fix moved owned entries into `web/v3/`, checks ownership before TTL deletion, and refuses replacement of an existing unowned key path. Both tests are now green, the complete suite is green, and the disposable live extraction stores exactly one marked file in `web/v3/`.
+
 ## Full verification
 
 ### Clean isolated-config suite
 
 ```text
-685 passed, 6 subtests passed in 7.02s
+687 passed, 6 subtests passed in 6.98s
 ```
 
 ### Sterile and generated gates
@@ -167,15 +179,14 @@ Target: public Hermes Agent documentation page. Native v3 request used one URL a
 
 ```json
 {
-  "cache_root_files": 1,
   "context_chars_returned": 1000,
-  "observations": 1,
+  "owned_files": 1,
+  "owned_namespace": "web/v3",
   "reference_store": "web_text_v3",
   "results": 1,
   "schema_valid": true,
   "status": "degraded",
   "storage_succeeded": true,
-  "stored_content_count": 1,
   "truncated": true
 }
 ```

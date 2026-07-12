@@ -300,7 +300,7 @@ class FullTextStore:
         now: Callable[[], float] = time.time,
     ) -> None:
         self.cache_root = Path(cache_root)
-        self.web_dir = self.cache_root / "web"
+        self.web_dir = self.cache_root / "web" / "v3"
         self.ttl_seconds = max(0, int(ttl_seconds))
         self.max_bytes = max(0, int(max_bytes))
         self.now = now
@@ -340,6 +340,8 @@ class FullTextStore:
         )
         path = self.path_for_key(key)
         try:
+            if path.exists() and not self._owned(path):
+                raise OSError("refusing to overwrite unowned full-text entry")
             _atomic_write_owned(path, f"{_OWNED_MARKER}{metadata} -->\n{full_text}")
             self.cleanup_orphans()
             self.enforce_retention()
@@ -368,11 +370,11 @@ class FullTextStore:
     def lookup(self, key: str) -> str | None:
         path = self.path_for_key(key)
         try:
+            if not self._owned(path):
+                return None
             stat = path.stat()
             if self.now() - stat.st_mtime > self.ttl_seconds:
                 path.unlink(missing_ok=True)
-                return None
-            if not self._owned(path):
                 return None
             payload = path.read_text(encoding="utf-8")
         except (OSError, UnicodeError):

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
 
@@ -93,19 +94,50 @@ def test_unwritable_store_degrades_without_fake_reference(tmp_path: Path, monkey
 
 
 def test_owned_orphan_temp_is_cleaned_but_foreign_temp_is_preserved(tmp_path: Path) -> None:
-    web = tmp_path / "web"
+    store = FullTextStore(tmp_path)
+    web = store.web_dir
     web.mkdir(parents=True)
     owned = web / ".wsp-v3-orphan.tmp"
     foreign = web / "someone-else.tmp"
     owned.write_text("owned", encoding="utf-8")
     foreign.write_text("foreign", encoding="utf-8")
-    store = FullTextStore(tmp_path)
 
     stats = store.cleanup_orphans()
 
     assert stats["orphan_temps_removed"] == 1
     assert not owned.exists()
     assert foreign.read_text(encoding="utf-8") == "foreign"
+
+
+def test_expired_unmarked_key_file_survives_lookup_byte_identical(tmp_path: Path) -> None:
+    now = 2_000_000.0
+    store = FullTextStore(tmp_path, ttl_seconds=100, now=lambda: now)
+    key = "a" * 64
+    path = store.path_for_key(key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    original = b"legacy v2 full text"
+    path.write_bytes(original)
+    os.utime(path, (now - 101, now - 101))
+
+    assert store.lookup(key) is None
+    assert path.read_bytes() == original
+
+
+def test_store_never_overwrites_unmarked_key_file(tmp_path: Path) -> None:
+    store = FullTextStore(tmp_path)
+    url = "https://collision.example/doc"
+
+    key = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    path = store.path_for_key(key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    original = b"foreign bytes at colliding key"
+    path.write_bytes(original)
+
+    result = store.store(url, "new v3 full text")
+
+    assert result["storage_succeeded"] is False
+    assert result["reference"] is None
+    assert path.read_bytes() == original
 
 
 def test_lookup_enforces_ttl_and_returns_full_text(tmp_path: Path) -> None:

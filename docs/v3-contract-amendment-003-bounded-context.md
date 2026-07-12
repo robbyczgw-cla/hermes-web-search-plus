@@ -83,7 +83,7 @@ Policy action `truncated_by_limit` gains additive reason `max_context_chars`.
 
 ## Retention
 
-Store namespace is `web_text_v3` under the configured web cache root. Public references use only `{store,key,media_type}`.
+Store namespace is `web_text_v3` under the configured cache root at `web/v3/`. Public references use only `{store,key,media_type}`. The dedicated physical subdirectory and marker checks are both mandatory so v2 legacy files with the same URL hash cannot be overwritten or deleted.
 
 Defaults:
 
