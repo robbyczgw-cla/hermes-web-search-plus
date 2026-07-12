@@ -4,12 +4,23 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from config import DEFAULT_CONFIG, get_api_key
-from provider_registry import DEFAULT_PROVIDER_PRIORITY
+from provider_registry import DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS
 from provider_stats import performance_adjustments
 from quality import _choose_tie_winner
 
 
 ROUTING_POLICY = "routing-v2"
+
+
+def iter_all_selectable_provider_modes() -> Tuple[str, ...]:
+    """Enumerate every search mode that routing/fallback is allowed to select."""
+    return tuple(
+        provider
+        for provider, spec in PROVIDER_SPECS.items()
+        if spec.supports_search
+        and not spec.rejected_reason
+        and spec.search_output_semantics == "source_results"
+    )
 
 
 # Ordered routing-class rules from the qualitative 25-query benchmark.
@@ -976,8 +987,7 @@ class QueryAnalyzer:
             "querit": (research_score * 0.65) + (rag_score * 0.35) + (recency_score * 0.45),
             "linkup": linkup_source_score + (rag_score * 0.7) + (research_score * 0.45) + (recency_score * 0.35),
             "exa": discovery_score + (1.0 if re.search(r"\b(similar|alternatives?|examples?)\b", query, re.IGNORECASE) else 0.0) + (exa_deep_score * 0.5) + (exa_deep_reasoning_score * 0.5),
-            "perplexity": direct_answer_score + (local_news_score * 0.4) + (recency_score * 0.55),
-            "kilo-perplexity": direct_answer_score + (local_news_score * 0.4) + (recency_score * 0.55),
+
             "you": rag_score + (recency_score * 0.25),  # You.com good for real-time + RAG
             "searxng": privacy_score,  # SearXNG for privacy/multi-source queries
             "firecrawl": discovery_score + (research_score * 0.35) + (recency_score * 0.25),
@@ -999,8 +1009,7 @@ class QueryAnalyzer:
             "querit": research_matches,
             "linkup": linkup_source_matches + rag_matches + research_matches,
             "exa": discovery_matches + exa_deep_matches + exa_deep_reasoning_matches,
-            "perplexity": direct_answer_matches,
-            "kilo-perplexity": direct_answer_matches,
+
             "you": rag_matches,
             "searxng": privacy_matches,
             "firecrawl": discovery_matches + research_matches,
@@ -1117,15 +1126,8 @@ class QueryAnalyzer:
                 # (user might want similar search)
                 pass  # Keep current winner but note it
 
-        # Determine Exa search depth when routed to Exa
+        # Exa is permanently constrained to source-result mode in WSP 3.0.
         exa_depth = "normal"
-        if winner == "exa":
-            deep_r_score = analysis.get("exa_deep_reasoning_score", 0)
-            deep_score = analysis.get("exa_deep_score", 0)
-            if deep_r_score >= 4.0:
-                exa_depth = "deep-reasoning"
-            elif deep_score >= 4.0:
-                exa_depth = "deep"
 
         # Build detailed routing result
         threshold = self.auto_config.get("confidence_threshold", 0.3)

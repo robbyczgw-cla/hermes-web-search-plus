@@ -103,7 +103,7 @@ SNAPSHOT_PAYLOAD_CONTRACT: Dict[str, Any] = {
     "optional_payload_fields": {
         "provider": str,
         "query": str,
-        "answer": str,
+
         "source_summaries": list,
         "quality_report": dict,
         "metadata": dict,
@@ -131,7 +131,7 @@ SNAPSHOT_TEXT_LIMITS: Dict[str, int] = {
     "snippet": 300,
     "content": 1200,
     "raw_content": 1200,
-    "answer": 600,
+
 }
 
 
@@ -294,11 +294,12 @@ def sanitize_payload_for_snapshot(payload: Dict[str, Any]) -> Dict[str, Any]:
             if isinstance(item, dict)
         ],
     }
-    answer = payload.get("answer")
-    if isinstance(answer, str) and answer.strip():
-        sanitized["answer"] = _truncate_text(answer, SNAPSHOT_TEXT_LIMITS["answer"])
     source_summaries = [
-        _sanitize_item(item, contract["required_source_summary_fields"], contract["optional_source_summary_fields"])
+        _sanitize_item(
+            item,
+            contract["required_source_summary_fields"],
+            contract["optional_source_summary_fields"],
+        )
         for item in (payload.get("source_summaries") or [])
         if isinstance(item, dict)
     ]

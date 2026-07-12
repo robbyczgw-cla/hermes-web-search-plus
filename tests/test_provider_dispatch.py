@@ -116,12 +116,12 @@ class SearchAdapterKwargParityTests(unittest.TestCase):
             self.assertEqual(call_args, (), provider)
             self.assertEqual(set(call_kwargs), EXPECTED_SEARCH_KWARGS[provider], provider)
 
-    def test_exa_adapter_honours_routing_exa_depth_suggestion(self):
+    def test_exa_adapter_ignores_banned_routing_depth_suggestion(self):
         config = search._deepcopy_default_config()
         args = search.build_parser(config).parse_args(["--query", "q"])
         recorder = _Recorder()
         provider_dispatch.SEARCH_DISPATCH["exa"]({"search_exa": recorder}, "exa", args, "k", config, {"exa_depth": "deep"})
-        self.assertEqual(recorder.calls[0][1]["exa_depth"], "deep")
+        self.assertEqual(recorder.calls[0][1]["exa_depth"], "normal")
 
 
 class ExtractAdapterKwargParityTests(unittest.TestCase):

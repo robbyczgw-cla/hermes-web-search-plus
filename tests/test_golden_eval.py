@@ -256,7 +256,7 @@ class SnapshotRecorderTests(unittest.TestCase):
         self.assertNotIn("favicon", sanitized["results"][0])
         self.assertLessEqual(len(sanitized["results"][0]["snippet"]), 300)
         self.assertLessEqual(len(sanitized["source_summaries"][0]["content"]), 1200)
-        self.assertLessEqual(len(sanitized["answer"]), 600)
+        self.assertNotIn("answer", sanitized)
         self.assertEqual(sanitized["quality_report"], {"duplicate_count": 1})
 
     def test_default_snapshot_expectations_are_derived_from_payload(self):

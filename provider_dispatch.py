@@ -21,7 +21,7 @@ registry capability flags can never drift apart.
 
 from typing import Any, Callable, Dict
 
-from config import DEFAULT_CONFIG, _validate_searxng_url, keyless_public_allowed
+from config import _validate_searxng_url, keyless_public_allowed
 from search_locale import resolve_locale
 
 
@@ -152,16 +152,12 @@ def _call_querit_search(search_module, prov, args, key, config, routing_info):
 
 
 def _call_exa_search(search_module, prov, args, key, config, routing_info):
-    # CLI --exa-depth overrides; fallback to auto-routing suggestion
-    exa_depth = args.exa_depth
-    if exa_depth == "normal" and routing_info.get("exa_depth") in ("deep", "deep-reasoning"):
-        exa_depth = routing_info["exa_depth"]
     return _resolve(search_module, "search_exa")(
         query=args.query or "",
         api_key=key,
         max_results=args.max_results,
         search_type=args.exa_type,
-        exa_depth=exa_depth,
+        exa_depth="normal",
         category=args.category,
         start_date=args.start_date,
         end_date=args.end_date,
@@ -204,20 +200,6 @@ def _call_parallel_search(search_module, prov, args, key, config, routing_info):
         client_model=parallel_config.get("client_model"),
     )
 
-
-def _call_perplexity_search(search_module, prov, args, key, config, routing_info):
-    """Shared adapter for both ``perplexity`` and ``kilo-perplexity``."""
-    perplexity_config = config.get(prov, {})
-    defaults = DEFAULT_CONFIG.get(prov, {})
-    return _resolve(search_module, "search_perplexity")(
-        query=args.query,
-        api_key=key,
-        max_results=args.max_results,
-        model=perplexity_config.get("model", defaults.get("model", "sonar-pro")),
-        api_url=perplexity_config.get("api_url", defaults.get("api_url", "https://api.perplexity.ai/chat/completions")),
-        freshness=getattr(args, "freshness", None),
-        provider_name=prov,
-    )
 
 
 def _call_you_search(search_module, prov, args, key, config, routing_info):
@@ -278,8 +260,7 @@ SEARCH_DISPATCH: Dict[str, Callable[..., Dict[str, Any]]] = {
     "exa": _call_exa_search,
     "firecrawl": _call_firecrawl_search,
     "parallel": _call_parallel_search,
-    "perplexity": _call_perplexity_search,
-    "kilo-perplexity": _call_perplexity_search,
+
     "you": _call_you_search,
     "searxng": _call_searxng_search,
     "keenable": _call_keenable_search,

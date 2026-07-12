@@ -1444,7 +1444,6 @@ def _format_results(data: dict) -> str:
     results = data.get("results", [])
     provider = data.get("provider", "unknown")
     routing = data.get("routing", {})
-    answer = data.get("answer", "")
     cached = data.get("cached", False)
 
     lines = []
@@ -1485,9 +1484,6 @@ def _format_results(data: dict) -> str:
         else:
             detail = f"not applied — {search_type_meta.get('reason', 'unsupported provider')}"
         lines.append(f"[Search type: {search_type_meta['requested']} | {detail}]")
-
-    if answer:
-        lines.append(f"\nAnswer: {answer}\n")
 
     quality_report = data.get("quality_report") or {}
     if quality_report:
@@ -1637,9 +1633,9 @@ def register(ctx: Any) -> None:
             "Brave for general web search, "
             "Linkup for source-backed grounding/citations, "
             "Firecrawl for web search plus optional scrape-ready results, "
-            "Perplexity for direct answers, You.com for real-time snippets, "
-            "SearXNG for privacy-focused/self-hosted search, and SerpBase/Querit only when explicitly enabled or forced. "
-            "Set depth='deep' for Exa multi-source synthesis, 'deep-reasoning' for complex cross-document analysis. "
+            "You.com for real-time snippets, SearXNG for privacy-focused/self-hosted search, "
+            "and SerpBase/Querit only when explicitly enabled or forced. "
+            "All providers are constrained to source-result/source-text modes. "
             "Override with provider param if needed."
         ),
         "parameters": {
@@ -1657,8 +1653,8 @@ def register(ctx: Any) -> None:
                 },
                 "depth": {
                     "type": "string",
-                    "enum": ["normal", "deep", "deep-reasoning"],
-                    "description": "Exa search depth: 'deep' synthesizes across sources (4-12s), 'deep-reasoning' for complex cross-document analysis (12-50s). Only applies when routed to Exa.",
+                    "enum": ["normal"],
+                    "description": "Exa source-result depth; fixed to normal by the source-only charter.",
                     "default": "normal",
                 },
                 "count": {

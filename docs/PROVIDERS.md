@@ -18,11 +18,11 @@ catalog; regenerate it with `python scripts/gen_provider_docs.py` after changing
 | Exa | ✅ | ✅ | `EXA_API_KEY` | — | yes (priority 3) | 1,000 free searches/month | https://dashboard.exa.ai/api-keys |
 | Firecrawl | ✅ | ✅ | `FIRECRAWL_API_KEY` | — | yes (priority 4) | 500 one-time credits | https://www.firecrawl.dev/app/api-keys |
 | Parallel | ✅ | ✅ | `PARALLEL_API_KEY` | — | explicit-only (`auto_allow=false`) | API key required | https://platform.parallel.ai |
-| Perplexity | ✅ | — | `PERPLEXITY_API_KEY` | — | explicit-only (`auto_allow=false`) | API key required | https://www.perplexity.ai/settings/api |
-| Kilo Code Perplexity bridge | ✅ | — | `KILOCODE_API_KEY` | — | explicit-only (`auto_allow=false`) | Depends on Kilo account | https://kilo.ai |
+| Perplexity | — | — | `PERPLEXITY_API_KEY` | — | — | API key required | https://www.perplexity.ai/settings/api |
+| Kilo Code Perplexity bridge | — | — | `KILOCODE_API_KEY` | — | — | Depends on Kilo account | https://kilo.ai |
 | You.com | ✅ | ✅ | `YOU_API_KEY` | — | yes (priority 1) | Limited/API key required | https://api.you.com |
-| SearXNG | ✅ | — | `SEARXNG_INSTANCE_URL` | — | yes (priority 13) | Free if self-hosted | https://docs.searxng.org/admin/installation.html |
-| Keenable | ✅ | ✅ | `KEENABLE_API_KEY` | yes (`KEENABLE_ALLOW_PUBLIC` opt-in) | yes (priority 14) | Keyless public tier; optional key for higher limits | https://keenable.ai |
+| SearXNG | ✅ | — | `SEARXNG_INSTANCE_URL` | — | yes (priority 11) | Free if self-hosted | https://docs.searxng.org/admin/installation.html |
+| Keenable | ✅ | ✅ | `KEENABLE_API_KEY` | yes (`KEENABLE_ALLOW_PUBLIC` opt-in) | yes (priority 12) | Keyless public tier; optional key for higher limits | https://keenable.ai |
 
 `priority N` is the provider's position in the default routing priority list.
 Providers marked explicit-only stay out of `provider="auto"` routing and fallback
@@ -72,11 +72,11 @@ LLM-ready web search and fast URL extraction with long source excerpts.
 
 ### Perplexity
 
-Direct answer-style search when configured directly.
+Rejected legacy answer endpoint; no source-only mode is registered.
 
 ### Kilo Code Perplexity bridge
 
-Perplexity-compatible access through Kilo Code when configured.
+Rejected legacy answer bridge; no source-only mode is registered.
 
 ### You.com
 

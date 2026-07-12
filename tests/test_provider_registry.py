@@ -16,8 +16,7 @@ def test_provider_registry_is_the_complete_capability_source():
         "exa",
         "firecrawl",
         "parallel",
-        "perplexity",
-        "kilo-perplexity",
+
         "you",
         "searxng",
         "keenable",

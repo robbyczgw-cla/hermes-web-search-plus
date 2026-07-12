@@ -406,8 +406,7 @@ def test_default_behavior_config_blocks_low_trust_auto_providers():
     assert config["auto_routing"]["auto_allow"]["querit"] is False
     assert config["auto_routing"]["auto_allow"]["brave"] is False
     assert config["auto_routing"]["auto_allow"]["parallel"] is False
-    assert config["auto_routing"]["auto_allow"]["kilo-perplexity"] is False
-    assert config["auto_routing"]["auto_allow"]["perplexity"] is False
+
 
 
 def test_setup_dry_run_can_auto_deny_provider(tmp_path, capsys):
@@ -423,7 +422,7 @@ def test_setup_dry_run_can_auto_deny_provider(tmp_path, capsys):
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "auto-allow false: brave, kilo-perplexity, parallel, perplexity, querit, serpbase" in out
+    assert "auto-allow false: brave, parallel, querit, serpbase" in out
     assert not env_path.exists()
     assert not config_path.exists()
 

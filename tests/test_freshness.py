@@ -149,17 +149,11 @@ class FreshnessRequestTests(unittest.TestCase):
 
         self.assertIn("freshness=day", captured["url"])
 
-    def test_perplexity_request_includes_recency_filter(self):
-        captured = {}
-
-        def fake_post(url, headers, body, timeout=30):
-            captured["body"] = body
-            return {"choices": [{"message": {"content": "answer"}}], "citations": []}
-
-        with mock.patch("search.make_request", side_effect=fake_post):
-            search.search_perplexity(query="q", api_key="pplx-key", freshness="year")
-
-        self.assertEqual(captured["body"]["search_recency_filter"], "year")
+    def test_perplexity_freshness_path_is_rejected_before_network(self):
+        with mock.patch("search.make_request") as request:
+            with self.assertRaisesRegex(ValueError, "no_verified_source_only_endpoint"):
+                search.search_perplexity(query="q", api_key="pplx-key", freshness="year")
+        request.assert_not_called()
 
 
 class FreshnessPipelineTests(unittest.TestCase):

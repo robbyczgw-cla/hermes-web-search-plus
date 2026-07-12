@@ -29,6 +29,17 @@ class ProviderSpec:
     signup_url: str = ""
     upstream_capabilities: Tuple[str, ...] = ()
     keyless: bool = False
+    search_output_semantics: str | None = "source_results"
+    extract_output_semantics: str | None = "source_text"
+    provider_fields_allowlist: Tuple[str, ...] = ()
+    rejected_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        allowed = {"source_results", "source_text"}
+        if self.supports_search and self.search_output_semantics not in allowed:
+            raise ValueError(f"{self.provider}: search mode is not source-only")
+        if self.supports_extract and self.extract_output_semantics not in allowed:
+            raise ValueError(f"{self.provider}: extract mode is not source-only")
 
 
 _PROVIDER_SPECS = (
@@ -150,26 +161,28 @@ _PROVIDER_SPECS = (
         provider="perplexity",
         env_var="PERPLEXITY_API_KEY",
         display_name="Perplexity",
-        description="Direct answer-style search when configured directly.",
+        description="Rejected legacy answer endpoint; no source-only mode is registered.",
         config_section="perplexity",
-        supports_search=True,
+        supports_search=False,
         supports_extract=False,
-        capability_labels=("search", "answer"),
+        capability_labels=(),
         auto_allowed_by_default=False,
         signup_url="https://www.perplexity.ai/settings/api",
+        rejected_reason="no_verified_source_only_endpoint",
     ),
     ProviderSpec(
         provider="kilo-perplexity",
         env_var="KILOCODE_API_KEY",
         display_name="Kilo Code Perplexity bridge",
-        description="Perplexity-compatible access through Kilo Code when configured.",
+        description="Rejected legacy answer bridge; no source-only mode is registered.",
         config_section="kilo-perplexity",
-        supports_search=True,
+        supports_search=False,
         supports_extract=False,
-        capability_labels=("search", "answer"),
+        capability_labels=(),
         auto_allowed_by_default=False,
         free_tier="Depends on Kilo account",
         signup_url="https://kilo.ai",
+        rejected_reason="no_verified_source_only_endpoint",
     ),
     ProviderSpec(
         provider="you",
@@ -227,8 +240,6 @@ DEFAULT_PROVIDER_PRIORITY = (
     "brave",
     "serpbase",
     "querit",
-    "kilo-perplexity",
-    "perplexity",
     "searxng",
     "keenable",
 )

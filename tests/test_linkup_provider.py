@@ -54,27 +54,15 @@ class LinkupProviderTests(unittest.TestCase):
         self.assertEqual(body["includeDomains"], ["example.com"])
         self.assertEqual(body["excludeDomains"], ["wikipedia.org"])
 
-    def test_search_linkup_parses_sourced_answer(self):
-        fake_response = {
-            "answer": "The claim is supported by current studies.",
-            "sources": [
-                {
-                    "name": "Study source",
-                    "url": "https://example.org/study",
-                    "snippet": "A relevant study snippet",
-                }
-            ],
-        }
-        with mock.patch("search.make_request", return_value=fake_response):
-            result = search.search_linkup(
-                query="fact check AI tutoring outcomes with citations",
-                api_key="linkup-test-key-12345",
-                output_type="sourcedAnswer",
-            )
-
-        self.assertEqual(result["answer"], "The claim is supported by current studies.")
-        self.assertEqual(result["results"][0]["title"], "Study source")
-        self.assertEqual(result["results"][0]["snippet"], "A relevant study snippet")
+    def test_search_linkup_rejects_sourced_answer_before_network(self):
+        with mock.patch("search.make_request") as request:
+            with self.assertRaisesRegex(ValueError, "outputType=searchResults"):
+                search.search_linkup(
+                    query="fact check AI tutoring outcomes with citations",
+                    api_key="linkup-test-key-12345",
+                    output_type="sourcedAnswer",
+                )
+        request.assert_not_called()
 
     def test_extract_linkup_batch_keeps_partial_results_when_one_fetch_hangs(self):
         def fake_make_request(url, headers, body, timeout=30):

@@ -23,8 +23,7 @@ def test_default_auto_allow_blocks_unreliable_and_answer_only_providers():
     assert auto_allow["serpbase"] is False
     assert auto_allow["querit"] is False
     assert auto_allow["brave"] is False
-    assert auto_allow["kilo-perplexity"] is False
-    assert auto_allow["perplexity"] is False
+
 
 
 def test_legacy_auto_allow_config_inherits_new_guarded_provider_defaults():
@@ -34,8 +33,7 @@ def test_legacy_auto_allow_config_inherits_new_guarded_provider_defaults():
     validated = search._validate_runtime_config(config)
 
     assert validated["auto_routing"]["auto_allow"]["brave"] is False
-    assert validated["auto_routing"]["auto_allow"]["kilo-perplexity"] is False
-    assert validated["auto_routing"]["auto_allow"]["perplexity"] is False
+
 
 
 def test_briefing_synthesis_overrides_docs_keywords():
@@ -256,4 +254,4 @@ def test_synthesis_query_routes_to_you_without_auto_selecting_kilo():
 
     assert routing["provider"] == "you"
     assert "answer_mode_recommended" not in routing
-    assert "kilo-perplexity" in routing["auto_allow_excluded"]
+    assert "kilo-perplexity" not in routing["scores"]
