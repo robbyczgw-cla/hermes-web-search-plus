@@ -1,0 +1,56 @@
+{
+  "contract_version": "3.0",
+  "request_id": "req_extract_0001",
+  "capability": "extract",
+  "status": "ok",
+  "results": [
+    {
+      "result_id": "ex_1",
+      "status": "ok",
+      "title": "Example Document",
+      "url": "https://example.com/doc",
+      "canonical_url": "https://example.com/doc",
+      "text": "Hello world. This is a document.",
+      "offset_unit": "unicode_codepoint",
+      "text_normalization": "NFC",
+      "segments": [
+        { "segment_id": "seg_1", "start": 0, "end": 12 },
+        { "segment_id": "seg_2", "start": 12, "end": 32 }
+      ],
+      "provenance": [
+        {
+          "provider": "tavily",
+          "source_url": "https://example.com/doc",
+          "retrieved_at": "2026-07-12T08:31:00Z"
+        }
+      ]
+    }
+  ],
+  "provider_attempts": [
+    {
+      "attempt_id": "att_1",
+      "provider": "tavily",
+      "capability": "extract",
+      "outcome": "success",
+      "retry_count": 0,
+      "result_count": 1,
+      "started_at": "2026-07-12T08:31:00Z",
+      "duration_ms": 800,
+      "budget_decision": "allowed",
+      "circuit_state_before": "closed",
+      "circuit_state_after": "closed"
+    }
+  ],
+  "routing_receipt": {
+    "policy_id": "classic",
+    "policy_revision": "1",
+    "mode": "classic",
+    "candidate_order": ["tavily"],
+    "selected_provider": "tavily",
+    "fallback_reason": "none"
+  },
+  "cache_status": { "disposition": "miss" },
+  "limits_applied": {},
+  "dedup_clusters": [],
+  "warnings": []
+}

@@ -31,6 +31,15 @@ class ResponseStatus(StrEnum):
     FAILED = "failed"
 
 
+class DegradedReason(StrEnum):
+    SERVED_STALE = "wsp.cache.served_stale"
+    CONTENT_TRUNCATED = "wsp.content.truncated"
+    URLS_OMITTED = "wsp.extract.urls_omitted"
+    PARTIAL_EXTRACTION = "wsp.extract.partial"
+    BUDGET_LIMITED = "wsp.budget.limited"
+    FINGERPRINTING_REDUCED = "wsp.independence.method_degraded"
+
+
 class ErrorClass(StrEnum):
     INVALID_REQUEST = "invalid_request"
     UNSUPPORTED = "unsupported"
@@ -334,6 +343,17 @@ class ResponseV3:
         }
         if not required_receipt_fields.issubset(self.routing_receipt):
             raise ValueError("routing_receipt is missing frozen required fields")
+        if self.status is ResponseStatus.DEGRADED:
+            accepted_codes = {reason.value for reason in DegradedReason}
+            warning_codes = {
+                warning.get("code")
+                for warning in self.warnings
+                if isinstance(warning, dict)
+            }
+            if not accepted_codes.intersection(warning_codes):
+                raise ValueError(
+                    "degraded response requires an enumerated degrade warning"
+                )
         if self.status is ResponseStatus.FAILED and self.error is None:
             raise ValueError("failed response requires error")
         if self.status is not ResponseStatus.FAILED and self.error is not None:

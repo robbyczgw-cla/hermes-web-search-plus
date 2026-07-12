@@ -1,4 +1,5 @@
 import json
+import unicodedata
 import unittest
 from pathlib import Path
 
@@ -6,6 +7,7 @@ from contract_v3 import (
     AttemptOutcome,
     CacheDisposition,
     Capability,
+    DegradedReason,
     ErrorClass,
     FallbackReason,
     ProviderAttemptV3,
@@ -31,6 +33,17 @@ CLASSIC_RECEIPT = {
 class ContractV3Tests(unittest.TestCase):
     def test_enum_namespace_is_frozen(self):
         self.assertEqual([item.value for item in Capability], ["search", "extract"])
+        self.assertEqual(
+            [item.value for item in DegradedReason],
+            [
+                "wsp.cache.served_stale",
+                "wsp.content.truncated",
+                "wsp.extract.urls_omitted",
+                "wsp.extract.partial",
+                "wsp.budget.limited",
+                "wsp.independence.method_degraded",
+            ],
+        )
         self.assertEqual(
             [item.value for item in ErrorClass],
             [
@@ -158,6 +171,35 @@ class ContractV3Tests(unittest.TestCase):
                 cache_status={"disposition": CacheDisposition.MISS.value},
             )
 
+    def test_degraded_response_requires_enumerated_warning(self):
+        with self.assertRaises(ValueError):
+            ResponseV3(
+                request_id="req_degraded",
+                capability=Capability.SEARCH,
+                status=ResponseStatus.DEGRADED,
+                results=[],
+                provider_attempts=[],
+                routing_receipt=CLASSIC_RECEIPT,
+                cache_status={"disposition": CacheDisposition.STALE_HIT.value},
+                warnings=[{"code": "wsp.warning.misc", "message": "not typed"}],
+            )
+        response = ResponseV3(
+            request_id="req_degraded",
+            capability=Capability.SEARCH,
+            status=ResponseStatus.DEGRADED,
+            results=[],
+            provider_attempts=[],
+            routing_receipt=CLASSIC_RECEIPT,
+            cache_status={"disposition": CacheDisposition.STALE_HIT.value},
+            warnings=[
+                {
+                    "code": DegradedReason.SERVED_STALE.value,
+                    "message": "served stale cache",
+                }
+            ],
+        )
+        self.assertEqual(response.status, ResponseStatus.DEGRADED)
+
     def test_schema_enum_values_match_python(self):
         request_schema = json.loads((SCHEMA_DIR / "request.schema.json").read_text())
         response_schema = json.loads((SCHEMA_DIR / "response.schema.json").read_text())
@@ -168,6 +210,11 @@ class ContractV3Tests(unittest.TestCase):
         defs = response_schema["$defs"]
         self.assertEqual(
             defs["Capability"]["enum"], [item.value for item in Capability]
+        )
+        self.assertIn("dedup_clusters", response_schema["required"])
+        self.assertEqual(
+            defs["DegradedReason"]["enum"],
+            [item.value for item in DegradedReason],
         )
         self.assertEqual(
             defs["ErrorClass"]["enum"], [item.value for item in ErrorClass]
@@ -204,6 +251,36 @@ class ContractV3Tests(unittest.TestCase):
             ).to_dict(),
             response_schema,
         )
+        fixture_dir = ROOT / "tests" / "fixtures" / "v3"
+        for fixture_path in sorted(fixture_dir.glob("*.json")):
+            with self.subTest(fixture=fixture_path.name):
+                jsonschema.validate(
+                    json.loads(fixture_path.read_text()), response_schema
+                )
+
+    def test_schema_enforces_nfc_marker_and_typed_degrade_reason(self):
+        try:
+            import jsonschema
+        except ImportError:
+            self.skipTest("jsonschema is optional")
+        response_schema = json.loads((SCHEMA_DIR / "response.schema.json").read_text())
+        fixture_dir = ROOT / "tests" / "fixtures" / "v3"
+
+        extract_payload = json.loads(
+            (fixture_dir / "02_extract_success.json").read_text()
+        )
+        self.assertEqual(
+            unicodedata.normalize("NFC", extract_payload["results"][0]["text"]),
+            extract_payload["results"][0]["text"],
+        )
+        extract_payload["results"][0].pop("text_normalization")
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(extract_payload, response_schema)
+
+        degraded_payload = json.loads((fixture_dir / "05_degraded.json").read_text())
+        degraded_payload["warnings"][0]["code"] = "wsp.warning.misc"
+        with self.assertRaises(jsonschema.ValidationError):
+            jsonschema.validate(degraded_payload, response_schema)
 
 
 if __name__ == "__main__":

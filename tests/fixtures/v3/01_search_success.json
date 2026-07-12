@@ -1,0 +1,84 @@
+{
+  "contract_version": "3.0",
+  "request_id": "req_search_0001",
+  "capability": "search",
+  "status": "ok",
+  "results": [
+    {
+      "result_id": "res_1",
+      "status": "ok",
+      "title": "Example Domain",
+      "url": "https://example.com/article",
+      "canonical_url": "https://example.com/article",
+      "snippet": "An illustrative first result.",
+      "published_at": "2026-07-10T12:00:00Z",
+      "cluster_id": "dc_1",
+      "provenance": [
+        {
+          "provider": "serper",
+          "source_url": "https://example.com/article",
+          "retrieved_at": "2026-07-12T08:30:00Z",
+          "provider_rank": 1
+        }
+      ]
+    },
+    {
+      "result_id": "res_2",
+      "status": "ok",
+      "title": "Another Source",
+      "url": "https://news.example.org/story",
+      "canonical_url": "https://news.example.org/story",
+      "snippet": "A second, distinct-domain result.",
+      "cluster_id": "dc_2",
+      "provenance": [
+        {
+          "provider": "serper",
+          "source_url": "https://news.example.org/story",
+          "retrieved_at": "2026-07-12T08:30:00Z",
+          "provider_rank": 2
+        }
+      ]
+    }
+  ],
+  "provider_attempts": [
+    {
+      "attempt_id": "att_1",
+      "provider": "serper",
+      "capability": "search",
+      "outcome": "success",
+      "retry_count": 0,
+      "result_count": 2,
+      "started_at": "2026-07-12T08:30:00Z",
+      "duration_ms": 420,
+      "budget_decision": "allowed",
+      "circuit_state_before": "closed",
+      "circuit_state_after": "closed"
+    }
+  ],
+  "routing_receipt": {
+    "policy_id": "classic",
+    "policy_revision": "1",
+    "mode": "classic",
+    "candidate_order": ["serper", "brave"],
+    "selected_provider": "serper",
+    "fallback_reason": "none"
+  },
+  "cache_status": { "disposition": "miss" },
+  "limits_applied": { "max_results": 10 },
+  "dedup_clusters": [
+    { "cluster_id": "dc_1", "canonical_result_id": "res_1", "member_result_ids": ["res_1"], "providers": ["serper"] },
+    { "cluster_id": "dc_2", "canonical_result_id": "res_2", "member_result_ids": ["res_2"], "providers": ["serper"] }
+  ],
+  "source_independence_estimate": {
+    "score": 0.7,
+    "unique_cluster_count": 2,
+    "result_count": 2,
+    "source_family_count": 2,
+    "provider_count": 1,
+    "method": "url+snippet-minhash-v1",
+    "confidence": "medium",
+    "method_degraded": false,
+    "limitations": ["shared upstream indexes may be undetectable"]
+  },
+  "warnings": []
+}

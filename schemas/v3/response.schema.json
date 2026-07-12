@@ -14,6 +14,7 @@
     "routing_receipt",
     "cache_status",
     "limits_applied",
+    "dedup_clusters",
     "warnings"
   ],
   "properties": {
@@ -135,6 +136,36 @@
           ]
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "degraded"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "then": {
+        "properties": {
+          "warnings": {
+            "contains": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "$ref": "#/$defs/DegradedReason"
+                }
+              }
+            },
+            "minContains": 1
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -151,6 +182,17 @@
         "ok",
         "degraded",
         "failed"
+      ]
+    },
+    "DegradedReason": {
+      "type": "string",
+      "enum": [
+        "wsp.cache.served_stale",
+        "wsp.content.truncated",
+        "wsp.extract.urls_omitted",
+        "wsp.extract.partial",
+        "wsp.budget.limited",
+        "wsp.independence.method_degraded"
       ]
     },
     "ErrorClass": {
@@ -508,6 +550,9 @@
         "offset_unit": {
           "const": "unicode_codepoint"
         },
+        "text_normalization": {
+          "const": "NFC"
+        },
         "segments": {
           "type": "array",
           "items": {
@@ -549,6 +594,7 @@
             "required": [
               "text",
               "offset_unit",
+              "text_normalization",
               "segments"
             ]
           }

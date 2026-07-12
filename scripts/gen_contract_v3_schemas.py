@@ -14,6 +14,7 @@ from contract_v3 import (  # noqa: E402
     CacheDisposition,
     Capability,
     CircuitState,
+    DegradedReason,
     ErrorClass,
     FallbackReason,
     ResponseStatus,
@@ -241,6 +242,7 @@ request_schema = {
 response_defs = {
     "Capability": enum_schema(Capability),
     "ResponseStatus": enum_schema(ResponseStatus),
+    "DegradedReason": enum_schema(DegradedReason),
     "ErrorClass": enum_schema(ErrorClass),
     "AttemptOutcome": enum_schema(AttemptOutcome),
     "SkipReason": enum_schema(SkipReason),
@@ -294,6 +296,7 @@ response_defs = {
             "canonical_url": {"type": "string", "format": "uri"},
             "text": {"type": "string"},
             "offset_unit": {"const": "unicode_codepoint"},
+            "text_normalization": {"const": "NFC"},
             "segments": {"type": "array", "items": {"$ref": "#/$defs/TextSegmentV3"}},
             "provenance": {
                 "type": "array",
@@ -374,7 +377,7 @@ response_defs = {
 response_defs["ExtractResultV3"]["allOf"] = [
     {
         "if": {"properties": {"status": {"const": "ok"}}, "required": ["status"]},
-        "then": {"required": ["text", "offset_unit", "segments"]},
+        "then": {"required": ["text", "offset_unit", "text_normalization", "segments"]},
     },
     {
         "if": {"properties": {"status": {"const": "failed"}}, "required": ["status"]},
@@ -398,6 +401,7 @@ response_schema = {
         "routing_receipt",
         "cache_status",
         "limits_applied",
+        "dedup_clusters",
         "warnings",
     ],
     "properties": {
@@ -454,6 +458,24 @@ response_schema = {
             },
             "then": {"required": ["error"]},
             "else": {"not": {"required": ["error"]}},
+        },
+        {
+            "if": {
+                "properties": {"status": {"const": "degraded"}},
+                "required": ["status"],
+            },
+            "then": {
+                "properties": {
+                    "warnings": {
+                        "contains": {
+                            "type": "object",
+                            "required": ["code"],
+                            "properties": {"code": {"$ref": "#/$defs/DegradedReason"}},
+                        },
+                        "minContains": 1,
+                    }
+                }
+            },
         },
     ],
     "$defs": response_defs,

@@ -1,0 +1,47 @@
+{
+  "contract_version": "3.0",
+  "request_id": "req_cache_0001",
+  "capability": "search",
+  "status": "ok",
+  "results": [
+    {
+      "result_id": "res_1",
+      "status": "ok",
+      "title": "Cached Result",
+      "url": "https://example.com/",
+      "canonical_url": "https://example.com/",
+      "snippet": "Served from a fresh cache entry.",
+      "cluster_id": "dc_1",
+      "provenance": [
+        {
+          "provider": "serper",
+          "source_url": "https://example.com/",
+          "retrieved_at": "2026-07-12T08:00:00Z",
+          "provider_rank": 1
+        }
+      ]
+    }
+  ],
+  "provider_attempts": [],
+  "routing_receipt": {
+    "policy_id": "classic",
+    "policy_revision": "1",
+    "mode": "classic",
+    "candidate_order": [],
+    "selected_provider": null,
+    "fallback_reason": "none"
+  },
+  "cache_status": {
+    "disposition": "fresh_hit",
+    "entry_id": "ce_abc123",
+    "age_seconds": 120,
+    "ttl_seconds": 3600,
+    "served_stale": false,
+    "source_contract_version": "3.0"
+  },
+  "limits_applied": { "max_results": 10 },
+  "dedup_clusters": [
+    { "cluster_id": "dc_1", "canonical_result_id": "res_1", "member_result_ids": ["res_1"], "providers": ["serper"] }
+  ],
+  "warnings": []
+}

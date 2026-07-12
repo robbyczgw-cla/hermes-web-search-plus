@@ -1,6 +1,6 @@
 # Web Search Plus v3 contract freeze — M0 engine side
 
-Status: **engine-owner field freeze candidate**. The field names, enum namespaces, and projection/cache rules below are frozen on the engine side. Items under **Joint decisions required** need engine-owner and policy-owner sign-off before the six golden fixtures become normative.
+Status: **M0 FROZEN — engine-owner and policy-owner co-signed.** The field names, enum namespaces, projection/cache rules, six golden fixtures, and resolved joint decisions below are normative for M1. Any change now requires an explicit contract amendment and fixture update.
 
 Canonical artifacts:
 
@@ -176,13 +176,14 @@ Required when `status=ok`:
 
 - `text: string`
 - `offset_unit: "unicode_codepoint"`
+- `text_normalization: "NFC"`
 - `segments: TextSegmentV3[]`
 
 Required when `status=failed`:
 
 - `error: ErrorV3`
 
-A segment contains only `segment_id`, `start`, and `end`. It does not contain a claim, relevance score, semantic type, interpretation, or generated summary. Intervals are intended to be half-open `[start, end)`; see the joint-decision list.
+Before offsets are calculated, `text` is normalized to Unicode NFC. A segment contains only `segment_id`, `start`, and `end`. It does not contain a claim, relevance score, semantic type, interpretation, or generated summary. Offsets are zero-based Unicode code-point indexes into that exact NFC string and use half-open intervals `[start, end)`.
 
 ### ProvenanceObservation
 
@@ -353,14 +354,23 @@ Projection must be deterministic and side-effect free. Legacy projections never 
 9. Cache clear/stats operate only on positively identified WSP-owned envelopes and preserve health, telemetry, SQLite state, and foreign files.
 10. No eager cache migration. Entries migrate naturally on new successful writes.
 
-## Joint decisions required before M0 sign-off
+## Resolved joint decisions for M0 sign-off
 
-1. **Offset semantics:** approve Unicode code-point, zero-based, half-open `[start,end)` offsets. Alternative byte offsets would change every extract fixture.
-2. **Degraded semantics:** proposed rule — successful fallback alone remains `ok`; stale serving, omitted URLs, truncation, budget-limited execution, partial extraction, or reduced fingerprinting become `degraded`.
-3. **Error code registry:** approve stable engine-owned `wsp.<namespace>.<specific>` codes, with provider-native codes only in `details.provider_code`.
-4. **Telemetry privacy:** proposed default — no raw query, URL, snippet, extracted text, API key, endpoint credentials, or raw provider body in persistent routing telemetry. Store a rotating-salt request fingerprint plus derived routing features. Explicit debug capture is opt-in and TTL-bound.
-5. **Legacy cache read window:** proposed rule — support compatible v2 reads through the 3.0 minor line, remove no earlier than 3.1 with measured usage and release notes.
-6. **Source-independence omission:** proposed rule — omit the object when no trustworthy estimate can be computed; do not emit a fake zero.
+1. **Offset semantics:** Unicode NFC text, zero-based Unicode code-point indexes, half-open `[start,end)` intervals.
+2. **Degraded semantics:** successful fallback alone remains `ok`; stale serving, omitted URLs, truncation, budget-limited execution, partial extraction, or reduced fingerprinting become `degraded`. Every degraded response carries at least one enumerated degrade reason in `warnings[].code`.
+3. **Error code registry:** stable engine-owned `wsp.<namespace>.<specific>` codes, with provider-native codes only in `details.provider_code`.
+4. **Telemetry privacy:** no raw query, URL, snippet, extracted text, API key, endpoint credentials, or raw provider body in persistent routing telemetry by default. Store a rotating-salt request fingerprint plus derived routing features. Explicit debug capture is opt-in and TTL-bound.
+5. **Legacy cache read window:** support compatible v2 reads through the 3.0 minor line, remove no earlier than 3.1 with measured usage and release notes.
+6. **Source-independence omission:** omit the object when no trustworthy estimate can be computed; never emit a fake zero. URL-only mode may emit a real estimate with `method_degraded=true`.
+
+### Enumerated degrade warning codes
+
+- `wsp.cache.served_stale`
+- `wsp.content.truncated`
+- `wsp.extract.urls_omitted`
+- `wsp.extract.partial`
+- `wsp.budget.limited`
+- `wsp.independence.method_degraded`
 
 ## M0 exit test contract
 
@@ -380,4 +390,4 @@ Boundary tests must additionally prove:
 - top-level `error` appears only on failed responses
 - provider-native errors cannot expand the stable ErrorClass enum
 - shadow routing cannot change `candidate_order` used for execution
-- v2 projection is deterministic and does not write a second execution path
+- M0 proves the contract-level single-authority invariant: only `classic` and `shadow` modes exist, and shadow never controls execution. M1 must add the runtime proof that v2 projection is deterministic and does not create a second execution path.

@@ -1,0 +1,74 @@
+{
+  "contract_version": "3.0",
+  "request_id": "req_degraded_0001",
+  "capability": "search",
+  "status": "degraded",
+  "results": [
+    {
+      "result_id": "res_1",
+      "status": "ok",
+      "title": "Stale cached result",
+      "url": "https://example.com/old",
+      "canonical_url": "https://example.com/old",
+      "snippet": "Live fetch failed; served from stale cache.",
+      "cluster_id": "dc_1",
+      "provenance": [
+        {
+          "provider": "serper",
+          "source_url": "https://example.com/old",
+          "retrieved_at": "2026-07-12T06:00:00Z",
+          "provider_rank": 1
+        }
+      ]
+    }
+  ],
+  "provider_attempts": [
+    {
+      "attempt_id": "att_1",
+      "provider": "serper",
+      "capability": "search",
+      "outcome": "failed",
+      "retry_count": 1,
+      "result_count": 0,
+      "started_at": "2026-07-12T08:33:00Z",
+      "duration_ms": 2000,
+      "budget_decision": "allowed",
+      "circuit_state_before": "closed",
+      "circuit_state_after": "open",
+      "error": {
+        "error_class": "timeout",
+        "code": "wsp.timeout.provider_deadline",
+        "message": "Provider exceeded the wall-time deadline.",
+        "retryable": true,
+        "provider": "serper"
+      }
+    }
+  ],
+  "routing_receipt": {
+    "policy_id": "classic",
+    "policy_revision": "1",
+    "mode": "classic",
+    "candidate_order": ["serper"],
+    "selected_provider": null,
+    "fallback_reason": "selected_failed"
+  },
+  "cache_status": {
+    "disposition": "stale_hit",
+    "entry_id": "ce_old789",
+    "age_seconds": 9000,
+    "ttl_seconds": 3600,
+    "served_stale": true,
+    "source_contract_version": "3.0"
+  },
+  "limits_applied": { "max_results": 10 },
+  "dedup_clusters": [
+    { "cluster_id": "dc_1", "canonical_result_id": "res_1", "member_result_ids": ["res_1"], "providers": ["serper"] }
+  ],
+  "warnings": [
+    {
+      "code": "wsp.cache.served_stale",
+      "message": "Live fetch failed; served stale cache entry (age 9000s exceeds ttl 3600s).",
+      "details": { "age_seconds": 9000, "ttl_seconds": 3600 }
+    }
+  ]
+}
