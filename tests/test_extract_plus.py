@@ -340,20 +340,12 @@ class ExtractPlusCoreTests(unittest.TestCase):
                 "search.extract_firecrawl",
                 side_effect=[transient, {"provider": "firecrawl", "results": [{"url": "https://example.com", "content": "ok"}]}],
             ) as mock_firecrawl:
-                with mock.patch("search.time.sleep") as mock_sleep:
-                    result = search.extract_plus(["https://example.com"], provider="firecrawl")
+                result = search.extract_plus(["https://example.com"], provider="firecrawl")
 
         self.assertEqual(result["provider"], "firecrawl")
         self.assertEqual(mock_firecrawl.call_count, 2)
-        # Retry backoff now carries jitter to de-synchronize retries: the delay is
-        # the base step plus up to RETRY_JITTER_FRACTION of it.
-        mock_sleep.assert_called_once()
-        (slept,) = mock_sleep.call_args[0]
-        base = search.RETRY_BACKOFF_SECONDS[0]
-        self.assertGreaterEqual(slept, base)
-        self.assertLessEqual(slept, base * (1 + search.RETRY_JITTER_FRACTION))
 
-    def test_extract_plus_marks_failed_provider_and_resets_successful_fallback(self):
+    def test_extract_plus_does_not_write_legacy_health_on_fallback(self):
         transient = search.ProviderRequestError("temporary outage", status_code=503, transient=True)
         with mock.patch.dict(os.environ, {"FIRECRAWL_API_KEY": "fc-test", "LINKUP_API_KEY": "linkup-test"}, clear=True):
             with mock.patch("search.extract_firecrawl", side_effect=[transient, transient, transient]):
@@ -364,24 +356,20 @@ class ExtractPlusCoreTests(unittest.TestCase):
                                 result = search.extract_plus(["https://example.com"], provider="firecrawl")
 
         self.assertEqual(result["provider"], "linkup")
-        mock_mark.assert_called_once()
-        self.assertEqual(mock_mark.call_args.args[0], "firecrawl")
-        mock_reset.assert_called_once_with("linkup")
-        self.assertEqual(result["routing"]["fallback_errors"][0]["cooldown_seconds"], 60)
+        mock_mark.assert_not_called()
+        mock_reset.assert_not_called()
+        self.assertEqual(result["routing"]["fallback_errors"][0]["error"], "transient")
 
-    def test_extract_plus_skips_provider_in_cooldown(self):
-        def fake_cooldown(provider):
-            return (provider == "tavily", 42 if provider == "tavily" else 0)
-
+    def test_extract_plus_ignores_legacy_cooldown_state(self):
         with mock.patch.dict(os.environ, {"TAVILY_API_KEY": "tvly-test", "LINKUP_API_KEY": "linkup-test"}, clear=True):
-            with mock.patch("search.provider_in_cooldown", side_effect=fake_cooldown):
-                with mock.patch("search.extract_tavily") as mock_tavily:
+            with mock.patch("search.provider_in_cooldown") as legacy_cooldown:
+                with mock.patch("search.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
                     with mock.patch("search.extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback"}]}):
                         result = search.extract_plus(["https://example.com"], provider="auto")
 
-        self.assertEqual(result["provider"], "linkup")
-        mock_tavily.assert_not_called()
-        self.assertEqual(result["routing"]["cooldown_skips"], [{"provider": "tavily", "cooldown_remaining_seconds": 42}])
+        self.assertEqual(result["provider"], "tavily")
+        mock_tavily.assert_called_once()
+        legacy_cooldown.assert_not_called()
 
 
 class ExtractPlusPluginTests(unittest.TestCase):

@@ -7,8 +7,17 @@ from compat_v3 import (
     v3_response_to_legacy_extract,
     v3_response_to_legacy_search,
 )
-from contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
+from contract_v3 import (
+    AttemptOutcome,
+    Capability,
+    CircuitState,
+    ProviderAttemptV3,
+    RequestV3,
+    ResponseStatus,
+    ResponseV3,
+)
 from orchestrator_v3 import (
+    CapabilityExecution,
     CapabilityAdapter,
     ExecutedV3,
     ProviderPlan,
@@ -204,16 +213,49 @@ def test_b6_same_request_has_same_plan_and_one_execution_path():
     assert legacy_execution.stage_trace == (
         "normalize",
         "validate",
-        "cache_lookup",
+        "candidate_plan",
+        "provider_attempt",
+        "result_normalization",
+        "response_v3",
+    )
+
+
+def test_orchestrator_uses_actual_attempt_receipts_and_stages():
+    request = legacy_request_to_v3(
+        "search", {"query": "q", "provider": "serper"}, request_id="req-1"
+    )
+    plan = ProviderPlan(("serper",), "serper")
+    receipt = ProviderAttemptV3(
+        attempt_id="attempt-1",
+        provider="serper",
+        capability=Capability.SEARCH,
+        outcome=AttemptOutcome.SUCCESS,
+        result_count=1,
+        circuit_state_before=CircuitState.CLOSED,
+        circuit_state_after=CircuitState.CLOSED,
+    )
+    adapter = CapabilityAdapter(
+        capability=Capability.SEARCH,
+        plan=lambda *_: plan,
+        execute=lambda *_: CapabilityExecution(
+            payload={"provider": "serper", "results": []},
+            provider_attempts=(receipt,),
+            stages=("admission", "provider_attempt", "retry_circuit_update"),
+        ),
+        normalize=_response,
+    )
+
+    execution = execute_v3_request(request, adapter, {})
+
+    assert execution.response.provider_attempts == [receipt]
+    assert execution.stage_trace == (
+        "normalize",
+        "validate",
         "candidate_plan",
         "admission",
         "provider_attempt",
-        "error_classification",
         "retry_circuit_update",
-        "fallback",
         "result_normalization",
-        "dedup_fingerprint",
-        "cache_write",
         "response_v3",
     )
 

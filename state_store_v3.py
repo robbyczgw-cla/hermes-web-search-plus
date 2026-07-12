@@ -13,6 +13,7 @@ from contract_v3 import Capability, CircuitState, ErrorClass, SkipReason
 
 SCHEMA_VERSION = 1
 DEFAULT_OPEN_SECONDS = {
+    ErrorClass.AUTH: 300,
     ErrorClass.QUOTA: 3600,
     ErrorClass.RATE_LIMIT: 60,
     ErrorClass.TRANSIENT: 60,
@@ -146,15 +147,12 @@ class SQLiteStateStore:
         if not self._available:
             return CircuitRecord(CircuitState.UNKNOWN)
         state = self._state_for(error_class)
-        if error_class is ErrorClass.AUTH:
-            open_until = None
-        else:
-            seconds = int(
-                retry_after_seconds
-                if retry_after_seconds is not None
-                else DEFAULT_OPEN_SECONDS.get(error_class, 60)
-            )
-            open_until = now + max(1, seconds)
+        seconds = int(
+            retry_after_seconds
+            if retry_after_seconds is not None
+            else DEFAULT_OPEN_SECONDS.get(error_class, 60)
+        )
+        open_until = now + max(1, seconds)
         try:
             connection = self._connect()
             try:
@@ -237,6 +235,46 @@ class SQLiteStateStore:
             updated_at=int(row["updated_at"]),
         )
 
+    def _claim_half_open(
+        self, key: CircuitKey, error_class: ErrorClass, *, now: int
+    ) -> bool:
+        """Atomically lease one probe for an expired circuit bucket."""
+        if not self._available:
+            return False
+        try:
+            connection = self._connect()
+            try:
+                connection.execute("BEGIN IMMEDIATE")
+                cursor = connection.execute(
+                    """
+                    UPDATE circuit_state
+                    SET state=?, open_until=?, updated_at=?
+                    WHERE provider=? AND capability=? AND endpoint=?
+                      AND credential_fingerprint=? AND error_class=?
+                      AND state IN (?, ?, ?, ?)
+                      AND open_until IS NOT NULL AND open_until <= ?
+                    """,
+                    (
+                        CircuitState.HALF_OPEN.value,
+                        now + 60,
+                        now,
+                        *key.values(),
+                        error_class.value,
+                        CircuitState.BLOCKED_AUTH.value,
+                        CircuitState.BLOCKED_QUOTA.value,
+                        CircuitState.OPEN.value,
+                        CircuitState.HALF_OPEN.value,
+                        now,
+                    ),
+                )
+                connection.commit()
+                return cursor.rowcount == 1
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            self._available = False
+            return False
+
     def admit(self, key: CircuitKey, *, now: int) -> AdmissionDecision:
         if not self._available:
             return AdmissionDecision(
@@ -252,6 +290,7 @@ class SQLiteStateStore:
             (ErrorClass.TRANSIENT, SkipReason.CIRCUIT_OPEN),
             (ErrorClass.TIMEOUT, SkipReason.CIRCUIT_OPEN),
         )
+        expired = []
         for error_class, skip_reason in checks:
             record = self.get_circuit(key, error_class)
             if not self._available:
@@ -261,14 +300,9 @@ class SQLiteStateStore:
                     SkipReason.CIRCUIT_OPEN,
                     store_available=False,
                 )
-            active = record.state is CircuitState.BLOCKED_AUTH or (
-                record.state in {
-                    CircuitState.BLOCKED_QUOTA,
-                    CircuitState.OPEN,
-                    CircuitState.HALF_OPEN,
-                }
-                and (record.open_until is None or record.open_until > now)
-            )
+            if record.state is CircuitState.CLOSED:
+                continue
+            active = record.open_until is None or record.open_until > now
             if active:
                 return AdmissionDecision(
                     False,
@@ -276,6 +310,29 @@ class SQLiteStateStore:
                     skip_reason,
                     blocking_error_class=error_class,
                 )
+            expired.append((error_class, skip_reason))
+
+        for error_class, skip_reason in expired:
+            if self._claim_half_open(key, error_class, now=now):
+                return AdmissionDecision(
+                    True,
+                    CircuitState.HALF_OPEN,
+                    blocking_error_class=error_class,
+                )
+            if not self._available:
+                return AdmissionDecision(
+                    False,
+                    CircuitState.UNKNOWN,
+                    SkipReason.CIRCUIT_OPEN,
+                    store_available=False,
+                )
+            current = self.get_circuit(key, error_class)
+            return AdmissionDecision(
+                False,
+                current.state,
+                skip_reason,
+                blocking_error_class=error_class,
+            )
         return AdmissionDecision(True, CircuitState.CLOSED)
 
     def configure_budget(

@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import copy
 import unicodedata
-from dataclasses import dataclass, replace
-from typing import Any, Callable, Dict, Tuple
+import uuid
+from dataclasses import dataclass, field, replace
+from typing import Any, Callable, Dict, Tuple, Union
 
 from contract_v3 import Capability, RequestV3, ResponseV3
 
@@ -36,7 +37,11 @@ PIPELINE_STAGES: Tuple[str, ...] = (
 class ProviderPlan:
     candidate_order: Tuple[str, ...]
     selected_provider: str
+    routing_metadata: Dict[str, Any] = field(default_factory=dict)
     mode: str = "classic"
+    execution_id: str = field(
+        default_factory=lambda: str(uuid.uuid4()), compare=False
+    )
 
     def __post_init__(self) -> None:
         if self.mode not in {"classic", "shadow"}:
@@ -48,7 +53,27 @@ class ProviderPlan:
 
 
 PlanFn = Callable[[RequestV3, Dict[str, Any]], ProviderPlan]
-ExecuteFn = Callable[[RequestV3, ProviderPlan, Dict[str, Any]], Dict[str, Any]]
+@dataclass(frozen=True)
+class CapabilityExecution:
+    payload: Dict[str, Any]
+    provider_attempts: Tuple[Any, ...] = ()
+    stages: Tuple[str, ...] = ("provider_attempt",)
+
+    def __post_init__(self) -> None:
+        if len(set(self.stages)) != len(self.stages):
+            raise ValueError("execution stages must be unique")
+        unknown = set(self.stages) - set(PIPELINE_STAGES)
+        if unknown:
+            raise ValueError(f"unknown execution stages: {sorted(unknown)}")
+        positions = [PIPELINE_STAGES.index(stage) for stage in self.stages]
+        if positions != sorted(positions):
+            raise ValueError("execution stages must follow canonical order")
+
+
+ExecuteFn = Callable[
+    [RequestV3, ProviderPlan, Dict[str, Any]],
+    Union[Dict[str, Any], CapabilityExecution],
+]
 NormalizeFn = Callable[[RequestV3, ProviderPlan, Dict[str, Any]], ResponseV3]
 
 
@@ -91,15 +116,36 @@ def execute_v3_request(
         raise ValueError("request and adapter capability differ")
     runtime_config: Dict[str, Any] = config or {}
     plan = adapter.plan(request, runtime_config)
-    legacy_payload = adapter.execute(request, plan, runtime_config)
+    raw_execution = adapter.execute(request, plan, runtime_config)
+    if isinstance(raw_execution, CapabilityExecution):
+        legacy_payload = raw_execution.payload
+        execution_stages = raw_execution.stages
+        provider_attempts = raw_execution.provider_attempts
+    else:
+        legacy_payload = raw_execution
+        execution_stages = ("provider_attempt",)
+        provider_attempts = ()
     response = adapter.normalize(request, plan, legacy_payload)
+    if provider_attempts:
+        response = replace(response, provider_attempts=list(provider_attempts))
     if response.capability is not request.capability:
         raise ValueError("adapter returned response for another capability")
     if tuple(response.routing_receipt["candidate_order"]) != plan.candidate_order:
         raise ValueError("response candidate_order drifted from authoritative plan")
+    executed_stage_set = {
+        "normalize",
+        "validate",
+        "candidate_plan",
+        *execution_stages,
+        "result_normalization",
+        "response_v3",
+    }
+    stage_trace = tuple(
+        stage for stage in PIPELINE_STAGES if stage in executed_stage_set
+    )
     return ExecutedV3(
         response=response,
         plan=plan,
         legacy_payload=copy.deepcopy(legacy_payload),
-        stage_trace=PIPELINE_STAGES,
+        stage_trace=stage_trace,
     )

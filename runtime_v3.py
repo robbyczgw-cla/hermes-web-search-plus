@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import unicodedata
-import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Mapping
 from urllib.parse import urlsplit, urlunsplit
@@ -227,7 +226,7 @@ def response_from_legacy(
     payload: Dict[str, Any],
 ) -> ResponseV3:
     """Build a contract-valid ResponseV3 without modifying the legacy payload."""
-    request_id = request.request_id or str(uuid.uuid4())
+    request_id = request.request_id or plan.execution_id
     routing = payload.get("routing") or {}
     selected = (
         routing.get("provider") or payload.get("provider") or plan.selected_provider

@@ -99,6 +99,28 @@ def test_circuit_key_isolated_by_capability_endpoint_and_credential(tmp_path):
     assert all(store.admit(key, now=101).allowed for key in variants)
 
 
+def test_auth_circuit_allows_exactly_one_half_open_probe_after_cooldown(tmp_path):
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    key = _key()
+
+    record = store.record_failure(key, ErrorClass.AUTH, now=100)
+
+    assert record.open_until == 400
+    assert store.admit(key, now=399).allowed is False
+    probe = store.admit(key, now=400)
+    competing = store.admit(key, now=400)
+    assert probe.allowed is True
+    assert probe.circuit_state is CircuitState.HALF_OPEN
+    assert probe.blocking_error_class is ErrorClass.AUTH
+    assert competing.allowed is False
+    assert competing.circuit_state is CircuitState.HALF_OPEN
+
+    store.record_success(key, ErrorClass.AUTH, now=401)
+    recovered = store.admit(key, now=401)
+    assert recovered.allowed is True
+    assert recovered.circuit_state is CircuitState.CLOSED
+
+
 def test_admission_maps_independent_open_buckets_to_specific_skip_reasons(tmp_path):
     store = SQLiteStateStore(tmp_path / "state.sqlite3")
     key = _key()

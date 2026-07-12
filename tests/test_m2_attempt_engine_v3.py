@@ -12,7 +12,7 @@ from http_client import ProviderRequestError
 from state_store_v3 import SQLiteStateStore, credential_fingerprint
 
 
-def _context(*, budget_units: int = 1) -> AttemptContext:
+def _context(*, budget_units: int = 1, budget_limit_units: int = 3) -> AttemptContext:
     return AttemptContext(
         provider="serper",
         capability=Capability.SEARCH,
@@ -21,12 +21,12 @@ def _context(*, budget_units: int = 1) -> AttemptContext:
         budget_scope="request-1",
         budget_window="request",
         budget_units=budget_units,
+        budget_limit_units=budget_limit_units,
     )
 
 
 def test_attempt_engine_retries_transient_and_records_one_provider_receipt(tmp_path):
     store = SQLiteStateStore(tmp_path / "state.sqlite3")
-    store.configure_budget("request-1", "request", limit_units=3)
     engine = AttemptEngine(store, max_attempts=3, sleep=lambda _seconds: None)
     calls = []
 
@@ -50,7 +50,6 @@ def test_attempt_engine_retries_transient_and_records_one_provider_receipt(tmp_p
 
 def test_auth_failure_is_not_retried_and_blocks_same_credential(tmp_path):
     store = SQLiteStateStore(tmp_path / "state.sqlite3")
-    store.configure_budget("request-1", "request", limit_units=3)
     engine = AttemptEngine(store, max_attempts=3, sleep=lambda _seconds: None)
     calls = []
 
@@ -87,18 +86,36 @@ def test_fail_closed_state_store_skips_before_provider_call(tmp_path):
 
 def test_budget_is_admitted_before_provider_call(tmp_path):
     store = SQLiteStateStore(tmp_path / "state.sqlite3")
-    store.configure_budget("request-1", "request", limit_units=0)
     engine = AttemptEngine(store)
     calls = []
 
     execution = engine.execute(
-        _context(), lambda: calls.append("called") or {"results": []}, now=lambda: 100
+        _context(budget_limit_units=0),
+        lambda: calls.append("called") or {"results": []},
+        now=lambda: 100,
     )
 
     assert calls == []
     assert execution.receipt.outcome is AttemptOutcome.SKIPPED
     assert execution.receipt.skip_reason is SkipReason.BUDGET_BLOCKED
     assert execution.receipt.budget_decision == "blocked"
+
+
+def test_successful_half_open_probe_clears_auth_bucket(tmp_path):
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    context = _context()
+    store.record_failure(context.circuit_key, ErrorClass.AUTH, now=100)
+    engine = AttemptEngine(store, max_attempts=1)
+
+    execution = engine.execute(
+        context,
+        lambda: {"results": []},
+        now=lambda: 400,
+    )
+
+    assert execution.receipt.outcome is AttemptOutcome.SUCCESS
+    assert execution.receipt.circuit_state_before is CircuitState.HALF_OPEN
+    assert store.get_circuit(context.circuit_key, ErrorClass.AUTH).state is CircuitState.CLOSED
 
 
 def test_admission_runs_before_each_retry(tmp_path):
@@ -112,7 +129,6 @@ def test_admission_runs_before_each_retry(tmp_path):
             return super().admit(key, now=now)
 
     store = CountingStore(tmp_path / "state.sqlite3")
-    store.configure_budget("request-1", "request", limit_units=3)
     engine = AttemptEngine(store, max_attempts=3, sleep=lambda _seconds: None)
     calls = []
 

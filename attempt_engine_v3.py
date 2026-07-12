@@ -29,6 +29,11 @@ class AttemptContext:
     budget_scope: str
     budget_window: str
     budget_units: int = 1
+    budget_limit_units: int = 3
+
+    def __post_init__(self) -> None:
+        if self.budget_units < 0 or self.budget_limit_units < 0:
+            raise ValueError("budget units must be non-negative")
 
     @property
     def circuit_key(self) -> CircuitKey:
@@ -68,6 +73,7 @@ class AttemptEngine:
                 context.capability.value,
                 context.endpoint,
                 context.credential_fingerprint,
+                context.budget_scope,
                 str(started),
             )
         )
@@ -117,10 +123,18 @@ class AttemptEngine:
         last_error = None
         encountered: set[ErrorClass] = set()
 
+        self.store.configure_budget(
+            context.budget_scope,
+            context.budget_window,
+            limit_units=context.budget_limit_units,
+        )
+
         for index in range(self.max_attempts):
             decision = self.store.admit(context.circuit_key, now=int(now()))
             if index == 0:
                 before = decision.circuit_state
+            if decision.allowed and decision.blocking_error_class is not None:
+                encountered.add(decision.blocking_error_class)
             if not decision.allowed:
                 return self._skipped(
                     context,
@@ -181,7 +195,7 @@ class AttemptEngine:
                             0, int((time.monotonic() - call_started) * 1000)
                         ),
                         error=classified,
-                        budget_decision="committed",
+                        budget_decision="reserved",
                         circuit_state_before=before,
                         circuit_state_after=after_record.state,
                     ),
@@ -210,7 +224,7 @@ class AttemptEngine:
                     duration_ms=max(
                         0, int((time.monotonic() - call_started) * 1000)
                     ),
-                    budget_decision="committed",
+                    budget_decision="reserved",
                     circuit_state_before=before,
                     circuit_state_after=CircuitState.CLOSED,
                 ),

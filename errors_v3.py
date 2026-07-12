@@ -29,6 +29,11 @@ _CODES = {
 }
 
 
+class ProviderContractFailure(Exception):
+    """Provider returned a structurally unusable result without a transport error."""
+
+
+
 def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
     """Map an arbitrary provider exception to the frozen ErrorV3 taxonomy.
 
@@ -55,6 +60,8 @@ def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
         or (isinstance(status, int) and status >= 500)
     ):
         error_class = ErrorClass.TRANSIENT
+    elif isinstance(error, ProviderContractFailure):
+        error_class = ErrorClass.PROVIDER_CONTRACT
     elif isinstance(error, (TypeError, KeyError)):
         error_class = ErrorClass.PROVIDER_CONTRACT
     else:

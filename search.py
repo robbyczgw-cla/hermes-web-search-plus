@@ -87,10 +87,17 @@ from request_gate_v3 import validate_provider_mode
 from search_locale import provider_supports_locale, resolve_locale
 from env_loader import load_env_files
 from research import run_research_mode
+from attempt_engine_v3 import AttemptContext, AttemptEngine
 from compat_v3 import legacy_request_to_v3, v3_response_to_legacy_search
 from contract_v3 import Capability, RequestV3, ResponseV3
-from orchestrator_v3 import CapabilityAdapter, ProviderPlan, execute_v3_request
+from orchestrator_v3 import (
+    CapabilityAdapter,
+    CapabilityExecution,
+    ProviderPlan,
+    execute_v3_request,
+)
 from runtime_v3 import response_from_legacy
+from state_store_v3 import SQLiteStateStore, credential_fingerprint
 import providers as _providers
 import routing as _routing
 import extract as _extract
@@ -1190,15 +1197,20 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             if p not in providers_to_try and p not in disabled_providers and _provider_auto_allowed(p, auto_config) and provider_configured(p, config):
                 providers_to_try.append(p)
 
-    # Skip providers currently in cooldown
+    # The v3 AttemptEngine owns admission/circuit state. Its single-provider
+    # adapter must not consult or mutate the legacy provider-health system.
+    engine_owned_attempt = bool(getattr(args, "_v3_engine_owned_attempt", False))
     eligible_providers = []
     cooldown_skips = []
-    for p in providers_to_try:
-        in_cd, remaining = provider_in_cooldown(p)
-        if in_cd:
-            cooldown_skips.append({"provider": p, "cooldown_remaining_seconds": remaining})
-        else:
-            eligible_providers.append(p)
+    if engine_owned_attempt:
+        eligible_providers = list(providers_to_try)
+    else:
+        for p in providers_to_try:
+            in_cd, remaining = provider_in_cooldown(p)
+            if in_cd:
+                cooldown_skips.append({"provider": p, "cooldown_remaining_seconds": remaining})
+            else:
+                eligible_providers.append(p)
 
     if not eligible_providers:
         eligible_providers = providers_to_try[:1]
@@ -1216,6 +1228,8 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         return adapter(globals(), prov, args, key, config, routing_info)
 
     def execute_with_retry(prov: str) -> Dict[str, Any]:
+        if engine_owned_attempt:
+            return execute_search(prov)
         started = time.monotonic()
         try:
             provider_result = execute_provider_with_retry(prov, lambda: execute_search(prov))
@@ -1362,7 +1376,8 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             break
         try:
             provider_result = execute_with_retry(current_provider)
-            reset_provider_health(current_provider)
+            if not engine_owned_attempt:
+                reset_provider_health(current_provider)
             successful_results.append((current_provider, provider_result))
             successful_provider = current_provider
 
@@ -1374,6 +1389,8 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             if not errors:
                 break
         except ProviderConfigError as e:
+            if engine_owned_attempt:
+                raise
             # Missing/invalid local credentials are configuration errors, not
             # provider health failures. Do not poison shared cooldown state for
             # a provider the runtime never actually contacted.
@@ -1383,6 +1400,8 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             })
             continue
         except Exception as e:
+            if engine_owned_attempt:
+                raise
             error_msg = str(e)
             cooldown_info = mark_provider_failure(current_provider, error_msg, retry_after=getattr(e, "retry_after", None))
             errors.append({
@@ -1514,6 +1533,7 @@ def _plan_search_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
         selected = str(routed["provider"])
     else:
         selected = requested
+        routed = {}
     candidates = [selected]
     if routing_request.get("allow_fallback", requested == "auto"):
         disabled = set(auto_config.get("disabled_providers", []))
@@ -1525,7 +1545,7 @@ def _plan_search_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
                 and provider_configured(provider, config)
             ):
                 candidates.append(provider)
-    return ProviderPlan(tuple(candidates), selected)
+    return ProviderPlan(tuple(candidates), selected, routing_metadata=dict(routed))
 
 
 def _search_args_from_v3(request: RequestV3, config: Dict[str, Any]):
@@ -1568,9 +1588,118 @@ def _search_args_from_v3(request: RequestV3, config: Dict[str, Any]):
     return args
 
 
-def _execute_search_v3(request: RequestV3, _plan: ProviderPlan, config: Dict[str, Any]) -> Dict[str, Any]:
-    payload, _exit_code = _execute_search_request_core(_search_args_from_v3(request, config), config)
-    return payload
+def _execute_search_v3(
+    request: RequestV3, plan: ProviderPlan, config: Dict[str, Any]
+) -> CapabilityExecution:
+    v3_config = config.get("v3") or {}
+    state_path = v3_config.get("state_path") or os.path.join(
+        str(CACHE_DIR), "v3", "state.sqlite3"
+    )
+    store = SQLiteStateStore(state_path)
+    budget_limit = int(
+        request.budget.get(
+            "max_provider_attempts",
+            v3_config.get("default_max_provider_attempts", 3),
+        )
+    )
+    engine = AttemptEngine(
+        store,
+        max_attempts=int(v3_config.get("max_attempts_per_provider", 2)),
+    )
+    receipts = []
+    payload = None
+    successful_provider = None
+    scope = request.request_id or plan.execution_id
+
+    for provider in plan.candidate_order:
+        provider_config = config.get(provider) or {}
+        endpoint = str(
+            provider_config.get("endpoint")
+            or provider_config.get("base_url")
+            or provider_config.get("url")
+            or f"provider://{provider}/search"
+        )
+        credential = get_api_key(provider, config) or f"keyless:{provider}"
+        context = AttemptContext(
+            provider=provider,
+            capability=Capability.SEARCH,
+            endpoint=endpoint,
+            credential_fingerprint=credential_fingerprint(credential),
+            budget_scope=scope,
+            budget_window="request",
+            budget_limit_units=budget_limit,
+        )
+
+        def operation(current_provider=provider):
+            args = _search_args_from_v3(request, config)
+            args.provider = current_provider
+            args.allow_fallback = False
+            args.no_cache = True
+            args._v3_engine_owned_attempt = True
+            provider_payload, exit_code = _execute_search_request_core(args, config)
+            if exit_code:
+                raise ProviderRequestError(
+                    str(provider_payload.get("error") or "provider failed"),
+                    transient=False,
+                )
+            return provider_payload
+
+        attempted = engine.execute(context, operation)
+        receipts.append(attempted.receipt)
+        if attempted.payload is not None:
+            payload = attempted.payload
+            successful_provider = provider
+            break
+
+    if payload is None:
+        payload = {
+            "error": "All providers failed",
+            "provider": plan.selected_provider,
+            "query": request.input["query"],
+            "results": [],
+            "routing": {
+                "provider": plan.selected_provider,
+                "fallback_used": False,
+            },
+            "provider_errors": [
+                {
+                    "provider": receipt.provider,
+                    "error": (
+                        receipt.error.message
+                        if receipt.error is not None
+                        else receipt.skip_reason.value
+                        if receipt.skip_reason is not None
+                        else "provider attempt failed"
+                    ),
+                }
+                for receipt in receipts
+            ],
+        }
+    else:
+        routing = payload.setdefault("routing", {})
+        requested = str(request.routing.get("provider") or "auto")
+        if requested == "auto":
+            routing.update(plan.routing_metadata)
+            routing["auto_routed"] = True
+            routing["provider"] = successful_provider
+            payload["provider"] = successful_provider
+        if successful_provider != plan.selected_provider:
+            routing["fallback_used"] = True
+            routing["original_provider"] = plan.selected_provider
+            routing["provider"] = successful_provider
+
+    stages = ["admission", "provider_attempt"]
+    if any(receipt.error is not None for receipt in receipts):
+        stages.append("error_classification")
+    stages.append("retry_circuit_update")
+    if len(receipts) > 1:
+        stages.append("fallback")
+    stages.append("dedup_fingerprint")
+    return CapabilityExecution(
+        payload=payload,
+        provider_attempts=tuple(receipts),
+        stages=tuple(stages),
+    )
 
 
 def _search_adapter() -> CapabilityAdapter:
