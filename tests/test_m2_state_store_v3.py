@@ -208,6 +208,45 @@ def test_budget_reconciliation_commits_actual_and_releases_unused_units(tmp_path
     assert ledger.reserved_units == 0
 
 
+def test_admission_degrades_if_store_fails_during_circuit_scan(
+    tmp_path, monkeypatch
+):
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+
+    def fail_during_scan(*_args, **_kwargs):
+        store._available = False
+        return None
+
+    monkeypatch.setattr(store, "get_circuit", fail_during_scan)
+    decision = store.admit(_key(), now=100)
+
+    assert decision.allowed is True
+    assert decision.circuit_state is CircuitState.UNKNOWN
+    assert decision.store_available is False
+    assert decision.skip_reason is None
+
+
+def test_reconcile_degrades_if_sqlite_fails_after_reservation(
+    tmp_path, monkeypatch
+):
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    store.configure_budget("request", "window", limit_units=3)
+    assert store.reserve_budget("request", "window", units=1)
+
+    def fail_connect():
+        raise sqlite3.OperationalError("database disappeared")
+
+    monkeypatch.setattr(store, "_connect", fail_connect)
+
+    assert (
+        store.reconcile_budget(
+            "request", "window", reserved_units=1, actual_units=1
+        )
+        is False
+    )
+    assert store.available is False
+
+
 def test_schema_initialization_is_idempotent_and_uses_wal(tmp_path):
     path = tmp_path / "state.sqlite3"
     SQLiteStateStore(path)

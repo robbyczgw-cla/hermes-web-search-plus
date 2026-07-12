@@ -186,20 +186,25 @@ class AttemptEngine:
                 )
 
             reserved = decision.store_available
-            if reserved and not self.store.reserve_budget(
-                context.budget_scope,
-                context.budget_window,
-                units=context.budget_units,
-            ):
-                return self._skipped(
-                    context,
-                    started=started,
-                    retry_count=index,
-                    state=decision.circuit_state,
-                    reason=SkipReason.BUDGET_BLOCKED,
-                    budget_decision="blocked",
-                )
             budget_decision = "reserved" if reserved else "store_unavailable"
+            if reserved:
+                budget_allowed = self.store.reserve_budget(
+                    context.budget_scope,
+                    context.budget_window,
+                    units=context.budget_units,
+                )
+                if not budget_allowed and self.store.available:
+                    return self._skipped(
+                        context,
+                        started=started,
+                        retry_count=index,
+                        state=decision.circuit_state,
+                        reason=SkipReason.BUDGET_BLOCKED,
+                        budget_decision="blocked",
+                    )
+                if not budget_allowed:
+                    reserved = False
+                    budget_decision = "store_unavailable"
 
             try_started = int(now())
             call_started = time.monotonic()
@@ -207,11 +212,13 @@ class AttemptEngine:
                 payload = operation()
             except BaseException as exc:
                 if reserved:
-                    self.store.commit_budget(
+                    reconciled = self.store.commit_budget(
                         context.budget_scope,
                         context.budget_window,
                         units=context.budget_units,
                     )
+                    if not reconciled:
+                        budget_decision = "store_unavailable"
                 classified = classify_provider_error(exc, provider=context.provider)
                 last_error = classified
                 encountered.add(classified.error_class)
@@ -263,11 +270,13 @@ class AttemptEngine:
                 )
 
             if reserved:
-                self.store.commit_budget(
+                reconciled = self.store.commit_budget(
                     context.budget_scope,
                     context.budget_window,
                     units=context.budget_units,
                 )
+                if not reconciled:
+                    budget_decision = "store_unavailable"
             for error_class in encountered:
                 self.store.record_success(
                     context.circuit_key, error_class, now=int(now())

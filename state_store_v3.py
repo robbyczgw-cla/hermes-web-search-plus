@@ -77,7 +77,7 @@ class BudgetRecord:
 
 
 class SQLiteStateStore:
-    """Durable state store whose admission path fails closed on SQLite errors."""
+    """Durable policy state; persisted blocks fail closed, I/O loss degrades safely."""
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -338,9 +338,9 @@ class SQLiteStateStore:
             record = self.get_circuit(key, error_class)
             if not self._available:
                 return AdmissionDecision(
-                    False,
+                    True,
                     CircuitState.UNKNOWN,
-                    SkipReason.CIRCUIT_OPEN,
+                    None,
                     store_available=False,
                 )
             if record.state is CircuitState.CLOSED:
@@ -364,9 +364,9 @@ class SQLiteStateStore:
                 )
             if not self._available:
                 return AdmissionDecision(
-                    False,
+                    True,
                     CircuitState.UNKNOWN,
-                    SkipReason.CIRCUIT_OPEN,
+                    None,
                     store_available=False,
                 )
             current = self.get_circuit(key, error_class)
@@ -430,13 +430,13 @@ class SQLiteStateStore:
             self._available = False
             return False
 
-    def release_budget(self, scope: str, window_key: str, *, units: int) -> None:
-        self.reconcile_budget(
+    def release_budget(self, scope: str, window_key: str, *, units: int) -> bool:
+        return self.reconcile_budget(
             scope, window_key, reserved_units=units, actual_units=0
         )
 
-    def commit_budget(self, scope: str, window_key: str, *, units: int) -> None:
-        self.reconcile_budget(
+    def commit_budget(self, scope: str, window_key: str, *, units: int) -> bool:
+        return self.reconcile_budget(
             scope, window_key, reserved_units=units, actual_units=units
         )
 
@@ -447,14 +447,14 @@ class SQLiteStateStore:
         *,
         reserved_units: int,
         actual_units: int,
-    ) -> None:
+    ) -> bool:
         """Atomically commit actual cost and release the unused reservation."""
         if reserved_units < 0 or actual_units < 0:
             raise ValueError("budget units must be non-negative")
         if actual_units > reserved_units:
             raise ValueError("actual budget units cannot exceed reserved units")
         if not self._available:
-            return
+            return False
         try:
             connection = self._connect()
             try:
@@ -479,11 +479,12 @@ class SQLiteStateStore:
                     connection.rollback()
                     raise RuntimeError("budget reservation missing during reconciliation")
                 connection.commit()
+                return True
             finally:
                 connection.close()
-        except sqlite3.Error as exc:
+        except sqlite3.Error:
             self._available = False
-            raise RuntimeError("state store unavailable") from exc
+            return False
 
     def get_budget(self, scope: str, window_key: str) -> BudgetRecord:
         if not self._available:

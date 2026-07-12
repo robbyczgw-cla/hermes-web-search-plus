@@ -136,6 +136,51 @@ def test_store_loss_after_reservation_never_discards_provider_outcome(tmp_path):
     assert failed.receipt.error.error_class is ErrorClass.TRANSIENT
 
 
+def test_store_loss_during_budget_reservation_does_not_skip_provider(
+    tmp_path, monkeypatch
+):
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    engine = AttemptEngine(store, max_attempts=1)
+    calls = []
+
+    def fail_reservation(*_args, **_kwargs):
+        store._available = False
+        return False
+
+    monkeypatch.setattr(store, "reserve_budget", fail_reservation)
+    execution = engine.execute(
+        _context(),
+        lambda: calls.append("called") or {"results": []},
+        now=lambda: 100,
+    )
+
+    assert calls == ["called"]
+    assert execution.receipt.outcome is AttemptOutcome.SUCCESS
+    assert execution.receipt.budget_decision == "store_unavailable"
+
+
+def test_store_loss_during_reconciliation_preserves_provider_success(
+    tmp_path, monkeypatch
+):
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    engine = AttemptEngine(store, max_attempts=1)
+
+    def fail_commit(*_args, **_kwargs):
+        store._available = False
+        return False
+
+    monkeypatch.setattr(store, "commit_budget", fail_commit)
+    execution = engine.execute(
+        _context(),
+        lambda: {"results": [{"url": "https://example.com"}]},
+        now=lambda: 100,
+    )
+
+    assert execution.payload is not None
+    assert execution.receipt.outcome is AttemptOutcome.SUCCESS
+    assert execution.receipt.budget_decision == "store_unavailable"
+
+
 def test_budget_is_admitted_before_provider_call(tmp_path):
     store = SQLiteStateStore(tmp_path / "state.sqlite3")
     engine = AttemptEngine(store)
