@@ -204,10 +204,12 @@ def test_b6_same_request_has_same_plan_and_one_execution_path():
     native_execution = execute_v3_request(native_request, adapter, {})
 
     assert legacy_execution.plan == native_execution.plan
-    assert (
-        legacy_execution.response.routing_receipt
-        == native_execution.response.routing_receipt
-    )
+    assert legacy_execution.response.routing_receipt["candidate_order"] == [
+        "auto",
+        "serper",
+    ]
+    assert native_execution.response.routing_receipt["candidate_order"] == []
+    assert native_execution.response.routing_receipt["selected_provider"] is None
     assert calls == {"plan": 2, "execute": 1, "normalize": 1}
     assert native_execution.response.cache_status["disposition"] == "fresh_hit"
     assert legacy_execution.stage_trace == (

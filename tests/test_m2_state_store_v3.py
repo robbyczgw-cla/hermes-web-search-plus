@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import sqlite3
 
 from contract_v3 import Capability, CircuitState, ErrorClass, SkipReason
@@ -13,7 +14,9 @@ def _key(secret: str = "credential-a") -> CircuitKey:
         provider="serper",
         capability=Capability.SEARCH,
         endpoint="https://google.serper.dev/search",
-        credential_fingerprint=credential_fingerprint(secret),
+        credential_fingerprint=credential_fingerprint(
+            secret, local_secret=b"test-local-secret"
+        ),
     )
 
 
@@ -45,24 +48,44 @@ def test_error_classifier_does_not_leak_exception_secret():
 
 
 def test_credential_fingerprint_is_stable_and_never_contains_secret():
-    first = credential_fingerprint("super-secret-value")
-    second = credential_fingerprint("super-secret-value")
+    first = credential_fingerprint(
+        "super-secret-value", local_secret=b"machine-a"
+    )
+    second = credential_fingerprint(
+        "super-secret-value", local_secret=b"machine-a"
+    )
+    other_machine = credential_fingerprint(
+        "super-secret-value", local_secret=b"machine-b"
+    )
 
     assert first == second
+    assert first != other_machine
     assert "super-secret-value" not in first
     assert len(first) == 24
 
 
-def test_state_store_admission_is_fail_closed_when_database_is_corrupt(tmp_path):
+def test_state_store_persists_private_hmac_secret_beside_database(tmp_path):
+    path = tmp_path / "state.sqlite3"
+    first = SQLiteStateStore(path)
+    first_fingerprint = first.fingerprint_credential("credential")
+    second = SQLiteStateStore(path)
+
+    assert second.fingerprint_credential("credential") == first_fingerprint
+    assert second.secret_path == tmp_path / "state.sqlite3.secret"
+    assert second.secret_path.stat().st_mode & 0o777 == 0o600
+    assert second.secret_path.read_bytes() != b"credential"
+
+
+def test_state_store_admission_degrades_when_database_is_corrupt(tmp_path):
     path = tmp_path / "state.sqlite3"
     path.write_bytes(b"not sqlite")
     store = SQLiteStateStore(path)
 
     decision = store.admit(_key(), now=100)
 
-    assert decision.allowed is False
+    assert decision.allowed is True
     assert decision.circuit_state is CircuitState.UNKNOWN
-    assert decision.skip_reason is SkipReason.CIRCUIT_OPEN
+    assert decision.skip_reason is None
     assert decision.store_available is False
 
 
@@ -150,6 +173,38 @@ def test_budget_ledger_reserve_commit_release_uses_abstract_units(tmp_path):
     ledger = store.get_budget("request-1", "2026-07-12")
     assert ledger.limit_units == 5
     assert ledger.used_units == 5
+    assert ledger.reserved_units == 0
+
+
+def test_budget_reservation_is_atomic_across_concurrent_workers(tmp_path):
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    store.configure_budget("shared", "window", limit_units=5)
+
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        admitted = list(
+            executor.map(
+                lambda _index: store.reserve_budget("shared", "window", units=1),
+                range(20),
+            )
+        )
+
+    ledger = store.get_budget("shared", "window")
+    assert sum(admitted) == 5
+    assert ledger.used_units == 0
+    assert ledger.reserved_units == 5
+
+
+def test_budget_reconciliation_commits_actual_and_releases_unused_units(tmp_path):
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    store.configure_budget("request", "window", limit_units=5)
+    assert store.reserve_budget("request", "window", units=3)
+
+    store.reconcile_budget(
+        "request", "window", reserved_units=3, actual_units=1
+    )
+
+    ledger = store.get_budget("request", "window")
+    assert ledger.used_units == 1
     assert ledger.reserved_units == 0
 
 

@@ -17,7 +17,9 @@ def _context(*, budget_units: int = 1, budget_limit_units: int = 3) -> AttemptCo
         provider="serper",
         capability=Capability.SEARCH,
         endpoint="https://google.serper.dev/search",
-        credential_fingerprint=credential_fingerprint("credential"),
+        credential_fingerprint=credential_fingerprint(
+            "credential", local_secret=b"test-local-secret"
+        ),
         budget_scope="request-1",
         budget_window="request",
         budget_units=budget_units,
@@ -45,7 +47,24 @@ def test_attempt_engine_retries_transient_and_records_one_provider_receipt(tmp_p
     assert execution.receipt.result_count == 1
     assert execution.receipt.circuit_state_before is CircuitState.CLOSED
     assert execution.receipt.circuit_state_after is CircuitState.CLOSED
+    assert execution.receipt.endpoint_id == "serper:search"
+    assert [item["outcome"] for item in execution.receipt.tries] == [
+        "error",
+        "success",
+    ]
+    assert execution.receipt.tries[0]["error"]["error_class"] == "transient"
+    assert execution.receipt.tries[1]["error"] is None
     assert store.get_budget("request-1", "request").used_units == 2
+
+
+def test_attempt_ids_are_unique_for_same_context_and_second(tmp_path):
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    engine = AttemptEngine(store, max_attempts=1)
+
+    first = engine.execute(_context(), lambda: {"results": []}, now=lambda: 100)
+    second = engine.execute(_context(), lambda: {"results": []}, now=lambda: 100)
+
+    assert first.receipt.attempt_id != second.receipt.attempt_id
 
 
 def test_auth_failure_is_not_retried_and_blocks_same_credential(tmp_path):
@@ -64,11 +83,17 @@ def test_auth_failure_is_not_retried_and_blocks_same_credential(tmp_path):
     assert failed.receipt.outcome is AttemptOutcome.FAILED
     assert failed.receipt.error.error_class is ErrorClass.AUTH
     assert failed.receipt.retry_count == 0
+    assert len(failed.receipt.tries) == 1
+    assert failed.receipt.tries[0]["outcome"] == "error"
+    assert failed.receipt.tries[0]["error"]["error_class"] == "auth"
     assert blocked.receipt.outcome is AttemptOutcome.SKIPPED
     assert blocked.receipt.skip_reason is SkipReason.AUTH_BLOCKED
+    assert blocked.receipt.endpoint_id == "serper:search"
+    assert blocked.receipt.decision == "skipped"
+    assert blocked.receipt.tries == []
 
 
-def test_fail_closed_state_store_skips_before_provider_call(tmp_path):
+def test_unavailable_state_store_degrades_without_skipping_provider(tmp_path):
     path = tmp_path / "state.sqlite3"
     path.write_bytes(b"corrupt")
     engine = AttemptEngine(SQLiteStateStore(path))
@@ -78,10 +103,37 @@ def test_fail_closed_state_store_skips_before_provider_call(tmp_path):
         _context(), lambda: calls.append("called") or {"results": []}, now=lambda: 100
     )
 
-    assert calls == []
-    assert execution.receipt.outcome is AttemptOutcome.SKIPPED
-    assert execution.receipt.skip_reason is SkipReason.CIRCUIT_OPEN
+    assert calls == ["called"]
+    assert execution.payload == {"results": []}
+    assert execution.receipt.outcome is AttemptOutcome.SUCCESS
     assert execution.receipt.circuit_state_before is CircuitState.UNKNOWN
+    assert execution.receipt.budget_decision == "store_unavailable"
+
+
+def test_store_loss_after_reservation_never_discards_provider_outcome(tmp_path):
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    engine = AttemptEngine(store, max_attempts=1)
+
+    def success():
+        store._available = False
+        return {"results": [{"url": "https://example.com"}]}
+
+    successful = engine.execute(_context(), success, now=lambda: 100)
+    assert successful.payload is not None
+    assert successful.receipt.outcome is AttemptOutcome.SUCCESS
+
+    store = SQLiteStateStore(tmp_path / "state-2.sqlite3")
+    engine = AttemptEngine(store, max_attempts=1)
+
+    def failure():
+        store._available = False
+        raise ProviderRequestError("upstream", status_code=503, transient=True)
+
+    failed = engine.execute(_context(), failure, now=lambda: 100)
+    assert failed.payload is None
+    assert failed.receipt.outcome is AttemptOutcome.FAILED
+    assert failed.receipt.error is not None
+    assert failed.receipt.error.error_class is ErrorClass.TRANSIENT
 
 
 def test_budget_is_admitted_before_provider_call(tmp_path):

@@ -33,7 +33,7 @@ from providers import (  # noqa: F401 - resolved late via EXTRACT_DISPATCH/monke
 from provider_dispatch import EXTRACT_DISPATCH
 from provider_registry import EXTRACT_PROVIDER_IDS
 from compat_v3 import legacy_request_to_v3, v3_response_to_legacy_extract
-from contract_v3 import Capability, RequestV3, ResponseV3
+from contract_v3 import Capability, RequestV3, ResponseV3, SkipReason
 from orchestrator_v3 import (
     CapabilityAdapter,
     CapabilityExecution,
@@ -41,7 +41,7 @@ from orchestrator_v3 import (
     execute_v3_request,
 )
 from runtime_v3 import response_from_legacy
-from state_store_v3 import SQLiteStateStore, credential_fingerprint
+from state_store_v3 import SQLiteStateStore
 
 
 EXTRACT_PROVIDER_PRIORITY = list(EXTRACT_PROVIDER_IDS)
@@ -288,8 +288,9 @@ def _execute_extract_v3(
     state_path = v3_config.get("state_path") or os.path.join(
         str(CACHE_DIR), "v3", "state.sqlite3"
     )
+    store = SQLiteStateStore(state_path)
     engine = AttemptEngine(
-        SQLiteStateStore(state_path),
+        store,
         max_attempts=int(v3_config.get("max_attempts_per_provider", 2)),
     )
     budget_limit = int(
@@ -317,11 +318,16 @@ def _execute_extract_v3(
             provider=provider,
             capability=Capability.EXTRACT,
             endpoint=endpoint,
-            credential_fingerprint=credential_fingerprint(credential),
+            credential_fingerprint=store.fingerprint_credential(credential),
             budget_scope=scope,
             budget_window="request",
             budget_limit_units=budget_limit,
         )
+        if payload is not None:
+            receipts.append(
+                engine.skip(context, SkipReason.POLICY_EXCLUDED).receipt
+            )
+            continue
 
         def operation(current_provider=provider):
             result = _extract_plus_core(
@@ -343,7 +349,7 @@ def _execute_extract_v3(
         if attempted.payload is not None:
             payload = attempted.payload
             successful_provider = provider
-            break
+            continue
         error_code = (
             "all_urls_failed"
             if attempted.receipt.error is not None
@@ -376,7 +382,7 @@ def _execute_extract_v3(
     if any(receipt.error is not None for receipt in receipts):
         stages.append("error_classification")
     stages.append("retry_circuit_update")
-    if len(receipts) > 1:
+    if sum(receipt.decision == "attempted" for receipt in receipts) > 1:
         stages.append("fallback")
     stages.append("dedup_fingerprint")
     return CapabilityExecution(

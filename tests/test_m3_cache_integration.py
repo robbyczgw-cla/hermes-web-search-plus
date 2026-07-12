@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from compat_v3 import legacy_request_to_v3
 from contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
 from orchestrator_v3 import CapabilityAdapter, ProviderPlan, execute_v3_request
@@ -62,10 +64,23 @@ def test_orchestrator_v3_cache_hit_skips_provider_and_rebinds_request_id(tmp_pat
     assert second.response.request_id == "second"
     assert second.response.cache_status["disposition"] == "fresh_hit"
     assert second.response.cache_status["source_contract_version"] == "3.0"
+    assert second.response.execution_id != first.response.execution_id
+    assert (
+        second.response.cache_status["origin_execution_id"]
+        == first.response.execution_id
+    )
     assert second.response.provider_attempts == []
     assert second.legacy_payload["cached"] is True
     assert "provider_attempt" not in second.stage_trace
     assert "cache_write" not in second.stage_trace
+    cache_file = next((tmp_path / "v3" / "response" / "search").glob("*.json"))
+    envelope = json.loads(cache_file.read_text())
+    stored = envelope["payload"]
+    assert stored["origin_execution_id"] == first.response.execution_id
+    assert "request_id" not in stored
+    assert "execution_id" not in stored
+    assert "provider_attempts" not in stored
+    assert "cache_status" not in stored
 
 
 def test_cache_bypass_neither_reads_nor_writes(tmp_path):

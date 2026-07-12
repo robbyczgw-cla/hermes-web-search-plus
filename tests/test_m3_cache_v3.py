@@ -30,6 +30,7 @@ def _response_payload(request_id: str = "stored-id") -> dict:
     return {
         "contract_version": "3.0",
         "request_id": request_id,
+        "execution_id": "exec_stored",
         "capability": "search",
         "status": "ok",
         "results": [],
@@ -69,7 +70,11 @@ def test_v3_cache_write_and_fresh_stale_lookup_are_namespaced(tmp_path):
     expired = cache.get(request, ttl_seconds=20, allow_stale_seconds=40, now=161)
 
     assert fresh.disposition == "fresh_hit"
-    assert fresh.payload["request_id"] == "stored-id"
+    assert fresh.payload is not None
+    assert fresh.payload["origin_execution_id"] == "exec_stored"
+    assert "request_id" not in fresh.payload
+    assert "provider_attempts" not in fresh.payload
+    assert "cache_status" not in fresh.payload
     assert fresh.age_seconds == 10
     assert stale.disposition == "stale_hit"
     assert stale.age_seconds == 30

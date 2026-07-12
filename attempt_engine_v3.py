@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import time
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Dict, Optional
@@ -67,23 +67,27 @@ class AttemptEngine:
 
     @staticmethod
     def _attempt_id(context: AttemptContext, started: int) -> str:
-        material = "\x1f".join(
-            (
-                context.provider,
-                context.capability.value,
-                context.endpoint,
-                context.credential_fingerprint,
-                context.budget_scope,
-                str(started),
-            )
-        )
-        return "attempt_" + hashlib.sha256(material.encode()).hexdigest()[:16]
+        del context, started
+        return "attempt_" + uuid.uuid4().hex[:16]
 
     @staticmethod
     def _started_at(timestamp: int) -> str:
         return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat().replace(
             "+00:00", "Z"
         )
+
+    @staticmethod
+    def _try_error(error) -> Dict:
+        retry_after_ms = None
+        if error.retry_after_seconds is not None:
+            retry_after_ms = max(0, int(error.retry_after_seconds * 1000))
+        return {
+            "error_class": error.error_class.value,
+            "code": error.code,
+            "http_status": error.http_status,
+            "retryable": error.retryable,
+            "retry_after_ms": retry_after_ms,
+        }
 
     def _skipped(
         self,
@@ -108,6 +112,40 @@ class AttemptEngine:
                 budget_decision=budget_decision,
                 circuit_state_before=state,
                 circuit_state_after=state,
+                endpoint_id=f"{context.provider}:{context.capability.value}",
+                decision="skipped",
+                tries=[],
+            ),
+        )
+
+    def skip(
+        self,
+        context: AttemptContext,
+        reason: SkipReason,
+        *,
+        now: Callable[[], float] = time.time,
+    ) -> AttemptExecution:
+        """Emit an explicit receipt for a candidate excluded before admission."""
+        started = int(now())
+        return AttemptExecution(
+            None,
+            ProviderAttemptV3(
+                attempt_id=self._attempt_id(context, started),
+                provider=context.provider,
+                capability=context.capability,
+                outcome=AttemptOutcome.SKIPPED,
+                started_at=self._started_at(started),
+                duration_ms=0,
+                retry_count=0,
+                result_count=0,
+                skip_reason=reason,
+                error=None,
+                budget_decision="not_evaluated",
+                circuit_state_before=CircuitState.CLOSED,
+                circuit_state_after=CircuitState.CLOSED,
+                endpoint_id=f"{context.provider}:{context.capability.value}",
+                decision="skipped",
+                tries=[],
             ),
         )
 
@@ -119,9 +157,11 @@ class AttemptEngine:
         now: Callable[[], int] = lambda: int(time.time()),
     ) -> AttemptExecution:
         started = int(now())
+        attempt_started_monotonic = time.monotonic()
         before = CircuitState.CLOSED
         last_error = None
         encountered: set[ErrorClass] = set()
+        tries = []
 
         self.store.configure_budget(
             context.budget_scope,
@@ -145,7 +185,8 @@ class AttemptEngine:
                     budget_decision="not_reserved",
                 )
 
-            if not self.store.reserve_budget(
+            reserved = decision.store_available
+            if reserved and not self.store.reserve_budget(
                 context.budget_scope,
                 context.budget_window,
                 units=context.budget_units,
@@ -158,19 +199,33 @@ class AttemptEngine:
                     reason=SkipReason.BUDGET_BLOCKED,
                     budget_decision="blocked",
                 )
+            budget_decision = "reserved" if reserved else "store_unavailable"
 
+            try_started = int(now())
             call_started = time.monotonic()
             try:
                 payload = operation()
             except BaseException as exc:
-                self.store.commit_budget(
-                    context.budget_scope,
-                    context.budget_window,
-                    units=context.budget_units,
-                )
+                if reserved:
+                    self.store.commit_budget(
+                        context.budget_scope,
+                        context.budget_window,
+                        units=context.budget_units,
+                    )
                 classified = classify_provider_error(exc, provider=context.provider)
                 last_error = classified
                 encountered.add(classified.error_class)
+                tries.append(
+                    {
+                        "try_number": index + 1,
+                        "started_at": self._started_at(try_started),
+                        "duration_ms": max(
+                            0, int((time.monotonic() - call_started) * 1000)
+                        ),
+                        "outcome": "error",
+                        "error": self._try_error(classified),
+                    }
+                )
                 should_retry = classified.retryable and index < self.max_attempts - 1
                 if should_retry:
                     self.sleep(classified.retry_after_seconds or 0.0)
@@ -192,25 +247,48 @@ class AttemptEngine:
                         result_count=0,
                         started_at=self._started_at(started),
                         duration_ms=max(
-                            0, int((time.monotonic() - call_started) * 1000)
+                            0,
+                            int(
+                                (time.monotonic() - attempt_started_monotonic) * 1000
+                            ),
                         ),
                         error=classified,
-                        budget_decision="reserved",
+                        budget_decision=budget_decision,
                         circuit_state_before=before,
                         circuit_state_after=after_record.state,
+                        endpoint_id=f"{context.provider}:{context.capability.value}",
+                        decision="attempted",
+                        tries=tries,
                     ),
                 )
 
-            self.store.commit_budget(
-                context.budget_scope,
-                context.budget_window,
-                units=context.budget_units,
-            )
+            if reserved:
+                self.store.commit_budget(
+                    context.budget_scope,
+                    context.budget_window,
+                    units=context.budget_units,
+                )
             for error_class in encountered:
                 self.store.record_success(
                     context.circuit_key, error_class, now=int(now())
                 )
             result_count = len(payload.get("results") or [])
+            try_duration_ms = max(
+                0, int((time.monotonic() - call_started) * 1000)
+            )
+            tries.append(
+                {
+                    "try_number": index + 1,
+                    "started_at": self._started_at(try_started),
+                    "duration_ms": try_duration_ms,
+                    "outcome": "success",
+                    "error": None,
+                }
+            )
+            duration_ms = max(
+                0, int((time.monotonic() - attempt_started_monotonic) * 1000)
+            )
+            endpoint_id = f"{context.provider}:{context.capability.value}"
             return AttemptExecution(
                 payload,
                 ProviderAttemptV3(
@@ -221,12 +299,17 @@ class AttemptEngine:
                     retry_count=index,
                     result_count=result_count,
                     started_at=self._started_at(started),
-                    duration_ms=max(
-                        0, int((time.monotonic() - call_started) * 1000)
-                    ),
-                    budget_decision="reserved",
+                    duration_ms=duration_ms,
+                    budget_decision=budget_decision,
                     circuit_state_before=before,
-                    circuit_state_after=CircuitState.CLOSED,
+                    circuit_state_after=(
+                        CircuitState.CLOSED
+                        if self.store.available
+                        else CircuitState.UNKNOWN
+                    ),
+                    endpoint_id=endpoint_id,
+                    decision="attempted",
+                    tries=tries,
                 ),
             )
 

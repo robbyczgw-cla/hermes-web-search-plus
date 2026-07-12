@@ -15,7 +15,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import cache as legacy_cache
-from cache_v3 import ResponseCacheV3
+from cache_v3 import ResponseCacheV3, response_payload_from_cache_material
 from contract_v3 import (
     Capability,
     DegradedReason,
@@ -145,9 +145,9 @@ def execute_v3_request(
             now=int(time.time()),
         )
         if lookup.payload is not None:
-            cached_response = ResponseV3.from_dict(lookup.payload)
             cached_order = tuple(
-                cached_response.routing_receipt.get("candidate_order") or ()
+                (lookup.payload.get("routing_receipt") or {}).get("candidate_order")
+                or ()
             )
             if cached_order == plan.candidate_order:
                 cache_status = {
@@ -157,7 +157,18 @@ def execute_v3_request(
                     "ttl_seconds": int(request.cache.get("ttl_seconds", 3600)),
                     "served_stale": lookup.disposition == "stale_hit",
                     "source_contract_version": "3.0",
+                    "origin_execution_id": lookup.payload.get("origin_execution_id"),
                 }
+                cached_payload = response_payload_from_cache_material(
+                    lookup.payload,
+                    request_id=request.request_id or plan.execution_id,
+                    execution_id=plan.execution_id,
+                    disposition=lookup.disposition,
+                    entry_id=str(lookup.entry_id or ""),
+                    age_seconds=int(lookup.age_seconds or 0),
+                    ttl_seconds=int(request.cache.get("ttl_seconds", 3600)),
+                )
+                cached_response = ResponseV3.from_dict(cached_payload)
                 warnings = list(cached_response.warnings)
                 status = cached_response.status
                 if lookup.disposition == "stale_hit":
@@ -170,7 +181,6 @@ def execute_v3_request(
                     )
                 cached_response = replace(
                     cached_response,
-                    request_id=request.request_id or plan.execution_id,
                     status=status,
                     provider_attempts=[],
                     cache_status=cache_status,
@@ -252,7 +262,13 @@ def execute_v3_request(
         execution_stages = ("provider_attempt",)
         provider_attempts = ()
         attempts_authoritative = False
-    response = adapter.normalize(request, plan, legacy_payload)
+    normalization_payload = legacy_payload
+    if attempts_authoritative:
+        normalization_payload = {
+            **legacy_payload,
+            "_v3_provider_attempts": list(provider_attempts),
+        }
+    response = adapter.normalize(request, plan, normalization_payload)
     if attempts_authoritative:
         response = replace(response, provider_attempts=list(provider_attempts))
     if cache_mode == "bypass":

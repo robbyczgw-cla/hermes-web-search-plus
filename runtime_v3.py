@@ -230,10 +230,36 @@ def observations_from_legacy(
 
 def project_results_from_observations(
     observations: List[Dict[str, Any]],
+    selected_items: List[Mapping[str, Any]] | None = None,
 ) -> List[Dict[str, Any]]:
-    """Create one representative projection per observation without composition."""
+    """Project selected source clusters without deleting non-selected observations."""
+    representatives = []
+    if selected_items is None:
+        representatives = [(observation, [observation]) for observation in observations]
+    else:
+        clusters: Dict[str, List[Dict[str, Any]]] = {}
+        for observation in observations:
+            clusters.setdefault(observation["url"]["canonical"], []).append(observation)
+        emitted = set()
+        for item in selected_items:
+            canonical = _canonical_url(str(item.get("url") or ""))
+            members = clusters.get(canonical) or []
+            if not members or canonical in emitted:
+                continue
+            observed = str(item.get("url") or "")
+            representative = next(
+                (
+                    observation
+                    for observation in members
+                    if observation["url"]["observed"] == observed
+                ),
+                members[0],
+            )
+            representatives.append((representative, members))
+            emitted.add(canonical)
+
     results = []
-    for rank, observation in enumerate(observations, 1):
+    for rank, (observation, members) in enumerate(representatives, 1):
         observation_id = observation["observation_id"]
         cluster_id = _stable_id("cluster", observation["url"]["canonical"])
         results.append(
@@ -242,7 +268,7 @@ def project_results_from_observations(
                 "kind": observation["kind"],
                 "engine_rank": rank,
                 "representative_observation_id": observation_id,
-                "observation_ids": [observation_id],
+                "observation_ids": [member["observation_id"] for member in members],
                 "dedup_cluster_id": cluster_id,
                 "url": dict(observation["url"]),
                 "title": _projected_text(observation, "title"),
@@ -299,14 +325,24 @@ def response_from_legacy(
         routing.get("provider") or payload.get("provider") or plan.selected_provider
     )
     raw_items = [item for item in (payload.get("results") or []) if item.get("url")]
-    provider_attempts = _attempts(request, plan, payload, selected, len(raw_items))
+    observation_items = [
+        item
+        for item in (payload.get("_v3_raw_results") or raw_items)
+        if isinstance(item, Mapping) and item.get("url")
+    ]
+    authoritative_attempts = payload.get("_v3_provider_attempts")
+    provider_attempts = (
+        list(authoritative_attempts)
+        if isinstance(authoritative_attempts, (list, tuple))
+        else _attempts(request, plan, payload, selected, len(raw_items))
+    )
     successful_attempt = next(
         (attempt for attempt in reversed(provider_attempts) if attempt.outcome is AttemptOutcome.SUCCESS),
         None,
     )
     observations = (
         observations_from_legacy(
-            payload,
+            {**payload, "results": observation_items},
             str(selected),
             request.capability,
             successful_attempt.attempt_id,
@@ -314,7 +350,7 @@ def response_from_legacy(
         if selected and successful_attempt
         else []
     )
-    results = project_results_from_observations(observations)
+    results = project_results_from_observations(observations, raw_items)
     failed_items = [item for item in raw_items if item.get("error")]
     top_error = payload.get("error")
     warnings: List[Dict[str, Any]] = []
@@ -333,6 +369,20 @@ def response_from_legacy(
         )
     else:
         status = ResponseStatus.OK
+
+    if any(
+        attempt.budget_decision == "store_unavailable"
+        for attempt in provider_attempts
+    ):
+        warnings.append(
+            {
+                "code": "wsp.state.store_unavailable",
+                "message": (
+                    "Operational state unavailable; provider execution continued "
+                    "without persistent circuit or budget state."
+                ),
+            }
+        )
 
     fallback_used = bool(routing.get("fallback_used") or _error_items(payload))
     fallback_reason = (
@@ -368,6 +418,27 @@ def response_from_legacy(
         }
         for result in results
     ]
+    selected_observation_ids = {
+        observation_id
+        for result in results
+        for observation_id in result["observation_ids"]
+    }
+    spam_domains = set(
+        ((payload.get("metadata") or {}).get("spam_filtered") or {}).get("domains")
+        or []
+    )
+    for observation in observations:
+        if observation["observation_id"] in selected_observation_ids:
+            continue
+        host = urlsplit(observation["url"]["canonical"]).hostname or ""
+        if host in spam_domains:
+            policy_actions.append(
+                {
+                    "action": "excluded",
+                    "observation_id": observation["observation_id"],
+                    "reason": "spam_domain",
+                }
+            )
     return ResponseV3(
         request_id=request_id,
         execution_id=plan.execution_id,

@@ -92,7 +92,7 @@ from research import run_research_mode
 from attempt_engine_v3 import AttemptContext, AttemptEngine
 from cache_v3 import peek_legacy_search
 from compat_v3 import legacy_request_to_v3, v3_response_to_legacy_search
-from contract_v3 import Capability, RequestV3, ResponseV3
+from contract_v3 import Capability, RequestV3, ResponseV3, SkipReason
 from orchestrator_v3 import (
     CapabilityAdapter,
     CapabilityExecution,
@@ -100,7 +100,7 @@ from orchestrator_v3 import (
     execute_v3_request,
 )
 from runtime_v3 import response_from_legacy
-from state_store_v3 import SQLiteStateStore, credential_fingerprint
+from state_store_v3 import SQLiteStateStore
 import providers as _providers
 import routing as _routing
 import extract as _extract
@@ -1262,7 +1262,14 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         adapter = SEARCH_DISPATCH.get(prov)
         if adapter is None:
             raise ValueError(f"Unknown provider: {prov}")
-        return adapter(globals(), prov, args, key, config, routing_info)
+        provider_result = adapter(globals(), prov, args, key, config, routing_info)
+        if engine_owned_attempt:
+            provider_result["_v3_raw_results"] = [
+                dict(item)
+                for item in (provider_result.get("results") or [])
+                if isinstance(item, dict)
+            ]
+        return provider_result
 
     def execute_with_retry(prov: str) -> Dict[str, Any]:
         if engine_owned_attempt:
@@ -1664,11 +1671,16 @@ def _execute_search_v3(
             provider=provider,
             capability=Capability.SEARCH,
             endpoint=endpoint,
-            credential_fingerprint=credential_fingerprint(credential),
+            credential_fingerprint=store.fingerprint_credential(credential),
             budget_scope=scope,
             budget_window="request",
             budget_limit_units=budget_limit,
         )
+        if payload is not None:
+            receipts.append(
+                engine.skip(context, SkipReason.POLICY_EXCLUDED).receipt
+            )
+            continue
 
         def operation(current_provider=provider):
             args = _search_args_from_v3(request, config)
@@ -1689,7 +1701,7 @@ def _execute_search_v3(
         if attempted.payload is not None:
             payload = attempted.payload
             successful_provider = provider
-            break
+            continue
 
     if payload is None:
         payload = {
@@ -1732,7 +1744,7 @@ def _execute_search_v3(
     if any(receipt.error is not None for receipt in receipts):
         stages.append("error_classification")
     stages.append("retry_circuit_update")
-    if len(receipts) > 1:
+    if sum(receipt.decision == "attempted" for receipt in receipts) > 1:
         stages.append("fallback")
     stages.append("dedup_fingerprint")
     return CapabilityExecution(
