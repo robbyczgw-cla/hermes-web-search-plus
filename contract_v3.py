@@ -92,6 +92,29 @@ class FallbackReason(StrEnum):
     BUDGET_CHAIN = "budget_chain"
 
 
+class CandidateDecision(StrEnum):
+    SELECTED = "selected"
+    ATTEMPTED_FAILED = "attempted_failed"
+    ATTEMPTED_NO_SELECTION = "attempted_no_selection"
+    SKIPPED = "skipped"
+    NOT_ATTEMPTED = "not_attempted"
+    ORIGIN_SELECTED = "origin_selected"
+
+
+class CandidateReasonCode(StrEnum):
+    CLASSIC_SELECTED = "classic_selected"
+    FALLBACK_SELECTED = "fallback_selected"
+    ATTEMPT_FAILED = "attempt_failed"
+    INSUFFICIENT_RESULTS = "insufficient_results"
+    BLOCKED_AUTH = "blocked_auth"
+    BLOCKED_QUOTA = "blocked_quota"
+    CIRCUIT_OPEN = "circuit_open"
+    BUDGET_DENIED = "budget_denied"
+    PROVIDER_UNAVAILABLE = "provider_unavailable"
+    NOT_ATTEMPTED_AFTER_SUCCESS = "not_attempted_after_success"
+    CACHE_ORIGIN_SELECTED = "cache_origin_selected"
+
+
 class CacheDisposition(StrEnum):
     FRESH_HIT = "fresh_hit"
     STALE_HIT = "stale_hit"
@@ -238,6 +261,431 @@ class ProviderAttemptV3:
             decision=str(payload.get("decision") or "attempted"),
             tries=[dict(item) for item in payload.get("tries", [])],
         )
+
+
+_SKIP_REASON_TO_CANDIDATE_REASON = {
+    SkipReason.AUTH_BLOCKED: CandidateReasonCode.BLOCKED_AUTH,
+    SkipReason.QUOTA_BLOCKED: CandidateReasonCode.BLOCKED_QUOTA,
+    SkipReason.CIRCUIT_OPEN: CandidateReasonCode.CIRCUIT_OPEN,
+    SkipReason.BUDGET_BLOCKED: CandidateReasonCode.BUDGET_DENIED,
+}
+_COMPLETED_RECEIPT_FIELDS = {
+    "authority",
+    "execution_scope",
+    "candidate_decisions",
+    "cache_origin",
+    "shadow_observation",
+}
+_CANDIDATE_FIELDS = {
+    "provider", "position", "decision", "reason_code", "attempt_id",
+}
+_DECISION_REASONS = {
+    CandidateDecision.SELECTED: {
+        CandidateReasonCode.CLASSIC_SELECTED,
+        CandidateReasonCode.FALLBACK_SELECTED,
+    },
+    CandidateDecision.ATTEMPTED_FAILED: {CandidateReasonCode.ATTEMPT_FAILED},
+    CandidateDecision.ATTEMPTED_NO_SELECTION: {
+        CandidateReasonCode.INSUFFICIENT_RESULTS,
+    },
+    CandidateDecision.SKIPPED: {
+        CandidateReasonCode.BLOCKED_AUTH,
+        CandidateReasonCode.BLOCKED_QUOTA,
+        CandidateReasonCode.CIRCUIT_OPEN,
+        CandidateReasonCode.BUDGET_DENIED,
+        CandidateReasonCode.PROVIDER_UNAVAILABLE,
+    },
+    CandidateDecision.NOT_ATTEMPTED: {
+        CandidateReasonCode.PROVIDER_UNAVAILABLE,
+        CandidateReasonCode.NOT_ATTEMPTED_AFTER_SUCCESS,
+    },
+    CandidateDecision.ORIGIN_SELECTED: {
+        CandidateReasonCode.CACHE_ORIGIN_SELECTED,
+    },
+}
+
+
+def _candidate_decision(
+    provider: str,
+    position: int,
+    decision: CandidateDecision,
+    reason: CandidateReasonCode,
+    attempt_id: str | None,
+) -> Dict[str, Any]:
+    return {
+        "provider": provider,
+        "position": position,
+        "decision": decision.value,
+        "reason_code": reason.value,
+        "attempt_id": attempt_id,
+    }
+
+
+def complete_routing_receipt_v3(
+    receipt: Dict[str, Any],
+    attempts: List[ProviderAttemptV3],
+    *,
+    shadow_observation: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """Complete a classic receipt without changing the authoritative plan."""
+    completed = dict(receipt)
+    order = [str(provider) for provider in receipt.get("candidate_order") or []]
+    selected = receipt.get("selected_provider")
+    attempts_by_provider = {item.provider: item for item in attempts}
+    decisions = []
+    selected_seen = False
+    for position, provider in enumerate(order, 1):
+        provider_attempt = attempts_by_provider.get(provider)
+        if provider == selected:
+            reason = (
+                CandidateReasonCode.CLASSIC_SELECTED
+                if position == 1
+                else CandidateReasonCode.FALLBACK_SELECTED
+            )
+            decisions.append(
+                _candidate_decision(
+                    provider,
+                    position,
+                    CandidateDecision.SELECTED,
+                    reason,
+                    provider_attempt.attempt_id if provider_attempt else None,
+                )
+            )
+            selected_seen = True
+        elif provider_attempt and provider_attempt.outcome is AttemptOutcome.SKIPPED:
+            reason = (
+                _SKIP_REASON_TO_CANDIDATE_REASON.get(
+                    provider_attempt.skip_reason,
+                    CandidateReasonCode.PROVIDER_UNAVAILABLE,
+                )
+                if provider_attempt.skip_reason is not None
+                else CandidateReasonCode.PROVIDER_UNAVAILABLE
+            )
+            decisions.append(
+                _candidate_decision(
+                    provider,
+                    position,
+                    CandidateDecision.SKIPPED,
+                    reason,
+                    provider_attempt.attempt_id,
+                )
+            )
+        elif provider_attempt and provider_attempt.outcome in {
+            AttemptOutcome.FAILED,
+            AttemptOutcome.CANCELLED,
+        }:
+            decisions.append(
+                _candidate_decision(
+                    provider,
+                    position,
+                    CandidateDecision.ATTEMPTED_FAILED,
+                    CandidateReasonCode.ATTEMPT_FAILED,
+                    provider_attempt.attempt_id,
+                )
+            )
+        elif provider_attempt and provider_attempt.outcome in {
+            AttemptOutcome.SUCCESS,
+            AttemptOutcome.PARTIAL,
+        }:
+            decisions.append(
+                _candidate_decision(
+                    provider,
+                    position,
+                    CandidateDecision.ATTEMPTED_NO_SELECTION,
+                    CandidateReasonCode.INSUFFICIENT_RESULTS,
+                    provider_attempt.attempt_id,
+                )
+            )
+            selected_seen = True
+        else:
+            reason = (
+                CandidateReasonCode.NOT_ATTEMPTED_AFTER_SUCCESS
+                if selected_seen
+                else CandidateReasonCode.PROVIDER_UNAVAILABLE
+            )
+            decisions.append(
+                _candidate_decision(
+                    provider,
+                    position,
+                    CandidateDecision.NOT_ATTEMPTED,
+                    reason,
+                    None,
+                )
+            )
+    if selected in order and order.index(selected) > 0:
+        prior_decisions = decisions[: order.index(selected)]
+        if any(
+            item["decision"] == CandidateDecision.ATTEMPTED_NO_SELECTION.value
+            for item in prior_decisions
+        ):
+            completed["fallback_reason"] = FallbackReason.INSUFFICIENT_RESULTS.value
+        elif any(
+            item["decision"] == CandidateDecision.ATTEMPTED_FAILED.value
+            for item in prior_decisions
+        ):
+            completed["fallback_reason"] = FallbackReason.SELECTED_FAILED.value
+        elif any(
+            item["decision"] == CandidateDecision.SKIPPED.value
+            for item in prior_decisions
+        ):
+            completed["fallback_reason"] = FallbackReason.SELECTED_SKIPPED.value
+    completed.update(
+        {
+            "authority": "classic",
+            "execution_scope": "current",
+            "candidate_decisions": decisions,
+            "cache_origin": None,
+            "shadow_observation": shadow_observation,
+        }
+    )
+    validate_routing_receipt_v3(completed, attempts, require_completed=True)
+    return completed
+
+
+def cache_hit_routing_receipt_v3(
+    origin_receipt: Dict[str, Any], *, origin_execution_id: str
+) -> Dict[str, Any]:
+    """Build a neutral current receipt with historical origin evidence nested."""
+    origin_decisions = []
+    for item in origin_receipt.get("candidate_decisions") or []:
+        if item.get("decision") == CandidateDecision.SELECTED.value:
+            origin_decisions.append(
+                _candidate_decision(
+                    str(item["provider"]),
+                    int(item["position"]),
+                    CandidateDecision.ORIGIN_SELECTED,
+                    CandidateReasonCode.CACHE_ORIGIN_SELECTED,
+                    None,
+                )
+            )
+    if not origin_decisions and origin_receipt.get("selected_provider"):
+        provider = str(origin_receipt["selected_provider"])
+        order = list(origin_receipt.get("candidate_order") or [])
+        position = order.index(provider) + 1 if provider in order else 1
+        origin_decisions.append(
+            _candidate_decision(
+                provider,
+                position,
+                CandidateDecision.ORIGIN_SELECTED,
+                CandidateReasonCode.CACHE_ORIGIN_SELECTED,
+                None,
+            )
+        )
+    receipt = {
+        "policy_id": str(origin_receipt.get("policy_id") or "classic"),
+        "policy_revision": str(origin_receipt.get("policy_revision") or "v2.9.1"),
+        "mode": "classic",
+        "candidate_order": [],
+        "selected_provider": None,
+        "fallback_reason": "none",
+        "authority": "classic",
+        "execution_scope": "current",
+        "candidate_decisions": [],
+        "cache_origin": {
+            "execution_id": origin_execution_id,
+            "policy_id": str(origin_receipt.get("policy_id") or "classic"),
+            "policy_revision": str(
+                origin_receipt.get("policy_revision") or "v2.9.1"
+            ),
+            "candidate_order": list(origin_receipt.get("candidate_order") or []),
+            "selected_provider": origin_receipt.get("selected_provider"),
+            "fallback_reason": str(
+                origin_receipt.get("fallback_reason") or "none"
+            ),
+            "candidate_decisions": origin_decisions,
+        },
+        "shadow_observation": None,
+    }
+    validate_routing_receipt_v3(receipt, require_completed=True)
+    return receipt
+
+
+def validate_routing_receipt_v3(
+    receipt: Dict[str, Any],
+    attempts: List[ProviderAttemptV3] | None = None,
+    *,
+    require_completed: bool = False,
+) -> None:
+    base_fields = {
+        "policy_id", "policy_revision", "mode", "candidate_order",
+        "selected_provider", "fallback_reason",
+    }
+    if not base_fields.issubset(receipt):
+        raise ValueError("routing_receipt is missing frozen required fields")
+    present = _COMPLETED_RECEIPT_FIELDS.intersection(receipt)
+    if not present and not require_completed:
+        return
+    if present != _COMPLETED_RECEIPT_FIELDS:
+        raise ValueError("routing_receipt completion fields must be all-or-none")
+    if receipt["authority"] != "classic" or receipt["execution_scope"] != "current":
+        raise ValueError("routing receipt authority/scope is invalid")
+    decisions = receipt["candidate_decisions"]
+    if not isinstance(decisions, list):
+        raise ValueError("candidate_decisions must be an array")
+    order = receipt["candidate_order"]
+    if not isinstance(order, list) or len(order) != len(set(order)):
+        raise ValueError("candidate_order must be a unique array")
+    if len(decisions) != len(order):
+        raise ValueError("candidate decisions must cover every candidate")
+    try:
+        FallbackReason(receipt["fallback_reason"])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("fallback_reason is invalid") from exc
+    attempt_map = {item.attempt_id: item for item in attempts or []}
+    selected_count = 0
+    for index, item in enumerate(decisions, 1):
+        if not isinstance(item, dict) or set(item) != _CANDIDATE_FIELDS:
+            raise ValueError("candidate decision fields are invalid")
+        decision = CandidateDecision(item["decision"])
+        reason = CandidateReasonCode(item["reason_code"])
+        if reason not in _DECISION_REASONS[decision]:
+            raise ValueError("candidate decision/reason combination is invalid")
+        if item["position"] != index or item["provider"] != order[index - 1]:
+            raise ValueError("candidate decisions must follow stable candidate order")
+        if decision is CandidateDecision.ORIGIN_SELECTED:
+            raise ValueError("origin_selected is forbidden in current decisions")
+        if decision is CandidateDecision.SELECTED:
+            selected_count += 1
+            if item["provider"] != receipt["selected_provider"]:
+                raise ValueError("selected decision/provider mismatch")
+        attempt_id = item["attempt_id"]
+        if decision in {
+            CandidateDecision.ATTEMPTED_FAILED,
+            CandidateDecision.ATTEMPTED_NO_SELECTION,
+            CandidateDecision.SKIPPED,
+        } and attempt_id is None:
+            raise ValueError("executed/skipped candidate decision requires attempt_id")
+        if decision is CandidateDecision.NOT_ATTEMPTED and attempt_id is not None:
+            raise ValueError("not_attempted candidate cannot reference an attempt")
+        if attempt_id is not None and attempts is not None:
+            provider_attempt = attempt_map.get(attempt_id)
+            if provider_attempt is None or provider_attempt.provider != item["provider"]:
+                raise ValueError("candidate decision references invalid current attempt")
+            expected_outcomes = {
+                CandidateDecision.SELECTED: {
+                    AttemptOutcome.SUCCESS,
+                    AttemptOutcome.PARTIAL,
+                },
+                CandidateDecision.ATTEMPTED_FAILED: {
+                    AttemptOutcome.FAILED,
+                    AttemptOutcome.CANCELLED,
+                },
+                CandidateDecision.ATTEMPTED_NO_SELECTION: {
+                    AttemptOutcome.SUCCESS,
+                    AttemptOutcome.PARTIAL,
+                },
+                CandidateDecision.SKIPPED: {AttemptOutcome.SKIPPED},
+            }
+            if (
+                decision in expected_outcomes
+                and provider_attempt.outcome not in expected_outcomes[decision]
+            ):
+                raise ValueError("candidate decision contradicts attempt outcome")
+            if decision is CandidateDecision.SKIPPED:
+                expected_skip_reason = (
+                    _SKIP_REASON_TO_CANDIDATE_REASON.get(
+                        provider_attempt.skip_reason,
+                        CandidateReasonCode.PROVIDER_UNAVAILABLE,
+                    )
+                    if provider_attempt.skip_reason is not None
+                    else CandidateReasonCode.PROVIDER_UNAVAILABLE
+                )
+                if reason is not expected_skip_reason:
+                    raise ValueError("candidate reason contradicts skip reason")
+    fallback = FallbackReason(receipt["fallback_reason"])
+    selected_positions = [
+        item["position"]
+        for item in decisions
+        if item["decision"] == CandidateDecision.SELECTED.value
+    ]
+    if selected_positions:
+        selected_position = selected_positions[0]
+        prior_decisions = decisions[: selected_position - 1]
+        if selected_position == 1 and fallback is not FallbackReason.NONE:
+            raise ValueError("direct selection cannot claim fallback")
+        if selected_position > 1 and fallback is FallbackReason.NONE:
+            raise ValueError("fallback selection requires fallback_reason")
+        if (
+            fallback is FallbackReason.SELECTED_FAILED
+            and not any(
+                item["decision"] == CandidateDecision.ATTEMPTED_FAILED.value
+                for item in prior_decisions
+            )
+        ):
+            raise ValueError("selected_failed requires a failed prior candidate")
+        if (
+            fallback is FallbackReason.INSUFFICIENT_RESULTS
+            and not any(
+                item["decision"]
+                == CandidateDecision.ATTEMPTED_NO_SELECTION.value
+                for item in prior_decisions
+            )
+        ):
+            raise ValueError(
+                "insufficient_results requires a successful unselected candidate"
+            )
+        if (
+            fallback is FallbackReason.SELECTED_SKIPPED
+            and not any(
+                item["decision"] == CandidateDecision.SKIPPED.value
+                for item in prior_decisions
+            )
+        ):
+            raise ValueError("selected_skipped requires a skipped prior candidate")
+    if receipt["selected_provider"] is not None and selected_count != 1:
+        raise ValueError("completed receipt requires exactly one selected decision")
+    origin = receipt["cache_origin"]
+    if origin is not None:
+        required_origin = {
+            "execution_id", "policy_id", "policy_revision", "candidate_order",
+            "selected_provider", "fallback_reason", "candidate_decisions",
+        }
+        if not isinstance(origin, dict) or set(origin) != required_origin:
+            raise ValueError("cache_origin fields are invalid")
+        if receipt["candidate_order"] or receipt["selected_provider"] is not None or decisions:
+            raise ValueError("cache hit cannot invent current routing decisions")
+        try:
+            FallbackReason(origin["fallback_reason"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("cache_origin fallback_reason is invalid") from exc
+        origin_order = origin["candidate_order"]
+        if not isinstance(origin_order, list) or len(origin_order) != len(set(origin_order)):
+            raise ValueError("cache_origin candidate_order must be unique")
+        origin_selected_count = 0
+        for item in origin["candidate_decisions"]:
+            if not isinstance(item, dict) or set(item) != _CANDIDATE_FIELDS:
+                raise ValueError("cache_origin decision fields are invalid")
+            position = item.get("position")
+            if (
+                not isinstance(position, int)
+                or isinstance(position, bool)
+                or position < 1
+                or position > len(origin_order)
+                or item.get("provider") != origin_order[position - 1]
+                or item.get("provider") != origin["selected_provider"]
+                or item.get("decision") != CandidateDecision.ORIGIN_SELECTED.value
+                or item.get("reason_code")
+                != CandidateReasonCode.CACHE_ORIGIN_SELECTED.value
+                or item.get("attempt_id") is not None
+            ):
+                raise ValueError("cache_origin decision is invalid")
+            origin_selected_count += 1
+        expected_origin_selected = 1 if origin["selected_provider"] is not None else 0
+        if origin_selected_count != expected_origin_selected:
+            raise ValueError("cache_origin selected decision/provider mismatch")
+    shadow = receipt["shadow_observation"]
+    if shadow is not None:
+        shadow_fields = {
+            "observed", "policy_id", "policy_revision", "selected_provider",
+            "affected_execution",
+        }
+        if (
+            not isinstance(shadow, dict)
+            or set(shadow) != shadow_fields
+            or shadow["observed"] is not True
+            or shadow["affected_execution"] is not False
+        ):
+            raise ValueError("shadow observation must be typed and observational")
 
 
 @dataclass(frozen=True)
@@ -539,12 +987,11 @@ class ResponseV3:
                 raise ValueError("engine must contain name, version, and build_commit")
             if not all(isinstance(value, str) and value for value in self.engine.values()):
                 raise ValueError("engine fields must be non-empty strings")
-        required_receipt_fields = {
-            "policy_id", "policy_revision", "mode", "candidate_order",
-            "selected_provider", "fallback_reason",
-        }
-        if not required_receipt_fields.issubset(self.routing_receipt):
-            raise ValueError("routing_receipt is missing frozen required fields")
+        validate_routing_receipt_v3(
+            self.routing_receipt,
+            self.provider_attempts,
+            require_completed=False,
+        )
         _validate_no_banned_fields(self.results)
         _validate_no_banned_fields(self.observations)
         if set(self.source_diversity) != _DIVERSITY_FIELDS:

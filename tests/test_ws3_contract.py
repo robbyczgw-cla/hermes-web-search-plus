@@ -45,6 +45,7 @@ CANDIDATE_REASON_CODES = frozenset(
         "classic_selected",
         "fallback_selected",
         "attempt_failed",
+        "insufficient_results",
         "blocked_auth",
         "blocked_quota",
         "circuit_open",

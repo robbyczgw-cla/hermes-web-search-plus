@@ -239,6 +239,33 @@
         "budget_chain"
       ]
     },
+    "CandidateDecision": {
+      "type": "string",
+      "enum": [
+        "selected",
+        "attempted_failed",
+        "attempted_no_selection",
+        "skipped",
+        "not_attempted",
+        "origin_selected"
+      ]
+    },
+    "CandidateReasonCode": {
+      "type": "string",
+      "enum": [
+        "classic_selected",
+        "fallback_selected",
+        "attempt_failed",
+        "insufficient_results",
+        "blocked_auth",
+        "blocked_quota",
+        "circuit_open",
+        "budget_denied",
+        "provider_unavailable",
+        "not_attempted_after_success",
+        "cache_origin_selected"
+      ]
+    },
     "CacheDisposition": {
       "type": "string",
       "enum": [
@@ -925,6 +952,214 @@
         "disposition"
       ]
     },
+    "CandidateDecisionV3": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "position": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "decision": {
+          "$ref": "#/$defs/CandidateDecision"
+        },
+        "reason_code": {
+          "$ref": "#/$defs/CandidateReasonCode"
+        },
+        "attempt_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "position",
+        "decision",
+        "reason_code",
+        "attempt_id"
+      ],
+      "oneOf": [
+        {
+          "properties": {
+            "decision": {
+              "const": "selected"
+            },
+            "reason_code": {
+              "enum": [
+                "classic_selected",
+                "fallback_selected"
+              ]
+            }
+          }
+        },
+        {
+          "properties": {
+            "decision": {
+              "const": "attempted_failed"
+            },
+            "reason_code": {
+              "const": "attempt_failed"
+            },
+            "attempt_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "decision": {
+              "const": "attempted_no_selection"
+            },
+            "reason_code": {
+              "const": "insufficient_results"
+            },
+            "attempt_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "decision": {
+              "const": "skipped"
+            },
+            "reason_code": {
+              "enum": [
+                "blocked_auth",
+                "blocked_quota",
+                "circuit_open",
+                "budget_denied",
+                "provider_unavailable"
+              ]
+            },
+            "attempt_id": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "properties": {
+            "decision": {
+              "const": "not_attempted"
+            },
+            "reason_code": {
+              "enum": [
+                "provider_unavailable",
+                "not_attempted_after_success"
+              ]
+            },
+            "attempt_id": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "decision": {
+              "const": "origin_selected"
+            },
+            "reason_code": {
+              "const": "cache_origin_selected"
+            },
+            "attempt_id": {
+              "type": "null"
+            }
+          }
+        }
+      ]
+    },
+    "CacheOriginReceiptV3": {
+      "type": "object",
+      "properties": {
+        "execution_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policy_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policy_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_order": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "selected_provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fallback_reason": {
+          "$ref": "#/$defs/FallbackReason"
+        },
+        "candidate_decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CandidateDecisionV3"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "execution_id",
+        "policy_id",
+        "policy_revision",
+        "candidate_order",
+        "selected_provider",
+        "fallback_reason",
+        "candidate_decisions"
+      ]
+    },
+    "ShadowObservationV3": {
+      "type": "object",
+      "properties": {
+        "observed": {
+          "type": "boolean",
+          "const": true
+        },
+        "policy_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policy_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "selected_provider": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "affected_execution": {
+          "type": "boolean",
+          "const": false
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "observed",
+        "policy_id",
+        "policy_revision",
+        "selected_provider",
+        "affected_execution"
+      ]
+    },
     "RoutingReceipt": {
       "type": "object",
       "properties": {
@@ -960,6 +1195,40 @@
         },
         "shadow": {
           "type": "object"
+        },
+        "authority": {
+          "type": "string",
+          "const": "classic"
+        },
+        "execution_scope": {
+          "type": "string",
+          "const": "current"
+        },
+        "candidate_decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CandidateDecisionV3"
+          }
+        },
+        "cache_origin": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CacheOriginReceiptV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shadow_observation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ShadowObservationV3"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "additionalProperties": false,
@@ -970,7 +1239,44 @@
         "candidate_order",
         "selected_provider",
         "fallback_reason"
-      ]
+      ],
+      "dependentRequired": {
+        "authority": [
+          "authority",
+          "execution_scope",
+          "candidate_decisions",
+          "cache_origin",
+          "shadow_observation"
+        ],
+        "execution_scope": [
+          "authority",
+          "execution_scope",
+          "candidate_decisions",
+          "cache_origin",
+          "shadow_observation"
+        ],
+        "candidate_decisions": [
+          "authority",
+          "execution_scope",
+          "candidate_decisions",
+          "cache_origin",
+          "shadow_observation"
+        ],
+        "cache_origin": [
+          "authority",
+          "execution_scope",
+          "candidate_decisions",
+          "cache_origin",
+          "shadow_observation"
+        ],
+        "shadow_observation": [
+          "authority",
+          "execution_scope",
+          "candidate_decisions",
+          "cache_origin",
+          "shadow_observation"
+        ]
+      }
     },
     "SourceDiversityV3": {
       "type": "object",

@@ -24,7 +24,9 @@ from contract_v3 import (
     RequestV3,
     ResponseStatus,
     ResponseV3,
+    complete_routing_receipt_v3,
 )
+from operator_receipts_v3 import OperatorReceiptJournal, receipt_record_from_response
 
 
 PIPELINE_STAGES: Tuple[str, ...] = (
@@ -120,6 +122,27 @@ def _normalize_request(request: RequestV3) -> RequestV3:
     return replace(request, input={**request.input, "query": normalized_query})
 
 
+def _append_operator_receipt(
+    response: ResponseV3,
+    cache_root: Any,
+    v3_config: Dict[str, Any],
+) -> None:
+    """Best-effort journal append; never changes the execution response."""
+    try:
+        if v3_config.get("operator_receipt_journal", True) is False:
+            return
+        journal = OperatorReceiptJournal(
+            cache_root,
+            ttl_seconds=int(v3_config.get("operator_receipt_ttl_seconds", 604800)),
+            max_records=int(v3_config.get("operator_receipt_max_records", 1000)),
+            max_bytes=int(v3_config.get("operator_receipt_max_bytes", 8 * 1024 * 1024)),
+        )
+        journal.append(receipt_record_from_response(response))
+    except Exception:
+        # Operator evidence is strictly best-effort and must never alter execution.
+        return
+
+
 def execute_v3_request(
     request: RequestV3,
     adapter: CapabilityAdapter,
@@ -196,6 +219,11 @@ def execute_v3_request(
                     "candidate_plan",
                     "response_v3",
                 }
+                _append_operator_receipt(
+                    cached_response,
+                    response_cache.root,
+                    v3_config,
+                )
                 return ExecutedV3(
                     response=cached_response,
                     plan=plan,
@@ -232,6 +260,13 @@ def execute_v3_request(
                 retryable=False,
             ),
         )
+        response = replace(
+            response,
+            routing_receipt=complete_routing_receipt_v3(
+                response.routing_receipt,
+                [],
+            ),
+        )
         stage_set = {
             "normalize",
             "validate",
@@ -239,6 +274,7 @@ def execute_v3_request(
             "candidate_plan",
             "response_v3",
         }
+        _append_operator_receipt(response, response_cache.root, v3_config)
         return ExecutedV3(
             response=response,
             plan=plan,
@@ -271,6 +307,14 @@ def execute_v3_request(
     response = adapter.normalize(request, plan, normalization_payload)
     if attempts_authoritative:
         response = replace(response, provider_attempts=list(provider_attempts))
+    response = replace(
+        response,
+        routing_receipt=complete_routing_receipt_v3(
+            response.routing_receipt,
+            list(response.provider_attempts),
+            shadow_observation=response.routing_receipt.get("shadow_observation"),
+        ),
+    )
     if cache_mode == "bypass":
         response = replace(response, cache_status={"disposition": "bypassed"})
     if response.capability is not request.capability:
@@ -307,6 +351,7 @@ def execute_v3_request(
     stage_trace = tuple(
         stage for stage in PIPELINE_STAGES if stage in executed_stage_set
     )
+    _append_operator_receipt(response, response_cache.root, v3_config)
     return ExecutedV3(
         response=response,
         plan=plan,

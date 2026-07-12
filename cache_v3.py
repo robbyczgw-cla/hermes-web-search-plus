@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from urllib.parse import urlsplit, urlunsplit
 
-from contract_v3 import RequestV3
+from contract_v3 import RequestV3, cache_hit_routing_receipt_v3
 
 
 CACHE_SCHEMA_VERSION = 2
@@ -83,20 +83,12 @@ def response_payload_from_cache_material(
         "policy_actions": list(material.get("policy_actions") or []),
         "source_diversity": dict(material.get("source_diversity") or {}),
         "provider_attempts": [],
-        "routing_receipt": {
-            "policy_id": str(
-                (material.get("routing_receipt") or {}).get("policy_id")
-                or "classic"
+        "routing_receipt": cache_hit_routing_receipt_v3(
+            dict(material.get("routing_receipt") or {}),
+            origin_execution_id=str(
+                material.get("origin_execution_id") or "exec_cache_origin_unknown"
             ),
-            "policy_revision": str(
-                (material.get("routing_receipt") or {}).get("policy_revision")
-                or "v2.9.1"
-            ),
-            "mode": "classic",
-            "candidate_order": [],
-            "selected_provider": None,
-            "fallback_reason": "none",
-        },
+        ),
         "cache_status": {
             "disposition": disposition,
             "entry_id": entry_id,

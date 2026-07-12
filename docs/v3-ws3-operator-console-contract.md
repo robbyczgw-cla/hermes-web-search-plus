@@ -87,7 +87,7 @@ Required fields:
 
 - `provider`: registry provider ID;
 - `position`: one-based stable candidate position;
-- `decision`: `selected | attempted_failed | skipped | not_attempted | origin_selected`;
+- `decision`: `selected | attempted_failed | attempted_no_selection | skipped | not_attempted | origin_selected`;
 - `reason_code`: one value from the closed enumeration below;
 - `attempt_id`: current attempt ID or null.
 
@@ -96,6 +96,7 @@ Closed `reason_code` enumeration:
 - `classic_selected`
 - `fallback_selected`
 - `attempt_failed`
+- `insufficient_results`
 - `blocked_auth`
 - `blocked_quota`
 - `circuit_open`
@@ -107,7 +108,8 @@ Closed `reason_code` enumeration:
 Cross-field invariants:
 
 - direct success has exactly one `selected/classic_selected`;
-- fallback success has prior `attempted_failed/attempt_failed` records and exactly one `selected/fallback_selected`;
+- fallback success has prior `attempted_failed/attempt_failed`, `attempted_no_selection/insufficient_results`, or typed skipped records and exactly one `selected/fallback_selected`;
+- successful or partial attempts that produce no selected provider are recorded as `attempted_no_selection/insufficient_results`, never as failed or not attempted;
 - skipped decisions map to a skipped `provider_attempts[]` item and its typed skip reason;
 - current non-cache attempted/selected decisions reference current `provider_attempts[].attempt_id`;
 - `origin_selected` is allowed only inside `cache_origin` and never references current attempts.

@@ -12,6 +12,8 @@ sys.path.insert(0, str(ROOT))
 from contract_v3 import (  # noqa: E402
     AttemptOutcome,
     CacheDisposition,
+    CandidateDecision,
+    CandidateReasonCode,
     Capability,
     CircuitState,
     DegradedReason,
@@ -305,6 +307,8 @@ response_defs = {
     "AttemptOutcome": enum_schema(AttemptOutcome),
     "SkipReason": enum_schema(SkipReason),
     "FallbackReason": enum_schema(FallbackReason),
+    "CandidateDecision": enum_schema(CandidateDecision),
+    "CandidateReasonCode": enum_schema(CandidateReasonCode),
     "CacheDisposition": enum_schema(CacheDisposition),
     "CircuitState": enum_schema(CircuitState),
     "ErrorV3": error,
@@ -436,6 +440,47 @@ response_defs = {
         },
         ("disposition",),
     ),
+    "CandidateDecisionV3": obj(
+        {
+            "provider": {"type": "string", "minLength": 1},
+            "position": {"type": "integer", "minimum": 1},
+            "decision": {"$ref": "#/$defs/CandidateDecision"},
+            "reason_code": {"$ref": "#/$defs/CandidateReasonCode"},
+            "attempt_id": {"type": ["string", "null"]},
+        },
+        ("provider", "position", "decision", "reason_code", "attempt_id"),
+    ),
+    "CacheOriginReceiptV3": obj(
+        {
+            "execution_id": {"type": "string", "minLength": 1},
+            "policy_id": {"type": "string", "minLength": 1},
+            "policy_revision": {"type": "string", "minLength": 1},
+            "candidate_order": {"type": "array", "items": {"type": "string"}},
+            "selected_provider": {"type": ["string", "null"]},
+            "fallback_reason": {"$ref": "#/$defs/FallbackReason"},
+            "candidate_decisions": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/CandidateDecisionV3"},
+            },
+        },
+        (
+            "execution_id", "policy_id", "policy_revision", "candidate_order",
+            "selected_provider", "fallback_reason", "candidate_decisions",
+        ),
+    ),
+    "ShadowObservationV3": obj(
+        {
+            "observed": {"type": "boolean", "const": True},
+            "policy_id": {"type": "string", "minLength": 1},
+            "policy_revision": {"type": "string", "minLength": 1},
+            "selected_provider": {"type": ["string", "null"]},
+            "affected_execution": {"type": "boolean", "const": False},
+        },
+        (
+            "observed", "policy_id", "policy_revision", "selected_provider",
+            "affected_execution",
+        ),
+    ),
     "RoutingReceipt": obj(
         {
             "policy_id": {"type": "string", "minLength": 1},
@@ -445,6 +490,24 @@ response_defs = {
             "selected_provider": {"type": ["string", "null"]},
             "fallback_reason": {"$ref": "#/$defs/FallbackReason"},
             "shadow": {"type": "object"},
+            "authority": {"type": "string", "const": "classic"},
+            "execution_scope": {"type": "string", "const": "current"},
+            "candidate_decisions": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/CandidateDecisionV3"},
+            },
+            "cache_origin": {
+                "anyOf": [
+                    {"$ref": "#/$defs/CacheOriginReceiptV3"},
+                    {"type": "null"},
+                ]
+            },
+            "shadow_observation": {
+                "anyOf": [
+                    {"$ref": "#/$defs/ShadowObservationV3"},
+                    {"type": "null"},
+                ]
+            },
         },
         (
             "policy_id",
@@ -573,6 +636,70 @@ response_defs = {
         ("code", "message"),
     ),
 }
+
+_RECEIPT_COMPLETION_FIELDS = (
+    "authority",
+    "execution_scope",
+    "candidate_decisions",
+    "cache_origin",
+    "shadow_observation",
+)
+response_defs["RoutingReceipt"]["dependentRequired"] = {
+    field: list(_RECEIPT_COMPLETION_FIELDS)
+    for field in _RECEIPT_COMPLETION_FIELDS
+}
+response_defs["CandidateDecisionV3"]["oneOf"] = [
+    {
+        "properties": {
+            "decision": {"const": "selected"},
+            "reason_code": {
+                "enum": ["classic_selected", "fallback_selected"],
+            },
+        }
+    },
+    {
+        "properties": {
+            "decision": {"const": "attempted_failed"},
+            "reason_code": {"const": "attempt_failed"},
+            "attempt_id": {"type": "string", "minLength": 1},
+        }
+    },
+    {
+        "properties": {
+            "decision": {"const": "attempted_no_selection"},
+            "reason_code": {"const": "insufficient_results"},
+            "attempt_id": {"type": "string", "minLength": 1},
+        }
+    },
+    {
+        "properties": {
+            "decision": {"const": "skipped"},
+            "reason_code": {
+                "enum": [
+                    "blocked_auth", "blocked_quota", "circuit_open",
+                    "budget_denied", "provider_unavailable",
+                ],
+            },
+            "attempt_id": {"type": "string", "minLength": 1},
+        }
+    },
+    {
+        "properties": {
+            "decision": {"const": "not_attempted"},
+            "reason_code": {
+                "enum": ["provider_unavailable", "not_attempted_after_success"],
+            },
+            "attempt_id": {"type": "null"},
+        }
+    },
+    {
+        "properties": {
+            "decision": {"const": "origin_selected"},
+            "reason_code": {"const": "cache_origin_selected"},
+            "attempt_id": {"type": "null"},
+        }
+    },
+]
 
 response_defs["StoredContentV3"]["allOf"] = [
     {
