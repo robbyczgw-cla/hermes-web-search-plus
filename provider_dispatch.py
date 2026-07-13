@@ -19,6 +19,8 @@ here. tests/test_provider_dispatch.py enforces that these tables and the
 registry capability flags can never drift apart.
 """
 
+from __future__ import annotations
+
 from typing import Any, Callable, Dict
 
 from config import _validate_searxng_url, keyless_public_allowed
