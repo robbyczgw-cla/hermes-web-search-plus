@@ -18,6 +18,14 @@
 - The Operator Console default state path now matches the engine's `v3/state.sqlite3` layout.
 - Brave Search is promoted to the default Routing v2 auto-pool for independent-index source diversity; its free-tier quota and rate limits use the same existing provider cooldown and fallback handling as the other free-tier auto providers.
 
+### 🎯 What 3.0 improves in practice
+- Every result is easier to audit: typed provenance connects it to the underlying source observation, while provider attempts, retries, skips, and cache origin remain visible.
+- Long pages no longer need to flood agent context: extraction returns a bounded preview and keeps the full cleaned text available on demand.
+- Provider failures become legible: missing credentials, rate limits, timeouts, empty results, and unapplied filters are represented explicitly instead of disappearing into silent gaps.
+- Upgrades are safer to try: state migration starts with a dry run, backs up existing state before writing, and supports digest-verified rollback.
+- Routing gains independent-index diversity without a surprise policy switch: Classic Routing v2 remains authoritative while Brave joins the default auto-pool.
+- Operators gain local, read-only visibility into routing receipts, provider readiness, cache state, and applied limits without triggering provider calls or configuration writes.
+
 ### ✨ Added before 3.0, carried forward
 - Added independent `auto_routing.extract_provider_priority` configuration for `web_extract_plus(provider="auto")`, with `setup.py config set-extract-priority ...`. The existing Tavily-first registry order remains the public default; partial lists append missing extract-capable providers, and search `provider_priority` remains independent.
 
