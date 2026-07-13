@@ -84,7 +84,12 @@ from quality import (  # noqa: F401 - re-exported for backward-compatible tests/
     select_research_providers,
 )
 from provider_dispatch import SEARCH_DISPATCH
-from provider_registry import PROVIDER_SPECS, SEARCH_PROVIDER_IDS, doctor_catalog
+from provider_registry import (
+    EXTRACT_PROVIDER_IDS,
+    PROVIDER_SPECS,
+    SEARCH_PROVIDER_IDS,
+    doctor_catalog,
+)
 from request_gate_v3 import validate_provider_mode
 from search_locale import provider_supports_locale, resolve_locale
 from env_loader import load_env_files
@@ -105,6 +110,7 @@ import providers as _providers
 import routing as _routing
 import extract as _extract
 import bench as _bench
+import extract_bench_v3 as _extract_bench
 
 # Backward-compatible cache helper aliases for older imports/tests.
 get_cached_result = cache_get
@@ -708,8 +714,8 @@ Full docs: See README.md and SKILL.md
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["doctor", "bench"],
-        help="Run a maintenance command such as 'doctor' or 'bench'",
+        choices=["doctor", "bench", "extract-bench"],
+        help="Run a maintenance command such as 'doctor', 'bench', or 'extract-bench'",
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON for maintenance commands")
     parser.add_argument("--live", action="store_true", help="Allow doctor to run live provider smokes (reserved; offline by default)")
@@ -717,6 +723,23 @@ Full docs: See README.md and SKILL.md
         "--bench",
         action="store_true",
         help="Benchmark configured search providers against a fixed live query suite and recommend an auto_routing.provider_priority (alias for the 'bench' command; spends real provider quota)",
+    )
+    parser.add_argument(
+        "--bench-providers",
+        nargs="+",
+        choices=list(EXTRACT_PROVIDER_IDS),
+        help="Limit extract-bench to these direct extraction providers",
+    )
+    parser.add_argument(
+        "--bench-timeout-budget",
+        type=float,
+        default=_extract_bench.DEFAULT_TIMEOUT_BUDGET_SECONDS,
+        help="Best-effort whole-run wall-clock budget for extract-bench",
+    )
+    parser.add_argument(
+        "--no-history",
+        action="store_true",
+        help="Do not persist the completed extract-bench summary for the Operator Console",
     )
 
     # Common arguments
@@ -1038,6 +1061,29 @@ def main():
             print(json.dumps(report, indent=indent, ensure_ascii=False))
         else:
             print(format_bench_text(report))
+        return
+
+    if args.command == "extract-bench":
+        if not args.extract_urls:
+            parser.error("extract-bench requires one or more --extract-urls")
+        report = _extract_bench.run_extract_bench(
+            config,
+            urls=args.extract_urls,
+            providers=args.bench_providers,
+            timeout_budget=args.bench_timeout_budget,
+        )
+        if not args.no_history:
+            report["history_written"] = _extract_bench.BenchmarkHistoryJournal(
+                CACHE_DIR
+            ).append(_extract_bench.benchmark_history_record(report))
+        else:
+            report["history_written"] = False
+        if args.json or args.compact:
+            indent = None if args.compact else 2
+            print(json.dumps(report, indent=indent, ensure_ascii=False))
+        else:
+            print(_extract_bench.format_extract_bench_text(report))
+            print("History written: {}".format(report["history_written"]))
         return
 
     # Handle cache management commands first (before query validation)

@@ -1,6 +1,6 @@
 # WSP v3 WS-3 — Operator Console Contract
 
-**Status:** FROZEN · 2026-07-12
+**Status:** FROZEN · 2026-07-13
 
 This contract defines the read-only Operator Console boundary. It is additive to Contract v3 and Amendments 002/003. Classic Routing-v2 remains authoritative; shadow policy remains observational and cannot alter execution.
 

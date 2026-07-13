@@ -144,13 +144,13 @@
         "<th>Provider</th><th>Readiness</th><th>Capabilities</th><th>Key</th><th>Auto</th><th>Cooldown</th>" +
         "</tr></thead><tbody>";
       provs.forEach(function (p) {
-        html += "<tr><td class=\"provider-name\">" + esc(p.display_name || p.provider) +
+        html += "<tr><td class=\"provider-name\" data-label=\"Provider\">" + esc(p.display_name || p.provider) +
           ' <span class="mono">' + esc(p.provider) + "</span></td>" +
-          "<td>" + providerReadiness(p) + "</td>" +
-          "<td>" + (p.capabilities || []).map(chip).join(" ") + "</td>" +
-          "<td>" + (p.key_present ? badge("present", "ok") : badge("missing", "bad")) + "</td>" +
-          "<td>" + (p.auto_allowed ? badge("allowed", "ok") : badge("manual only", "neutral")) + "</td>" +
-          "<td>" + (p.cooldown_active ? badge("active", "warn") : badge("none", "neutral")) + "</td></tr>";
+          '<td data-label="Readiness">' + providerReadiness(p) + "</td>" +
+          '<td data-label="Capabilities">' + (p.capabilities || []).map(chip).join(" ") + "</td>" +
+          '<td data-label="Key">' + (p.key_present ? badge("present", "ok") : badge("missing", "bad")) + "</td>" +
+          '<td data-label="Auto">' + (p.auto_allowed ? badge("allowed", "ok") : badge("manual only", "neutral")) + "</td>" +
+          '<td data-label="Cooldown">' + (p.cooldown_active ? badge("active", "warn") : badge("none", "neutral")) + "</td></tr>";
       });
       html += "</tbody></table></div>";
     }
@@ -331,11 +331,11 @@
           '<th>Provider</th><th class="num">Score</th><th class="num">Success rate</th>' +
           '<th class="num">Median latency</th><th class="num">Errors</th></tr></thead><tbody>';
         provs.forEach(function (p) {
-          html += '<tr><td class="provider-name">' + esc(p.provider) + "</td>" +
-            '<td class="num">' + (p.score != null ? esc(Number(p.score).toFixed(3)) : "—") + "</td>" +
-            '<td class="num">' + fmtRate(p.success_rate) + "</td>" +
-            '<td class="num">' + fmtLatency(p.median_latency_seconds) + "</td>" +
-            '<td class="num">' + (p.error_count > 0 ? badge(fmtInt(p.error_count), "warn") : fmtInt(p.error_count)) + "</td></tr>";
+          html += '<tr><td class="provider-name" data-label="Provider">' + esc(p.provider) + "</td>" +
+            '<td class="num" data-label="Score">' + (p.score != null ? esc(Number(p.score).toFixed(3)) : "—") + "</td>" +
+            '<td class="num" data-label="Success rate">' + fmtRate(p.success_rate) + "</td>" +
+            '<td class="num" data-label="Median latency">' + fmtLatency(p.median_latency_seconds) + "</td>" +
+            '<td class="num" data-label="Errors">' + (p.error_count > 0 ? badge(fmtInt(p.error_count), "warn") : fmtInt(p.error_count)) + "</td></tr>";
         });
         html += "</tbody></table></div>";
       }

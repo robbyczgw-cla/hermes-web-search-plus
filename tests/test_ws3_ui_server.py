@@ -210,8 +210,8 @@ def test_every_response_has_fail_closed_browser_security_headers(tmp_path: Path)
 def test_frontend_assets_are_byte_identical_and_csp_clean() -> None:
     expected = {
         "index.html": "c3e0e498ced835032c20ee2c7fed319e344fceb7fb5bc07c3449fc22e0c293d0",
-        "styles.css": "df7f2e531f3296fb8a3b453de39fbddf44211198b736aa707650bf1acc98a5f0",
-        "app.js": "4daab257bdccd433d7a914aeafd15cd6bde10e2ab2fb143292a10c00cddfb62c",
+        "styles.css": "53603b96d0eb9e500452d03cfe368c6f49ff699d83e3521e7ddab4bdaeed7a93",
+        "app.js": "d3d631523c912d207a6fefdc61556b558544b9c433a91e1b19782907460c6757",
     }
     for name, digest in expected.items():
         assert hashlib.sha256((STATIC_ROOT / name).read_bytes()).hexdigest() == digest

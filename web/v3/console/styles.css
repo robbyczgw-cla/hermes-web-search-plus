@@ -183,3 +183,31 @@ select{
   .wrap{padding:14px}
   table{min-width:440px}
 }
+
+/* Narrow phones: collapse tables into labeled cards so no column
+   hides behind horizontal scroll (median latency / errors stay visible). */
+@media(max-width:560px){
+  .tabs{gap:2px;padding-inline:8px;overflow-x:visible}
+  .tab{
+    flex:1 1 auto;min-width:0;padding:9px 5px;text-align:center;
+    font-size:clamp(11px,3.05vw,12px);
+  }
+  .tbl-scroll{overflow-x:visible}
+  table{min-width:0;font-size:13px}
+  thead{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+  tr{
+    display:block;border:1px solid var(--border);border-radius:10px;
+    background:var(--surface2);padding:2px 4px;margin-bottom:10px;
+  }
+  td{
+    display:flex;justify-content:space-between;align-items:baseline;gap:14px;
+    white-space:normal;text-align:right;padding:8px 10px;border-bottom:1px solid var(--border);
+  }
+  tr td:last-child{border-bottom:none}
+  td::before{
+    content:attr(data-label);flex:0 0 auto;text-align:left;
+    color:var(--faint);font-size:10px;text-transform:uppercase;letter-spacing:.07em;font-weight:700;
+  }
+  td.num{text-align:right}
+  td.provider-name{font-weight:700}
+}
