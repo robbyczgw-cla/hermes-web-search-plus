@@ -1,0 +1,11 @@
+{
+  "name": "web-search-plus-schema-tests",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:schema": "node tests/schema_boundary_v3.mjs"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1"
+  }
+}

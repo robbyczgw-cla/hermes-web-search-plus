@@ -7,9 +7,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-const require = createRequire(
-  "/root/work/web-search-plus-plugin/node_modules/",
-);
+const require = createRequire(import.meta.url);
 const Ajv = require("ajv/dist/2020");
 
 const here = dirname(fileURLToPath(import.meta.url));
