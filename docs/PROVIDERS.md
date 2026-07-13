@@ -11,7 +11,7 @@ catalog; regenerate it with `python scripts/gen_provider_docs.py` after changing
 |---|---:|---:|---|---|---|---|---|
 | Serper | ✅ | ✅ | `SERPER_API_KEY` | — | yes (priority 2) | 2,500 one-time credits | https://serper.dev/api-key |
 | SerpBase | ✅ | — | `SERPBASE_API_KEY` | — | explicit-only (`auto_allow=false`) | 100 free searches, paid packs available | https://www.serpbase.dev |
-| Brave Search | ✅ | — | `BRAVE_API_KEY` | — | explicit-only (`auto_allow=false`) | $5 free monthly credits | https://api.search.brave.com/app/keys |
+| Brave Search | ✅ | — | `BRAVE_API_KEY` | — | yes (priority 7) | $5 free monthly credits | https://api.search.brave.com/app/keys |
 | Tavily | ✅ | ✅ | `TAVILY_API_KEY` | — | yes (priority 5) | 1,000 free searches/month | https://tavily.com |
 | Querit | ✅ | — | `QUERIT_API_KEY` | — | explicit-only (`auto_allow=false`) | 1,000 free searches/month | https://www.querit.ai |
 | Linkup | ✅ | ✅ | `LINKUP_API_KEY` | — | yes (priority 6) | €5 free monthly credits (~5,000 standard extracts) | https://www.linkup.so |
@@ -40,7 +40,7 @@ Cheap Google-like SERP fallback; WSP exposes search only, explicit/fallback-only
 
 ### Brave Search
 
-Independent general web index; explicit/guarded by default after Routing v2 reliability testing.
+Independent general web index in the Routing v2 default pool.
 
 ### Tavily
 

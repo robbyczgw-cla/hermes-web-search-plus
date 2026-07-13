@@ -30,7 +30,13 @@ def test_provider_registry_is_the_complete_capability_source():
     assert registry.KEYLESS_PROVIDER_IDS == ("keenable",)
     assert registry.PROVIDER_SPECS["serper"].env_var == "SERPER_API_KEY"
     assert registry.PROVIDER_SPECS["tavily"].supports_extract is True
-    assert registry.PROVIDER_SPECS["brave"].auto_allowed_by_default is False
+    assert registry.PROVIDER_SPECS["brave"].auto_allowed_by_default is True
+    assert registry.DEFAULT_PROVIDER_PRIORITY[6] == "brave"
+    assert registry.DEFAULT_AUTO_ALLOW == {
+        "serpbase": False,
+        "querit": False,
+        "parallel": False,
+    }
     assert "research" in registry.PROVIDER_SPECS["tavily"].capability_labels
 
 

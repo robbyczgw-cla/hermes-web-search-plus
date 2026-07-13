@@ -15,14 +15,15 @@ def _route(query):
         return search.QueryAnalyzer(config).route(query)
 
 
-def test_default_auto_allow_blocks_unreliable_and_answer_only_providers():
+def test_default_auto_allow_blocks_explicit_only_providers():
     config = search._deepcopy_default_config()
 
     auto_allow = config["auto_routing"]["auto_allow"]
 
     assert auto_allow["serpbase"] is False
     assert auto_allow["querit"] is False
-    assert auto_allow["brave"] is False
+    assert auto_allow["parallel"] is False
+    assert auto_allow.get("brave", True) is True
 
 
 
@@ -32,7 +33,8 @@ def test_legacy_auto_allow_config_inherits_new_guarded_provider_defaults():
 
     validated = search._validate_runtime_config(config)
 
-    assert validated["auto_routing"]["auto_allow"]["brave"] is False
+    assert validated["auto_routing"]["auto_allow"].get("brave", True) is True
+    assert validated["auto_routing"]["auto_allow"]["parallel"] is False
 
 
 
@@ -215,7 +217,7 @@ def test_multilingual_current_japanese_routes_to_you_not_brave_or_serper():
     assert routing["provider"] == "you"
     assert routing["routing_policy"] == "routing-v2"
     assert routing["analysis_summary"]["language_hint"] == "ja"
-    assert "brave" in routing["auto_allow_excluded"]
+    assert "brave" not in routing["auto_allow_excluded"]
 
 
 def test_multilingual_arabic_routes_to_you_and_blocks_querit():

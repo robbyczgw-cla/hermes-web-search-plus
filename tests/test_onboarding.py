@@ -400,11 +400,11 @@ def test_config_set_auto_allow_updates_provider_gate(tmp_path):
 def test_default_behavior_config_blocks_low_trust_auto_providers():
     config = wsp._default_behavior_config()
 
-    assert config["auto_routing"]["provider_priority"][:6] == ["you", "serper", "exa", "firecrawl", "tavily", "linkup"]
+    assert config["auto_routing"]["provider_priority"][:7] == ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave"]
     assert config["auto_routing"]["extract_provider_priority"] == list(wsp.EXTRACT_PROVIDER_IDS)
     assert config["auto_routing"]["auto_allow"]["serpbase"] is False
     assert config["auto_routing"]["auto_allow"]["querit"] is False
-    assert config["auto_routing"]["auto_allow"]["brave"] is False
+    assert config["auto_routing"]["auto_allow"].get("brave", True) is True
     assert config["auto_routing"]["auto_allow"]["parallel"] is False
 
 
@@ -422,7 +422,7 @@ def test_setup_dry_run_can_auto_deny_provider(tmp_path, capsys):
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "auto-allow false: brave, parallel, querit, serpbase" in out
+    assert "auto-allow false: parallel, querit, serpbase" in out
     assert not env_path.exists()
     assert not config_path.exists()
 

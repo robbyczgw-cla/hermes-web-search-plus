@@ -27,7 +27,7 @@
 Most web-search tools fail in one of two boring ways: they hard-code a single provider, or they pretend every user has every API key. Web Search Plus is capability-based instead: it lets Hermes search, extract, compare, and recover across the providers you actually configured.
 
 - **No global required key.** Configure one search-capable provider and search works; extraction providers are additive.
-- **Routing v2 is conservative.** You.com, Serper, Exa, Firecrawl, Tavily, and Linkup form the default auto-search pool; everything else stays explicit/guarded until you opt in.
+- **Routing v2 is conservative.** You.com, Serper, Exa, Firecrawl, Tavily, Linkup, and Brave form the default auto-search pool; everything else stays explicit/guarded until you opt in.
 - **Large pages stay usable.** Long extracts return a compact head/tail preview plus a `read_file` footer for the full cleaned text, instead of dumping token bombs into the agent context.
 - **Freshness, verticals, and locale are explicit.** `day`/`week`/`month`/`year` recency, `search_type="news"`, and `country`/`language` defaults with query-language auto-detection — providers that cannot apply a filter report that in metadata instead of silently dropping it.
 - **Provider quality is measurable.** The built-in bench compares configured search providers on success rate, latency, result volume, and snippet coverage, then suggests a search-provider priority order without writing config automatically.
@@ -152,7 +152,7 @@ Full parameter tables for both tools, freshness/vertical/locale semantics, and c
 | Firecrawl | ✅ | ✅ | Source-first web search with scrape-ready result content |
 | Tavily | ✅ | ✅ | Long-form research and content-heavy queries |
 | Linkup | ✅ | ✅ | Source-backed grounding, citations, RAG-ready retrieval |
-| Brave | ✅ | — | Independent web index; guarded by default (`auto_allow=false`) |
+| Brave | ✅ | — | Independent web index; default auto-pool priority 7 |
 | SearXNG | ✅ | — | Privacy-focused self-hosted metasearch |
 | Keenable | ✅ | ✅ | Independent web index; key or opt-in keyless public tier (off by default); lowest-priority fallback |
 | SerpBase | ✅ | — | Cheap Google-like SERP fallback; guarded by default (`auto_allow=false`) |

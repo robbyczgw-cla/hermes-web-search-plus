@@ -105,7 +105,7 @@ With a `KEENABLE_API_KEY` set, requests always use the authenticated endpoints. 
 
 ### Migration note for v2.0.0
 
-Routing v2 changes the default `provider="auto"` behavior. Existing configs keep explicit user choices, but missing `auto_allow` entries inherit the guarded defaults: Brave, SerpBase, Querit, and Parallel stay explicit-only until you opt them into automatic routing. Perplexity provider IDs from older configs are ignored because those endpoints are no longer registered.
+Routing v2 changes the default `provider="auto"` behavior. Existing configs keep explicit user choices, but missing `auto_allow` entries inherit the guarded defaults: SerpBase, Querit, and Parallel stay explicit-only until you opt them into automatic routing; Brave joins the default auto-pool at priority 7. Perplexity provider IDs from older configs are ignored because those endpoints are no longer registered.
 
 ```bash
 python ~/.hermes/plugins/web-search-plus/setup.py config show --json
@@ -280,7 +280,7 @@ Backward compatibility: without `defaults.locale` and without flags, everything 
 
 Some providers can be configured for explicit use without being selected automatically. That is what `auto_allow` controls.
 
-Brave, SerpBase, Querit, and Parallel default to `auto_allow=false`. Setting their keys makes explicit calls work:
+SerpBase, Querit, and Parallel default to `auto_allow=false`. Setting their keys makes explicit calls work; configured Brave keys participate in automatic routing by default:
 
 ```python
 web_search_plus(query="best DAC reviews", provider="serpbase")
@@ -335,7 +335,7 @@ Parameters:
 
 Parameter semantics:
 
-- `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `parallel`, `searxng`, `serpbase`, or `querit`. Brave, Parallel, SerpBase, and Querit are available for explicit calls but default to `auto_allow=false`.
+- `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `parallel`, `searxng`, `serpbase`, or `querit`. Brave joins the default auto-pool at priority 7; Parallel, SerpBase, and Querit remain available for explicit calls but default to `auto_allow=false`.
 - `count`: result count, from 1 to 20.
 - `time_range`: `day`, `week`, `month`, or `year` where supported.
 - `freshness`: unified recency filter with the values `day`, `week`, `month`, or `year` (case-insensitive; invalid values return a clear error). It is applied natively by Serper, Brave, Querit, Firecrawl, Keenable, You.com, and SearXNG, each translated into that provider's own format (for example Brave `pw` or Serper `tbs=qdr:w` for `week`). Providers without recency support (Tavily, Exa, Linkup, Parallel, SerpBase) still run the search normally; the result metadata then reports `"freshness": {"requested": "week", "applied": false, "reason": "provider tavily does not support freshness"}` instead of silently dropping the filter. In `mode="research"` the filter is passed to every participating provider and the applied status is reported per provider.
