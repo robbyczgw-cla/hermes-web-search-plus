@@ -1,6 +1,6 @@
 # WSP v3 — Contract Amendment 003: Bounded Context
 
-**Status:** FROZEN fixture gate · 2026-07-12 · Andy (policy owner) + Hermi (engine co-sign)
+**Status:** FROZEN fixture gate · 2026-07-12
 
 Amends `docs/v3-contract-amendment-002-source-only-evidence.md`. M0/M1 and Amendment 002 remain unchanged; this amendment is additive. On conflict, this amendment wins.
 
