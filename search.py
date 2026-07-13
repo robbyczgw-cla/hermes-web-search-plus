@@ -31,6 +31,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from http_client import (  # noqa: F401 - re-exported for backward-compatible tests/imports
     ProviderRequestError,
@@ -111,6 +112,7 @@ import routing as _routing
 import extract as _extract
 import bench as _bench
 import extract_bench_v3 as _extract_bench
+import state_migration_v3 as _state_migration
 
 # Backward-compatible cache helper aliases for older imports/tests.
 get_cached_result = cache_get
@@ -714,8 +716,8 @@ Full docs: See README.md and SKILL.md
     parser.add_argument(
         "command",
         nargs="?",
-        choices=["doctor", "bench", "extract-bench"],
-        help="Run a maintenance command such as 'doctor', 'bench', or 'extract-bench'",
+        choices=["doctor", "bench", "extract-bench", "state-migrate"],
+        help="Run doctor, benchmark, or reversible state-migration maintenance",
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON for maintenance commands")
     parser.add_argument("--live", action="store_true", help="Allow doctor to run live provider smokes (reserved; offline by default)")
@@ -740,6 +742,22 @@ Full docs: See README.md and SKILL.md
         "--no-history",
         action="store_true",
         help="Do not persist the completed extract-bench summary for the Operator Console",
+    )
+    migration_action = parser.add_mutually_exclusive_group()
+    migration_action.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply state-migrate after creating a verified backup (dry-run is default)",
+    )
+    migration_action.add_argument(
+        "--rollback",
+        metavar="BACKUP_ID",
+        help="Rollback state-migrate using a verified backup ID",
+    )
+    parser.add_argument(
+        "--migration-backup-root",
+        type=Path,
+        help="Override the default v3/migration-backups directory",
     )
 
     # Common arguments
@@ -1044,6 +1062,33 @@ def main():
     config = load_config()
     parser = build_parser(config)
     args = parser.parse_args()
+
+    migration_options_used = bool(
+        args.apply or args.rollback or args.migration_backup_root is not None
+    )
+    if args.command != "state-migrate" and migration_options_used:
+        parser.error("--apply, --rollback, and --migration-backup-root require state-migrate")
+
+    if args.command == "state-migrate":
+        state_path = CACHE_DIR / "v3" / "state.sqlite3"
+        backup_root = args.migration_backup_root or state_path.parent / "migration-backups"
+        if args.rollback:
+            report = _state_migration.rollback_legacy_state(
+                state_path=state_path,
+                backup_root=backup_root,
+                backup_id=args.rollback,
+            )
+        else:
+            report = _state_migration.migrate_legacy_state(
+                cache_root=CACHE_DIR,
+                state_path=state_path,
+                backup_root=backup_root,
+                dry_run=not args.apply,
+            )
+        print(_state_migration.render_migration_report(report))
+        if report.status not in {"ready", "applied", "unchanged", "rolled_back"}:
+            raise SystemExit(2)
+        return
 
     if args.command == "doctor":
         report = _build_doctor_report(config, live=args.live)

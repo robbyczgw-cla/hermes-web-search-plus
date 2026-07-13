@@ -14,7 +14,7 @@ from typing import Optional
 from contract_v3 import Capability, CircuitState, ErrorClass, SkipReason
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_OPEN_SECONDS = {
     ErrorClass.AUTH: 300,
     ErrorClass.QUOTA: 3600,
@@ -74,6 +74,68 @@ class BudgetRecord:
     limit_units: int
     used_units: int
     reserved_units: int
+
+
+def initialize_state_schema(connection: sqlite3.Connection) -> None:
+    """Create or upgrade the additive v3 operational-state schema."""
+    connection.executescript(
+        f"""
+        CREATE TABLE IF NOT EXISTS circuit_state (
+            provider TEXT NOT NULL,
+            capability TEXT NOT NULL,
+            endpoint TEXT NOT NULL,
+            credential_fingerprint TEXT NOT NULL,
+            error_class TEXT NOT NULL,
+            state TEXT NOT NULL,
+            failure_count INTEGER NOT NULL DEFAULT 0,
+            open_until INTEGER,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (
+                provider, capability, endpoint,
+                credential_fingerprint, error_class
+            )
+        );
+        CREATE TABLE IF NOT EXISTS budget_ledger (
+            scope TEXT NOT NULL,
+            window_key TEXT NOT NULL,
+            limit_units INTEGER NOT NULL,
+            used_units INTEGER NOT NULL DEFAULT 0,
+            reserved_units INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (scope, window_key)
+        );
+        CREATE TABLE IF NOT EXISTS legacy_provider_health (
+            provider TEXT PRIMARY KEY,
+            failure_count INTEGER NOT NULL CHECK (failure_count >= 0),
+            cooldown_until INTEGER NOT NULL CHECK (cooldown_until >= 0),
+            cooldown_seconds INTEGER NOT NULL CHECK (cooldown_seconds >= 0),
+            last_failure_at INTEGER NOT NULL CHECK (last_failure_at >= 0),
+            source_digest TEXT NOT NULL,
+            migrated_at INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS adaptive_samples_v3 (
+            provider TEXT NOT NULL,
+            source_index INTEGER NOT NULL CHECK (source_index >= 0),
+            sample_time INTEGER NOT NULL CHECK (sample_time >= 0),
+            latency_ms INTEGER NOT NULL CHECK (latency_ms >= 0),
+            result_count INTEGER NOT NULL CHECK (result_count >= 0),
+            error INTEGER NOT NULL CHECK (error IN (0, 1)),
+            source_digest TEXT NOT NULL,
+            migrated_at INTEGER NOT NULL,
+            PRIMARY KEY (provider, source_index)
+        );
+        CREATE INDEX IF NOT EXISTS adaptive_samples_v3_time
+            ON adaptive_samples_v3(provider, sample_time);
+        CREATE TABLE IF NOT EXISTS legacy_state_migrations (
+            migration_id TEXT PRIMARY KEY,
+            source_digest TEXT NOT NULL,
+            applied_at INTEGER NOT NULL,
+            health_providers INTEGER NOT NULL,
+            adaptive_providers INTEGER NOT NULL,
+            adaptive_samples INTEGER NOT NULL
+        );
+        PRAGMA user_version={SCHEMA_VERSION};
+        """
+    )
 
 
 class SQLiteStateStore:
@@ -137,34 +199,7 @@ class SQLiteStateStore:
             try:
                 connection.execute("PRAGMA journal_mode=WAL")
                 connection.execute("PRAGMA foreign_keys=ON")
-                connection.executescript(
-                    """
-                    CREATE TABLE IF NOT EXISTS circuit_state (
-                        provider TEXT NOT NULL,
-                        capability TEXT NOT NULL,
-                        endpoint TEXT NOT NULL,
-                        credential_fingerprint TEXT NOT NULL,
-                        error_class TEXT NOT NULL,
-                        state TEXT NOT NULL,
-                        failure_count INTEGER NOT NULL DEFAULT 0,
-                        open_until INTEGER,
-                        updated_at INTEGER NOT NULL,
-                        PRIMARY KEY (
-                            provider, capability, endpoint,
-                            credential_fingerprint, error_class
-                        )
-                    );
-                    CREATE TABLE IF NOT EXISTS budget_ledger (
-                        scope TEXT NOT NULL,
-                        window_key TEXT NOT NULL,
-                        limit_units INTEGER NOT NULL,
-                        used_units INTEGER NOT NULL DEFAULT 0,
-                        reserved_units INTEGER NOT NULL DEFAULT 0,
-                        PRIMARY KEY (scope, window_key)
-                    );
-                    PRAGMA user_version=1;
-                    """
-                )
+                initialize_state_schema(connection)
             finally:
                 connection.close()
             self._available = True

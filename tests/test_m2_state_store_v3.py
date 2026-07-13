@@ -6,7 +6,7 @@ import sqlite3
 from contract_v3 import Capability, CircuitState, ErrorClass, SkipReason
 from errors_v3 import classify_provider_error
 from http_client import ProviderRequestError
-from state_store_v3 import CircuitKey, SQLiteStateStore, credential_fingerprint
+from state_store_v3 import SCHEMA_VERSION, CircuitKey, SQLiteStateStore, credential_fingerprint
 
 
 def _key(secret: str = "credential-a") -> CircuitKey:
@@ -260,4 +260,4 @@ def test_schema_initialization_is_idempotent_and_uses_wal(tmp_path):
         connection.close()
 
     assert mode.lower() == "wal"
-    assert version == 1
+    assert version == SCHEMA_VERSION
