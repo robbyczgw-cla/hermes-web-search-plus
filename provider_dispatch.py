@@ -22,6 +22,12 @@ registry capability flags can never drift apart.
 from typing import Any, Callable, Dict
 
 from config import _validate_searxng_url, keyless_public_allowed
+from provider_adapter_protocol import (
+    ExtractAdapter,
+    SearchAdapter,
+    assert_dispatch_conformance,
+)
+from provider_registry import PROVIDER_SPECS
 from search_locale import resolve_locale
 
 
@@ -250,7 +256,7 @@ def _call_keenable_search(search_module, prov, args, key, config, routing_info):
 
 
 # Adapter signature: (search_module, provider, args, key, config, routing_info) -> result dict.
-SEARCH_DISPATCH: Dict[str, Callable[..., Dict[str, Any]]] = {
+SEARCH_DISPATCH: dict[str, SearchAdapter] = {
     "serper": _call_serper_search,
     "serpbase": _call_serpbase_search,
     "brave": _call_brave_search,
@@ -322,7 +328,7 @@ def _call_you_extract(extract_module, prov, urls, key, output_format, include_im
 
 # Adapter signature: (extract_module, provider, urls, key, output_format,
 # include_images, include_raw_html, render_js, config, keyless_allowed) -> result dict.
-EXTRACT_DISPATCH: Dict[str, Callable[..., Dict[str, Any]]] = {
+EXTRACT_DISPATCH: dict[str, ExtractAdapter] = {
     "firecrawl": _call_firecrawl_extract,
     "linkup": _call_linkup_extract,
     "tavily": _call_tavily_extract,
@@ -332,3 +338,8 @@ EXTRACT_DISPATCH: Dict[str, Callable[..., Dict[str, Any]]] = {
     "you": _call_you_extract,
     "serper": _call_serper_extract,
 }
+
+
+# Import-time fail-closed gate: registry capabilities and callable signatures
+# must not drift between tests or in downstream plugin packaging.
+assert_dispatch_conformance(SEARCH_DISPATCH, EXTRACT_DISPATCH, PROVIDER_SPECS)

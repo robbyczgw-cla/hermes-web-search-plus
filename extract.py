@@ -38,6 +38,7 @@ from providers import (  # noqa: F401 - resolved late via EXTRACT_DISPATCH/monke
     extract_tavily,
     extract_you,
 )
+from provider_adapter_protocol import validate_adapter_result
 from provider_dispatch import EXTRACT_DISPATCH
 from provider_registry import EXTRACT_PROVIDER_IDS
 from compat_v3 import legacy_request_to_v3, v3_response_to_legacy_extract
@@ -216,7 +217,22 @@ def _extract_plus_core(
                 adapter = EXTRACT_DISPATCH.get(prov)
                 if adapter is None:
                     raise ValueError(f"Unknown extract provider: {prov}")
-                return adapter(globals(), prov, urls, key, output_format, include_images, include_raw_html, render_js, config, keyless_allowed)
+                return validate_adapter_result(
+                    prov,
+                    "extract",
+                    adapter(
+                        globals(),
+                        prov,
+                        urls,
+                        key,
+                        output_format,
+                        include_images,
+                        include_raw_html,
+                        render_js,
+                        config,
+                        keyless_allowed,
+                    ),
+                )
 
             result = (
                 execute_extract()

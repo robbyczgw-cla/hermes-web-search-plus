@@ -21,9 +21,9 @@ CONFIG = {
 RESPONSE_SCHEMA = json.loads(Path("schemas/v3/response.schema.json").read_text())
 
 
-def _search_payload():
+def _search_payload(provider="serper"):
     return {
-        "provider": "serper",
+        "provider": provider,
         "query": "q",
         "results": [
             {
@@ -35,7 +35,7 @@ def _search_payload():
         ],
         "routing": {
             "auto_routed": False,
-            "provider": "serper",
+            "provider": provider,
             "routing_policy": "classic-v2",
         },
         "metadata": {"dedup_count": 0},
@@ -76,7 +76,7 @@ def test_v3_execution_can_read_but_never_writes_legacy_cache(monkeypatch):
     monkeypatch.setattr(
         search,
         "search_you",
-        lambda **_kwargs: _search_payload(),
+        lambda **_kwargs: _search_payload("you"),
     )
 
     runtime_config = {

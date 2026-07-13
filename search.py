@@ -84,6 +84,7 @@ from quality import (  # noqa: F401 - re-exported for backward-compatible tests/
     rerank_results_for_intent,
     select_research_providers,
 )
+from provider_adapter_protocol import validate_adapter_result
 from provider_dispatch import SEARCH_DISPATCH
 from provider_registry import (
     EXTRACT_PROVIDER_IDS,
@@ -1353,7 +1354,11 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         adapter = SEARCH_DISPATCH.get(prov)
         if adapter is None:
             raise ValueError(f"Unknown provider: {prov}")
-        provider_result = adapter(globals(), prov, args, key, config, routing_info)
+        provider_result = validate_adapter_result(
+            prov,
+            "search",
+            adapter(globals(), prov, args, key, config, routing_info),
+        )
         if engine_owned_attempt:
             provider_result["_v3_raw_results"] = [
                 dict(item)

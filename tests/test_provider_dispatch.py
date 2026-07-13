@@ -16,6 +16,7 @@ import __init__ as plugin
 import provider_dispatch
 import provider_registry
 import search
+from provider_adapter_protocol import validate_adapter_result
 
 
 class SearchDispatchCompletenessTests(unittest.TestCase):
@@ -94,12 +95,19 @@ EXPECTED_EXTRACT_KWARGS = {
 
 
 class _Recorder:
-    def __init__(self):
+    def __init__(self, provider="recorded", capability="search"):
         self.calls = []
+        self.provider = provider
+        self.capability = capability
 
     def __call__(self, *args, **kwargs):
         self.calls.append((args, kwargs))
-        return {"provider": "recorded", "query": "q", "results": [], "answer": "", "images": [], "metadata": {}}
+        result = {"provider": self.provider, "results": []}
+        if self.capability == "search":
+            result.update(
+                {"query": "q", "answer": "", "images": [], "metadata": {}}
+            )
+        return result
 
 
 class SearchAdapterKwargParityTests(unittest.TestCase):
@@ -108,9 +116,10 @@ class SearchAdapterKwargParityTests(unittest.TestCase):
         parser = search.build_parser(config)
         args = parser.parse_args(["--query", "q"])
         for provider, adapter in sorted(provider_dispatch.SEARCH_DISPATCH.items()):
-            recorder = _Recorder()
+            recorder = _Recorder(provider, "search")
             namespace = {EXPECTED_SEARCH_FUNCTION[provider]: recorder}
-            adapter(namespace, provider, args, "test-key" if provider != "searxng" else None, config, {})
+            result = adapter(namespace, provider, args, "test-key" if provider != "searxng" else None, config, {})
+            self.assertIs(validate_adapter_result(provider, "search", result), result)
             self.assertEqual(len(recorder.calls), 1, provider)
             call_args, call_kwargs = recorder.calls[0]
             self.assertEqual(call_args, (), provider)
@@ -128,9 +137,10 @@ class ExtractAdapterKwargParityTests(unittest.TestCase):
     def test_adapters_build_the_same_kwargs_as_the_old_chain(self):
         config = search._deepcopy_default_config()
         for provider, adapter in sorted(provider_dispatch.EXTRACT_DISPATCH.items()):
-            recorder = _Recorder()
+            recorder = _Recorder(provider, "extract")
             namespace = {"extract_" + provider: recorder}
-            adapter(namespace, provider, ["https://example.com"], "test-key", "markdown", False, False, False, config, False)
+            result = adapter(namespace, provider, ["https://example.com"], "test-key", "markdown", False, False, False, config, False)
+            self.assertIs(validate_adapter_result(provider, "extract", result), result)
             self.assertEqual(len(recorder.calls), 1, provider)
             call_args, call_kwargs = recorder.calls[0]
             self.assertEqual(call_args, (["https://example.com"], "test-key", "markdown", False, False, False), provider)

@@ -26,6 +26,7 @@ from config import get_api_key, keyless_public_allowed, provider_configured
 from extract import _validate_extract_urls
 from http_client import ProviderRequestError
 from operator_console_v3 import BENCHMARK_HISTORY_SCHEMA_VERSION, BENCHMARK_OWNER
+from provider_adapter_protocol import validate_adapter_result
 from provider_dispatch import EXTRACT_DISPATCH
 from provider_registry import EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
 
@@ -106,17 +107,21 @@ def _bench_one_provider(
     try:
         adapter = EXTRACT_DISPATCH[provider]
         key = get_api_key(provider, dict(config))
-        result = adapter(
-            extract_module,
+        result = validate_adapter_result(
             provider,
-            urls,
-            key,
-            "markdown",
-            False,
-            False,
-            False,
-            dict(config),
-            keyless_public_allowed(provider, dict(config)),
+            "extract",
+            adapter(
+                extract_module,
+                provider,
+                urls,
+                key,
+                "markdown",
+                False,
+                False,
+                False,
+                dict(config),
+                keyless_public_allowed(provider, dict(config)),
+            ),
         )
     except Exception as exc:  # One provider must never abort or leak details from a bench run.
         provider_error_code = _safe_provider_error_code(exc)
