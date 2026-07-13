@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [v3.0.1] — 2026-07-13
+
+### 🐛 Fixed
+- Fixed in-process engine loading when Hermes' host package root precedes an already-registered plugin path. The lazy loader now temporarily prioritizes Web Search Plus sibling modules and restores the exact original `sys.path`, preventing collisions with Hermes' `providers` package and avoiding a permanent subprocess fallback.
+
 ## [v3.0.0] — 2026-07-13
 
 ### 🚀 WSP 3.0 — Source-only evidence engine

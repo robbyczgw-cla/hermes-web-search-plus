@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v3.0.0
+web-search-plus — Hermes Plugin v3.0.1
 Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "3.0.0"
+__version__ = "3.0.1"
 
 import argparse
 import getpass
@@ -1149,11 +1149,13 @@ def _load_search_module() -> Any:
             return _search_module
         if _search_import_failed:
             return None
-        plugin_dir = str(Path(__file__).parent)
-        inserted = False
-        if plugin_dir not in sys.path:
-            sys.path.insert(0, plugin_dir)
-            inserted = True
+        plugin_dir = str(_PLUGIN_DIR)
+        original_sys_path = list(sys.path)
+        # Hermes may already have this plugin path on sys.path, but behind the
+        # host package root. Move it to the front while flat sibling imports
+        # resolve, then restore the exact original order in the finally block.
+        sys.path[:] = [entry for entry in sys.path if entry != plugin_dir]
+        sys.path.insert(0, plugin_dir)
         # Stash any top-level modules whose names collide with this plugin's
         # flat sibling imports (providers, extract, routing, research, etc.).
         # If hermes-agent's `providers` package is already in sys.modules,
@@ -1200,11 +1202,7 @@ def _load_search_module() -> Any:
                 sys.modules.pop(_name, None)
             for _name, _mod in stashed.items():
                 sys.modules[_name] = _mod
-            if inserted:
-                try:
-                    sys.path.remove(plugin_dir)
-                except ValueError:  # pragma: no cover - defensive cleanup
-                    pass
+            sys.path[:] = original_sys_path
         _search_module = _search
         return _search_module
 

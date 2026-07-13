@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import re
 import sys
@@ -71,3 +72,42 @@ def test_plugin_loads_from_foreign_cwd_without_package_context(tmp_path, monkeyp
         assert module._get_provider_catalog()
     finally:
         sys.modules.pop(module_name, None)
+
+
+def test_lazy_search_loader_prioritizes_plugin_over_host_modules(tmp_path):
+    """Gateway sys.path precedence must not shadow WSP's flat siblings."""
+    module_name = "wsp_gateway_precedence_import_test"
+    host_root = tmp_path / "host"
+    host_providers = host_root / "providers"
+    host_providers.mkdir(parents=True)
+    (host_providers / "__init__.py").write_text("HOST_PROVIDER = True\n", encoding="utf-8")
+
+    original_path = list(sys.path)
+    previous_providers = sys.modules.pop("providers", None)
+    sys.modules.pop(module_name, None)
+    sys.modules.pop("_wsp_search_engine", None)
+
+    try:
+        sys.path[:] = [str(host_root), *[entry for entry in original_path if entry != str(ROOT)]]
+        host_module = importlib.import_module("providers")
+
+        spec = importlib.util.spec_from_file_location(module_name, ROOT / "__init__.py")
+        assert spec is not None
+        assert spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        path_before_load = list(sys.path)
+        engine = module._load_search_module()
+
+        assert engine is not None
+        assert engine.__file__ == str(ROOT / "search.py")
+        assert sys.modules["providers"] is host_module
+        assert sys.path == path_before_load
+    finally:
+        sys.modules.pop(module_name, None)
+        sys.modules.pop("_wsp_search_engine", None)
+        sys.modules.pop("providers", None)
+        if previous_providers is not None:
+            sys.modules["providers"] = previous_providers
+        sys.path[:] = original_path
