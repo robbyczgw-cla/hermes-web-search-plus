@@ -8,6 +8,7 @@ RequestV3 before they can reach this function.
 from __future__ import annotations
 
 import copy
+import os
 import time
 import unicodedata
 import uuid
@@ -122,6 +123,36 @@ def _normalize_request(request: RequestV3) -> RequestV3:
     return replace(request, input={**request.input, "query": normalized_query})
 
 
+_EXPLICIT_FALSE_VALUES = {"", "0", "false", "no", "off"}
+
+
+def _effective_policy_mode(request: RequestV3, config: Dict[str, Any]) -> str:
+    """Resolve the two-level policy switch, failing closed to Classic."""
+    raw_override = os.environ.get("WSP_ROUTING_CLASSIC_ONLY")
+    if raw_override is not None:
+        normalized = raw_override.strip().strip('"').strip("'").lower()
+        if normalized not in _EXPLICIT_FALSE_VALUES:
+            return "classic"
+
+    routing_config = config.get("routing")
+    if not isinstance(routing_config, dict):
+        return "classic"
+    if routing_config.get("policy_mode") != "shadow":
+        return "classic"
+    return "shadow" if request.routing.get("policy_mode") == "shadow" else "classic"
+
+
+def _shadow_intent_observation(selected_provider: str | None) -> Dict[str, Any]:
+    """Describe Shadow intent without evaluating or changing the Classic plan."""
+    return {
+        "observed": True,
+        "policy_id": "shadow-interface",
+        "policy_revision": "3.0",
+        "selected_provider": selected_provider,
+        "affected_execution": False,
+    }
+
+
 def _append_operator_receipt(
     response: ResponseV3,
     cache_root: Any,
@@ -153,7 +184,15 @@ def execute_v3_request(
     if request.capability is not adapter.capability:
         raise ValueError("request and adapter capability differ")
     runtime_config: Dict[str, Any] = config or {}
+    policy_mode = _effective_policy_mode(request, runtime_config)
+    if request.routing.get("policy_mode") != policy_mode:
+        request = replace(
+            request,
+            routing={**request.routing, "policy_mode": policy_mode},
+        )
     plan = adapter.plan(request, runtime_config)
+    if plan.mode != policy_mode:
+        plan = replace(plan, mode=policy_mode)
     cache_mode = str(request.cache.get("mode") or "prefer")
     cache_enabled = cache_mode != "bypass"
     v3_config = runtime_config.get("v3") or {}
@@ -192,6 +231,16 @@ def execute_v3_request(
                     ttl_seconds=int(request.cache.get("ttl_seconds", 3600)),
                 )
                 cached_response = ResponseV3.from_dict(cached_payload)
+                cached_routing = {
+                    **cached_response.routing_receipt,
+                    "mode": policy_mode,
+                }
+                if policy_mode == "classic":
+                    cached_routing["shadow_observation"] = None
+                else:
+                    cached_routing["shadow_observation"] = _shadow_intent_observation(
+                        cached_routing.get("selected_provider")
+                    )
                 warnings = list(cached_response.warnings)
                 status = cached_response.status
                 if lookup.disposition == "stale_hit":
@@ -206,6 +255,7 @@ def execute_v3_request(
                     cached_response,
                     status=status,
                     provider_attempts=[],
+                    routing_receipt=cached_routing,
                     cache_status=cache_status,
                     warnings=warnings,
                 )
@@ -265,6 +315,11 @@ def execute_v3_request(
             routing_receipt=complete_routing_receipt_v3(
                 response.routing_receipt,
                 [],
+                shadow_observation=(
+                    _shadow_intent_observation(None)
+                    if policy_mode == "shadow"
+                    else None
+                ),
             ),
         )
         stage_set = {
@@ -307,12 +362,22 @@ def execute_v3_request(
     response = adapter.normalize(request, plan, normalization_payload)
     if attempts_authoritative:
         response = replace(response, provider_attempts=list(provider_attempts))
+    routing_receipt = {**response.routing_receipt, "mode": policy_mode}
+    if policy_mode == "shadow":
+        shadow_observation = _shadow_intent_observation(
+            routing_receipt.get("selected_provider")
+        )
+    else:
+        shadow_observation = None
+        if "shadow_observation" in routing_receipt:
+            routing_receipt["shadow_observation"] = None
+    response = replace(response, routing_receipt=routing_receipt)
     response = replace(
         response,
         routing_receipt=complete_routing_receipt_v3(
             response.routing_receipt,
             list(response.provider_attempts),
-            shadow_observation=response.routing_receipt.get("shadow_observation"),
+            shadow_observation=shadow_observation,
         ),
     )
     if cache_mode == "bypass":

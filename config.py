@@ -66,6 +66,11 @@ DEFAULT_CONFIG = {
         "auto_allow": dict(DEFAULT_AUTO_ALLOW),
         "confidence_threshold": 0.3,  # Below this, note low confidence
     },
+    "routing": {
+        # Fail-closed operator policy boundary. Shadow intent is accepted only
+        # when this ceiling is explicitly changed to "shadow".
+        "policy_mode": "classic",
+    },
     "web": {
         # Maximum cleaned characters returned inline per extracted result before
         # truncate-and-store keeps the full text on disk for page-on-demand.
@@ -286,6 +291,13 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
         auto["confidence_threshold"] = threshold
     if config.get("default_provider") and config["default_provider"] in set(auto.get("disabled_providers", [])):
         raise ValueError("default_provider cannot be disabled")
+    routing = config.get("routing", dict(DEFAULT_CONFIG["routing"]))
+    if not isinstance(routing, dict):
+        raise ValueError("routing must be an object")
+    policy_mode = routing.get("policy_mode", "classic")
+    if policy_mode not in {"classic", "shadow"}:
+        raise ValueError("routing.policy_mode must be classic or shadow")
+    routing["policy_mode"] = policy_mode
     bounded = config.get(
         "bounded_context", dict(DEFAULT_CONFIG["bounded_context"])
     )
@@ -312,6 +324,7 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     ):
         raise ValueError("bounded_context.cache_root must be a non-empty string")
     config["auto_routing"] = auto
+    config["routing"] = routing
     config["bounded_context"] = bounded
     return config
 
