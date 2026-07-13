@@ -25,6 +25,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -34,10 +38,13 @@ jobs:
           else
             pip install pytest ruff
           fi
+          npm ci --ignore-scripts
       - name: Ruff
         run: ruff check .
       - name: Tests
         run: python -m pytest tests/ -q
+      - name: Schema boundary
+        run: node tests/schema_boundary_v3.mjs
       - name: Compile
         run: >-
           python -m py_compile
