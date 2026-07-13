@@ -571,3 +571,72 @@ def test_extract_legacy_and_native_use_same_v3_entry_and_one_core_call(monkeypat
     )
     assert len(calls) == 1
     assert native.cache_status["disposition"] == "fresh_hit"
+
+
+def test_extract_top_level_error_preserves_quota_attempt_taxonomy(tmp_path, monkeypatch):
+    config = {
+        "exa": {"api_key": "exa-test-key-12345678901234567890"},
+        "extract": {"allow_private_urls": True},
+        "v3": {"state_path": str(tmp_path / "state.sqlite3")},
+    }
+    request = legacy_request_to_v3(
+        Capability.EXTRACT,
+        {
+            "urls": ["https://example.com/a"],
+            "provider": "exa",
+            "allow_fallback": False,
+        },
+        request_id="quota-taxonomy",
+    )
+    monkeypatch.setattr(
+        search._extract,
+        "_extract_plus_core",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            ProviderRequestError("credits exhausted", status_code=402)
+        ),
+    )
+
+    response = search._extract.run_extract_request_v3(request, config=config)
+
+    assert response.status.value == "failed"
+    assert response.provider_attempts[0].error is not None
+    assert response.error is not None
+    assert response.provider_attempts[0].error.error_class.value == "quota"
+    assert response.error.error_class.value == "quota"
+    assert response.error.code == "wsp.provider.quota"
+    assert response.error.retryable is False
+    assert response.error.http_status == 402
+
+
+def test_extract_top_level_error_preserves_config_attempt_taxonomy(tmp_path):
+    config = {
+        "extract": {"allow_private_urls": True},
+        "v3": {"state_path": str(tmp_path / "state.sqlite3")},
+    }
+    request = legacy_request_to_v3(
+        Capability.EXTRACT,
+        {
+            "urls": ["https://example.com/a"],
+            "provider": "keenable",
+            "allow_fallback": False,
+        },
+        request_id="config-taxonomy",
+    )
+
+    response = search._extract.run_extract_request_v3(request, config=config)
+
+    assert response.status.value == "failed"
+    assert response.provider_attempts[0].error is not None
+    assert response.error is not None
+    assert response.provider_attempts[0].error.error_class.value == "config"
+    assert response.error.error_class.value == "config"
+    assert response.error.code == "wsp.config.provider_invalid"
+    assert response.error.retryable is False
+
+
+def test_cli_help_does_not_advertise_answer_providers():
+    help_text = search.build_parser(CONFIG).format_help()
+
+    assert "Direct Answer" not in help_text
+    assert "Perplexity" not in help_text
+    assert "synthesized up-to-date answers" not in help_text

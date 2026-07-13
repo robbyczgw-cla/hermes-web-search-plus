@@ -51,7 +51,7 @@ def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
         error_class = ErrorClass.TIMEOUT
     elif status in {401, 403}:
         error_class = ErrorClass.AUTH
-    elif status == 402:
+    elif status in {402, 432}:
         error_class = ErrorClass.QUOTA
     elif status == 429:
         error_class = ErrorClass.RATE_LIMIT

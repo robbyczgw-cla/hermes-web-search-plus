@@ -24,6 +24,7 @@ def test_error_classifier_keeps_auth_quota_rate_and_transient_distinct():
     cases = [
         (ProviderRequestError("unauthorized", status_code=401), ErrorClass.AUTH),
         (ProviderRequestError("payment required", status_code=402), ErrorClass.QUOTA),
+        (ProviderRequestError("usage limit", status_code=432), ErrorClass.QUOTA),
         (
             ProviderRequestError("rate limited", status_code=429, transient=True, retry_after=7),
             ErrorClass.RATE_LIMIT,

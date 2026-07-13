@@ -370,7 +370,21 @@ def response_from_legacy(
     error = None
     if top_error and not results:
         status = ResponseStatus.FAILED
-        error = _error(str(top_error), str(selected) if selected else None)
+        error = next(
+            (
+                attempt.error
+                for attempt in provider_attempts
+                if attempt.provider == selected and attempt.error is not None
+            ),
+            None,
+        ) or next(
+            (
+                attempt.error
+                for attempt in reversed(provider_attempts)
+                if attempt.error is not None
+            ),
+            None,
+        ) or _error(str(top_error), str(selected) if selected else None)
     elif failed_items:
         status = ResponseStatus.DEGRADED
         warnings.append(
