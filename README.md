@@ -2,7 +2,7 @@
 
 
 <p align="center">
-  <img src="docs/assets/web-search-plus-v3-hero.png" alt="Web Search Plus: source-only web intelligence for agents with provider-independent search, extraction, routing, and evidence receipts" width="100%">
+  <img src="docs/assets/web-search-plus-v3-hero.jpg" alt="Web Search Plus: source-only web intelligence for agents with provider-independent search, extraction, routing, and evidence receipts" width="100%">
 </p>
 
 <p align="center">
