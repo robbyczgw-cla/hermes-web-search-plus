@@ -1,0 +1,70 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="referrer" content="no-referrer">
+<title>WSP 3.0 — Operator Console</title>
+<link rel="stylesheet" href="styles.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="dot" aria-hidden="true"></span>WSP<span class="brand-sub">Operator Console</span></div>
+  <div class="topbar-right">
+    <span id="engineBadge" class="engine-badge">contract —</span>
+    <span id="lastUpdated" class="last-updated">never refreshed</span>
+    <button id="refreshBtn" class="btn" type="button">↻ Refresh</button>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist" aria-label="Console views">
+  <button class="tab active" data-view="overview"   type="button" role="tab" aria-selected="true">Overview</button>
+  <button class="tab" data-view="receipts"   type="button" role="tab" aria-selected="false">Routing Receipts</button>
+  <button class="tab" data-view="benchmarks" type="button" role="tab" aria-selected="false">Benchmark History</button>
+</nav>
+
+<div id="errorBanner" class="error-banner hidden" role="alert"></div>
+
+<main class="wrap">
+  <section id="view-overview" class="view" role="tabpanel">
+    <div class="loading">Loading overview …</div>
+  </section>
+
+  <section id="view-receipts" class="view hidden" role="tabpanel">
+    <div class="view-controls">
+      <label class="ctl" for="receiptsLimit">Show last
+        <select id="receiptsLimit">
+          <option value="10">10</option>
+          <option value="25" selected>25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      receipts</label>
+    </div>
+    <div id="receiptsList"><div class="loading">Loading receipts …</div></div>
+  </section>
+
+  <section id="view-benchmarks" class="view hidden" role="tabpanel">
+    <div class="view-controls">
+      <label class="ctl" for="benchLimit">Show last
+        <select id="benchLimit">
+          <option value="5">5</option>
+          <option value="10" selected>10</option>
+          <option value="25">25</option>
+        </select>
+      runs</label>
+    </div>
+    <div id="benchList"><div class="loading">Loading benchmark history …</div></div>
+  </section>
+</main>
+
+<footer class="foot">
+  <span>read-only console · no actions, no writes · GET <code>/api/v3/*</code> only</span>
+  <span id="schemaNote"></span>
+</footer>
+
+</body>
+</html>

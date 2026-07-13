@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import http.client
 import importlib
 import json
+import re
 import threading
 from contextlib import contextmanager
 from pathlib import Path
@@ -12,6 +14,8 @@ import pytest
 
 
 TOKEN = "task-4-test-token"
+ROOT = Path(__file__).resolve().parents[1]
+STATIC_ROOT = ROOT / "web" / "v3" / "console"
 
 
 class FakeSnapshots:
@@ -72,6 +76,7 @@ def request(
     *,
     token: str | None = TOKEN,
     host: str | None = None,
+    cookie: str | None = None,
 ) -> tuple[int, dict[str, str], bytes]:
     connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
     headers: dict[str, str] = {
@@ -79,6 +84,8 @@ def request(
     }
     if token is not None:
         headers["Authorization"] = f"Bearer {token}"
+    if cookie is not None:
+        headers["Cookie"] = cookie
     connection.request(method, target, headers=headers)
     response = connection.getresponse()
     body = response.read()
@@ -198,3 +205,134 @@ def test_every_response_has_fail_closed_browser_security_headers(tmp_path: Path)
             assert headers["cross-origin-resource-policy"] == "same-origin"
             assert "default-src 'none'" in headers["content-security-policy"]
             assert "access-control-allow-origin" not in headers
+
+
+def test_frontend_assets_are_byte_identical_and_csp_clean() -> None:
+    expected = {
+        "index.html": "c3e0e498ced835032c20ee2c7fed319e344fceb7fb5bc07c3449fc22e0c293d0",
+        "styles.css": "df7f2e531f3296fb8a3b453de39fbddf44211198b736aa707650bf1acc98a5f0",
+        "app.js": "4daab257bdccd433d7a914aeafd15cd6bde10e2ab2fb143292a10c00cddfb62c",
+    }
+    for name, digest in expected.items():
+        assert hashlib.sha256((STATIC_ROOT / name).read_bytes()).hexdigest() == digest
+
+    html = (STATIC_ROOT / "index.html").read_text(encoding="utf-8")
+    script = (STATIC_ROOT / "app.js").read_text(encoding="utf-8")
+    assert not re.search(r"<script(?![^>]+src=)", html, re.IGNORECASE)
+    assert "style=" not in html.lower()
+    assert not re.search(r"\son[a-z]+\s*=", html, re.IGNORECASE)
+    assert 'method: "GET"' in script
+    assert not re.search(r'method\s*:\s*["\'](?:POST|PUT|PATCH|DELETE)', script)
+
+
+def test_server_serves_only_three_static_assets_with_static_csp(tmp_path: Path) -> None:
+    with running_server(tmp_path) as (server, _backend):
+        expected = {
+            "/": ("index.html", "text/html; charset=utf-8"),
+            "/styles.css": ("styles.css", "text/css; charset=utf-8"),
+            "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+        }
+        for route, (name, content_type) in expected.items():
+            status, headers, body = request(server, "GET", route)
+            assert status == 200
+            assert body == (STATIC_ROOT / name).read_bytes()
+            assert headers["content-type"] == content_type
+            csp = headers["content-security-policy"]
+            assert "script-src 'self'" in csp
+            assert "style-src 'self'" in csp
+            assert "connect-src 'self'" in csp
+            assert "'unsafe-inline'" not in csp
+
+            status, head_headers, head_body = request(server, "HEAD", route)
+            assert status == 200
+            assert head_body == b""
+            assert int(head_headers["content-length"]) == len(body)
+
+        assert request(server, "GET", "/favicon.ico")[0] == 404
+        assert request(server, "GET", "/app.js.map")[0] == 404
+        assert request(server, "GET", "/../ui.py")[0] == 404
+
+
+def test_browser_token_bootstrap_sets_opaque_session_cookie(tmp_path: Path) -> None:
+    with running_server(tmp_path) as (server, backend):
+        status, headers, body = request(
+            server, "GET", f"/?token={TOKEN}", token=None
+        )
+        assert status == 303
+        assert headers["location"] == "/"
+        cookie = headers["set-cookie"]
+        assert cookie.startswith("wsp_console_session=")
+        assert "HttpOnly" in cookie
+        assert "SameSite=Strict" in cookie
+        assert "Path=/" in cookie
+        assert TOKEN not in cookie
+        assert TOKEN.encode() not in body
+
+        session = cookie.split(";", 1)[0]
+        status, _, body = request(server, "GET", "/", token=None, cookie=session)
+        assert status == 200
+        assert body == (STATIC_ROOT / "index.html").read_bytes()
+        status, _, body = request(
+            server, "GET", "/api/v3/overview", token=None, cookie=session
+        )
+        assert status == 200
+        assert json.loads(body) == {"schema_version": 1}
+        assert backend.calls == [("overview", None)]
+
+        status, headers, body = request(
+            server, "GET", "/?token=definitely-wrong-token", token=None
+        )
+        assert status == 401
+        assert "set-cookie" not in headers
+        assert b"definitely-wrong-token" not in body
+
+
+def test_static_routes_remain_get_head_only(tmp_path: Path) -> None:
+    with running_server(tmp_path) as (server, backend):
+        status, headers, _ = request(server, "POST", "/")
+        assert status == 405
+        assert headers["allow"] == "GET, HEAD"
+        assert backend.calls == []
+
+
+def test_static_root_and_assets_refuse_symlinks(tmp_path: Path) -> None:
+    ui = importlib.import_module("ui")
+    linked_root = tmp_path / "linked-root"
+    linked_root.symlink_to(STATIC_ROOT, target_is_directory=True)
+    with pytest.raises(ValueError, match="static"):
+        ui.create_server(
+            host="127.0.0.1",
+            port=0,
+            token=TOKEN,
+            cache_root=tmp_path,
+            static_root=linked_root,
+        )
+
+    real_parent = tmp_path / "real-parent"
+    assets = real_parent / "assets"
+    assets.mkdir(parents=True)
+    for name in ("index.html", "styles.css", "app.js"):
+        (assets / name).write_bytes((STATIC_ROOT / name).read_bytes())
+    (assets / "app.js").unlink()
+    (assets / "app.js").symlink_to(STATIC_ROOT / "app.js")
+    with pytest.raises(ValueError, match="static"):
+        ui.create_server(
+            host="127.0.0.1",
+            port=0,
+            token=TOKEN,
+            cache_root=tmp_path,
+            static_root=assets,
+        )
+
+    (assets / "app.js").unlink()
+    (assets / "app.js").write_bytes((STATIC_ROOT / "app.js").read_bytes())
+    linked_parent = tmp_path / "linked-parent"
+    linked_parent.symlink_to(real_parent, target_is_directory=True)
+    with pytest.raises(ValueError, match="static"):
+        ui.create_server(
+            host="127.0.0.1",
+            port=0,
+            token=TOKEN,
+            cache_root=tmp_path,
+            static_root=linked_parent / "assets",
+        )
