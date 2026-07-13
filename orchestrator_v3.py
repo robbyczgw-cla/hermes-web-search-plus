@@ -12,7 +12,7 @@ import time
 import unicodedata
 import uuid
 from dataclasses import dataclass, field, replace
-from typing import Any, Callable, Dict, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import cache as legacy_cache
 from cache_v3 import ResponseCacheV3
@@ -87,7 +87,7 @@ ExecuteFn = Callable[
 ]
 NormalizeFn = Callable[[RequestV3, ProviderPlan, Dict[str, Any]], ResponseV3]
 LegacyCacheLookupFn = Callable[
-    [RequestV3, ProviderPlan, Dict[str, Any]], CapabilityExecution | None
+    [RequestV3, ProviderPlan, Dict[str, Any]], Optional[CapabilityExecution]
 ]
 
 

@@ -104,7 +104,8 @@ def _providers(result: Dict[str, Any]) -> List[str]:
 
 
 def _source_family(url: str) -> str:
-    return (urlsplit(url).hostname or "").lower().removeprefix("www.")
+    hostname = (urlsplit(url).hostname or "").lower()
+    return hostname[4:] if hostname.startswith("www.") else hostname
 
 
 def analyze_source_independence(
