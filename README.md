@@ -2,7 +2,7 @@
 
 
 <p align="center">
-  <img src="docs/assets/web-search-plus-v261-hero.png" alt="Hermes web-search-plus hero: two-tool source-only surface, Routing v2, evidence receipts, quality diagnostics, and 12 search / 8 extraction providers" width="100%">
+  <img src="docs/assets/web-search-plus-v3-hero.png" alt="Web Search Plus: source-only web intelligence for agents with provider-independent search, extraction, routing, and evidence receipts" width="100%">
 </p>
 
 <p align="center">
@@ -84,11 +84,18 @@ Notes:
 - [Operator Console](docs/V3_OPERATOR_CONSOLE.md) — local read-only startup, security boundary, and troubleshooting.
 - [Provider Benchmarks](docs/V3_BENCHMARKS.md) — live quota use, extraction history, privacy, and applying recommendations.
 
+<p align="center">
+  <a href="docs/V3_OPERATOR_CONSOLE.md"><img src="docs/assets/operator-console-overview.png" alt="Web Search Plus local read-only Operator Console overview" width="100%"></a>
+</p>
+
+<p align="center"><sub>Local, read-only operational visibility — no provider calls, config writes, or cache mutation.</sub></p>
+
 ### Reference
 
 - [User Guide](docs/USER_GUIDE.md) — detailed setup, provider tuning, tool parameters, extraction, reliability, and cost controls.
 - [Provider Reference](docs/PROVIDERS.md) — generated capabilities, environment variables, routing defaults, free tiers, and signup links.
 - [Routing v2 Reference](docs/ROUTING.md) — generated class-by-class routing preferences and demotions.
+- [3.0 Wire Contract](docs/V3_WIRE_CONTRACT.md) — normative request/response surface, with search-parity, source-evidence, and bounded-context amendments.
 - [FAQ](docs/FAQ.md) — common setup, provider selection, cache, quota, and troubleshooting questions.
 - [Architecture](docs/ARCHITECTURE.md) — plugin boundary, routing engine, cache/state flow, and provider-extension notes.
 

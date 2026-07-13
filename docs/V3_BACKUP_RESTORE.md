@@ -57,4 +57,4 @@ A rejected rollback does not modify live state. Do not edit manifests or copied 
 5. Keep the backup until the upgraded installation has operated normally.
 6. Use the CLI rollback command; never copy SQLite files over a live process.
 
-The exercised gate and exact before/after digests are documented in [Legacy-State Migration Gate](v3-state-migration-gate.md).
+The end-to-end procedure is in the [3.0 Migration Guide](V3_MIGRATION.md); backup verification, transactional failure handling, idempotence, and exact rollback are enforced by [`tests/test_v3_state_migration.py`](../tests/test_v3_state_migration.py).

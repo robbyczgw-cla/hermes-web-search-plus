@@ -1,12 +1,12 @@
 # WSP v3 — Contract Amendment 003: Bounded Context
 
-**Status:** FROZEN fixture gate · 2026-07-12
+This amendment is normative for 3.0 bounded-context behavior.
 
-Amends `docs/v3-contract-amendment-002-source-only-evidence.md`. M0/M1 and Amendment 002 remain unchanged; this amendment is additive. On conflict, this amendment wins.
+Amends [`V3_SOURCE_EVIDENCE_CONTRACT.md`](V3_SOURCE_EVIDENCE_CONTRACT.md). The base contract and source-evidence amendment remain unchanged; this amendment is additive. On conflict, this amendment wins.
 
 ## Scope
 
-WS-2 adds deterministic URL fan-out limits, a per-call inline content budget, truthful omission/truncation metadata, full-text page-on-demand storage and bounded retention. It adds no synthesis, claims, semantic spans, Console behavior or provider protocol.
+This amendment adds deterministic URL fan-out limits, a per-call inline content budget, truthful omission/truncation metadata, full-text page-on-demand storage and bounded retention. It adds no synthesis, claims, semantic spans, Console behavior or provider protocol.
 
 ## Request rules
 
@@ -97,4 +97,4 @@ Defaults:
 
 ## Additivity gate
 
-All six Amendment-002 goldens MUST remain valid without modification. WS-2 fixtures live under `tests/fixtures/v3/ws2/` and are release-blocking.
+All six Amendment-002 goldens MUST remain valid without modification. Bounded-context fixtures live under `tests/fixtures/v3/ws2/` and are release-blocking.

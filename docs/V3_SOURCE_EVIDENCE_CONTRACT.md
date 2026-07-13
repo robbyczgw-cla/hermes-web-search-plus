@@ -1,7 +1,7 @@
 # WSP v3 — Contract Amendment 002: Source-Only Evidence Preservation
 
-*Status: **FROZEN** · 2026-07-12 · rev 4 (engine-policy verdict: no flat shorthand; full ResultV3 shape everywhere).*
-*Amends `docs/v3-contract-freeze.md`; Amendment 001 and the M0/M1 structure remain in force. On conflict, this amendment wins.*
+*Normative for 3.0: no flat shorthand; the full `ResultV3` shape is required everywhere.*
+*Amends [`V3_WIRE_CONTRACT.md`](V3_WIRE_CONTRACT.md); the [search-parity amendment](V3_SEARCH_PARITY_CONTRACT.md) and base contract remain in force. On conflict, this amendment wins.*
 
 Normative language uses **MUST / MUST NOT / MAY** per RFC 2119.
 

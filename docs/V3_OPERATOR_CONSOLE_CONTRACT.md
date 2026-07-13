@@ -1,6 +1,6 @@
-# WSP v3 WS-3 — Operator Console Contract
+# WSP v3 Operator Console security contract
 
-**Status:** FROZEN · 2026-07-13
+This contract is normative for the 3.0 read-only Operator Console.
 
 This contract defines the read-only Operator Console boundary. It is additive to Contract v3 and Amendments 002/003. Classic Routing-v2 remains authoritative; shadow policy remains observational and cannot alter execution.
 
@@ -69,7 +69,7 @@ Sections:
 
 ## Routing-v2 Receipt completion
 
-The current six-field receipt is partial. WS-3A adds the following typed fields before journaling/UI:
+The v3 receipt model adds the following typed fields before journaling/UI:
 
 ```json
 {
@@ -151,7 +151,7 @@ The marker-owned bounded JSONL journal stores only:
 - execution ID, capability and response status;
 - sanitized completed receipt;
 - cache disposition;
-- WS-2 numeric/count/boolean limits summary;
+- bounded-context numeric/count/boolean limits summary;
 - warning/error codes.
 
 The shared privacy choke point runs immediately before append. Journal failure is best-effort and cannot change the provider response. Retention targets only the one marker-owned journal and never scans/deletes foreign files.
@@ -168,5 +168,5 @@ Release-blocking tests require:
 - explicit refusal of `0.0.0.0`, `::`, LAN, Tailnet and arbitrary host binds;
 - cache-hit origin/current separation with zero fabricated current attempts;
 - closed reason-code validation and candidate/attempt consistency;
-- Amendment-002 and WS-2 fixture additivity;
+- source-evidence and bounded-context fixture additivity;
 - Console production code must conform to this frozen boundary.

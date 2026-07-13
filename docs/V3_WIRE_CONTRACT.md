@@ -1,6 +1,6 @@
-# Web Search Plus v3 contract freeze — M0 engine side
+# Web Search Plus v3 wire contract
 
-Status: **M0 FROZEN — engine-owner and policy-owner co-signed.** The field names, enum namespaces, projection/cache rules, six golden fixtures, and resolved joint decisions below are normative for M1. Any change now requires an explicit contract amendment and fixture update.
+This is the normative 3.0 contract for field names, enum namespaces, projection and cache rules, and golden fixtures. Any contract change requires an explicit amendment and fixture update.
 
 Canonical artifacts:
 
@@ -378,7 +378,7 @@ Projection must be deterministic and side-effect free. Legacy projections never 
 
 ## M0 exit test contract
 
-The policy-owner's six fixtures must each validate against `response.schema.json`:
+The six canonical fixtures must each validate against `response.schema.json`:
 
 - search success
 - extract success

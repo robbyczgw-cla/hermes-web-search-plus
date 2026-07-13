@@ -47,4 +47,4 @@ The Console deliberately excludes queries, URLs, titles, snippets, extracted con
 - **401 after opening `/` directly** — use the fresh bootstrap URL printed at startup.
 - **Port already in use** — choose another port or use `--port 0`.
 
-The frozen security and DTO boundary is documented in [Operator Console Contract](v3-ws3-operator-console-contract.md).
+The normative security and DTO boundary is documented in the [Operator Console Contract](V3_OPERATOR_CONSOLE_CONTRACT.md).

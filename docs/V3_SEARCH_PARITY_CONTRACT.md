@@ -1,10 +1,10 @@
-# Contract Amendment 001 — M1 public search parity
+# Contract Amendment 001 — public search parity
 
-Status: **engine-owner candidate; policy-owner acceptance required at M1 handoff.**
+This amendment is normative for the 3.0 public search surface.
 
 ## Reason
 
-The co-signed M0 `SearchOptions` could not losslessly represent four inputs already exposed by the v2 Hermes tool. Omitting them would force the compatibility layer to use hidden runtime context, violating B6 because an identical `RequestV3` could then produce a different provider plan or output.
+The initial `SearchOptions` contract could not losslessly represent four inputs already exposed by the v2 Hermes tool. Omitting them would force the compatibility layer to use hidden runtime context, violating B6 because an identical `RequestV3` could then produce a different provider plan or output.
 
 ## Additions
 
