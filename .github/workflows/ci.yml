@@ -19,12 +19,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.8', '3.11']
+        python-version: ['3.10', '3.11', '3.12']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -33,33 +34,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          if [ -f requirements-dev.txt ]; then
-            pip install -r requirements-dev.txt
-          else
-            pip install pytest ruff
-          fi
+          pip install -r requirements-dev.txt
           npm ci --ignore-scripts
       - name: Ruff
         run: ruff check .
       - name: Tests
         run: python -m pytest tests/ -q
+      - name: Generated artifacts
+        run: |
+          python scripts/gen_provider_docs.py --check
+          python scripts/gen_contract_v3_schemas.py --check
       - name: Schema boundary
         run: node tests/schema_boundary_v3.mjs
       - name: Compile
-        run: >-
-          python -m py_compile
-          search.py
-          __init__.py
-          daemon_tasks.py
-          http_client.py
-          cache.py
-          config.py
-          env_loader.py
-          provider_health.py
-          provider_stats.py
-          quality.py
-          research.py
-          routing.py
-          providers.py
-          extract.py
-          scripts/golden_eval.py
+        run: python -m compileall -q .
