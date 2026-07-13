@@ -43,9 +43,9 @@ Each provider adapter normalizes provider-specific request and response details 
 
 Provider capability classes:
 
-- Search-only: Brave, Perplexity, Kilo Perplexity, SearXNG, SerpBase, Querit. Brave, Parallel, Perplexity/Kilo Perplexity, SerpBase, and Querit default to `auto_allow=false` and are explicit/guarded unless users opt in.
+- Search-only: Brave, SearXNG, SerpBase, and Querit. Brave, Parallel, SerpBase, and Querit default to `auto_allow=false` and are explicit/guarded unless users opt in.
 - Search and extraction: You.com, Serper, Firecrawl, Tavily, Exa, Linkup, Parallel, Keenable. Serper extraction uses its webpage scraper (`scrape.serper.dev`) and sits last in the auto-extraction fallback chain.
-- Answer-style search: Perplexity and Kilo Perplexity return direct-answer style search results, but default auto-routing treats them as guarded providers rather than fast search providers.
+- Rejected legacy endpoints: native Perplexity and Kilo Perplexity remain metadata-only rejection records because no verified source-only endpoint is registered.
 
 Provider pricing, freshness, ranking, localization, and vertical support are controlled by the providers. The plugin normalizes responses; it does not make providers equivalent.
 
@@ -63,16 +63,14 @@ Default routing config includes:
   "auto_routing": {
     "enabled": true,
     "fallback_provider": "serper",
-    "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "serpbase", "querit", "kilo-perplexity", "perplexity", "searxng", "keenable"],
+    "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "serpbase", "querit", "searxng", "keenable"],
     "extract_provider_priority": ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper"],
     "disabled_providers": [],
     "auto_allow": {
       "serpbase": false,
       "querit": false,
       "brave": false,
-      "parallel": false,
-      "kilo-perplexity": false,
-      "perplexity": false
+      "parallel": false
     },
     "confidence_threshold": 0.3
   }
@@ -111,9 +109,7 @@ Example:
   "serpbase": false,
   "parallel": false,
   "querit": false,
-  "brave": false,
-  "kilo-perplexity": false,
-  "perplexity": false
+  "brave": false
 }
 ```
 

@@ -94,6 +94,52 @@ def request(
     return result
 
 
+def test_server_default_state_path_matches_engine_layout(tmp_path: Path) -> None:
+    ui = importlib.import_module("ui")
+    server = ui.create_server(
+        port=0,
+        token=TOKEN,
+        cache_root=tmp_path,
+        config={},
+    )
+    try:
+        assert server.state_path == tmp_path / "v3" / "state.sqlite3"
+    finally:
+        server.server_close()
+
+
+def test_cli_generates_bootstrap_url_and_closes_server(monkeypatch, capsys) -> None:
+    ui = importlib.import_module("ui")
+    calls: dict[str, Any] = {}
+
+    class FakeServer:
+        server_port = 43210
+
+        def serve_forever(self) -> None:
+            calls["served"] = True
+            raise KeyboardInterrupt
+
+        def server_close(self) -> None:
+            calls["closed"] = True
+
+    def fake_create_server(**kwargs: Any) -> FakeServer:
+        calls["kwargs"] = kwargs
+        return FakeServer()
+
+    monkeypatch.setattr(ui, "create_server", fake_create_server)
+    monkeypatch.setattr(ui.secrets, "token_urlsafe", lambda _size: "generated-safe-token")
+
+    assert ui.main(["--port", "0"]) == 0
+    assert calls["kwargs"]["host"] == "127.0.0.1"
+    assert calls["kwargs"]["port"] == 0
+    assert calls["kwargs"]["token"] == "generated-safe-token"
+    assert calls["served"] is True
+    assert calls["closed"] is True
+    output = capsys.readouterr().out
+    assert "http://127.0.0.1:43210/?token=generated-safe-token" in output
+    assert "read-only" in output
+
+
 def test_server_requires_literal_loopback_and_strong_startup_token(tmp_path: Path) -> None:
     ui = importlib.import_module("ui")
     for host in ("0.0.0.0", "::", "localhost", "192.168.1.20", "100.100.100.100"):

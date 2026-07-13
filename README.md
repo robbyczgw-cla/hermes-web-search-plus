@@ -2,16 +2,16 @@
 
 
 <p align="center">
-  <img src="docs/assets/web-search-plus-v261-hero.png" alt="Hermes web-search-plus hero: two-tool surface, adaptive Routing v2, research mode, quality diagnostics, and 14 search / 8 extraction providers" width="100%">
+  <img src="docs/assets/web-search-plus-v261-hero.png" alt="Hermes web-search-plus hero: two-tool source-only surface, Routing v2, evidence receipts, quality diagnostics, and 12 search / 8 extraction providers" width="100%">
 </p>
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-22d3ee.svg"></a>
-  <img alt="Python 3.8+" src="https://img.shields.io/badge/python-3.8%2B-34d399.svg">
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-34d399.svg">
   <img alt="Hermes Plugin" src="https://img.shields.io/badge/Hermes-plugin-a78bfa.svg">
 </p>
 
-**Web Search Plus is the operator-grade web layer for Hermes: one search tool, one extraction tool, many providers, conservative routing, safe large-page handling, freshness controls, and provider benchmarking without locking you into a single API.** Routing v2 spans 14 search providers and 8 extraction-capable providers; `web_extract_plus(provider="auto")` defaults to Tavily-first extraction for fast, reliable fetches, with Exa, Linkup, Firecrawl, Parallel, You.com, and Serper as fallback paths when available.
+**Web Search Plus is the operator-grade, source-only web layer for Hermes: one search tool, one extraction tool, 12 search providers, 8 extraction providers, conservative routing, provenance receipts, safe large-page handling, and provider benchmarking without locking you into a single API.** `web_extract_plus(provider="auto")` defaults to Tavily-first extraction, while the v3 evidence spine records provider attempts, source observations, cache origin, policy actions, and applied limits without adding an answer-synthesis layer.
 
 `web-search-plus` adds two Hermes tools:
 
@@ -65,18 +65,32 @@ Notes:
 
 - Plugin install clones into `~/.hermes/plugins/web-search-plus`; update later with `hermes plugins update web-search-plus`, then restart/`/reset`.
 - Keys are written to the active Hermes environment file by the setup helper; they should never be committed to the repo.
-- Python 3.8+ is required; runtime code is stdlib-only.
+- Python 3.10+ is required; runtime code is stdlib-only.
 - To make Web Search Plus the preferred web layer, disable the built-in web toolset (`agent.disabled_toolsets: [web]`) and verify with `setup.py fastpath` — details in the [User Guide](docs/USER_GUIDE.md#installation-and-first-run-checks).
 
 ---
 
 ## Documentation
 
-- [User Guide](docs/USER_GUIDE.md) — detailed setup, provider tuning, routing preferences, tool parameters, extraction, reliability, and cost controls.
-- [Provider Reference](docs/PROVIDERS.md) — generated per-provider matrix: capabilities, env vars, auto-routing defaults, free tiers, and signup links.
-- [Routing v2 Reference](docs/ROUTING.md) — generated class-by-class view of what auto-routing prefers and demotes.
+### Upgrading to 3.0
+
+- [3.0 Release Notes](docs/RELEASE_NOTES_V3.md) — start here for highlights, compatibility changes, and 3.1 deferrals.
+- [3.0 Migration](docs/V3_MIGRATION.md) — dry-run, apply, smoke tests, and verified rollback.
+- [3.0 Compatibility](docs/V3_COMPATIBILITY.md) — stable surfaces, intentional removals, cache/state behavior, and routing controls.
+- [Backup and Restore](docs/V3_BACKUP_RESTORE.md) — migration backup ownership and exact restore behavior.
+
+### Operating
+
+- [Operator Console](docs/V3_OPERATOR_CONSOLE.md) — local read-only startup, security boundary, and troubleshooting.
+- [Provider Benchmarks](docs/V3_BENCHMARKS.md) — live quota use, extraction history, privacy, and applying recommendations.
+
+### Reference
+
+- [User Guide](docs/USER_GUIDE.md) — detailed setup, provider tuning, tool parameters, extraction, reliability, and cost controls.
+- [Provider Reference](docs/PROVIDERS.md) — generated capabilities, environment variables, routing defaults, free tiers, and signup links.
+- [Routing v2 Reference](docs/ROUTING.md) — generated class-by-class routing preferences and demotions.
 - [FAQ](docs/FAQ.md) — common setup, provider selection, cache, quota, and troubleshooting questions.
-- [Architecture](docs/ARCHITECTURE.md) — plugin boundary, routing engine, auto-allow gate, cache/cooldown state, data flow, and provider-extension notes.
+- [Architecture](docs/ARCHITECTURE.md) — plugin boundary, routing engine, cache/state flow, and provider-extension notes.
 
 ---
 
@@ -84,7 +98,7 @@ Notes:
 
 | Capability | Unlocks | Configure at least one of |
 |---|---|---|
-| Search | `web_search_plus` | Brave, Serper, Tavily, Exa, Linkup, Firecrawl, Parallel, Perplexity, Kilo Perplexity, You.com, SearXNG, SerpBase, Querit, or Keenable |
+| Search | `web_search_plus` | Brave, Serper, Tavily, Exa, Linkup, Firecrawl, Parallel, You.com, SearXNG, SerpBase, Querit, or Keenable |
 | Extraction | `web_extract_plus` | Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, Serper, or Keenable |
 | Best starter | Search + extraction + reliable fallback | You.com + Serper + Linkup |
 
@@ -138,8 +152,6 @@ Full parameter tables for both tools, freshness/vertical/locale semantics, and c
 | Firecrawl | ✅ | ✅ | Source-first web search with scrape-ready result content |
 | Tavily | ✅ | ✅ | Long-form research and content-heavy queries |
 | Linkup | ✅ | ✅ | Source-backed grounding, citations, RAG-ready retrieval |
-| Perplexity | ✅ | — | Native synthesized search; guarded by default (`auto_allow=false`) |
-| Kilo Perplexity | ✅ | — | Perplexity through Kilo gateway; guarded by default (`auto_allow=false`) |
 | Brave | ✅ | — | Independent web index; guarded by default (`auto_allow=false`) |
 | SearXNG | ✅ | — | Privacy-focused self-hosted metasearch |
 | Keenable | ✅ | ✅ | Independent web index; key or opt-in keyless public tier (off by default); lowest-priority fallback |
@@ -163,7 +175,6 @@ TAVILY_API_KEY=***        # https://tavily.com — search + extraction
 EXA_API_KEY=***           # https://exa.ai — search + extraction
 LINKUP_API_KEY=***        # https://linkup.so — search + cheap/citation-friendly extraction
 FIRECRAWL_API_KEY=***     # https://firecrawl.dev — search + extraction
-PERPLEXITY_API_KEY=***    # https://perplexity.ai/settings/api
 YOU_API_KEY=***           # https://api.you.com — search + extraction
 SEARXNG_INSTANCE_URL=https://your-instance.example.com
 KEENABLE_API_KEY=***      # https://keenable.ai — search + extraction
@@ -171,8 +182,6 @@ SERPBASE_API_KEY=***      # https://www.serpbase.dev — explicit/fallback-only 
 PARALLEL_API_KEY=***      # https://platform.parallel.ai — explicit/guarded LLM-ready search + extraction
 QUERIT_API_KEY=***        # https://querit.ai — explicit/fallback-only by default
 
-# Kilo gateway alternate provider (`provider="kilo-perplexity"`)
-KILOCODE_API_KEY=***
 ```
 
 Keenable also has an opt-in keyless public tier (off by default, per-IP limits, no SLA) — see [User Guide → Provider setup](docs/USER_GUIDE.md#provider-setup).

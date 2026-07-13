@@ -97,7 +97,7 @@ Presets:
 - `extract`: Firecrawl + Linkup + Exa + Tavily. Extraction-heavy setup.
 - `all`: prompt for every supported provider.
 
-Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, Perplexity, Kilo Perplexity, SearXNG, SerpBase, Querit, and Keenable. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, Keenable, and Serper.
+Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, SearXNG, SerpBase, Querit, and Keenable. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, Keenable, and Serper. Native Perplexity and Kilo Perplexity are not registered in 3.0 because their legacy answer endpoints do not expose a verified source-only mode.
 
 Keenable is keyless: set `KEENABLE_API_KEY` for the authenticated endpoints, or opt into its public tier (off by default). In the wizard, skip the Keenable key prompt and answer yes, or run `setup.py setup keenable --keyless-public`; it writes `keenable.allow_public: true` to `config.json` (equivalently `KEENABLE_ALLOW_PUBLIC=1`).
 
@@ -105,7 +105,7 @@ With a `KEENABLE_API_KEY` set, requests always use the authenticated endpoints. 
 
 ### Migration note for v2.0.0
 
-Routing v2 changes the default `provider="auto"` behavior. Existing configs keep explicit user choices, but missing `auto_allow` entries inherit the new guarded defaults: Brave, SerpBase, Querit, native Perplexity, and Kilo Perplexity stay explicit-only until you opt them into automatic routing.
+Routing v2 changes the default `provider="auto"` behavior. Existing configs keep explicit user choices, but missing `auto_allow` entries inherit the guarded defaults: Brave, SerpBase, Querit, and Parallel stay explicit-only until you opt them into automatic routing. Perplexity provider IDs from older configs are ignored because those endpoints are no longer registered.
 
 ```bash
 python ~/.hermes/plugins/web-search-plus/setup.py config show --json
@@ -230,7 +230,7 @@ Example pattern:
 }
 ```
 
-Read that as: guarded providers can have keys but remain explicit-only for `provider="auto"`, and the router selected the best eligible provider. If you want SerpBase, Brave, Querit, Perplexity, or Kilo Perplexity to participate in automatic routing, opt in with `set-auto-allow <provider> on`; if a provider is cooled down, wait or clear local provider health state in your cache directory.
+Read that as: guarded providers can have keys but remain explicit-only for `provider="auto"`, and the router selected the best eligible provider. If you want SerpBase, Brave, Querit, or Parallel to participate in automatic routing, opt in with `set-auto-allow <provider> on`; if a provider is cooled down, wait or inspect local provider health state.
 
 ## Search locale defaults
 
@@ -274,13 +274,13 @@ Result metadata reports the resolved locale and where each value came from, foll
 }
 ```
 
-Backward compatibility: without `defaults.locale` and without flags, everything still resolves to `us`/`en` exactly as before. Providers without locale parameters (Tavily, Exa, Linkup, Parallel, Perplexity, Keenable) are unaffected.
+Backward compatibility: without `defaults.locale` and without flags, everything still resolves to `us`/`en` exactly as before. Providers without locale parameters (Tavily, Exa, Linkup, Parallel, Keenable) are unaffected.
 
 ## Explicit opt-in providers: guarded providers
 
 Some providers can be configured for explicit use without being selected automatically. That is what `auto_allow` controls.
 
-Brave, SerpBase, Querit, native Perplexity, and Kilo Perplexity default to `auto_allow=false`. Setting their keys makes explicit calls work:
+Brave, SerpBase, Querit, and Parallel default to `auto_allow=false`. Setting their keys makes explicit calls work:
 
 ```python
 web_search_plus(query="best DAC reviews", provider="serpbase")
@@ -321,7 +321,7 @@ Parameters:
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `query` | string | **required** | Search query |
-| `provider` | string | `"auto"` | `auto`, `serper`, `brave`, `tavily`, `exa`, `linkup`, `firecrawl`, `parallel`, `perplexity`, `kilo-perplexity`, `you`, `searxng`, `serpbase`, `querit`, `keenable` |
+| `provider` | string | `"auto"` | `auto`, `serper`, `brave`, `tavily`, `exa`, `linkup`, `firecrawl`, `parallel`, `you`, `searxng`, `serpbase`, `querit`, `keenable` |
 | `depth` | string | `"normal"` | Exa only: `normal`, `deep`, `deep-reasoning` |
 | `count` | integer | `5` | Results, 1–20 |
 | `time_range` | string | — | `day`, `week`, `month`, `year` |
@@ -335,10 +335,10 @@ Parameters:
 
 Parameter semantics:
 
-- `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `perplexity`, `kilo-perplexity`, `searxng`, `serpbase`, or `querit`. Brave, Parallel, Perplexity/Kilo Perplexity, SerpBase, and Querit are available for explicit calls but default to `auto_allow=false`.
+- `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `parallel`, `searxng`, `serpbase`, or `querit`. Brave, Parallel, SerpBase, and Querit are available for explicit calls but default to `auto_allow=false`.
 - `count`: result count, from 1 to 20.
 - `time_range`: `day`, `week`, `month`, or `year` where supported.
-- `freshness`: unified recency filter with the values `day`, `week`, `month`, or `year` (case-insensitive; invalid values return a clear error). It is applied natively by Serper, Brave, Querit, Firecrawl, Keenable, You.com, Perplexity/Kilo Perplexity, and SearXNG, each translated into that provider's own format (for example Brave `pw` or Serper `tbs=qdr:w` for `week`). Providers without recency support (Tavily, Exa, Linkup, Parallel, SerpBase) still run the search normally; the result metadata then reports `"freshness": {"requested": "week", "applied": false, "reason": "provider tavily does not support freshness"}` instead of silently dropping the filter. In `mode="research"` the filter is passed to every participating provider and the applied status is reported per provider.
+- `freshness`: unified recency filter with the values `day`, `week`, `month`, or `year` (case-insensitive; invalid values return a clear error). It is applied natively by Serper, Brave, Querit, Firecrawl, Keenable, You.com, and SearXNG, each translated into that provider's own format (for example Brave `pw` or Serper `tbs=qdr:w` for `week`). Providers without recency support (Tavily, Exa, Linkup, Parallel, SerpBase) still run the search normally; the result metadata then reports `"freshness": {"requested": "week", "applied": false, "reason": "provider tavily does not support freshness"}` instead of silently dropping the filter. In `mode="research"` the filter is passed to every participating provider and the applied status is reported per provider.
 - `search_type`: result vertical, `search` (default) or `news` (case-insensitive; invalid values return a clear error). Serper serves the news vertical natively via `google.serper.dev/news` and returns article `date` and `source` fields; the unified `freshness` filter keeps working there. Providers without a native news vertical still run the normal search; the result metadata then reports `"search_type": {"requested": "news", "applied": false, "reason": "provider tavily does not support search_type news"}` instead of silently ignoring the request. In `mode="research"` the applied status is reported per provider.
 - `include_domains` / `exclude_domains`: provider-dependent domain filters.
 - `quality_report`: include routing diagnostics, skipped providers, result quality hints, and extraction recommendation.

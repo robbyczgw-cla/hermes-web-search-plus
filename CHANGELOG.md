@@ -2,8 +2,24 @@
 
 ## [Unreleased]
 
-### ✨ Added
+### 🚀 WSP 3.0 — Source-only evidence engine
+- Added the native source-only v3 evidence spine: frozen request/response contracts, lossless provider observations, complete attempt receipts, policy actions, cache-origin evidence, bounded context, typed errors, and marker-owned operational storage.
+- Added the local read-only Operator Console with loopback-only binding, startup-token authentication, privacy-filtered overview/receipt/benchmark APIs, and a runnable `python3 ui.py --port 8765` entrypoint.
+- Added dry-run-first legacy-state migration for `provider_health.json` plus `provider_stats.json`, with verified backups, transactional import, idempotent apply, and digest-checked rollback.
+- Added a formal provider-adapter protocol that fails closed on registry/signature drift, provider identity mismatch, malformed result envelopes, and non-source answer payloads.
+- Added direct extraction benchmarking with privacy-safe aggregate Console history and independent extraction-priority recommendations.
+- Added a two-level Classic-routing kill switch: `routing.policy_mode` plus the higher-priority `WSP_ROUTING_CLASSIC_ONLY=1` environment override.
+
+### 💥 Changed in 3.0
+- WSP is now mechanically source-only. Native Perplexity and Kilo Perplexity answer endpoints are no longer registered because they do not expose a verified source-only mode; the public surface is 12 search providers and 8 extraction providers.
+- Classic Routing v2 remains authoritative in 3.0. Full persisted shadow-observer evaluation and the self-hosted/no-paid-key profile are explicitly deferred to 3.1.
+- The Operator Console default state path now matches the engine's `v3/state.sqlite3` layout.
+
+### ✨ Added before 3.0, carried forward
 - Added independent `auto_routing.extract_provider_priority` configuration for `web_extract_plus(provider="auto")`, with `setup.py config set-extract-priority ...`. The existing Tavily-first registry order remains the public default; partial lists append missing extract-capable providers, and search `provider_priority` remains independent.
+
+### 📚 Docs
+- Added 3.0 migration, compatibility, backup/restore, Operator Console, benchmark, and release-note guides.
 
 ## [v2.9.1] — 2026-07-10
 

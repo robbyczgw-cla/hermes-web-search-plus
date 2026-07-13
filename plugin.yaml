@@ -33,7 +33,7 @@ onboarding:
     auto_routing: "python ~/.hermes/plugins/web-search-plus/setup.py config set-routing on"
     priority: "python ~/.hermes/plugins/web-search-plus/setup.py config set-priority you,serper,exa,firecrawl,tavily,linkup,parallel"
     fallback: "python ~/.hermes/plugins/web-search-plus/setup.py config set-fallback serper"
-    disable_provider: "python ~/.hermes/plugins/web-search-plus/setup.py config disable perplexity"
+    disable_provider: "python ~/.hermes/plugins/web-search-plus/setup.py config disable brave"
     block_auto_provider: "python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow brave off"
     reset: "python ~/.hermes/plugins/web-search-plus/setup.py config reset --yes"
   config_file: "~/.hermes/plugins/config.json"

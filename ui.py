@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import hmac
 import json
 import os
+import secrets
 import stat
 from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -448,7 +450,7 @@ def create_server(
     server.state_path = (
         Path(state_path)
         if state_path is not None
-        else Path(cache_root) / "state" / "v3.sqlite3"
+        else Path(cache_root) / "v3" / "state.sqlite3"
     )
     server.operator_config = active_config
     server.configured_secrets = _configured_secrets(active_config)
@@ -456,3 +458,35 @@ def create_server(
     server.snapshot_backend = snapshot_backend
     server.static_assets = static_assets
     return server
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Run the local read-only Operator Console until interrupted."""
+
+    parser = argparse.ArgumentParser(description="WSP read-only Operator Console")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8765,
+        help="Loopback TCP port (default: 8765; use 0 for an ephemeral port)",
+    )
+    args = parser.parse_args(argv)
+    token = secrets.token_urlsafe(24)
+    server = create_server(host=LOOPBACK_HOST, port=args.port, token=token)
+    bootstrap_url = (
+        f"http://{LOOPBACK_HOST}:{server.server_port}/?token={token}"
+    )
+    print("WSP Operator Console (read-only, loopback only)")
+    print(bootstrap_url)
+    print("Press Ctrl-C to stop.")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        return 0
+    finally:
+        server.server_close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
