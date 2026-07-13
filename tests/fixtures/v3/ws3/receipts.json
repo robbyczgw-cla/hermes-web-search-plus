@@ -4,7 +4,7 @@
     {
       "schema_version": 1,
       "timestamp": 1783890300.0,
-      "execution_id": "exec_cache_current",
+      "execution_id": "exec_11111111111111111111111111111111",
       "capability": "search",
       "status": "ok",
       "routing": {
@@ -18,7 +18,7 @@
         "fallback_reason": "none",
         "candidate_decisions": [],
         "cache_origin": {
-          "execution_id": "exec_origin",
+          "execution_id": "exec_22222222222222222222222222222222",
           "policy_id": "classic",
           "policy_revision": "v2.9.1",
           "candidate_order": ["serper"],
@@ -39,7 +39,7 @@
       "current_provider_attempts": [],
       "cache": {
         "disposition": "fresh_hit",
-        "origin_execution_id": "exec_origin"
+        "origin_execution_id": "exec_22222222222222222222222222222222"
       },
       "limits": {
         "requested_url_count": 0,
@@ -56,7 +56,7 @@
     {
       "schema_version": 1,
       "timestamp": 1783890200.0,
-      "execution_id": "exec_fallback",
+      "execution_id": "exec_33333333333333333333333333333333",
       "capability": "extract",
       "status": "degraded",
       "routing": {
@@ -74,14 +74,14 @@
             "position": 1,
             "decision": "attempted_failed",
             "reason_code": "attempt_failed",
-            "attempt_id": "attempt_tavily"
+            "attempt_id": "attempt_aaaaaaaaaaaaaaaa"
           },
           {
             "provider": "serper",
             "position": 2,
             "decision": "selected",
             "reason_code": "fallback_selected",
-            "attempt_id": "attempt_serper"
+            "attempt_id": "attempt_bbbbbbbbbbbbbbbb"
           }
         ],
         "cache_origin": null,
@@ -93,7 +93,7 @@
           "affected_execution": false
         }
       },
-      "current_provider_attempts": ["attempt_tavily", "attempt_serper"],
+      "current_provider_attempts": ["attempt_aaaaaaaaaaaaaaaa", "attempt_bbbbbbbbbbbbbbbb"],
       "cache": {
         "disposition": "miss",
         "origin_execution_id": null

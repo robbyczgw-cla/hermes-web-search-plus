@@ -50,20 +50,6 @@ _PROVIDER_VALUES = frozenset({*PROVIDER_SPECS, "auto"})
 _PROVIDER_DISPLAY_NAMES = frozenset(
     spec.display_name for spec in PROVIDER_SPECS.values()
 )
-_FROZEN_FIXTURE_IDS = {
-    "execution_id": {
-        "exec_cache_current", "exec_direct", "exec_fallback", "exec_origin",
-        "exec_origin_serper",
-    },
-    "origin_execution_id": {"exec_origin", "exec_origin_serper"},
-    "attempt_id": {
-        "attempt_serper", "attempt_tavily", "attempt_serper_1", "attempt_tavily_1",
-    },
-    "current_provider_attempts": {
-        "attempt_serper", "attempt_tavily", "attempt_serper_1", "attempt_tavily_1",
-    },
-}
-
 _ENUM_VALUES = {
     "status": {
         "ok", "degraded", "failed", "completed", "collected", "not_collected",
@@ -137,17 +123,11 @@ def _validate_string(value: str, field_name: str | None, location: str) -> None:
             raise ValueError(f"operator payload string lacks provider provenance at {location}")
         return
     if field_name in _EXECUTION_FIELDS:
-        if (
-            not _EXECUTION_ID.fullmatch(value)
-            and value not in _FROZEN_FIXTURE_IDS.get(field_name, set())
-        ):
+        if not _EXECUTION_ID.fullmatch(value):
             raise ValueError(f"operator payload string lacks execution provenance at {location}")
         return
     if field_name in _ATTEMPT_FIELDS:
-        if (
-            not _ATTEMPT_ID.fullmatch(value)
-            and value not in _FROZEN_FIXTURE_IDS.get(field_name, set())
-        ):
+        if not _ATTEMPT_ID.fullmatch(value):
             raise ValueError(f"operator payload string lacks attempt provenance at {location}")
         return
     if field_name == "entry_id" and _ENTRY_ID.fullmatch(value):
