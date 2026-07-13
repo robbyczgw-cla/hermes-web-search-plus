@@ -45,6 +45,16 @@ def test_no_provider_advertises_answer_or_synthesis_capability():
     assert offenders == {}
 
 
+def test_cli_help_does_not_advertise_answer_providers():
+    import search
+
+    help_text = search.build_parser({}).format_help()
+
+    assert "Direct Answer" not in help_text
+    assert "Perplexity" not in help_text
+    assert "synthesized up-to-date answers" not in help_text
+
+
 def test_answer_only_providers_are_explicitly_rejected_and_not_dispatched():
     for provider in ("perplexity", "kilo-perplexity"):
         spec = PROVIDER_SPECS[provider]
@@ -79,7 +89,7 @@ def test_formatter_cannot_render_legacy_answer_payload():
 def test_plugin_surface_exposes_only_search_and_extract_tools():
     text = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
     tools = [
-        line.strip().removeprefix("- ")
+        line.strip()[2:]
         for line in text.splitlines()
         if line.strip().startswith("- web_")
     ]

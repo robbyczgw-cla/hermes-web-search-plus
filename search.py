@@ -680,9 +680,6 @@ Intelligent Auto-Routing:
   Discovery Intent → Exa (Neural)
     "similar to", "companies like", "alternatives", URLs, startups, papers
 
-  Direct Answer Intent → Perplexity (via Kilo Gateway)
-    "what is", "current status", local events, synthesized up-to-date answers
-
 Examples:
   python3 search.py -q "iPhone 16 Pro Max price"          # → Serper (shopping)
   python3 search.py -q "how does HTTPS encryption work"   # → Tavily (research)
