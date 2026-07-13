@@ -1,6 +1,6 @@
 # WSP v3 WS-3 — Operator Console Contract
 
-**Status:** TASK-1 GATE CANDIDATE · 2026-07-12 · requires Robby acceptance before Task 2
+**Status:** FROZEN · 2026-07-12
 
 This contract defines the read-only Operator Console boundary. It is additive to Contract v3 and Amendments 002/003. Classic Routing-v2 remains authoritative; shadow policy remains observational and cannot alter execution.
 
@@ -169,4 +169,4 @@ Release-blocking tests require:
 - cache-hit origin/current separation with zero fabricated current attempts;
 - closed reason-code validation and candidate/attempt consistency;
 - Amendment-002 and WS-2 fixture additivity;
-- no Console production code before this Task-1 gate is accepted by Robby.
+- Console production code must conform to this frozen boundary.
