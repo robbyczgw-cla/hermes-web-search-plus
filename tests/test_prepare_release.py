@@ -28,6 +28,12 @@ def _make_fake_repo(root: Path, version: str = OLD) -> None:
     (root / "http_client.py").write_text(
         f'DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/{version}"\n', encoding="utf-8"
     )
+    (root / "operator_console_v3.py").write_text(
+        f'def build_overview(plugin_version: str = "{version}"): ...\n', encoding="utf-8"
+    )
+    (root / "ui.py").write_text(
+        f'def create_server(plugin_version: str = "{version}"): ...\n', encoding="utf-8"
+    )
     (root / "tests" / "test_release_metadata.py").write_text(
         f'EXPECTED_VERSION = "{version}"\n', encoding="utf-8"
     )
@@ -63,6 +69,8 @@ def test_write_updates_every_surface(tmp_path):
     assert "Hermes Plugin v2.0.0" in init_py
     assert "Version: 2.0.0" in (tmp_path / "search.py").read_text(encoding="utf-8")
     assert 'ClawdBot-WebSearchPlus/2.0.0"' in (tmp_path / "http_client.py").read_text(encoding="utf-8")
+    assert 'plugin_version: str = "2.0.0"' in (tmp_path / "operator_console_v3.py").read_text(encoding="utf-8")
+    assert 'plugin_version: str = "2.0.0"' in (tmp_path / "ui.py").read_text(encoding="utf-8")
     assert 'EXPECTED_VERSION = "2.0.0"' in (tmp_path / "tests" / "test_release_metadata.py").read_text(encoding="utf-8")
     assert OLD not in (tmp_path / "plugin.yaml").read_text(encoding="utf-8")
 

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 2.9.1
+Version: 3.0.0
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
-Brave Search, SerpBase, Querit, Parallel, Perplexity, Kilo Perplexity, SearXNG, Keenable.
+Brave Search, SerpBase, Querit, Parallel, SearXNG, Keenable.
 Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com, Keenable, Serper.
 
 Smart Routing uses multi-signal analysis:

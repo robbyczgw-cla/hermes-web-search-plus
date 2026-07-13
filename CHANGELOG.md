@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v3.0.0] — 2026-07-13
+
 ### 🚀 WSP 3.0 — Source-only evidence engine
 - Added the native source-only v3 evidence spine: frozen request/response contracts, lossless provider observations, complete attempt receipts, policy actions, cache-origin evidence, bounded context, typed errors, and marker-owned operational storage.
 - Added the local read-only Operator Console with loopback-only binding, startup-token authentication, privacy-filtered overview/receipt/benchmark APIs, and a runnable `python3 ui.py --port 8765` entrypoint.
