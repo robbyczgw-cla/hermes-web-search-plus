@@ -1,8 +1,10 @@
 """Extraction orchestrator for Web Search Plus."""
 
+import hashlib
 import ipaddress
 import os
 import socket
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
@@ -425,10 +427,6 @@ def _finalize_extract_response(
     context_plan=None,
 ) -> ResponseV3:
     """Apply the extract envelope before cache write, receipts, and projection."""
-    if isinstance(response.limits_applied.get("extract"), dict):
-        return response
-    source_request = original_request or request
-    bounded_plan = context_plan or prepare_extract_request(source_request, config)
     policy = config.get("bounded_context") or {}
     if not isinstance(policy, dict):
         policy = {}
@@ -442,6 +440,57 @@ def _finalize_extract_response(
             policy.get("full_text_max_bytes", DEFAULT_FULL_TEXT_MAX_BYTES)
         ),
     )
+    if isinstance(response.limits_applied.get("extract"), dict):
+        if response.cache_status.get("disposition") not in {
+            "fresh_hit",
+            "stale_hit",
+        }:
+            return response
+        store.enforce_retention()
+        stored_content = []
+        unavailable_count = 0
+        for item in response.stored_content:
+            current = dict(item)
+            if current.get("storage_succeeded") is True:
+                reference = current.get("reference") or {}
+                key = reference.get("key") if isinstance(reference, dict) else None
+                text = store.lookup(str(key)) if isinstance(key, str) else None
+                digest = (
+                    hashlib.sha256(text.encode("utf-8")).hexdigest()
+                    if isinstance(text, str)
+                    else None
+                )
+                if (
+                    digest != current.get("full_text_sha256")
+                    or len(text or "") != current.get("full_text_chars")
+                ):
+                    unavailable_count += 1
+                    current.update(
+                        {
+                            "storage_succeeded": False,
+                            "reference": None,
+                            "full_text_sha256": None,
+                            "full_text_chars": None,
+                        }
+                    )
+            stored_content.append(current)
+        if not unavailable_count:
+            return response
+        warnings = list(response.warnings)
+        if not any(
+            warning.get("code") == "wsp.storage.full_text_unavailable"
+            for warning in warnings
+        ):
+            warnings.append(
+                {
+                    "code": "wsp.storage.full_text_unavailable",
+                    "message": "Cached full extracted content is no longer available.",
+                    "details": {"unavailable_count": unavailable_count},
+                }
+            )
+        return replace(response, stored_content=stored_content, warnings=warnings)
+    source_request = original_request or request
+    bounded_plan = context_plan or prepare_extract_request(source_request, config)
     return apply_bounded_context(
         response,
         source_request,
@@ -450,26 +499,135 @@ def _finalize_extract_response(
     )
 
 
-def _extract_adapter(
-    *,
-    original_request: RequestV3 | None = None,
-    context_plan=None,
-) -> CapabilityAdapter:
+def _extract_cache_eligible(
+    request: RequestV3, _provider_plan: ProviderPlan, _config: Dict[str, Any]
+) -> bool:
+    """Only cache extract shapes reconstructible from canonical source evidence."""
+    return not (
+        request.options.get("include_images")
+        or request.options.get("include_raw_html")
+    )
+
+
+def _extract_cache_identity(
+    request: RequestV3, _provider_plan: ProviderPlan, config: Dict[str, Any]
+) -> RequestV3:
+    """Key on the full URL request plus the effective operator bounds."""
+    prepared = prepare_extract_request(request, config)
+    return replace(
+        prepared.request,
+        input={**request.input, "urls": list(request.input["urls"])},
+    )
+
+
+def _extract_cache_vary(
+    _request: RequestV3, _provider_plan: ProviderPlan, config: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Bind mutable operator storage and URL policy to cache-owned evidence."""
+    policy = config.get("bounded_context") or {}
+    if not isinstance(policy, dict):
+        policy = {}
+    cache_root = Path(policy.get("cache_root") or CACHE_DIR)
+    return {
+        "extract_url_policy": {
+            "allow_private_urls": _extract_allows_private_urls(config),
+        },
+        "full_text_store": {
+            "cache_root": os.path.abspath(os.fspath(cache_root)),
+            "ttl_seconds": max(
+                0,
+                int(
+                    policy.get(
+                        "full_text_ttl_seconds", DEFAULT_FULL_TEXT_TTL_SECONDS
+                    )
+                ),
+            ),
+            "max_bytes": max(
+                0,
+                int(policy.get("full_text_max_bytes", DEFAULT_FULL_TEXT_MAX_BYTES)),
+            ),
+        },
+    }
+
+
+def _extract_cache_write_eligible(
+    _request: RequestV3,
+    _provider_plan: ProviderPlan,
+    _response: ResponseV3,
+    legacy_payload: Dict[str, Any],
+    _config: Dict[str, Any],
+) -> bool:
+    """Avoid lossy cache projections for partial or provider-specific payloads."""
+    if set(legacy_payload) - {"provider", "results", "routing"}:
+        return False
+    routing = legacy_payload.get("routing")
+    if routing is not None:
+        if not isinstance(routing, dict) or set(routing) - {
+            "provider",
+            "requested_provider",
+            "fallback_used",
+            "fallback_errors",
+        }:
+            return False
+        if not isinstance(routing.get("provider"), str):
+            return False
+        if not isinstance(routing.get("requested_provider"), str):
+            return False
+        if not isinstance(routing.get("fallback_used"), bool):
+            return False
+        fallback_errors = routing.get("fallback_errors")
+        if not isinstance(fallback_errors, list) or any(
+            not isinstance(item, dict)
+            or set(item) - {"provider", "error"}
+            or not isinstance(item.get("provider"), str)
+            or not isinstance(item.get("error"), str)
+            for item in fallback_errors
+        ):
+            return False
+    cacheable_result_fields = {
+        "title",
+        "url",
+        "content",
+        "raw_content",
+        "provider",
+    }
+    for item in legacy_payload.get("results") or []:
+        if not isinstance(item, dict) or item.get("error"):
+            return False
+        if set(item) - cacheable_result_fields:
+            return False
+        if "provider" in item and not isinstance(item.get("provider"), str):
+            return False
+        if "raw_content" in item and item.get("raw_content") != item.get("content"):
+            return False
+    return True
+
+
+def _extract_adapter() -> CapabilityAdapter:
+    def execute(request, provider_plan, config):
+        prepared = prepare_extract_request(request, config)
+        return _execute_extract_v3(prepared.request, provider_plan, config)
+
     def finalize_response(request, _provider_plan, response, config):
+        prepared = prepare_extract_request(request, config)
         return _finalize_extract_response(
             request,
             response,
             config,
-            original_request=original_request,
-            context_plan=context_plan,
+            original_request=request,
+            context_plan=prepared,
         )
 
     return CapabilityAdapter(
         capability=Capability.EXTRACT,
         plan=_plan_extract_v3,
-        execute=_execute_extract_v3,
+        execute=execute,
         normalize=response_from_legacy,
         finalize_response=finalize_response,
+        cache_eligible=_extract_cache_eligible,
+        cache_identity=_extract_cache_identity,
+        cache_vary=_extract_cache_vary,
+        cache_write_eligible=_extract_cache_write_eligible,
     )
 
 
@@ -480,19 +638,7 @@ def run_extract_request_v3(
 ) -> ResponseV3:
     """Execute a native extract RequestV3 through the canonical orchestrator."""
     runtime_config = config or load_config()
-    bounded_plan = prepare_extract_request(request, runtime_config)
-    response = execute_v3_request(
-        bounded_plan.request,
-        _extract_adapter(original_request=request, context_plan=bounded_plan),
-        runtime_config,
-    ).response
-    return _finalize_extract_response(
-        bounded_plan.request,
-        response,
-        runtime_config,
-        original_request=request,
-        context_plan=bounded_plan,
-    )
+    return execute_v3_request(request, _extract_adapter(), runtime_config).response
 
 
 def extract_plus(
@@ -520,10 +666,9 @@ def extract_plus(
             "render_js": render_js,
         },
     )
-    bounded_plan = prepare_extract_request(request, runtime_config)
     execution = execute_v3_request(
-        bounded_plan.request,
-        _extract_adapter(original_request=request, context_plan=bounded_plan),
+        request,
+        _extract_adapter(),
         runtime_config,
     )
     return v3_response_to_legacy_extract(execution)

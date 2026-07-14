@@ -95,6 +95,18 @@ FinalizeResponseFn = Callable[
 LegacyCacheLookupFn = Callable[
     [RequestV3, ProviderPlan, Dict[str, Any]], Optional[CapabilityExecution]
 ]
+CacheEligibilityFn = Callable[
+    [RequestV3, ProviderPlan, Dict[str, Any]], bool
+]
+CacheIdentityFn = Callable[
+    [RequestV3, ProviderPlan, Dict[str, Any]], RequestV3
+]
+CacheVaryFn = Callable[
+    [RequestV3, ProviderPlan, Dict[str, Any]], Dict[str, Any]
+]
+CacheWriteEligibilityFn = Callable[
+    [RequestV3, ProviderPlan, ResponseV3, Dict[str, Any], Dict[str, Any]], bool
+]
 
 
 @dataclass(frozen=True)
@@ -105,6 +117,10 @@ class CapabilityAdapter:
     normalize: NormalizeFn
     legacy_cache_lookup: LegacyCacheLookupFn | None = None
     finalize_response: FinalizeResponseFn | None = None
+    cache_eligible: CacheEligibilityFn | None = None
+    cache_identity: CacheIdentityFn | None = None
+    cache_vary: CacheVaryFn | None = None
+    cache_write_eligible: CacheWriteEligibilityFn | None = None
 
 
 @dataclass(frozen=True)
@@ -198,17 +214,35 @@ def execute_v3_request(
     if plan.mode != policy_mode:
         plan = replace(plan, mode=policy_mode)
     cache_mode = str(request.cache.get("mode") or "prefer")
-    cache_enabled = cache_mode != "bypass"
+    cache_allowed = True
+    if cache_mode != "bypass" and adapter.cache_eligible is not None:
+        cache_allowed = adapter.cache_eligible(request, plan, runtime_config)
+    cache_enabled = cache_mode != "bypass" and cache_allowed
+    cache_request = (
+        adapter.cache_identity(request, plan, runtime_config)
+        if cache_enabled and adapter.cache_identity is not None
+        else request
+    )
+    if cache_request.capability is not request.capability:
+        raise ValueError("cache identity capability differs from execution request")
+    cache_vary = (
+        adapter.cache_vary(request, plan, runtime_config)
+        if cache_enabled and adapter.cache_vary is not None
+        else {}
+    )
+    if not isinstance(cache_vary, dict):
+        raise ValueError("cache vary material must be an object")
     v3_config = runtime_config.get("v3") or {}
     response_cache = ResponseCacheV3(
         v3_config.get("cache_dir") or legacy_cache.CACHE_DIR
     )
     if cache_enabled:
         lookup = response_cache.get(
-            request,
+            cache_request,
             ttl_seconds=int(request.cache.get("ttl_seconds", 3600)),
             allow_stale_seconds=int(request.cache.get("allow_stale_seconds", 0)),
             now=int(time.time()),
+            vary=cache_vary,
         )
         if lookup.payload is not None:
             cached_order = tuple(
@@ -388,7 +422,7 @@ def execute_v3_request(
             shadow_observation=shadow_observation,
         ),
     )
-    if cache_mode == "bypass":
+    if cache_mode == "bypass" or (cache_mode == "prefer" and not cache_allowed):
         response = replace(response, cache_status={"disposition": "bypassed"})
     if adapter.finalize_response is not None:
         response = adapter.finalize_response(request, plan, response, runtime_config)
@@ -406,13 +440,21 @@ def execute_v3_request(
     }
     if cache_enabled:
         executed_stage_set.add("cache_lookup")
-        if response.status is not ResponseStatus.FAILED:
+        cache_write_allowed = (
+            adapter.cache_write_eligible(
+                request, plan, response, legacy_payload, runtime_config
+            )
+            if adapter.cache_write_eligible is not None
+            else True
+        )
+        if response.status is not ResponseStatus.FAILED and cache_write_allowed:
             try:
                 response_cache.put(
-                    request,
+                    cache_request,
                     response.to_dict(),
                     now=int(time.time()),
                     legacy_payload=legacy_payload,
+                    vary=cache_vary,
                 )
                 executed_stage_set.add("cache_write")
             except OSError:

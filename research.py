@@ -27,6 +27,7 @@ def run_research_mode(
     time_budget_seconds: float | None = None,
     now_fn=None,
     max_workers: int | None = None,
+    on_provider_timeout=None,
 ) -> Dict[str, Any]:
     """Run broad search, deduplicate, then extract top sources for grounding.
 
@@ -85,6 +86,8 @@ def run_research_mode(
         try:
             results_by_index[index] = (provider, tasks[index].result(timeout=timeout))
         except FuturesTimeoutError:
+            if on_provider_timeout is not None:
+                on_provider_timeout(provider)
             provider_errors.append({"provider": provider, "error": "timed out: research time budget exhausted"})
         except Exception as e:
             provider_errors.append({"provider": provider, "error": str(e)})

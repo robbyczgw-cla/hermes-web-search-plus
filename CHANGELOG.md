@@ -4,8 +4,11 @@
 
 ### 🐛 Fixed
 - Restored true multi-provider Research Mode in the native v3/Hermes path. Research providers now execute as separate authoritative attempts, and source observations retain the provider-attempt provenance of each contributing backend.
-- Preserved extracted page content on v3 cache hits by projecting cached extraction text as `content` rather than a search-only `snippet`.
-- Applied the global extraction context budget before v3 cache writes, operator receipts, and legacy Hermes projection, so cache misses and hits share the same deterministic fair-share output.
+- Restored the complete public Research envelope and its single post-merge quality pass, bypassed the legacy lossy cache, classified started deadline overruns as cancelled attempts, degraded provider/extraction budget limits truthfully, and marked total fan-out failure as a failed response.
+- Preserved extracted page content, safe `raw_content` aliases, and per-result provider attribution on v3 cache hits instead of projecting extraction evidence as search-only snippets.
+- Keyed extraction cache entries on the complete requested URL list, attempt budget, effective context limits, and current URL/storage policy, while still enforcing the provider fan-out cap before execution. Lossy partial-error, raw-HTML, image, and provider-specific payloads now bypass cache writes.
+- Made retained full-text references content-versioned and revalidated them on cache hits, preventing a refresh of the same URL from silently changing older cached evidence.
+- Applied the global extraction context budget before v3 cache writes, operator receipts, and legacy Hermes projection, so cache misses and hits share the same deterministic fair-share output without writing requested URLs into operator receipts.
 
 ### 📚 Docs
 - Removed stale Perplexity/Kilo credential and freshness claims from active plugin metadata and replaced obsolete provider-toggle examples.

@@ -14,7 +14,7 @@ from urllib.parse import urlsplit, urlunsplit
 from contract_v3 import RequestV3, cache_hit_routing_receipt_v3
 
 
-CACHE_SCHEMA_VERSION = 2
+CACHE_SCHEMA_VERSION = 3
 CACHE_OWNER = "web-search-plus:v3"
 NORMALIZER_VERSION = "runtime-v3-amendment-002"
 
@@ -29,7 +29,9 @@ class CacheLookupV3:
     legacy_payload: Optional[Dict[str, Any]] = None
 
 
-def cache_material_from_response(payload: Dict[str, Any]) -> Dict[str, Any]:
+def cache_material_from_response(
+    payload: Dict[str, Any], *, legacy_payload: Dict[str, Any] | None = None
+) -> Dict[str, Any]:
     """Reduce a wire response to cache-owned evidence material."""
     attempts = payload.get("provider_attempts") or []
     successful = next(
@@ -37,11 +39,32 @@ def cache_material_from_response(payload: Dict[str, Any]) -> Dict[str, Any]:
         {},
     )
     routing = payload.get("routing_receipt") or {}
+    capability = str(payload.get("capability") or "")
+    extract_legacy = (legacy_payload or {}) if capability == "extract" else {}
+    legacy_provider = (legacy_payload or {}).get("provider")
+    if not isinstance(legacy_provider, str):
+        legacy_provider = None
+    legacy_routing_hint = extract_legacy.get("routing")
+    legacy_projection_hints = []
+    for item in extract_legacy.get("results") or []:
+        if not isinstance(item, dict) or not item.get("url"):
+            continue
+        hint: Dict[str, Any] = {
+            "url": str(item["url"]),
+            "raw_content_alias": "raw_content" in item,
+        }
+        if isinstance(item.get("provider"), str):
+            hint["provider"] = item["provider"]
+        legacy_projection_hints.append(hint)
     return {
         "origin_execution_id": str(
             payload.get("execution_id") or "exec_cache_origin_unknown"
         ),
-        "origin_provider": routing.get("selected_provider"),
+        "origin_provider": (
+            routing.get("selected_provider")
+            or legacy_provider
+            or successful.get("provider")
+        ),
         "endpoint_id": successful.get("endpoint_id"),
         "normalizer_version": NORMALIZER_VERSION,
         "contract_version": "3.0",
@@ -56,6 +79,12 @@ def cache_material_from_response(payload: Dict[str, Any]) -> Dict[str, Any]:
         "stored_content": list(payload.get("stored_content") or []),
         "dedup_clusters": list(payload.get("dedup_clusters") or []),
         "warnings": list(payload.get("warnings") or []),
+        "legacy_routing_hint": (
+            dict(legacy_routing_hint)
+            if isinstance(legacy_routing_hint, dict)
+            else None
+        ),
+        "legacy_projection_hints": legacy_projection_hints,
         "engine": payload.get("engine"),
         "error": payload.get("error"),
     }
@@ -113,6 +142,11 @@ def response_payload_from_cache_material(
 def legacy_payload_from_cache_material(material: Dict[str, Any]) -> Dict[str, Any]:
     """Create a source-only legacy projection without storing legacy payload bytes."""
     capability = str(material.get("capability") or "search")
+    hints_by_url = {
+        str(item.get("url")): item
+        for item in material.get("legacy_projection_hints") or []
+        if isinstance(item, dict) and item.get("url")
+    }
     results = []
     for item in material.get("projection") or []:
         title = item.get("title")
@@ -123,9 +157,15 @@ def legacy_payload_from_cache_material(material: Dict[str, Any]) -> Dict[str, An
             "url": (item.get("url") or {}).get("observed"),
         }
         if capability == "extract":
-            legacy_item["content"] = (
+            content = (
                 text.get("text") if isinstance(text, dict) else None
             )
+            legacy_item["content"] = content
+            hint = hints_by_url.get(str(legacy_item["url"])) or {}
+            if hint.get("raw_content_alias") is True:
+                legacy_item["raw_content"] = content
+            if isinstance(hint.get("provider"), str):
+                legacy_item["provider"] = hint["provider"]
         else:
             legacy_item["snippet"] = (
                 snippet.get("text")
@@ -135,14 +175,20 @@ def legacy_payload_from_cache_material(material: Dict[str, Any]) -> Dict[str, An
                 else None
             )
         results.append(legacy_item)
-    return {
+    legacy = {
         "provider": material.get("origin_provider"),
         "results": results,
         "cached": True,
     }
+    routing_hint = material.get("legacy_routing_hint")
+    if isinstance(routing_hint, dict):
+        legacy["routing"] = dict(routing_hint)
+    return legacy
 
 
-def derive_cache_key(request: RequestV3) -> str:
+def derive_cache_key(
+    request: RequestV3, *, vary: Optional[Dict[str, Any]] = None
+) -> str:
     """Hash execution semantics, deliberately excluding request/cache policy IDs."""
     material = {
         "contract_version": request.contract_version,
@@ -150,7 +196,10 @@ def derive_cache_key(request: RequestV3) -> str:
         "input": request.input,
         "options": request.options,
         "routing": request.routing,
+        "budget": request.budget,
     }
+    if vary:
+        material["vary"] = vary
     encoded = json.dumps(
         material,
         sort_keys=True,
@@ -166,8 +215,10 @@ class ResponseCacheV3:
         self.root = Path(root)
         self.response_root = self.root / "v3" / "response"
 
-    def path_for(self, request: RequestV3) -> Path:
-        entry_id = derive_cache_key(request)
+    def path_for(
+        self, request: RequestV3, *, vary: Optional[Dict[str, Any]] = None
+    ) -> Path:
+        entry_id = derive_cache_key(request, vary=vary)
         return self.response_root / request.capability.value / f"{entry_id}.json"
 
     @staticmethod
@@ -213,17 +264,20 @@ class ResponseCacheV3:
         *,
         now: int,
         legacy_payload: Optional[Dict[str, Any]] = None,
+        vary: Optional[Dict[str, Any]] = None,
     ) -> str:
-        entry_id = derive_cache_key(request)
+        entry_id = derive_cache_key(request, vary=vary)
         envelope = {
             "owner": CACHE_OWNER,
             "cache_schema_version": CACHE_SCHEMA_VERSION,
             "contract_version": "3.0",
             "entry_id": entry_id,
             "created_at": int(now),
-            "payload": cache_material_from_response(payload),
+            "payload": cache_material_from_response(
+                payload, legacy_payload=legacy_payload
+            ),
         }
-        self._atomic_write(self.path_for(request), envelope)
+        self._atomic_write(self.path_for(request, vary=vary), envelope)
         return entry_id
 
     def get(
@@ -233,8 +287,9 @@ class ResponseCacheV3:
         ttl_seconds: int,
         allow_stale_seconds: int,
         now: int,
+        vary: Optional[Dict[str, Any]] = None,
     ) -> CacheLookupV3:
-        path = self.path_for(request)
+        path = self.path_for(request, vary=vary)
         envelope = self._read(path)
         if envelope is None:
             return CacheLookupV3("miss")
@@ -242,7 +297,9 @@ class ResponseCacheV3:
         if not isinstance(created_at, int):
             return CacheLookupV3("miss")
         age = max(0, int(now) - created_at)
-        entry_id = str(envelope.get("entry_id") or derive_cache_key(request))
+        entry_id = str(
+            envelope.get("entry_id") or derive_cache_key(request, vary=vary)
+        )
         if age <= max(0, int(ttl_seconds)):
             return CacheLookupV3(
                 "fresh_hit",

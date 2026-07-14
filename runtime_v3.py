@@ -20,6 +20,7 @@ from contract_v3 import (
     RequestV3,
     ResponseStatus,
     ResponseV3,
+    SkipReason,
 )
 from orchestrator_v3 import ProviderPlan
 
@@ -419,6 +420,21 @@ def response_from_legacy(
         )
     else:
         status = ResponseStatus.OK
+
+    budget_limited = payload.get("_v3_budget_limited") is True or any(
+        attempt.outcome is AttemptOutcome.CANCELLED
+        or attempt.skip_reason
+        in {SkipReason.BUDGET_BLOCKED, SkipReason.DEADLINE_EXCEEDED}
+        for attempt in provider_attempts
+    )
+    if status is not ResponseStatus.FAILED and budget_limited:
+        status = ResponseStatus.DEGRADED
+        warnings.append(
+            {
+                "code": DegradedReason.BUDGET_LIMITED.value,
+                "message": "Execution was limited by its attempt or time budget.",
+            }
+        )
 
     if any(
         attempt.budget_decision == "store_unavailable"

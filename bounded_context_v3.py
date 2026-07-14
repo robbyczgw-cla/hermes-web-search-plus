@@ -272,6 +272,7 @@ def apply_bounded_context(
 
 
 def _atomic_write_owned(path: Path, text: str) -> None:
+    """Publish a complete owned entry without replacing an existing path."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(
         prefix=".wsp-v3-", suffix=".tmp", dir=str(path.parent)
@@ -279,13 +280,14 @@ def _atomic_write_owned(path: Path, text: str) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
-        os.replace(temporary, path)
-    except Exception:
+        # The hard-link publication is atomic and fails closed when another
+        # writer (or a foreign file) already owns the content-addressed path.
+        os.link(temporary, path)
+    finally:
         try:
             os.unlink(temporary)
         except OSError:
             pass
-        raise
 
 
 class FullTextStore:
@@ -319,6 +321,19 @@ class FullTextStore:
         except (OSError, UnicodeError):
             return False
 
+    @staticmethod
+    def _owned_digest(path: Path) -> str | None:
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                first = handle.readline().rstrip("\n")
+            if not first.startswith(_OWNED_MARKER) or not first.endswith(" -->"):
+                return None
+            metadata = json.loads(first[len(_OWNED_MARKER) : -4])
+        except (IndexError, OSError, UnicodeError, ValueError):
+            return None
+        digest = metadata.get("sha256") if isinstance(metadata, dict) else None
+        return digest if isinstance(digest, str) else None
+
     def _owned_files(self) -> Iterable[Path]:
         if not self.web_dir.exists():
             return []
@@ -326,8 +341,29 @@ class FullTextStore:
 
     def store(self, url: str, text: str) -> Dict[str, Any]:
         full_text = unicodedata.normalize("NFC", text)
-        key = hashlib.sha256(url.encode("utf-8")).hexdigest()
         digest = hashlib.sha256(full_text.encode("utf-8")).hexdigest()
+        legacy_key = hashlib.sha256(url.encode("utf-8")).hexdigest()
+        legacy_path = self.path_for_key(legacy_key)
+        key = hashlib.sha256(f"{url}\0{digest}".encode("utf-8")).hexdigest()
+        path = self.path_for_key(key)
+        try:
+            # Preserve the legacy collision guard even though new entries use
+            # content-addressed keys. Existing URL-keyed references stay valid
+            # through lookup(), but are never overwritten.
+            if legacy_path.exists() and not self._owned(legacy_path):
+                raise OSError("refusing to write beside an unowned legacy entry")
+            if path.exists() and (
+                not self._owned(path) or self._owned_digest(path) != digest
+            ):
+                raise OSError("refusing to overwrite mismatched full-text entry")
+        except OSError:
+            return {
+                "storage_attempted": True,
+                "storage_succeeded": False,
+                "reference": None,
+                "full_text_sha256": None,
+                "full_text_chars": None,
+            }
         metadata = json.dumps(
             {
                 "version": 1,
@@ -338,14 +374,20 @@ class FullTextStore:
             sort_keys=True,
             separators=(",", ":"),
         )
-        path = self.path_for_key(key)
         try:
-            if path.exists() and not self._owned(path):
-                raise OSError("refusing to overwrite unowned full-text entry")
-            _atomic_write_owned(path, f"{_OWNED_MARKER}{metadata} -->\n{full_text}")
-            self.cleanup_orphans()
-            self.enforce_retention()
             if not path.exists():
+                try:
+                    _atomic_write_owned(
+                        path, f"{_OWNED_MARKER}{metadata} -->\n{full_text}"
+                    )
+                except FileExistsError:
+                    # A concurrent writer of the same immutable content won.
+                    pass
+            if not self._owned(path) or self._owned_digest(path) != digest:
+                raise OSError("content-addressed full-text entry is invalid")
+            self.cleanup_orphans(min_age_seconds=60.0)
+            self.enforce_retention()
+            if not self._owned(path) or self._owned_digest(path) != digest:
                 raise OSError("entry exceeds configured retention bounds")
         except OSError:
             return {
@@ -384,15 +426,22 @@ class FullTextStore:
             return None
         return text
 
-    def cleanup_orphans(self) -> Dict[str, int]:
+    def cleanup_orphans(self, *, min_age_seconds: float = 0.0) -> Dict[str, int]:
         removed = 0
         errors = 0
         if not self.web_dir.exists():
             return {"orphan_temps_removed": 0, "errors": 0}
         for path in self.web_dir.glob(".wsp-v3-*.tmp"):
             try:
+                if (
+                    min_age_seconds > 0
+                    and time.time() - path.stat().st_mtime < min_age_seconds
+                ):
+                    continue
                 path.unlink(missing_ok=True)
                 removed += 1
+            except FileNotFoundError:
+                continue
             except OSError:
                 errors += 1
         return {"orphan_temps_removed": removed, "errors": errors}

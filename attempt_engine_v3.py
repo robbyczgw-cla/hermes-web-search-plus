@@ -140,12 +140,55 @@ class AttemptEngine:
                 result_count=0,
                 skip_reason=reason,
                 error=None,
-                budget_decision="not_evaluated",
+                budget_decision="unknown",
                 circuit_state_before=CircuitState.CLOSED,
                 circuit_state_after=CircuitState.CLOSED,
                 endpoint_id=f"{context.provider}:{context.capability.value}",
                 decision="skipped",
                 tries=[],
+            ),
+        )
+
+    def cancel_started(
+        self,
+        context: AttemptContext,
+        *,
+        started_at: float,
+        duration_ms: int,
+    ) -> AttemptExecution:
+        """Describe a launched provider call whose caller stopped at its deadline."""
+        started = int(started_at)
+        elapsed_ms = max(0, int(duration_ms))
+        error = classify_provider_error(
+            TimeoutError("provider call exceeded the caller deadline"),
+            provider=context.provider,
+        )
+        return AttemptExecution(
+            None,
+            ProviderAttemptV3(
+                attempt_id=self._attempt_id(context, started),
+                provider=context.provider,
+                capability=context.capability,
+                outcome=AttemptOutcome.CANCELLED,
+                retry_count=0,
+                result_count=0,
+                started_at=self._started_at(started),
+                duration_ms=elapsed_ms,
+                error=error,
+                budget_decision="unknown",
+                circuit_state_before=CircuitState.UNKNOWN,
+                circuit_state_after=CircuitState.UNKNOWN,
+                endpoint_id=f"{context.provider}:{context.capability.value}",
+                decision="attempted",
+                tries=[
+                    {
+                        "try_number": 1,
+                        "started_at": self._started_at(started),
+                        "duration_ms": elapsed_ms,
+                        "outcome": "error",
+                        "error": self._try_error(error),
+                    }
+                ],
             ),
         )
 

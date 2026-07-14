@@ -1262,6 +1262,59 @@ def _legacy_search_cache_context(
     }
 
 
+def _finalize_research_result(
+    result: Dict[str, Any],
+    *,
+    args,
+    config: Dict[str, Any],
+    routing_info: Dict[str, Any],
+    providers_considered: List[str],
+    research_providers: List[str],
+    cooldown_skips: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Apply the shared public Research Mode metadata and quality envelope."""
+    final_routing = dict(routing_info)
+    final_routing["mode"] = "research"
+    final_routing["provider"] = "research"
+    result.setdefault("routing", {}).update(final_routing)
+    if args.freshness:
+        result.setdefault("metadata", {})["freshness"] = {
+            "requested": args.freshness,
+            "providers": [
+                _providers.freshness_metadata(provider, args.freshness)
+                for provider in research_providers
+            ],
+        }
+    research_search_type = getattr(args, "search_type", None)
+    if (
+        research_search_type in _providers.SEARCH_TYPE_VALUES
+        and research_search_type != "search"
+    ):
+        result.setdefault("metadata", {})["search_type"] = {
+            "requested": research_search_type,
+            "providers": [
+                _providers.search_type_metadata(provider, research_search_type)
+                for provider in research_providers
+            ],
+        }
+    _apply_result_quality_pipeline(
+        result,
+        config,
+        query=args.query or "",
+        include_domains=args.include_domains,
+    )
+    result["quality_report"] = build_quality_report(
+        query=args.query,
+        result=result,
+        routing_info=final_routing,
+        providers_considered=providers_considered,
+        eligible_providers=research_providers,
+        cooldown_skips=cooldown_skips,
+        errors=result.get("routing", {}).get("provider_errors", []),
+    )
+    return result
+
+
 def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
     """Run the search/research pipeline for parsed args.
 
@@ -1434,33 +1487,14 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             max_extract_urls=args.research_extract_count,
             time_budget_seconds=args.research_time_budget,
         )
-        routing_info["mode"] = "research"
-        routing_info["provider"] = "research"
-        result["routing"].update(routing_info)
-        if args.freshness:
-            result.setdefault("metadata", {})["freshness"] = {
-                "requested": args.freshness,
-                "providers": [
-                    _providers.freshness_metadata(p, args.freshness) for p in research_providers
-                ],
-            }
-        research_search_type = getattr(args, "search_type", None)
-        if research_search_type in _providers.SEARCH_TYPE_VALUES and research_search_type != "search":
-            result.setdefault("metadata", {})["search_type"] = {
-                "requested": research_search_type,
-                "providers": [
-                    _providers.search_type_metadata(p, research_search_type) for p in research_providers
-                ],
-            }
-        _apply_result_quality_pipeline(result, config, query=args.query or "", include_domains=args.include_domains)
-        result["quality_report"] = build_quality_report(
-            query=args.query,
-            result=result,
+        result = _finalize_research_result(
+            result,
+            args=args,
+            config=config,
             routing_info=routing_info,
             providers_considered=providers_considered,
-            eligible_providers=research_providers,
+            research_providers=research_providers,
             cooldown_skips=cooldown_skips,
-            errors=result.get("routing", {}).get("provider_errors", []),
         )
         return result, 0
 
@@ -1550,6 +1584,8 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             result = primary
 
     if result is not None:
+        if engine_owned_attempt and getattr(args, "_v3_research_member", False):
+            return result, 0
         if successful_provider != provider:
             routing_info["fallback_used"] = True
             routing_info["original_provider"] = provider
@@ -1651,8 +1687,15 @@ def _plan_search_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
         selected = requested
         routed = {}
     candidates = [selected]
-    if routing_request.get("allow_fallback", requested == "auto"):
-        disabled = set(auto_config.get("disabled_providers", []))
+    disabled = set(auto_config.get("disabled_providers", []))
+    research_mode = str(request.options.get("mode") or "normal") == "research"
+    fixed_provider_mode = (
+        requested == "auto" and auto_config.get("enabled", True) is False
+    )
+    expand_candidates = routing_request.get("allow_fallback", requested == "auto")
+    if not fixed_provider_mode and (
+        (research_mode and requested == "auto") or expand_candidates
+    ):
         for provider in auto_config.get("provider_priority", list(SEARCH_PROVIDER_IDS)):
             if (
                 provider not in candidates
@@ -1661,7 +1704,7 @@ def _plan_search_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
                 and provider_configured(provider, config)
             ):
                 candidates.append(provider)
-    if str(request.options.get("mode") or "normal") == "research":
+    if research_mode:
         # Research is a bounded fan-out, not a fallback chain. Use the same
         # diversity-biased provider selection as the standalone research path,
         # constrained to the v3 planner's eligible candidates.
@@ -1758,15 +1801,17 @@ def _execute_research_v3(
             v3_config.get("default_max_provider_attempts", 3),
         )
     )
-    engine = AttemptEngine(
-        store,
-        max_attempts=int(v3_config.get("max_attempts_per_provider", 2)),
-    )
+    # Research already gets resilience from independent provider fan-out. A
+    # single try per member prevents an overdue daemon task from starting a new
+    # billable retry after the caller's research deadline has elapsed.
+    engine = AttemptEngine(store, max_attempts=1)
     providers = list(plan.candidate_order)
     scope = request.request_id or plan.execution_id
     contexts = {}
     receipts_by_provider = {}
     payloads_by_provider: Dict[str, Dict[str, Any]] = {}
+    operation_started: Dict[str, Tuple[float, float]] = {}
+    timed_out_providers: set[str] = set()
 
     for provider in providers:
         provider_config = config.get(provider) or {}
@@ -1789,6 +1834,7 @@ def _execute_research_v3(
 
     def execute_provider(provider: str) -> Dict[str, Any]:
         def operation() -> Dict[str, Any]:
+            operation_started[provider] = (time.time(), time.monotonic())
             args = _search_args_from_v3(request, config)
             args.provider = provider
             args.mode = "normal"
@@ -1796,6 +1842,7 @@ def _execute_research_v3(
             args.allow_fallback = False
             args.no_cache = True
             args._v3_engine_owned_attempt = True
+            args._v3_research_member = True
             provider_payload, exit_code = _execute_search_request_core(args, config)
             if exit_code:
                 raise ProviderRequestError(
@@ -1832,19 +1879,63 @@ def _execute_research_v3(
             request.options.get("research_time_budget")
             or getattr(args, "research_time_budget", 55.0)
         ),
+        on_provider_timeout=timed_out_providers.add,
     )
+    extraction_error = str(
+        (payload.get("routing") or {}).get("extraction_error") or ""
+    ).lower()
+    if "research time budget exhausted" in extraction_error:
+        payload["_v3_budget_limited"] = True
 
+    completed_providers = set(
+        (payload.get("routing") or {}).get("providers_queried") or []
+    )
     receipts = []
     for provider in providers:
-        receipt = receipts_by_provider.get(provider)
+        receipt = (
+            None
+            if provider in timed_out_providers
+            else receipts_by_provider.get(provider)
+        )
         if receipt is None:
-            receipt = engine.skip(
-                contexts[provider], SkipReason.DEADLINE_EXCEEDED
-            ).receipt
+            started = operation_started.get(provider)
+            if started is not None:
+                wall_started, monotonic_started = started
+                receipt = engine.cancel_started(
+                    contexts[provider],
+                    started_at=wall_started,
+                    duration_ms=int(
+                        max(0.0, time.monotonic() - monotonic_started) * 1000
+                    ),
+                ).receipt
+            else:
+                receipt = engine.skip(
+                    contexts[provider], SkipReason.DEADLINE_EXCEEDED
+                ).receipt
         receipts.append(receipt)
+
+    if not completed_providers:
+        payload["error"] = "All research providers failed"
+
+    routing_info = dict(plan.routing_metadata)
+    routing_info.setdefault(
+        "auto_routed", str(request.routing.get("provider") or "auto") == "auto"
+    )
+    routing_info.setdefault("routing_policy", ROUTING_POLICY)
+    payload = _finalize_research_result(
+        payload,
+        args=args,
+        config=config,
+        routing_info=routing_info,
+        providers_considered=providers,
+        research_providers=providers,
+        cooldown_skips=[],
+    )
 
     raw_results = []
     for provider in providers:
+        if provider not in completed_providers:
+            continue
         provider_payload = payloads_by_provider.get(provider) or {}
         provider_items = provider_payload.get("_v3_raw_results") or provider_payload.get(
             "results"
@@ -1856,7 +1947,6 @@ def _execute_research_v3(
             observation.setdefault("provider", provider)
             raw_results.append(observation)
     payload["_v3_raw_results"] = raw_results
-    payload["_v3_provider_attempts"] = receipts
 
     stages = ["admission", "provider_attempt"]
     if any(receipt.error is not None for receipt in receipts):

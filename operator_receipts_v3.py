@@ -28,6 +28,25 @@ def receipt_record_from_response(
     response: ResponseV3, *, timestamp: float | None = None
 ) -> dict[str, Any]:
     """Project a response into the fixed secret-free operator journal DTO."""
+    limits_applied = {
+        key: value
+        for key, value in response.limits_applied.items()
+        if isinstance(value, (int, float, bool))
+    }
+    extract_limits = response.limits_applied.get("extract")
+    if isinstance(extract_limits, dict):
+        limits_applied["extract"] = {
+            key: extract_limits[key]
+            for key in (
+                "requested_url_count",
+                "omitted_url_count",
+                "max_urls",
+                "max_context_chars",
+                "context_chars_returned",
+                "truncated",
+            )
+            if isinstance(extract_limits.get(key), (int, bool))
+        }
     record = {
         "schema_version": JOURNAL_SCHEMA_VERSION,
         "timestamp": float(time.time() if timestamp is None else timestamp),
@@ -43,11 +62,7 @@ def receipt_record_from_response(
             provider_attempt.attempt_id
             for provider_attempt in response.provider_attempts
         ],
-        "limits_applied": {
-            key: value
-            for key, value in response.limits_applied.items()
-            if isinstance(value, (int, float, bool))
-        },
+        "limits_applied": limits_applied,
         "warning_codes": [
             str(warning.get("code"))
             for warning in response.warnings

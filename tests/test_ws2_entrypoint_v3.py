@@ -50,17 +50,30 @@ def test_native_extract_caps_before_provider_execution(monkeypatch, tmp_path: Pa
     request = RequestV3.extract(urls, max_urls=10, max_context_chars=60_000)
     captured = {}
 
-    def fake_execute(bounded_request, _adapter, _config):
-        captured["request"] = bounded_request
-        return SimpleNamespace(response=response_for_urls(bounded_request.input["urls"]))
+    def fake_provider_execute(bounded_request, _plan, _config):
+        captured["provider_request"] = bounded_request
 
+    def fake_execute(original_request, adapter, config):
+        captured["canonical_request"] = original_request
+        provider_plan = adapter.plan(original_request, config)
+        adapter.execute(original_request, provider_plan, config)
+        response = response_for_urls(
+            captured["provider_request"].input["urls"]
+        )
+        response = adapter.finalize_response(
+            original_request, provider_plan, response, config
+        )
+        return SimpleNamespace(response=response)
+
+    monkeypatch.setattr(extract, "_execute_extract_v3", fake_provider_execute)
     monkeypatch.setattr(extract, "execute_v3_request", fake_execute)
     response = extract.run_extract_request_v3(
         request,
         config={"bounded_context": {"cache_root": str(tmp_path)}},
     )
 
-    assert captured["request"].input["urls"] == urls[:10]
+    assert captured["canonical_request"].input["urls"] == urls
+    assert captured["provider_request"].input["urls"] == urls[:10]
     assert response.status is ResponseStatus.DEGRADED
     assert response.limits_applied["extract"]["processed_urls"] == urls[:10]
     assert response.limits_applied["extract"]["omitted_urls"] == urls[10:]
