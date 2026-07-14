@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [v3.0.2] — 2026-07-14
+
+### Credits
+- #104 by @robbyczgw-cla — repaired and hardened the native v3 Research, Extract cache, bounded-context, retained full-text, and operator-receipt integration paths.
+
 ### 🐛 Fixed
 - Restored true multi-provider Research Mode in the native v3/Hermes path. Research providers now execute as separate authoritative attempts, and source observations retain the provider-attempt provenance of each contributing backend.
 - Restored the complete public Research envelope and its single post-merge quality pass, bypassed the legacy lossy cache, classified started deadline overruns as cancelled attempts, degraded provider/extraction budget limits truthfully, and marked total fan-out failure as a failed response.
