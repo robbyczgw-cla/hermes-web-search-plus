@@ -1661,6 +1661,18 @@ def _plan_search_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
                 and provider_configured(provider, config)
             ):
                 candidates.append(provider)
+    if str(request.options.get("mode") or "normal") == "research":
+        # Research is a bounded fan-out, not a fallback chain. Use the same
+        # diversity-biased provider selection as the standalone research path,
+        # constrained to the v3 planner's eligible candidates.
+        candidates = select_research_providers(
+            primary_provider=selected,
+            provider_priority=list(
+                auto_config.get("provider_priority", list(SEARCH_PROVIDER_IDS))
+            ),
+            available_providers=set(candidates),
+            max_providers=3,
+        )
     return ProviderPlan(tuple(candidates), selected, routing_metadata=dict(routed))
 
 
@@ -1731,9 +1743,137 @@ def _lookup_legacy_search_v3(
     )
 
 
+def _execute_research_v3(
+    request: RequestV3, plan: ProviderPlan, config: Dict[str, Any]
+) -> CapabilityExecution:
+    """Execute the planned research fan-out through authoritative v3 attempts."""
+    v3_config = config.get("v3") or {}
+    state_path = v3_config.get("state_path") or os.path.join(
+        str(CACHE_DIR), "v3", "state.sqlite3"
+    )
+    store = SQLiteStateStore(state_path)
+    budget_limit = int(
+        request.budget.get(
+            "max_provider_attempts",
+            v3_config.get("default_max_provider_attempts", 3),
+        )
+    )
+    engine = AttemptEngine(
+        store,
+        max_attempts=int(v3_config.get("max_attempts_per_provider", 2)),
+    )
+    providers = list(plan.candidate_order)
+    scope = request.request_id or plan.execution_id
+    contexts = {}
+    receipts_by_provider = {}
+    payloads_by_provider: Dict[str, Dict[str, Any]] = {}
+
+    for provider in providers:
+        provider_config = config.get(provider) or {}
+        endpoint = str(
+            provider_config.get("endpoint")
+            or provider_config.get("base_url")
+            or provider_config.get("url")
+            or f"provider://{provider}/search"
+        )
+        credential = get_api_key(provider, config) or f"keyless:{provider}"
+        contexts[provider] = AttemptContext(
+            provider=provider,
+            capability=Capability.SEARCH,
+            endpoint=endpoint,
+            credential_fingerprint=store.fingerprint_credential(credential),
+            budget_scope=scope,
+            budget_window="request",
+            budget_limit_units=budget_limit,
+        )
+
+    def execute_provider(provider: str) -> Dict[str, Any]:
+        def operation() -> Dict[str, Any]:
+            args = _search_args_from_v3(request, config)
+            args.provider = provider
+            args.mode = "normal"
+            args.research_providers = ""
+            args.allow_fallback = False
+            args.no_cache = True
+            args._v3_engine_owned_attempt = True
+            provider_payload, exit_code = _execute_search_request_core(args, config)
+            if exit_code:
+                raise ProviderRequestError(
+                    str(provider_payload.get("error") or "provider failed"),
+                    transient=False,
+                )
+            return provider_payload
+
+        attempted = engine.execute(contexts[provider], operation)
+        receipts_by_provider[provider] = attempted.receipt
+        if attempted.payload is None:
+            message = (
+                attempted.receipt.error.message
+                if attempted.receipt.error is not None
+                else "Provider attempt did not return a payload."
+            )
+            raise ProviderRequestError(message)
+        payloads_by_provider[provider] = attempted.payload
+        return attempted.payload
+
+    args = _search_args_from_v3(request, config)
+    payload = run_research_mode(
+        query=str(request.input.get("query") or ""),
+        research_providers=providers,
+        execute_search=execute_provider,
+        extract_urls=lambda urls: extract_plus(
+            urls=urls,
+            provider="auto",
+            config=config,
+        ),
+        max_results=int(request.options.get("max_results") or 5),
+        max_extract_urls=int(getattr(args, "research_extract_count", 3) or 3),
+        time_budget_seconds=float(
+            request.options.get("research_time_budget")
+            or getattr(args, "research_time_budget", 55.0)
+        ),
+    )
+
+    receipts = []
+    for provider in providers:
+        receipt = receipts_by_provider.get(provider)
+        if receipt is None:
+            receipt = engine.skip(
+                contexts[provider], SkipReason.DEADLINE_EXCEEDED
+            ).receipt
+        receipts.append(receipt)
+
+    raw_results = []
+    for provider in providers:
+        provider_payload = payloads_by_provider.get(provider) or {}
+        provider_items = provider_payload.get("_v3_raw_results") or provider_payload.get(
+            "results"
+        ) or []
+        for item in provider_items:
+            if not isinstance(item, dict):
+                continue
+            observation = dict(item)
+            observation.setdefault("provider", provider)
+            raw_results.append(observation)
+    payload["_v3_raw_results"] = raw_results
+    payload["_v3_provider_attempts"] = receipts
+
+    stages = ["admission", "provider_attempt"]
+    if any(receipt.error is not None for receipt in receipts):
+        stages.append("error_classification")
+    stages.extend(["retry_circuit_update", "dedup_fingerprint"])
+    return CapabilityExecution(
+        payload=payload,
+        provider_attempts=tuple(receipts),
+        stages=tuple(stages),
+    )
+
+
 def _execute_search_v3(
     request: RequestV3, plan: ProviderPlan, config: Dict[str, Any]
 ) -> CapabilityExecution:
+    if str(request.options.get("mode") or "normal") == "research":
+        return _execute_research_v3(request, plan, config)
     v3_config = config.get("v3") or {}
     state_path = v3_config.get("state_path") or os.path.join(
         str(CACHE_DIR), "v3", "state.sqlite3"

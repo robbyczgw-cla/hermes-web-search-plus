@@ -100,5 +100,36 @@ def v3_response_to_legacy_search(execution: ExecutedV3) -> Dict[str, Any]:
 
 
 def v3_response_to_legacy_extract(execution: ExecutedV3) -> Dict[str, Any]:
-    """Return a fresh byte-equivalent copy of the legacy extract payload."""
-    return _project(execution, Capability.EXTRACT)
+    """Project the bounded v3 extraction response onto the legacy payload shape."""
+    if execution.response.capability is not Capability.EXTRACT:
+        raise ValueError("legacy projection capability mismatch")
+    legacy = execution.legacy_copy()
+    originals = {
+        str(item.get("url") or ""): dict(item)
+        for item in legacy.get("results") or []
+        if isinstance(item, dict)
+    }
+    projected = []
+    projected_urls = set()
+    for item in execution.response.results:
+        observed_url = str((item.get("url") or {}).get("observed") or "")
+        title = item.get("title") or {}
+        text = item.get("text") or {}
+        result = originals.get(observed_url, {}).copy()
+        result["title"] = title.get("text")
+        result["url"] = observed_url
+        result["content"] = text.get("text")
+        projected.append(result)
+        projected_urls.add(observed_url)
+    projected.extend(
+        item
+        for url, item in originals.items()
+        if url not in projected_urls and item.get("error")
+    )
+    legacy["results"] = projected
+    if execution.response.cache_status.get("disposition") in {
+        "fresh_hit",
+        "stale_hit",
+    }:
+        legacy["cached"] = True
+    return legacy

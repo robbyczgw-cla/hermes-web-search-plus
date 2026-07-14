@@ -416,27 +416,20 @@ def _execute_extract_v3(
     )
 
 
-def _extract_adapter() -> CapabilityAdapter:
-    return CapabilityAdapter(
-        capability=Capability.EXTRACT,
-        plan=_plan_extract_v3,
-        execute=_execute_extract_v3,
-        normalize=response_from_legacy,
-    )
-
-
-def run_extract_request_v3(
+def _finalize_extract_response(
     request: RequestV3,
+    response: ResponseV3,
+    config: Dict[str, Any],
     *,
-    config: Optional[Dict[str, Any]] = None,
+    original_request: RequestV3 | None = None,
+    context_plan=None,
 ) -> ResponseV3:
-    """Execute a native extract RequestV3 through the canonical orchestrator."""
-    runtime_config = config or load_config()
-    bounded_plan = prepare_extract_request(request, runtime_config)
-    response = execute_v3_request(
-        bounded_plan.request, _extract_adapter(), runtime_config
-    ).response
-    policy = runtime_config.get("bounded_context") or {}
+    """Apply the extract envelope before cache write, receipts, and projection."""
+    if isinstance(response.limits_applied.get("extract"), dict):
+        return response
+    source_request = original_request or request
+    bounded_plan = context_plan or prepare_extract_request(source_request, config)
+    policy = config.get("bounded_context") or {}
     if not isinstance(policy, dict):
         policy = {}
     cache_root = Path(policy.get("cache_root") or CACHE_DIR)
@@ -449,7 +442,57 @@ def run_extract_request_v3(
             policy.get("full_text_max_bytes", DEFAULT_FULL_TEXT_MAX_BYTES)
         ),
     )
-    return apply_bounded_context(response, request, bounded_plan, store=store)
+    return apply_bounded_context(
+        response,
+        source_request,
+        bounded_plan,
+        store=store,
+    )
+
+
+def _extract_adapter(
+    *,
+    original_request: RequestV3 | None = None,
+    context_plan=None,
+) -> CapabilityAdapter:
+    def finalize_response(request, _provider_plan, response, config):
+        return _finalize_extract_response(
+            request,
+            response,
+            config,
+            original_request=original_request,
+            context_plan=context_plan,
+        )
+
+    return CapabilityAdapter(
+        capability=Capability.EXTRACT,
+        plan=_plan_extract_v3,
+        execute=_execute_extract_v3,
+        normalize=response_from_legacy,
+        finalize_response=finalize_response,
+    )
+
+
+def run_extract_request_v3(
+    request: RequestV3,
+    *,
+    config: Optional[Dict[str, Any]] = None,
+) -> ResponseV3:
+    """Execute a native extract RequestV3 through the canonical orchestrator."""
+    runtime_config = config or load_config()
+    bounded_plan = prepare_extract_request(request, runtime_config)
+    response = execute_v3_request(
+        bounded_plan.request,
+        _extract_adapter(original_request=request, context_plan=bounded_plan),
+        runtime_config,
+    ).response
+    return _finalize_extract_response(
+        bounded_plan.request,
+        response,
+        runtime_config,
+        original_request=request,
+        context_plan=bounded_plan,
+    )
 
 
 def extract_plus(
@@ -479,6 +522,8 @@ def extract_plus(
     )
     bounded_plan = prepare_extract_request(request, runtime_config)
     execution = execute_v3_request(
-        bounded_plan.request, _extract_adapter(), runtime_config
+        bounded_plan.request,
+        _extract_adapter(original_request=request, context_plan=bounded_plan),
+        runtime_config,
     )
     return v3_response_to_legacy_extract(execution)

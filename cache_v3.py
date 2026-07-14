@@ -112,24 +112,29 @@ def response_payload_from_cache_material(
 
 def legacy_payload_from_cache_material(material: Dict[str, Any]) -> Dict[str, Any]:
     """Create a source-only legacy projection without storing legacy payload bytes."""
+    capability = str(material.get("capability") or "search")
     results = []
     for item in material.get("projection") or []:
         title = item.get("title")
         snippet = item.get("snippet")
         text = item.get("text")
-        results.append(
-            {
-                "title": title.get("text") if isinstance(title, dict) else None,
-                "url": (item.get("url") or {}).get("observed"),
-                "snippet": (
-                    snippet.get("text")
-                    if isinstance(snippet, dict)
-                    else text.get("text")
-                    if isinstance(text, dict)
-                    else None
-                ),
-            }
-        )
+        legacy_item = {
+            "title": title.get("text") if isinstance(title, dict) else None,
+            "url": (item.get("url") or {}).get("observed"),
+        }
+        if capability == "extract":
+            legacy_item["content"] = (
+                text.get("text") if isinstance(text, dict) else None
+            )
+        else:
+            legacy_item["snippet"] = (
+                snippet.get("text")
+                if isinstance(snippet, dict)
+                else text.get("text")
+                if isinstance(text, dict)
+                else None
+            )
+        results.append(legacy_item)
     return {
         "provider": material.get("origin_provider"),
         "results": results,

@@ -89,6 +89,9 @@ ExecuteFn = Callable[
     Union[Dict[str, Any], CapabilityExecution],
 ]
 NormalizeFn = Callable[[RequestV3, ProviderPlan, Dict[str, Any]], ResponseV3]
+FinalizeResponseFn = Callable[
+    [RequestV3, ProviderPlan, ResponseV3, Dict[str, Any]], ResponseV3
+]
 LegacyCacheLookupFn = Callable[
     [RequestV3, ProviderPlan, Dict[str, Any]], Optional[CapabilityExecution]
 ]
@@ -101,6 +104,7 @@ class CapabilityAdapter:
     execute: ExecuteFn
     normalize: NormalizeFn
     legacy_cache_lookup: LegacyCacheLookupFn | None = None
+    finalize_response: FinalizeResponseFn | None = None
 
 
 @dataclass(frozen=True)
@@ -259,6 +263,10 @@ def execute_v3_request(
                     cache_status=cache_status,
                     warnings=warnings,
                 )
+                if adapter.finalize_response is not None:
+                    cached_response = adapter.finalize_response(
+                        request, plan, cached_response, runtime_config
+                    )
                 legacy_payload = copy.deepcopy(lookup.legacy_payload or {})
                 legacy_payload["cached"] = True
                 legacy_payload["cache_age_seconds"] = lookup.age_seconds or 0
@@ -382,6 +390,8 @@ def execute_v3_request(
     )
     if cache_mode == "bypass":
         response = replace(response, cache_status={"disposition": "bypassed"})
+    if adapter.finalize_response is not None:
+        response = adapter.finalize_response(request, plan, response, runtime_config)
     if response.capability is not request.capability:
         raise ValueError("adapter returned response for another capability")
     if tuple(response.routing_receipt["candidate_order"]) != plan.candidate_order:

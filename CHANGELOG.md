@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### 🐛 Fixed
+- Restored true multi-provider Research Mode in the native v3/Hermes path. Research providers now execute as separate authoritative attempts, and source observations retain the provider-attempt provenance of each contributing backend.
+- Preserved extracted page content on v3 cache hits by projecting cached extraction text as `content` rather than a search-only `snippet`.
+- Applied the global extraction context budget before v3 cache writes, operator receipts, and legacy Hermes projection, so cache misses and hits share the same deterministic fair-share output.
+
+### 📚 Docs
+- Removed stale Perplexity/Kilo credential and freshness claims from active plugin metadata and replaced obsolete provider-toggle examples.
+
 ## [v3.0.1] — 2026-07-13
 
 ### 🐛 Fixed

@@ -1672,7 +1672,7 @@ def register(ctx: Any) -> None:
                     "enum": ["day", "week", "month", "year"],
                     "description": (
                         "Unified recency filter (case-insensitive). Applied natively by serper, brave, "
-                        "querit, firecrawl, keenable, you, perplexity, kilo-perplexity, and searxng; "
+                        "querit, firecrawl, keenable, you, and searxng; "
                         "providers without recency support (tavily, exa, linkup, parallel, serpbase) still "
                         "run the search and report freshness.applied=false in result metadata. Optional."
                     ),

@@ -148,8 +148,8 @@ Tune automatic search routing, extraction routing, and fallback:
 python ~/.hermes/plugins/web-search-plus/setup.py config set-priority you,serper,exa,firecrawl,tavily,linkup
 python ~/.hermes/plugins/web-search-plus/setup.py config set-extract-priority serper,parallel,tavily,exa,linkup,firecrawl,you,keenable
 python ~/.hermes/plugins/web-search-plus/setup.py config set-fallback serper
-python ~/.hermes/plugins/web-search-plus/setup.py config disable perplexity
-python ~/.hermes/plugins/web-search-plus/setup.py config enable perplexity
+python ~/.hermes/plugins/web-search-plus/setup.py config disable brave
+python ~/.hermes/plugins/web-search-plus/setup.py config enable brave
 python ~/.hermes/plugins/web-search-plus/setup.py config set-threshold 0.45
 ```
 
