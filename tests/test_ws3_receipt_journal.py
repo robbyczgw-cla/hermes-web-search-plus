@@ -5,6 +5,7 @@ import json
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -46,11 +47,13 @@ def fixture(name: str) -> dict[str, Any]:
 
 def append_journal_in_process(args: tuple[str, int, dict[str, Any]]) -> bool:
     root, index, source = args
+    fixture_now = float(source["timestamp"]) + 1.0
     journal_module = importlib.import_module("operator_receipts_v3")
     journal = journal_module.OperatorReceiptJournal(
         root,
         max_records=100,
         max_bytes=1_000_000,
+        now=lambda: fixture_now,
     )
     return journal.append(dict(source, execution_id=f"exec_{index:032x}"))
 
@@ -345,6 +348,31 @@ def test_privacy_choke_accepts_fixtures_but_rejects_allowed_key_freetext() -> No
         )
 
 
+def test_privacy_choke_tracks_providers_registered_after_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    privacy = importlib.import_module("operator_privacy_v3")
+    registry = importlib.import_module("provider_registry")
+
+    monkeypatch.setitem(
+        registry.PROVIDER_SPECS,
+        "sdk-fixture",
+        SimpleNamespace(display_name="SDK fixture provider"),
+    )
+
+    assert privacy.assert_operator_payload_safe(
+        {
+            "schema_version": 1,
+            "provider": "sdk-fixture",
+            "display_name": "SDK fixture provider",
+        }
+    ) is None
+    with pytest.raises(ValueError, match="provider provenance"):
+        privacy.assert_operator_payload_safe(
+            {"schema_version": 1, "provider": "unregistered-provider"}
+        )
+
+
 def test_completed_receipt_rejects_missing_candidate_and_outcome_drift() -> None:
     contract = importlib.import_module("contract_v3")
     good = contract.complete_routing_receipt_v3(
@@ -535,12 +563,14 @@ def test_journal_ttl_prunes_only_owned_records(tmp_path: Path) -> None:
 def test_concurrent_journal_appends_do_not_lose_owned_records(tmp_path: Path) -> None:
     journal_module = importlib.import_module("operator_receipts_v3")
     source = fixture("receipts.json")["receipts"][0]
+    fixture_now = float(source["timestamp"]) + 1.0
 
     def append(index: int) -> bool:
         journal = journal_module.OperatorReceiptJournal(
             tmp_path,
             max_records=100,
             max_bytes=1_000_000,
+            now=lambda: fixture_now,
         )
         return journal.append(
             dict(source, execution_id=f"exec_{index:032x}")
@@ -549,7 +579,10 @@ def test_concurrent_journal_appends_do_not_lose_owned_records(tmp_path: Path) ->
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(append, range(24)))
 
-    records = journal_module.OperatorReceiptJournal(tmp_path).load(limit=100)
+    records = journal_module.OperatorReceiptJournal(
+        tmp_path,
+        now=lambda: fixture_now,
+    ).load(limit=100)
     assert all(results)
     assert {item["execution_id"] for item in records} == {
         f"exec_{index:032x}" for index in range(24)
@@ -561,6 +594,7 @@ def test_cross_process_journal_appends_do_not_lose_owned_records(
 ) -> None:
     journal_module = importlib.import_module("operator_receipts_v3")
     source = fixture("receipts.json")["receipts"][0]
+    fixture_now = float(source["timestamp"]) + 1.0
     work = [(str(tmp_path), index, source) for index in range(12)]
 
     with ProcessPoolExecutor(
@@ -569,7 +603,10 @@ def test_cross_process_journal_appends_do_not_lose_owned_records(
     ) as pool:
         results = list(pool.map(append_journal_in_process, work))
 
-    records = journal_module.OperatorReceiptJournal(tmp_path).load(limit=100)
+    records = journal_module.OperatorReceiptJournal(
+        tmp_path,
+        now=lambda: fixture_now,
+    ).load(limit=100)
     assert all(results)
     assert {item["execution_id"] for item in records} == {
         f"exec_{index:032x}" for index in range(12)

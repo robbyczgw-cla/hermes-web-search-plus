@@ -544,6 +544,7 @@ response_defs = {
                     {"type": "null"},
                 ]
             },
+            "budget_preflight": {"$ref": "#/$defs/BudgetPreflightReceiptV3"},
         },
         (
             "policy_id",
@@ -554,6 +555,64 @@ response_defs = {
             "fallback_reason",
         ),
     ),
+    "BudgetPreflightCheckV3": obj(
+        {
+            "check": {
+                "type": "string",
+                "enum": [
+                    "provider_call_cap", "daily_quota", "timeout_budget",
+                    "context_budget",
+                ],
+            },
+            "limit": {"type": ["integer", "null"], "minimum": 0},
+            "observed": {"type": ["integer", "null"], "minimum": 0},
+            "verdict": {"type": "string", "enum": ["ok", "exceeded"]},
+        },
+        ("check", "limit", "observed", "verdict"),
+    ),
+    "BudgetPreflightReceiptV3": {
+        **obj(
+            {
+                "action": {"type": "string", "enum": ["degrade", "abort"]},
+                "checks": {
+                    "type": "array",
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "items": {"$ref": "#/$defs/BudgetPreflightCheckV3"},
+                },
+                "adjustments": {
+                    **obj(
+                        {
+                            "max_provider_calls": {"type": "integer", "minimum": 1},
+                            "timeout_seconds": {"type": "integer", "minimum": 1},
+                            "context_limit": {"type": "integer", "minimum": 1},
+                        }
+                    ),
+                    "minProperties": 1,
+                },
+                "reason": {
+                    "type": "string",
+                    "enum": [
+                        "daily_quota_exhausted", "budget_ledger_unavailable",
+                        "budget_unsatisfiable",
+                    ],
+                },
+            },
+            ("action", "checks"),
+        ),
+        "oneOf": [
+            {
+                "properties": {"action": {"const": "degrade"}},
+                "required": ["adjustments"],
+                "not": {"required": ["reason"]},
+            },
+            {
+                "properties": {"action": {"const": "abort"}},
+                "required": ["reason"],
+                "not": {"required": ["adjustments"]},
+            },
+        ],
+    },
     "SourceDiversityV3": obj(
         {
             "method": {"type": "string", "minLength": 1},
@@ -637,15 +696,16 @@ response_defs = {
                 "enum": [
                     "excluded", "reranked", "demoted",
                     "selected_as_representative", "truncated_by_limit",
+                    "budget_preflight",
                 ],
             },
-            "observation_id": {"type": "string", "pattern": "^obs_"},
+            "observation_id": {"type": ["string", "null"], "pattern": "^obs_"},
             "reason": {
                 "type": "string",
                 "enum": [
                     "spam_domain", "intent_authority", "domain_diversity",
                     "dedup_representative", "max_results", "max_content_bytes",
-                    "max_context_chars",
+                    "max_context_chars", "degraded", "aborted",
                 ],
             },
         },
@@ -727,7 +787,10 @@ response_defs["CandidateDecisionV3"]["oneOf"] = [
         "properties": {
             "decision": {"const": "not_attempted"},
             "reason_code": {
-                "enum": ["provider_unavailable", "not_attempted_after_success"],
+                "enum": [
+                    "provider_unavailable", "not_attempted_after_success",
+                    "budget_denied",
+                ],
             },
             "attempt_id": {"type": "null"},
         }
@@ -761,6 +824,25 @@ response_defs["StoredContentV3"]["allOf"] = [
                 "reference": {"type": "null"},
                 "full_text_sha256": {"type": "null"},
                 "full_text_chars": {"type": "null"},
+            }
+        },
+    }
+]
+response_defs["PolicyActionV3"]["allOf"] = [
+    {
+        "if": {
+            "properties": {"action": {"const": "budget_preflight"}},
+            "required": ["action"],
+        },
+        "then": {
+            "properties": {
+                "observation_id": {"type": "null"},
+                "reason": {"enum": ["degraded", "aborted"]},
+            }
+        },
+        "else": {
+            "properties": {
+                "observation_id": {"type": "string", "pattern": "^obs_"},
             }
         },
     }

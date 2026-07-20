@@ -1394,40 +1394,68 @@
           ]
         },
         "limit": {
-          "type": ["integer", "null"],
+          "type": [
+            "integer",
+            "null"
+          ],
           "minimum": 0
         },
         "observed": {
-          "type": ["integer", "null"],
+          "type": [
+            "integer",
+            "null"
+          ],
           "minimum": 0
         },
         "verdict": {
           "type": "string",
-          "enum": ["ok", "exceeded"]
+          "enum": [
+            "ok",
+            "exceeded"
+          ]
         }
       },
       "additionalProperties": false,
-      "required": ["check", "limit", "observed", "verdict"]
+      "required": [
+        "check",
+        "limit",
+        "observed",
+        "verdict"
+      ]
     },
     "BudgetPreflightReceiptV3": {
       "type": "object",
       "properties": {
         "action": {
           "type": "string",
-          "enum": ["degrade", "abort"]
+          "enum": [
+            "degrade",
+            "abort"
+          ]
         },
         "checks": {
           "type": "array",
           "minItems": 4,
           "maxItems": 4,
-          "items": {"$ref": "#/$defs/BudgetPreflightCheckV3"}
+          "items": {
+            "$ref": "#/$defs/BudgetPreflightCheckV3"
+          }
         },
         "adjustments": {
           "type": "object",
           "properties": {
-            "max_provider_calls": {"type": "integer", "minimum": 1},
-            "timeout_seconds": {"type": "integer", "minimum": 1},
-            "context_limit": {"type": "integer", "minimum": 1}
+            "max_provider_calls": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "timeout_seconds": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "context_limit": {
+              "type": "integer",
+              "minimum": 1
+            }
           },
           "additionalProperties": false,
           "minProperties": 1
@@ -1442,17 +1470,40 @@
         }
       },
       "additionalProperties": false,
-      "required": ["action", "checks"],
+      "required": [
+        "action",
+        "checks"
+      ],
       "oneOf": [
         {
-          "properties": {"action": {"const": "degrade"}},
-          "required": ["adjustments"],
-          "not": {"required": ["reason"]}
+          "properties": {
+            "action": {
+              "const": "degrade"
+            }
+          },
+          "required": [
+            "adjustments"
+          ],
+          "not": {
+            "required": [
+              "reason"
+            ]
+          }
         },
         {
-          "properties": {"action": {"const": "abort"}},
-          "required": ["reason"],
-          "not": {"required": ["adjustments"]}
+          "properties": {
+            "action": {
+              "const": "abort"
+            }
+          },
+          "required": [
+            "reason"
+          ],
+          "not": {
+            "required": [
+              "adjustments"
+            ]
+          }
         }
       ]
     },
@@ -1695,7 +1746,10 @@
           ]
         },
         "observation_id": {
-          "type": ["string", "null"],
+          "type": [
+            "string",
+            "null"
+          ],
           "pattern": "^obs_"
         },
         "reason": {
@@ -1722,18 +1776,34 @@
       "allOf": [
         {
           "if": {
-            "properties": {"action": {"const": "budget_preflight"}},
-            "required": ["action"]
+            "properties": {
+              "action": {
+                "const": "budget_preflight"
+              }
+            },
+            "required": [
+              "action"
+            ]
           },
           "then": {
             "properties": {
-              "observation_id": {"type": "null"},
-              "reason": {"enum": ["degraded", "aborted"]}
+              "observation_id": {
+                "type": "null"
+              },
+              "reason": {
+                "enum": [
+                  "degraded",
+                  "aborted"
+                ]
+              }
             }
           },
           "else": {
             "properties": {
-              "observation_id": {"type": "string", "pattern": "^obs_"}
+              "observation_id": {
+                "type": "string",
+                "pattern": "^obs_"
+              }
             }
           }
         }

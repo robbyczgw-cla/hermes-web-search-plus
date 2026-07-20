@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [v3.1.1] — 2026-07-20
+
+### 🐛 Fixed
+- Refresh Operator Privacy provider provenance from the validated live registry so providers registered after the privacy module was imported can emit receipts without weakening the fail-closed rejection of unregistered provider IDs.
+- Isolate the opt-in Provider SDK fixture probe in a temporary cache root, preventing test receipts and cache entries from touching an operator's active WSP state.
+- Bring the contract schema generator back into parity with the 3.1 budget-preflight schema, so the generated-artifact CI gate no longer treats the published response schema as stale.
+- Stabilize receipt-journal concurrency tests with the journal's injected clock, removing wall-clock expiry from thread and cross-process retention assertions.
+
 ## [v3.1.0] — 2026-07-20
 
 ### ✨ Added

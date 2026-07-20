@@ -46,10 +46,6 @@ _ATTEMPT_ID = re.compile(r"^attempt_[a-f0-9]{16}$")
 _ENTRY_ID = re.compile(r"^(?:search|extract)_[a-f0-9]{32}$")
 _WSP_CODE = re.compile(r"^wsp\.[a-z0-9_.-]{1,96}$")
 _SEMVER = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.-]+)?$")
-_PROVIDER_VALUES = frozenset({*PROVIDER_SPECS, "auto"})
-_PROVIDER_DISPLAY_NAMES = frozenset(
-    spec.display_name for spec in PROVIDER_SPECS.values()
-)
 _ENUM_VALUES = {
     "status": {
         "ok", "degraded", "failed", "completed", "collected", "not_collected",
@@ -131,7 +127,7 @@ def _validate_string(value: str, field_name: str | None, location: str) -> None:
     ):
         raise ValueError(f"operator payload leaks authorization material at {location}")
     if field_name == "display_name":
-        if value not in _PROVIDER_DISPLAY_NAMES:
+        if not any(value == spec.display_name for spec in PROVIDER_SPECS.values()):
             raise ValueError(f"operator payload string is not known-safe at {location}")
         return
     if field_name in _ENUM_VALUES:
@@ -139,7 +135,7 @@ def _validate_string(value: str, field_name: str | None, location: str) -> None:
             raise ValueError(f"operator payload string is not known-safe at {location}")
         return
     if field_name in _PROVIDER_FIELDS:
-        if value not in _PROVIDER_VALUES:
+        if value != "auto" and value not in PROVIDER_SPECS:
             raise ValueError(f"operator payload string lacks provider provenance at {location}")
         return
     if field_name in _EXECUTION_FIELDS:
