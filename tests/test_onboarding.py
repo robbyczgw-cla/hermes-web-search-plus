@@ -263,7 +263,7 @@ def test_setup_dry_run_uses_target_env_path_for_dashboard(tmp_path, monkeypatch,
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "Providers: 1/14 configured" in out
+    assert "Providers: 1/15 configured" in out
     assert "Active: You.com" in out
     assert "Brave Search" not in out.split("Setup plan:", 1)[0]
 
@@ -279,7 +279,7 @@ def test_status_uses_target_env_path_for_dashboard(tmp_path, monkeypatch, capsys
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "Providers: 1/14 configured" in out
+    assert "Providers: 1/15 configured" in out
     assert "Active: Linkup" in out
     assert "Brave Search" not in out
 
@@ -422,7 +422,7 @@ def test_setup_dry_run_can_auto_deny_provider(tmp_path, capsys):
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "auto-allow false: parallel, querit, serpbase" in out
+    assert "auto-allow false: hound, parallel, querit, serpbase" in out
     assert not env_path.exists()
     assert not config_path.exists()
 
@@ -585,7 +585,7 @@ def test_config_set_extract_priority_writes_isolated_complete_order(tmp_path):
 
     data = json.loads(config_path.read_text())
     assert data["auto_routing"]["extract_provider_priority"] == [
-        "serper", "parallel", "tavily", "exa", "linkup", "firecrawl", "you", "keenable"
+        "serper", "parallel", "tavily", "exa", "linkup", "firecrawl", "you", "keenable", "hound"
     ]
     assert data["auto_routing"]["provider_priority"] == list(wsp._DEFAULT_PROVIDER_PRIORITY)
 

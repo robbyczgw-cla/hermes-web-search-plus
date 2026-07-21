@@ -12,6 +12,7 @@ import os
 import unittest
 from unittest import mock
 
+import provider_registry
 import providers
 import search
 
@@ -315,7 +316,12 @@ class SerperExtractTests(unittest.TestCase):
         self.assertEqual(captured["timeout"], 7)
 
     def test_extract_plus_auto_places_serper_last(self):
-        self.assertEqual(search.EXTRACT_PROVIDER_PRIORITY[-1], "serper")
+        auto_enabled = [
+            provider
+            for provider in search.EXTRACT_PROVIDER_PRIORITY
+            if provider_registry.DEFAULT_AUTO_ALLOW.get(provider, True)
+        ]
+        self.assertEqual(auto_enabled[-1], "serper")
 
     def test_extract_plus_auto_falls_back_to_serper_when_only_serper_keyed(self):
         with mock.patch.dict(os.environ, {"SERPER_API_KEY": "serper-test-key"}, clear=True):

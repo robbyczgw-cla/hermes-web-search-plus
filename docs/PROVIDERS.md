@@ -23,6 +23,7 @@ and the plugin provider catalog; regenerate it with `python scripts/gen_provider
 | You.com | ✅ | ✅ | `YOU_API_KEY` | — | yes (priority 1) | Limited/API key required | https://api.you.com |
 | SearXNG | ✅ | — | `SEARXNG_INSTANCE_URL` | — | yes (priority 11) | Free if self-hosted | https://docs.searxng.org/admin/installation.html |
 | Keenable | ✅ | ✅ | `KEENABLE_API_KEY` | yes (`KEENABLE_ALLOW_PUBLIC` opt-in) | yes (priority 12) | Keyless public tier; optional key for higher limits | https://keenable.ai |
+| Hound (local MCP) | ✅ | ✅ | `HOUND_MCP_URL` | — | explicit-only (`auto_allow=false`) | Free local sidecar; no API key | https://github.com/dondai1234/master-fetch |
 
 `priority N` is the provider's position in the default routing priority list.
 Providers marked explicit-only stay out of `provider="auto"` routing and fallback
@@ -91,3 +92,7 @@ Self-hosted/privacy-preserving metasearch instance URL.
 ### Keenable
 
 Independent web index for search and extraction; works keyless, optional key raises rate limits.
+
+### Hound (local MCP)
+
+Local key-free metasearch and browser-backed extraction through a loopback Hound sidecar.

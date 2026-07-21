@@ -52,7 +52,11 @@ from providers import (  # noqa: F401 - resolved late via EXTRACT_DISPATCH/monke
 )
 from provider_adapter_protocol import validate_adapter_result
 from provider_dispatch import EXTRACT_DISPATCH
-from provider_registry import EXTRACT_PROVIDER_IDS, PROVIDER_SPECS
+from provider_registry import (
+    DEFAULT_AUTO_ALLOW,
+    EXTRACT_PROVIDER_IDS,
+    PROVIDER_SPECS,
+)
 from compat_v3 import legacy_request_to_v3, v3_response_to_legacy_extract
 from contract_v3 import Capability, RequestV3, ResponseV3, SkipReason
 from orchestrator_v3 import (
@@ -66,6 +70,16 @@ from state_store_v3 import SQLiteStateStore
 
 
 EXTRACT_PROVIDER_PRIORITY = list(EXTRACT_PROVIDER_IDS)
+
+
+def _extract_provider_auto_allowed(provider: str, auto_config: Dict[str, Any]) -> bool:
+    """Gate automatic extraction and fallback without blocking explicit calls."""
+
+    auto_allow = auto_config.get("auto_allow", {}) if isinstance(auto_config, dict) else {}
+    default_allowed = bool(DEFAULT_AUTO_ALLOW.get(provider, True))
+    if not isinstance(auto_allow, dict):
+        return default_allowed
+    return bool(auto_allow.get(provider, default_allowed))
 
 
 def _daily_preflight_budget(config: Dict[str, Any]) -> Dict[str, Any]:
@@ -225,15 +239,32 @@ def _extract_plus_core(
             "requested_provider": selected,
         }
     auto_config = config.get("auto_routing", {})
+    if not isinstance(auto_config, dict):
+        auto_config = {}
     disabled_providers = set(auto_config.get("disabled_providers", []))
-    base_providers = (
-        [selected]
-        if engine_owned_attempt
-        else resolve_extract_provider_priority(config)
-        if selected == "auto"
-        else [selected] + [p for p in EXTRACT_PROVIDER_PRIORITY if p != selected]
-    )
-    providers = [p for p in base_providers if p == selected or p not in disabled_providers]
+    if engine_owned_attempt:
+        base_providers = [selected]
+    else:
+        priority = (
+            resolve_extract_provider_priority(config)
+            if selected == "auto"
+            else EXTRACT_PROVIDER_PRIORITY
+        )
+        automatic = [
+            candidate
+            for candidate in priority
+            if _extract_provider_auto_allowed(candidate, auto_config)
+        ]
+        base_providers = (
+            automatic
+            if selected == "auto"
+            else [selected] + [candidate for candidate in automatic if candidate != selected]
+        )
+    providers = [
+        candidate
+        for candidate in base_providers
+        if candidate == selected or candidate not in disabled_providers
+    ]
     errors = []
     cooldown_skips = []
     for prov in providers:
@@ -317,7 +348,10 @@ def _extract_plus_core(
 
 def _plan_extract_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
     selected = str(request.routing.get("provider") or "auto")
-    disabled = set((config.get("auto_routing") or {}).get("disabled_providers", []))
+    auto_config = config.get("auto_routing") or {}
+    if not isinstance(auto_config, dict):
+        auto_config = {}
+    disabled = set(auto_config.get("disabled_providers", []))
     priority = resolve_extract_provider_priority(config)
     configured = [
         provider
@@ -325,17 +359,29 @@ def _plan_extract_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan
         if provider not in disabled
         and (get_api_key(provider, config) or keyless_public_allowed(provider, config))
     ]
+    automatic = [
+        provider
+        for provider in configured
+        if _extract_provider_auto_allowed(provider, auto_config)
+    ]
     if selected == "auto":
-        candidates = configured
-        chosen = candidates[0] if candidates else priority[0]
+        candidates = automatic
+        if not candidates:
+            candidates = [
+                provider
+                for provider in priority
+                if provider not in disabled
+                and _extract_provider_auto_allowed(provider, auto_config)
+            ][:1]
+        chosen = candidates[0] if candidates else "auto"
     else:
         candidates = [selected] + [
-            provider for provider in configured if provider != selected
+            provider for provider in automatic if provider != selected
         ]
         chosen = selected
     if not request.routing.get("allow_fallback", True):
-        candidates = [chosen]
-    return ProviderPlan(tuple(candidates or [chosen]), chosen)
+        candidates = [chosen] if chosen != "auto" else []
+    return ProviderPlan(tuple(candidates), chosen)
 
 
 def _execute_extract_v3(
