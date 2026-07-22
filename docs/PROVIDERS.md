@@ -95,4 +95,4 @@ Independent web index for search and extraction; works keyless, optional key rai
 
 ### Hound (local MCP)
 
-Local key-free metasearch and browser-backed extraction through a loopback Hound sidecar.
+Local key-free metasearch and browser-backed extraction through a loopback Hound sidecar. Hound is an independent MIT-licensed project by Bishesh Bhandari.

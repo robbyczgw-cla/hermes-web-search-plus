@@ -33,7 +33,12 @@ from config import (
     provider_configured,
     validate_api_key,
 )
-from provider_registry import DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS, SEARCH_PROVIDER_IDS
+from provider_registry import (
+    DEFAULT_AUTO_ALLOW,
+    DEFAULT_PROVIDER_PRIORITY,
+    PROVIDER_SPECS,
+    SEARCH_PROVIDER_IDS,
+)
 from provider_adapter_protocol import validate_adapter_result
 from provider_dispatch import SEARCH_DISPATCH
 from provider_stats import LATENCY_CEILING_SECONDS
@@ -108,8 +113,17 @@ def _resolve_search_module(search_module: Optional[Any] = None) -> Any:
     return importlib.import_module("search")
 
 
+def _bench_auto_allowed(provider: str, auto_config: Dict[str, Any]) -> bool:
+    """Mirror the routing auto-allow gate for priority recommendations."""
+
+    overrides = auto_config.get("auto_allow", {})
+    if not isinstance(overrides, dict):
+        overrides = {}
+    return bool(overrides.get(provider, DEFAULT_AUTO_ALLOW.get(provider, True)))
+
+
 def bench_eligible_providers(config: Dict[str, Any]) -> List[str]:
-    """Configured, search-capable, not-disabled providers, in registry order."""
+    """Configured auto-routable providers, in registry order."""
     auto_config = config.get("auto_routing")
     if not isinstance(auto_config, dict):
         auto_config = {}
@@ -117,7 +131,9 @@ def bench_eligible_providers(config: Dict[str, Any]) -> List[str]:
     return [
         provider
         for provider in SEARCH_PROVIDER_IDS
-        if provider not in disabled and provider_configured(provider, config)
+        if provider not in disabled
+        and _bench_auto_allowed(provider, auto_config)
+        and provider_configured(provider, config)
     ]
 
 

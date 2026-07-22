@@ -412,7 +412,10 @@ PROVIDER = ProviderSpec(
     kind="both",
     env_var="HOUND_MCP_URL",
     display_name="Hound (local MCP)",
-    description="Local key-free metasearch and browser-backed extraction through a loopback Hound sidecar.",
+    description=(
+        "Local key-free metasearch and browser-backed extraction through a loopback "
+        "Hound sidecar. Hound is an independent MIT-licensed project by Bishesh Bhandari."
+    ),
     config_section="hound",
     capability_labels=("search", "extract", "local", "browser", "pdf", "ocr"),
     upstream_capabilities=("crawl", "screenshot", "browser", "pdf", "ocr"),

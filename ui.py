@@ -434,7 +434,7 @@ def create_server(
     cache_root: str | Path = CACHE_DIR,
     state_path: str | Path | None = None,
     config: Mapping[str, Any] | None = None,
-    plugin_version: str = "3.1.2",
+    plugin_version: str = "3.2.0",
     snapshot_backend: Any = operator_console_v3,
     static_root: str | Path | None = None,
 ) -> ThreadingHTTPServer:

@@ -19,7 +19,7 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v3.1.1** — see the [Changelog](CHANGELOG.md) and [3.1 Release Notes](docs/RELEASE_NOTES_V31.md).
+Current release: **v3.2.0** — see the [Changelog](CHANGELOG.md) and [3.2 Release Notes](docs/RELEASE_NOTES_V32.md).
 
 ---
 
@@ -33,9 +33,9 @@ The same two tools since 2.x — what changed underneath is how much you can tru
 - **A second routing opinion, safely.** An opt-in shadow policy records what it *would* have chosen — it never changes what runs.
 - **Spend control before spending.** Opt-in budget preflight checks call caps, daily quota, and context budgets before the first provider call.
 - **Quality you can measure.** Reports score domain, URL, and content diversity, so ten copies of the same SEO page stop counting as ten sources.
-- **Runs with zero paid keys** if you want: an opt-in self-hosted profile uses SearXNG plus Keenable's public tier.
+- **Runs with zero paid keys** if you want: the opt-in self-hosted profile uses SearXNG plus Keenable's public tier, while the optional Hound integration provides local keyless search and extraction over MCP.
 
-Everything new since 3.0 is opt-in; defaults stay stable across upgrades. Full details: [3.1 Release Notes](docs/RELEASE_NOTES_V31.md) · [3.0 Release Notes](docs/RELEASE_NOTES_V3.md).
+Everything new since 3.0 is opt-in; defaults stay stable across upgrades. Full details: [3.2 Release Notes](docs/RELEASE_NOTES_V32.md) · [3.1 Release Notes](docs/RELEASE_NOTES_V31.md) · [3.0 Release Notes](docs/RELEASE_NOTES_V3.md).
 
 ---
 
@@ -58,7 +58,7 @@ cd ~/.hermes/plugins/web-search-plus
 python3 search.py --query "Hermes Agent latest release" --provider auto --quality-report
 ```
 
-Web Search Plus supports 12 search and 8 extraction providers — you do **not** need them all. One search-capable key enables `web_search_plus`; one extraction-capable key enables `web_extract_plus`; more keys just make routing smarter. The setup helper stores keys in the active Hermes environment file — never commit them to the repository.
+Web Search Plus supports 13 search and 9 extraction providers — you do **not** need them all. One search-capable key or configured local endpoint enables `web_search_plus`; one extraction-capable key or endpoint enables `web_extract_plus`; more providers just make controlled routing more flexible. The setup helper stores keys in the active Hermes environment file — never commit them to the repository.
 
 ### Upgrading from 2.x? Relax.
 
@@ -84,13 +84,19 @@ python3 ~/.hermes/plugins/web-search-plus/setup.py status
 
 It selects the derived `self_hosted` profile: automatic search uses only your SearXNG instance and keyless Keenable, while automatic extraction runs through Keenable's public fetch tier (SearXNG does not extract; the public tier is rate-limited and has no SLA). Configure SearXNG with `searxng.base_url` (the older `instance_url` still works); the preset enables Keenable's existing public tier without writing a key. See the [Self-hosted profile guide](docs/USER_GUIDE.md#self-hosted-profile) for prerequisites and explicit-provider behavior.
 
+### Local Hound provider
+
+[Hound](https://github.com/dondai1234/master-fetch), created by [Bishesh Bhandari](https://github.com/dondai1234), is an independent MIT-licensed MCP server for local keyless search and browser-backed extraction. WSP 3.2 connects to a separately installed Hound sidecar on loopback; it does not bundle or fork Hound. Hound is explicit-only by default, so installing it does not change automatic routing or fallback.
+
+Keyless means no commercial API key or per-request provider bill — not offline, anonymous, or cost-free. Public engines and target sites still receive requests from your IP, browser mode consumes local resources, and reliability has no hosted-service SLA. See the [Hound provider guide](docs/HOUND.md) for installation, security boundaries, verification, and the full pros/cons.
+
 Update later with:
 
 ```bash
 hermes plugins update web-search-plus
 ```
 
-Python 3.10+ is required. Runtime code is standard-library only.
+Python 3.10+ is required for the core plugin. The core runtime is standard-library only; the optional Hound bridge uses the MCP SDK and `httpx` supplied by current Hermes runtimes, while Hound itself requires a separate Python 3.11+ installation.
 
 ---
 
@@ -122,9 +128,9 @@ Full parameters, freshness and locale behavior, provider selection, extraction c
 
 **Where to go next:**
 
-- **Installing or configuring providers** → [User Guide](docs/USER_GUIDE.md)
+- **Installing or configuring providers** → [User Guide](docs/USER_GUIDE.md) · [Hound local provider](docs/HOUND.md)
 - **Upgrading from 2.x** → [3.0 Migration](docs/V3_MIGRATION.md), then [3.1 Migration](docs/V31_MIGRATION.md)
-- **What changed** → [Changelog](CHANGELOG.md) · [3.1 Release Notes](docs/RELEASE_NOTES_V31.md)
+- **What changed** → [Changelog](CHANGELOG.md) · [3.2 Release Notes](docs/RELEASE_NOTES_V32.md)
 - **Troubleshooting** → [FAQ](docs/FAQ.md) · [Operator Console](docs/V3_OPERATOR_CONSOLE.md)
 - **Building a provider** → [Provider SDK](docs/PROVIDER_SDK.md) · [Architecture](docs/ARCHITECTURE.md)
 
@@ -133,7 +139,9 @@ The full reference, including the normative v3 contracts for implementers and re
 ### Start & upgrade
 
 - [User Guide](docs/USER_GUIDE.md) — installation, first-run checks, tool usage, and troubleshooting
-- [3.1 Release Notes](docs/RELEASE_NOTES_V31.md) — highlights and compatibility
+- [3.2 Release Notes](docs/RELEASE_NOTES_V32.md) — local Hound integration, keyless trade-offs, compatibility, and attribution
+- [Hound local provider](docs/HOUND.md) — separate installation, loopback service, verification, privacy, and operating costs
+- [3.1 Release Notes](docs/RELEASE_NOTES_V31.md) — 3.1 highlights and compatibility
 - [3.1 Migration](docs/V31_MIGRATION.md) — opt-in matrix, kill switches, verification, and rollback
 - [Provider SDK](docs/PROVIDER_SDK.md) — add a provider with one `providers.d` module
 - [3.0 Release Notes](docs/RELEASE_NOTES_V3.md) — highlights, provider changes, compatibility, and 3.1 deferrals
@@ -177,3 +185,4 @@ MIT — see [LICENSE](LICENSE).
 
 - [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) — TypeScript/OpenClaw version
 - [Hermes Agent](https://github.com/NousResearch/hermes-agent) — the agent runtime this plugin extends
+- [Hound](https://github.com/dondai1234/master-fetch) — independent MIT-licensed local web-research MCP server by [Bishesh Bhandari](https://github.com/dondai1234); WSP integrates through a separate loopback sidecar

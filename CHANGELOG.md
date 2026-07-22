@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [v3.2.0] — 2026-07-22
+
+### ✨ Added
+- Added Hound as an optional local MCP provider for both source search and URL extraction. Hound remains explicit-only by default, and WSP connects to a separately installed loopback sidecar instead of bundling or importing Hound internals.
+- Added a dedicated Hound operator guide covering separate installation, loopback-only service configuration, explicit Search/Extract verification, keyless trade-offs, privacy boundaries, caching ownership, and deliberate auto-routing opt-in.
+
+### 🔒 Security and reliability
+- Restricted Hound endpoints to uncredentialed HTTP on `127.0.0.1` or `::1`; remote hosts, hostnames, URL userinfo, query strings, fragments, redirects, proxy-environment routing, and oversized MCP responses fail closed.
+- Project Hound transport, timeout, MCP, and malformed-payload failures into typed provider errors while preserving requested extraction cardinality and never promoting missing upstream content to success.
+- Disabled Hound's per-request cache through the adapter so WSP remains the authoritative routing, freshness, evidence-cache, and receipt layer.
+- Applied `auto_allow=false` consistently to search and extraction fallback, keeping Hound out of automatic traffic unless an operator opts in.
+- Aligned provider-benchmark eligibility with the same auto-allow gate, preventing configured explicit-only providers from being recommended for automatic priority before operator opt-in.
+
+### Credits
+- Hound is an independent MIT-licensed project created and maintained by [Bishesh Bhandari (`dondai1234`)](https://github.com/dondai1234). WSP 3.2 ships only its own MCP client adapter; Hound is installed and operated separately.
+- Thanks to the Hound project for the open MCP interface and constructive upstream collaboration around domain validation, canonical URL normalization, and content classification. See [3.2 Release Notes](docs/RELEASE_NOTES_V32.md) for the linked upstream work.
+
 ## [v3.1.2] — 2026-07-21
 
 ### 🐛 Fixed
