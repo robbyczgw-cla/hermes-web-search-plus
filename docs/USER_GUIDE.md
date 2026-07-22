@@ -95,7 +95,7 @@ Presets:
 - `lean`: You.com + Linkup. Small fast search plus extraction.
 - `search`: You.com + Serper + Exa + Firecrawl + Tavily + Linkup. Full default Routing v2 pool.
 - `extract`: Firecrawl + Linkup + Exa + Tavily. Extraction-heavy setup.
-- `self-hosted`: SearXNG + keyless Keenable. Enables the privacy/budget profile without a commercial API key.
+- `self-hosted`: SearXNG + keyless Keenable for automatic routing without a commercial API key. A separately installed Hound sidecar can be layered on for explicit local search and extraction.
 - `all`: prompt for every supported provider.
 
 Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, SearXNG, SerpBase, Querit, Keenable, and the optional local Hound MCP sidecar. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, Keenable, Serper, and Hound. Native Perplexity and Kilo Perplexity are not registered because their legacy answer endpoints do not expose a verified source-only mode.
@@ -106,7 +106,17 @@ Hound is a different kind of keyless provider: it is a separately installed loca
 
 With a `KEENABLE_API_KEY` set, requests always use the authenticated endpoints. Without a key and without the opt-in, Keenable is treated as unconfigured: it won't auto-route, fall back, or enable `web_extract_plus`. When the public tier is enabled, queries and fetched URLs are sent to an **unauthenticated** public service with per-IP limits and no SLA — roughly 1,000 requests/hour and 10 requests/second — so treat it as a best-effort last resort, not a dependable provider. The first request that uses the public endpoint logs a one-time warning so the egress is visible, and `web-search-plus doctor` reports keyless providers as `key=no` with a separate `keyless=on/off` badge so key status stays truthful.
 
-### Self-hosted profile
+### Local and keyless paths
+
+`Local`, `self-hosted`, and `keyless` describe different boundaries in WSP:
+
+- **SearXNG** is an operator-configured metasearch endpoint and supports search only. The `self_hosted` profile can select it automatically.
+- **Hound** is a separately installed loopback MCP sidecar and supports both search and extraction. It is explicit-only by default and is not installed or silently enabled by the `self-hosted` preset.
+- **Keenable's public tier** needs no API key, but it is a remote public service rather than a local provider.
+
+Neither SearXNG nor Hound makes web access offline: searches still reach upstream engines, and extracted URLs still reach destination websites. "Local" means that you operate the control-plane service and its compute, not that requests stay on the machine.
+
+### Self-hosted automatic-routing profile
 
 Use the `self_hosted` profile when automatic traffic must avoid commercial API keys. The quickest setup is:
 
@@ -134,6 +144,23 @@ At load time, rather than by saving duplicate routing settings, the profile deri
 - Budget preflight limits continue to apply unchanged when configured.
 
 `setup.py status` is an offline diagnostic: it displays the active profile and effective auto pool, then checks that the SearXNG URL is present and well formed and that Keenable is configured or its keyless public tier is enabled. It never contacts either provider. If neither SearXNG nor Keenable is usable, an automatic request returns the typed `self_hosted_profile_unavailable` error with the local remediation.
+
+#### Add Hound for local Search + Extract
+
+The `self-hosted` preset deliberately does not install Hound or add it to the automatic pool. Install and start Hound separately as described in [Hound local MCP provider](HOUND.md), then expose its loopback endpoint to the Hermes process:
+
+```bash
+export HOUND_MCP_URL=http://127.0.0.1:8765/mcp
+```
+
+Use Hound explicitly for both capabilities:
+
+```python
+web_search_plus(query="Hermes Agent documentation", provider="hound", count=5)
+web_extract_plus(urls=["https://example.com"], provider="hound")
+```
+
+This gives a local-first control plane with SearXNG available for automatic search and Hound available for deliberate search or extraction. Hound remains outside automatic routing and fallback unless an operator explicitly opts it in after measuring local reliability and latency.
 
 The profile governs only automatic routing. An explicit `provider="serper"` (or another keyed provider) still works when its key exists; its result metadata includes `"profile_deviation": true` so the paid-key deviation is visible. Explicit provider requests remain useful for diagnostics and controlled operator overrides.
 
