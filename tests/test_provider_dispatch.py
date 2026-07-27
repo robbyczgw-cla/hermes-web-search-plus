@@ -65,7 +65,7 @@ EXPECTED_SEARCH_KWARGS = {
     "tavily": {"query", "api_key", "max_results", "depth", "topic", "include_domains", "exclude_domains", "include_images", "include_raw_content"},
     "querit": {"query", "api_key", "max_results", "language", "country", "time_range", "include_domains", "exclude_domains", "base_url", "base_path", "timeout"},
     "linkup": {"query", "api_key", "max_results", "depth", "output_type", "include_domains", "exclude_domains", "api_url", "timeout"},
-    "exa": {"query", "api_key", "max_results", "search_type", "exa_depth", "category", "start_date", "end_date", "similar_url", "include_domains", "exclude_domains", "text_verbosity"},
+    "exa": {"query", "api_key", "max_results", "search_type", "exa_depth", "category", "start_date", "end_date", "similar_url", "include_domains", "exclude_domains", "text_verbosity", "freshness"},
     "firecrawl": {"query", "api_key", "max_results", "country", "time_range", "sources", "include_domains", "exclude_domains", "scrape_markdown", "ignore_invalid_urls", "api_url", "timeout_ms"},
     "parallel": {"query", "api_key", "max_results", "include_domains", "exclude_domains", "api_url", "timeout", "client_model"},
     "perplexity": {"query", "api_key", "max_results", "model", "api_url", "freshness", "provider_name"},
@@ -133,6 +133,22 @@ class SearchAdapterKwargParityTests(unittest.TestCase):
         recorder = _Recorder()
         provider_dispatch.SEARCH_DISPATCH["exa"]({"search_exa": recorder}, "exa", args, "k", config, {"exa_depth": "deep"})
         self.assertEqual(recorder.calls[0][1]["exa_depth"], "normal")
+
+    def test_exa_adapter_forwards_freshness(self):
+        config = search._deepcopy_default_config()
+        args = search.build_parser(config).parse_args(["--query", "q", "--freshness", "week"])
+        recorder = _Recorder()
+        provider_dispatch.SEARCH_DISPATCH["exa"](
+            {"search_exa": recorder},
+            "exa",
+            args,
+            "k",
+            config,
+            {},
+        )
+        self.assertEqual(recorder.calls[0][1]["freshness"], "week")
+        self.assertIsNone(recorder.calls[0][1]["start_date"])
+        self.assertIsNone(recorder.calls[0][1]["end_date"])
 
 
 class ExtractAdapterKwargParityTests(unittest.TestCase):

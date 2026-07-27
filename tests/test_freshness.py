@@ -8,6 +8,7 @@ and unsupported providers still run while reporting applied=false in metadata.
 
 import contextlib
 import unittest
+from datetime import datetime, timezone
 from unittest import mock
 
 import providers
@@ -37,18 +38,27 @@ class FreshnessMappingTests(unittest.TestCase):
             "perplexity": {"day": "day", "week": "week", "month": "month", "year": "year"},
             "kilo-perplexity": {"day": "day", "week": "week", "month": "month", "year": "year"},
             "searxng": {"day": "day", "week": "week", "month": "month", "year": "year"},
+            "exa": {"day": "day", "week": "week", "month": "month", "year": "year"},
         }
         self.assertEqual(providers.PROVIDER_FRESHNESS_FORMATS, expected)
 
     def test_map_freshness_for_provider(self):
         self.assertEqual(providers.map_freshness_for_provider("brave", "week"), "pw")
         self.assertEqual(providers.map_freshness_for_provider("serper", "day"), "qdr:d")
-        self.assertIsNone(providers.map_freshness_for_provider("tavily", "week"))
+        self.assertEqual(providers.map_freshness_for_provider("exa", "week"), "week")
         self.assertIsNone(providers.map_freshness_for_provider("brave", None))
 
     def test_unsupported_providers_are_not_in_table(self):
-        for provider in ("tavily", "exa", "linkup", "parallel", "serpbase"):
+        for provider in ("tavily", "linkup", "parallel", "serpbase"):
             self.assertFalse(providers.provider_supports_freshness(provider), provider)
+
+    def test_exa_freshness_uses_absolute_utc_bounds(self):
+        start, end = providers.exa_date_bounds(
+            "week",
+            now=datetime(2026, 7, 25, 12, 34, 56, tzinfo=timezone.utc),
+        )
+        self.assertEqual(start, "2026-07-18T12:34:56Z")
+        self.assertEqual(end, "2026-07-25T12:34:56Z")
 
     def test_table_matches_existing_provider_mappers(self):
         # The central table must never drift from the maps the provider
@@ -74,6 +84,14 @@ class FreshnessMappingTests(unittest.TestCase):
             "applied": False,
             "provider": "tavily",
             "reason": "provider tavily does not support freshness",
+        })
+
+        exa = providers.freshness_metadata("exa", "week")
+        self.assertEqual(exa, {
+            "requested": "week",
+            "applied": True,
+            "provider": "exa",
+            "native_value": "week",
         })
 
 
@@ -154,6 +172,44 @@ class FreshnessRequestTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "no_verified_source_only_endpoint"):
                 search.search_perplexity(query="q", api_key="pplx-key", freshness="year")
         request.assert_not_called()
+
+    def test_exa_request_includes_absolute_publication_bounds(self):
+        captured = {}
+
+        def fake_post(url, headers, body, timeout=30):
+            captured["body"] = body
+            return {"results": []}
+
+        with mock.patch("providers.make_request", side_effect=fake_post):
+            with mock.patch.object(
+                providers,
+                "exa_date_bounds",
+                return_value=("2026-07-18T12:34:56Z", "2026-07-25T12:34:56Z"),
+            ) as bounds:
+                providers.search_exa(query="q", api_key="exa-key", freshness="week")
+
+        bounds.assert_called_once_with("week")
+        self.assertEqual(captured["body"]["startPublishedDate"], "2026-07-18T12:34:56Z")
+        self.assertEqual(captured["body"]["endPublishedDate"], "2026-07-25T12:34:56Z")
+
+    def test_exa_explicit_dates_override_freshness(self):
+        captured = {}
+
+        def fake_post(url, headers, body, timeout=30):
+            captured["body"] = body
+            return {"results": []}
+
+        with mock.patch("providers.make_request", side_effect=fake_post):
+            providers.search_exa(
+                query="q",
+                api_key="exa-key",
+                freshness="week",
+                start_date="2020-01-01T00:00:00Z",
+                end_date="2020-01-31T00:00:00Z",
+            )
+
+        self.assertEqual(captured["body"]["startPublishedDate"], "2020-01-01T00:00:00Z")
+        self.assertEqual(captured["body"]["endPublishedDate"], "2020-01-31T00:00:00Z")
 
 
 class FreshnessPipelineTests(unittest.TestCase):

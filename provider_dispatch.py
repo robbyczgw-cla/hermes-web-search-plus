@@ -173,6 +173,7 @@ def _call_exa_search(search_module, prov, args, key, config, routing_info):
         include_domains=args.include_domains,
         exclude_domains=args.exclude_domains,
         text_verbosity=args.exa_verbosity,
+        freshness=args.freshness,
     )
 
 
