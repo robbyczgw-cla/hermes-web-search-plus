@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### ✨ Added
-- Exa now applies the unified `freshness` filter (`day`, `week`, `month`, `year`) by translating it into absolute UTC `startPublishedDate`/`endPublishedDate` bounds on `/search` and `/findSimilar`. Result metadata reports the applied date range instead of the unified token.
+- Exa now applies the unified `freshness` filter (`day`, `week`, `month`, `year`) by translating it into absolute UTC `startPublishedDate`/`endPublishedDate` bounds on `/search` and `/findSimilar`. Result metadata reports the applied date range instead of the unified token. Contributed by [@kesku](https://github.com/kesku) in [#111](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/111).
 
 ## [v3.4.0] — 2026-07-28
 
