@@ -1,5 +1,5 @@
 name: web-search-plus
-version: "3.3.0"
+version: "3.4.0"
 description: "Multi-provider web search, URL extraction, quality reports, and opt-in research mode"
 author: robbyczgw-cla
 requires_env: []
@@ -17,6 +17,7 @@ optional_env:
   - SEARXNG_INSTANCE_URL
   - KEENABLE_API_KEY
   - HOUND_MCP_URL
+  - MONID_API_KEY
 provides_tools:
   - web_search_plus
   - web_extract_plus

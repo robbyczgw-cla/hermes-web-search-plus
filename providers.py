@@ -101,16 +101,41 @@ def normalize_freshness(value: Optional[str]) -> Optional[str]:
     return normalized
 
 
+def _sdk_provider_supports_freshness(provider: str) -> bool:
+    """Return a discovered provider's declared native freshness support.
+
+    The registry import stays lazy because provider discovery imports this
+    module during normal plugin startup. Built-ins continue to use the explicit
+    native-value table above; SDK providers use canonical WSP freshness values.
+    """
+    try:
+        from provider_registry import PROVIDER_SPECS
+
+        spec = PROVIDER_SPECS.get(provider)
+    except (ImportError, AttributeError):
+        return False
+    return bool(
+        spec is not None
+        and spec.execute_search is not None
+        and spec.supports_freshness
+    )
+
+
 def provider_supports_freshness(provider: str) -> bool:
     """Return whether a provider's current API call can apply a freshness filter."""
-    return provider in PROVIDER_FRESHNESS_FORMATS
+    return provider in PROVIDER_FRESHNESS_FORMATS or _sdk_provider_supports_freshness(provider)
 
 
 def map_freshness_for_provider(provider: str, freshness: Optional[str]) -> Optional[str]:
     """Translate the unified freshness value into the provider's native format."""
     if not freshness:
         return None
-    return PROVIDER_FRESHNESS_FORMATS.get(provider, {}).get(freshness)
+    native = PROVIDER_FRESHNESS_FORMATS.get(provider, {}).get(freshness)
+    if native is not None:
+        return native
+    if freshness in FRESHNESS_VALUES and _sdk_provider_supports_freshness(provider):
+        return freshness
+    return None
 
 
 def freshness_metadata(provider: str, requested: str) -> Dict[str, Any]:
