@@ -135,7 +135,7 @@ Full parameters, freshness and locale behavior, provider selection, extraction c
 - **Upgrading from 2.x** → [3.0 Migration](docs/V3_MIGRATION.md), then [3.1 Migration](docs/V31_MIGRATION.md)
 - **What changed** → [Changelog](CHANGELOG.md) · [3.3 Release Notes](docs/RELEASE_NOTES_V33.md)
 - **Troubleshooting** → [FAQ](docs/FAQ.md) · [Operator Console](docs/V3_OPERATOR_CONSOLE.md)
-- **Building a provider** → [Provider SDK](docs/PROVIDER_SDK.md) · [Architecture](docs/ARCHITECTURE.md)
+- **Contributing or building a provider** → [Contributing](CONTRIBUTING.md) · [Provider SDK](docs/PROVIDER_SDK.md) · [Architecture](docs/ARCHITECTURE.md)
 
 The full reference, including the normative v3 contracts for implementers and reviewers:
 
@@ -177,7 +177,7 @@ python3 -m pytest -q
 python3 -m compileall -q __init__.py search.py setup.py scripts tests
 ```
 
-Generated provider and routing references are checked in CI. Development architecture and extension notes are in [Architecture](docs/ARCHITECTURE.md).
+Generated provider and routing references are checked in CI. Start with [Contributing](CONTRIBUTING.md); development architecture and extension notes are in [Architecture](docs/ARCHITECTURE.md).
 
 ---
 

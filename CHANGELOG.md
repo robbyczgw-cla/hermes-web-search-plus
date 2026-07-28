@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 📚 Docs
+- Added a repository-specific contribution guide covering local setup, the source-only provider contract, SDK-based provider intake, CI and generated-artifact gates, changelog hygiene, security reporting, and maintainer-only release boundaries.
+
 ## [v3.3.0] — 2026-07-24
 
 ### ✨ Added
