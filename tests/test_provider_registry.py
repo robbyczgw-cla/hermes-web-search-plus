@@ -21,7 +21,7 @@ def test_provider_registry_is_the_complete_capability_source():
         "searxng",
         "keenable",
     )
-    assert registry.SEARCH_PROVIDER_IDS[-1] == "hound"
+    assert registry.SEARCH_PROVIDER_IDS[-2:] == ("hound", "octen")
     assert registry.EXTRACT_PROVIDER_IDS == (
         "tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper", "hound"
     )
@@ -41,6 +41,7 @@ def test_provider_registry_is_the_complete_capability_source():
         "querit": False,
         "parallel": False,
         "hound": False,
+        "octen": False,
     }
     assert "research" in registry.PROVIDER_SPECS["tavily"].capability_labels
 

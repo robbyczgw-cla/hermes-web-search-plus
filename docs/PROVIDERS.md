@@ -24,6 +24,7 @@ and the plugin provider catalog; regenerate it with `python scripts/gen_provider
 | SearXNG | ✅ | — | `SEARXNG_INSTANCE_URL` | — | yes (priority 11) | Free if self-hosted | https://docs.searxng.org/admin/installation.html |
 | Keenable | ✅ | ✅ | `KEENABLE_API_KEY` | yes (`KEENABLE_ALLOW_PUBLIC` opt-in) | yes (priority 12) | Keyless public tier; optional key for higher limits | https://keenable.ai |
 | Hound (local MCP) | ✅ | ✅ | `HOUND_MCP_URL` | — | explicit-only (`auto_allow=false`) | Free local sidecar; no API key | https://github.com/dondai1234/master-fetch |
+| Octen via Monid | ✅ | — | `MONID_API_KEY` | — | explicit-only (`auto_allow=false`) | No free-tier claim; Monid API key and wallet balance required | https://app.monid.ai/access/api-keys |
 
 `priority N` is the provider's position in the default routing priority list.
 Providers marked explicit-only stay out of `provider="auto"` routing and fallback
@@ -96,3 +97,7 @@ Independent web index for search and extraction; works keyless, optional key rai
 ### Hound (local MCP)
 
 Local key-free metasearch and browser-backed extraction through a loopback Hound sidecar. Hound is an independent MIT-licensed project by Bishesh Bhandari.
+
+### Octen via Monid
+
+Explicit-only Octen source-result web search through Monid, with native recency and domain filtering.
