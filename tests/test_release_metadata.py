@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "3.3.0"
+EXPECTED_VERSION = "3.4.0"
 
 
 def _load_plugin_module():
@@ -54,15 +54,19 @@ def test_ci_ruff_policy_is_repo_local_and_pinned():
     assert "ruff==0.15.12" in requirements
 
 
-def test_v33_release_surfaces_preserve_upstream_attribution():
+def test_current_release_surfaces_and_attribution():
     readme = (ROOT / "README.md").read_text()
     changelog = (ROOT / "CHANGELOG.md").read_text()
-    release_notes = (ROOT / "docs/RELEASE_NOTES_V33.md").read_text()
+    release_notes = (ROOT / "docs/RELEASE_NOTES_V34.md").read_text()
     user_guide = (ROOT / "docs/USER_GUIDE.md").read_text()
     combined = "\n".join((readme, changelog, release_notes, user_guide))
 
-    assert "Current release: **v3.3.0**" in readme
-    assert "docs/RELEASE_NOTES_V33.md" in readme
+    assert "Current release: **v3.4.0**" in readme
+    assert "docs/RELEASE_NOTES_V34.md" in readme
+    assert "Octen" in release_notes
+    assert "Monid" in release_notes
+    assert "explicit" in release_notes
+    assert "No free-tier claim" in release_notes
     assert "https://github.com/dondai1234/master-fetch" in combined
     assert "Bishesh Bhandari" in combined
     assert "MIT-licensed" in combined or "MIT project" in combined

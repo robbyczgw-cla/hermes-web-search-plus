@@ -19,13 +19,13 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v3.3.0** — see the [Changelog](CHANGELOG.md) and [3.3 Release Notes](docs/RELEASE_NOTES_V33.md).
+Current release: **v3.4.0** — see the [Changelog](CHANGELOG.md) and [3.4 Release Notes](docs/RELEASE_NOTES_V34.md).
 
-### What's new in 3.3
+### What's new in 3.4
 
-Version 3.3 keeps more useful text when reading pages, combines supporting details more carefully, and can finish broad research sooner when it already has enough good sources. The tools and normal setup stay the same.
+Version 3.4 adds an optional Octen web-search connection through Monid. It is off by default and only runs when you select it explicitly. Existing tools, provider settings, and automatic routing stay the same.
 
-For the technical details, see the [3.3 Release Notes](docs/RELEASE_NOTES_V33.md).
+For the technical details, see the [3.4 Release Notes](docs/RELEASE_NOTES_V34.md).
 
 ---
 
@@ -38,7 +38,7 @@ For the technical details, see the [3.3 Release Notes](docs/RELEASE_NOTES_V33.md
 - **Optional details when you need them.** Quality reports show which service worked and what happened along the way.
 - **Local options are available.** SearXNG, Keenable and the optional Hound connection can reduce your dependence on paid APIs.
 
-Everything new since 3.0 is additive or opt-in; defaults stay stable across upgrades. Full details: [3.3 Release Notes](docs/RELEASE_NOTES_V33.md) · [3.2 Release Notes](docs/RELEASE_NOTES_V32.md) · [3.1 Release Notes](docs/RELEASE_NOTES_V31.md) · [3.0 Release Notes](docs/RELEASE_NOTES_V3.md).
+Everything new since 3.0 is additive or opt-in; defaults stay stable across upgrades. Full details: [3.4 Release Notes](docs/RELEASE_NOTES_V34.md) · [3.3 Release Notes](docs/RELEASE_NOTES_V33.md) · [3.2 Release Notes](docs/RELEASE_NOTES_V32.md) · [3.1 Release Notes](docs/RELEASE_NOTES_V31.md) · [3.0 Release Notes](docs/RELEASE_NOTES_V3.md).
 
 ---
 
@@ -143,7 +143,7 @@ Full parameters, freshness and locale behavior, provider selection, extraction c
 
 - **Installing or configuring providers** → [User Guide](docs/USER_GUIDE.md) · [Hound local provider](docs/HOUND.md)
 - **Upgrading from 2.x** → [3.0 Migration](docs/V3_MIGRATION.md), then [3.1 Migration](docs/V31_MIGRATION.md)
-- **What changed** → [Changelog](CHANGELOG.md) · [3.3 Release Notes](docs/RELEASE_NOTES_V33.md)
+- **What changed** → [Changelog](CHANGELOG.md) · [3.4 Release Notes](docs/RELEASE_NOTES_V34.md)
 - **Troubleshooting** → [FAQ](docs/FAQ.md) · [Operator Console](docs/V3_OPERATOR_CONSOLE.md)
 - **Contributing or building a provider** → [Contributing](CONTRIBUTING.md) · [Provider SDK](docs/PROVIDER_SDK.md) · [Architecture](docs/ARCHITECTURE.md)
 
@@ -152,6 +152,7 @@ The full reference, including the normative v3 contracts for implementers and re
 ### Start & upgrade
 
 - [User Guide](docs/USER_GUIDE.md) — installation, first-run checks, tool usage, and troubleshooting
+- [3.4 Release Notes](docs/RELEASE_NOTES_V34.md) — optional Octen source search via Monid, access/billing, security, and compatibility
 - [3.3 Release Notes](docs/RELEASE_NOTES_V33.md) — heading-aware spans, provenance enrichment, Research quorum, compatibility, and attribution
 - [3.2 Release Notes](docs/RELEASE_NOTES_V32.md) — local Hound integration, keyless trade-offs, compatibility, and attribution
 - [Hound local provider](docs/HOUND.md) — separate installation, loopback service, verification, privacy, and operating costs

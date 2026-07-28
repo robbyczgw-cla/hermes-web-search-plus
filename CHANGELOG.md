@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v3.4.0] — 2026-07-28
+
 ### ✨ Added
 - Added Octen via Monid as a bundled, source-only Search provider through the public Provider SDK. The adapter supports native freshness plus include/exclude-domain filters and remains explicit-only by default (`auto_allow=false`).
 
@@ -14,6 +16,12 @@
 
 ### 📚 Docs
 - Added a repository-specific contribution guide covering local setup, the source-only provider contract, SDK-based provider intake, CI and generated-artifact gates, changelog hygiene, security reporting, and maintainer-only release boundaries.
+- Rewrote the README introduction in plain product language and added dedicated 3.4 release notes covering Octen-via-Monid behavior, access and billing, security boundaries, and compatibility.
+
+### Release inventory
+- #110 — plain-language README introduction.
+- #112 — repository contribution guide.
+- #113 — explicit Octen source search via Monid.
 
 ## [v3.3.0] — 2026-07-24
 
