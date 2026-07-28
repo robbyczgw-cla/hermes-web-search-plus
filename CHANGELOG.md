@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### ✨ Added
+- Exa now applies the unified `freshness` filter (`day`, `week`, `month`, `year`) by translating it into absolute UTC `startPublishedDate`/`endPublishedDate` bounds on `/search` and `/findSimilar`. Result metadata reports the applied date range instead of the unified token.
+
 ## [v3.3.0] — 2026-07-24
 
 ### ✨ Added
