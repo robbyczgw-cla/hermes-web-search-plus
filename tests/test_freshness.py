@@ -86,12 +86,21 @@ class FreshnessMappingTests(unittest.TestCase):
             "reason": "provider tavily does not support freshness",
         })
 
-        exa = providers.freshness_metadata("exa", "week")
+        with mock.patch.object(
+            providers,
+            "exa_date_bounds",
+            return_value=("2026-07-18T12:34:56Z", "2026-07-25T12:34:56Z"),
+        ) as bounds:
+            exa = providers.freshness_metadata("exa", "week")
+        bounds.assert_called_once_with("week")
         self.assertEqual(exa, {
             "requested": "week",
             "applied": True,
             "provider": "exa",
-            "native_value": "week",
+            "native_value": {
+                "startPublishedDate": "2026-07-18T12:34:56Z",
+                "endPublishedDate": "2026-07-25T12:34:56Z",
+            },
         })
 
 

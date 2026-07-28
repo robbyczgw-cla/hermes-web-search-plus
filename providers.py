@@ -115,6 +115,17 @@ def map_freshness_for_provider(provider: str, freshness: Optional[str]) -> Optio
 
 def freshness_metadata(provider: str, requested: str) -> Dict[str, Any]:
     """Describe whether a provider applied the requested freshness filter."""
+    if provider == "exa" and provider_supports_freshness(provider):
+        start, end = exa_date_bounds(requested)
+        return {
+            "requested": requested,
+            "applied": True,
+            "provider": provider,
+            "native_value": {
+                "startPublishedDate": start,
+                "endPublishedDate": end,
+            },
+        }
     native = map_freshness_for_provider(provider, requested)
     if native is not None:
         return {"requested": requested, "applied": True, "provider": provider, "native_value": native}
