@@ -61,7 +61,9 @@ cd ~/.hermes/plugins/web-search-plus
 python3 search.py --query "Hermes Agent latest release" --provider auto --quality-report
 ```
 
-Web Search Plus supports 14 search and 9 extraction providers — you do **not** need them all. One search-capable key or configured local endpoint enables `web_search_plus`; one extraction-capable key or endpoint enables `web_extract_plus`; more providers just make controlled routing more flexible. The setup helper stores keys in the active Hermes environment file — never commit them to the repository.
+Web Search Plus supports 15 search and 9 extraction providers — you do **not** need them all. One search-capable key or configured local endpoint enables `web_search_plus`; one extraction-capable key or endpoint enables `web_extract_plus`; more providers just make controlled routing more flexible. The setup helper stores keys in the active Hermes environment file — never commit them to the repository.
+
+Provider privacy is not uniform. Before sending sensitive queries or URLs, review the maintained [Provider Privacy & Terms guide](https://websearchplus.xyz/providers.html#privacy-terms), which distinguishes standard self-serve terms from enterprise-only ZDR or no-training options.
 
 ### Upgrading from 2.x? Relax.
 
@@ -96,6 +98,16 @@ web_search_plus(query="recent vector database research", provider="octen", fresh
 ```
 
 The adapter executes Octen's `/search` endpoint through Monid's documented HTTP API for ranked links and highlights. It supports freshness and domain filters, explicitly disables full-content retrieval, and does not call Octen's answer or Broad Search APIs. Access and billing use Monid's prepaid wallet; see Monid for current pricing and terms. Octen stays outside automatic routing and fallback unless you deliberately enable `auto_allow`.
+
+### Optional TinyFish source search
+
+Set `TINYFISH_API_KEY` from your own [TinyFish account](https://agent.tinyfish.ai/api-keys) to use its direct Search API explicitly. Web Search Plus does not provide, pool, proxy, or share TinyFish credentials.
+
+```python
+web_search_plus(query="recent agent framework releases", provider="tinyfish", freshness="week")
+```
+
+The adapter calls only TinyFish's fixed source-search endpoint and returns ranked links and snippets. It never sends the optional `purpose` or `fetch` parameters and does not call TinyFish Agent or Browser APIs. Domain filters and result hosts are accepted only as ASCII/Punycode hostnames; raw Unicode hostnames are rejected fail-closed. TinyFish remains outside automatic routing and fallback: its [standard Terms](https://www.tinyfish.ai/terms) permit Customer Data to be used for model training and fine-tuning, and its [Privacy Policy](https://www.tinyfish.ai/privacy-policy) does not provide a fixed deletion period. Treat the integration as high risk unless your contract supplies stronger terms; see the [provider/privacy matrix](https://websearchplus.xyz/providers.html#privacy-terms).
 
 ### Local Hound provider
 
@@ -142,6 +154,7 @@ Full parameters, freshness and locale behavior, provider selection, extraction c
 **Where to go next:**
 
 - **Installing or configuring providers** → [User Guide](docs/USER_GUIDE.md) · [Hound local provider](docs/HOUND.md)
+- **Comparing provider privacy and terms** → [Provider Privacy & Terms](https://websearchplus.xyz/providers.html#privacy-terms)
 - **Upgrading from 2.x** → [3.0 Migration](docs/V3_MIGRATION.md), then [3.1 Migration](docs/V31_MIGRATION.md)
 - **What changed** → [Changelog](CHANGELOG.md) · [3.4 Release Notes](docs/RELEASE_NOTES_V34.md)
 - **Troubleshooting** → [FAQ](docs/FAQ.md) · [Operator Console](docs/V3_OPERATOR_CONSOLE.md)
@@ -166,6 +179,7 @@ The full reference, including the normative v3 contracts for implementers and re
 ### Configure & operate
 
 - [Provider Reference](docs/PROVIDERS.md) — generated capabilities, environment variables, defaults, and signup links
+- [Provider Privacy & Terms](https://websearchplus.xyz/providers.html#privacy-terms) — provider-specific training, retention, ZDR, and contract caveats
 - [Routing v2 Reference](docs/ROUTING.md) — generated routing classes, preferences, and demotions
 - [Operator Console](docs/V3_OPERATOR_CONSOLE.md) — local read-only visibility and troubleshooting
 - [Provider Benchmarks](docs/V3_BENCHMARKS.md) — search and extraction comparison with privacy and quota guidance

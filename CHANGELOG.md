@@ -4,6 +4,12 @@
 
 ### ✨ Added
 - Exa now applies the unified `freshness` filter (`day`, `week`, `month`, `year`) by translating it into absolute UTC `startPublishedDate`/`endPublishedDate` bounds on `/search` and `/findSimilar`. Result metadata reports the applied date range instead of the unified token. Contributed by [@kesku](https://github.com/kesku) in [#111](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/111).
+- Added TinyFish as a bundled source-only Search provider. The adapter supports native news, freshness, locale, and domain filters and remains explicit-only by default (`auto_allow=false`).
+
+### 🔒 Security and privacy
+- TinyFish requests are restricted to its fixed HTTPS Search API origin, reject redirects, cap response bodies at 2 MiB, and never use the optional `purpose`, `fetch`, Agent, or Browser paths.
+- Document TinyFish's standard-Terms training/fine-tuning allowance in the provider metadata and README instead of presenting explicit-only routing as a privacy control.
+- Link the repository to the maintained provider-by-provider Privacy & Terms guide on websearchplus.xyz.
 
 ## [v3.4.0] — 2026-07-28
 

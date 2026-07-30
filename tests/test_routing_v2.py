@@ -26,7 +26,9 @@ def test_default_auto_allow_blocks_explicit_only_providers():
     assert auto_allow["hound"] is False
     assert auto_allow["octen"] is False
     assert auto_allow.get("brave", True) is True
-    assert set(auto_allow) == {"serpbase", "querit", "parallel", "hound", "octen"}
+    assert set(auto_allow) == {
+        "serpbase", "querit", "parallel", "hound", "octen", "tinyfish",
+    }
 
 
 
@@ -41,7 +43,7 @@ def test_legacy_auto_allow_config_inherits_new_guarded_provider_defaults():
     assert validated["auto_routing"]["auto_allow"]["hound"] is False
     assert validated["auto_routing"]["auto_allow"]["octen"] is False
     assert set(validated["auto_routing"]["auto_allow"]) == {
-        "serpbase", "querit", "parallel", "hound", "octen",
+        "serpbase", "querit", "parallel", "hound", "octen", "tinyfish",
     }
 
 

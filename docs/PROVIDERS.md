@@ -25,6 +25,7 @@ and the plugin provider catalog; regenerate it with `python scripts/gen_provider
 | Keenable | ✅ | ✅ | `KEENABLE_API_KEY` | yes (`KEENABLE_ALLOW_PUBLIC` opt-in) | yes (priority 12) | Keyless public tier; optional key for higher limits | https://keenable.ai |
 | Hound (local MCP) | ✅ | ✅ | `HOUND_MCP_URL` | — | explicit-only (`auto_allow=false`) | Free local sidecar; no API key | https://github.com/dondai1234/master-fetch |
 | Octen via Monid | ✅ | — | `MONID_API_KEY` | — | explicit-only (`auto_allow=false`) | No free-tier claim; Monid API key and wallet balance required | https://app.monid.ai/access/api-keys |
+| TinyFish Search | ✅ | — | `TINYFISH_API_KEY` | — | explicit-only (`auto_allow=false`) | Search does not consume credits; API access required (30 rpm Free/PAYG) | https://agent.tinyfish.ai/api-keys |
 
 `priority N` is the provider's position in the default routing priority list.
 Providers marked explicit-only stay out of `provider="auto"` routing and fallback
@@ -101,3 +102,7 @@ Local key-free metasearch and browser-backed extraction through a loopback Hound
 ### Octen via Monid
 
 Explicit-only Octen source-result web search through Monid, with native recency and domain filtering.
+
+### TinyFish Search
+
+Direct source-only TinyFish web/news search using your own account/API key. WSP does not provide, pool, proxy, or share TinyFish credentials. Domain filters and result hosts are accepted only as ASCII/Punycode hostnames. Privacy warning: TinyFish's standard Terms permit Customer Data to be used for model training and fine-tuning; review https://www.tinyfish.ai/terms and https://www.tinyfish.ai/privacy-policy before use. Explicit-only by default.

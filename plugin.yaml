@@ -18,6 +18,7 @@ optional_env:
   - KEENABLE_API_KEY
   - HOUND_MCP_URL
   - MONID_API_KEY
+  - TINYFISH_API_KEY
 provides_tools:
   - web_search_plus
   - web_extract_plus
