@@ -19,13 +19,13 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v3.4.0** — see the [Changelog](CHANGELOG.md) and [3.4 Release Notes](docs/RELEASE_NOTES_V34.md).
+Current release: **v3.4.1** — see the [Changelog](CHANGELOG.md) and [3.4.1 Release Notes](docs/RELEASE_NOTES_V341.md).
 
-### What's new in 3.4
+### What's new in 3.4.1
 
-Version 3.4 adds an optional Octen web-search connection through Monid. It is off by default and only runs when you select it explicitly. Existing tools, provider settings, and automatic routing stay the same.
+Version 3.4.1 adds native Exa freshness bounds and an optional TinyFish source-search provider. TinyFish is BYOK, off by default, and runs only when explicitly selected; review its High Risk data-use terms before sending queries. Existing tools, provider settings, and automatic routing stay the same.
 
-For the technical details, see the [3.4 Release Notes](docs/RELEASE_NOTES_V34.md).
+For technical details, see the [Changelog](CHANGELOG.md), [provider guide](docs/PROVIDERS.md), and [3.4.1 Release Notes](docs/RELEASE_NOTES_V341.md).
 
 ---
 

@@ -103,6 +103,21 @@ class FreshnessMappingTests(unittest.TestCase):
             },
         })
 
+        with mock.patch.object(
+            providers,
+            "exa_date_bounds",
+            return_value=("2026-07-18T12:34:56Z", "2026-07-25T12:34:56Z"),
+        ):
+            exa_override = providers.freshness_metadata(
+                "exa",
+                "week",
+                start_date="2020-01-01T00:00:00Z",
+            )
+        self.assertEqual(exa_override["native_value"], {
+            "startPublishedDate": "2020-01-01T00:00:00Z",
+            "endPublishedDate": "2026-07-25T12:34:56Z",
+        })
+
 
 class NormalizeFreshnessTests(unittest.TestCase):
     def test_valid_values_pass_through(self):

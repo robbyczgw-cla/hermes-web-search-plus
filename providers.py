@@ -138,10 +138,18 @@ def map_freshness_for_provider(provider: str, freshness: Optional[str]) -> Optio
     return None
 
 
-def freshness_metadata(provider: str, requested: str) -> Dict[str, Any]:
+def freshness_metadata(
+    provider: str,
+    requested: str,
+    *,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> Dict[str, Any]:
     """Describe whether a provider applied the requested freshness filter."""
     if provider == "exa" and provider_supports_freshness(provider):
-        start, end = exa_date_bounds(requested)
+        generated_start, generated_end = exa_date_bounds(requested)
+        start = start_date or generated_start
+        end = end_date or generated_end
         return {
             "requested": requested,
             "applied": True,
