@@ -73,6 +73,18 @@ def test_current_release_surfaces_and_attribution():
     assert "https://github.com/dondai1234/hound" not in combined
 
 
+def test_current_filter_help_mentions_all_new_native_support():
+    init_py = (ROOT / "__init__.py").read_text().lower()
+    search_py = (ROOT / "search.py").read_text().lower()
+    user_guide = (ROOT / "docs/USER_GUIDE.md").read_text().lower()
+
+    assert "google.serper.dev/news) and tinyfish" in init_py
+    assert "currently serper and tinyfish" in search_py
+    assert "searxng, exa, and tinyfish" in search_py
+    assert "searxng, exa, and tinyfish" in user_guide
+    assert "tinyfish serves it through its native news-domain mode" in user_guide
+
+
 def test_readme_intro_uses_plain_product_language():
     readme = (ROOT / "README.md").read_text()
     intro = readme.split("## Quick Start", 1)[0].lower()

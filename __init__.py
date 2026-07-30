@@ -1828,8 +1828,8 @@ def register(ctx: Any) -> None:
                     "type": "string",
                     "enum": ["search", "news"],
                     "description": (
-                        "Result vertical: 'search' (default) or 'news'. Served natively by serper "
-                        "(google.serper.dev/news); other providers run the normal search and report "
+                        "Result vertical: 'search' (default) or 'news'. Served natively by Serper "
+                        "(google.serper.dev/news) and TinyFish; other providers run the normal search and report "
                         "search_type.applied=false in result metadata. Optional."
                     ),
                     "default": "search",
