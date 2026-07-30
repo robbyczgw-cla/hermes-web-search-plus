@@ -31,7 +31,7 @@ Hound remains visibly attributed to the independent MIT-licensed [Master-Fetch p
 ## Verification
 
 - Ruff passed
-- 1,020 tests plus 6 schema subtests passed
+- 1,021 tests plus 6 schema subtests passed
 - generated provider documentation and contract-v3 schemas are current
 - Node schema boundary passed after a clean `npm ci`
 - `npm audit --audit-level=high` reports zero vulnerabilities
