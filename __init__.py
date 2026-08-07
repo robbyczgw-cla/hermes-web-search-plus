@@ -1644,7 +1644,10 @@ def _format_results(data: dict) -> str:
             content = (src.get("content") or src.get("raw_content") or "").strip()
             lines.append(f"{i}. {url}")
             if content:
-                lines.append(f"   {content[:500]}")
+                summary = content[:500]
+                if len(content) > 500:
+                    summary += f" [TRUNCATED: showing first 500 of {len(content)} characters]"
+                lines.append(f"   {summary}")
         lines.append("")
 
     for i, r in enumerate(results, 1):

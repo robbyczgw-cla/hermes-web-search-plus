@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### 🐛 Fixed
+- Research source summaries in the public formatter now mark 500-character previews with the exact original length instead of silently truncating them.
+
 ## [v3.4.1] — 2026-07-30
 
 ### ✨ Added
