@@ -19,13 +19,13 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v3.4.2** — see the [Changelog](CHANGELOG.md) and [3.4.2 Release Notes](docs/RELEASE_NOTES_V342.md).
+Current release: **v4.0.0** — see the [Changelog](CHANGELOG.md) and [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
 
-### What's new in 3.4.2
+### What's new in 4.0.0
 
-Long Research source summaries now identify their 500-character preview boundary and report the exact original length, so a shortened display cannot be mistaken for complete source content. Existing tools, provider settings, and automatic routing stay the same.
+Web Search Plus now uses DonSeTch 2.1.0 as its optional local source provider for Search and Markdown Extract. DonSeTch runs as a separately installed stdio MCP process configured through `DONSETCH_BIN`; it is not bundled with this plugin. The Hound provider and `HOUND_MCP_URL` integration were removed, so this release includes a migration step for existing Hound users.
 
-For technical details, see the [Changelog](CHANGELOG.md), [provider guide](docs/PROVIDERS.md), and [3.4.2 Release Notes](docs/RELEASE_NOTES_V342.md).
+For technical details, see the [Changelog](CHANGELOG.md), [provider guide](docs/PROVIDERS.md), and [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
 
 ---
 
@@ -36,9 +36,9 @@ For technical details, see the [Changelog](CHANGELOG.md), [provider guide](docs/
 - **Fewer dead ends.** If one service is unavailable or returns nothing, Web Search Plus can try another.
 - **Search and page reading together.** Find useful pages, then turn them into clean text for your agent.
 - **Optional details when you need them.** Quality reports show which service worked and what happened along the way.
-- **Local options are available.** SearXNG, Keenable and the optional Hound connection can reduce your dependence on paid APIs.
+- **Local options are available.** SearXNG, Keenable and the optional DonSeTch provider can reduce your dependence on paid APIs.
 
-Everything new since 3.0 is additive or opt-in; defaults stay stable across upgrades. Full details: [3.4 Release Notes](docs/RELEASE_NOTES_V34.md) · [3.3 Release Notes](docs/RELEASE_NOTES_V33.md) · [3.2 Release Notes](docs/RELEASE_NOTES_V32.md) · [3.1 Release Notes](docs/RELEASE_NOTES_V31.md) · [3.0 Release Notes](docs/RELEASE_NOTES_V3.md).
+Everything new since 3.0 is additive or opt-in, except the v4.0 provider migration described above. Full details: [4.0 Release Notes](docs/RELEASE_NOTES_V400.md) · [3.4 Release Notes](docs/RELEASE_NOTES_V34.md) · [3.3 Release Notes](docs/RELEASE_NOTES_V33.md) · [3.2 Release Notes](docs/RELEASE_NOTES_V32.md) · [3.1 Release Notes](docs/RELEASE_NOTES_V31.md) · [3.0 Release Notes](docs/RELEASE_NOTES_V3.md).
 
 ---
 
@@ -65,18 +65,9 @@ Web Search Plus supports 15 search and 9 extraction providers — you do **not**
 
 Provider privacy is not uniform. Before sending sensitive queries or URLs, review the maintained [Provider Privacy & Terms guide](https://websearchplus.xyz/providers.html#privacy-terms), which distinguishes standard self-serve terms from enterprise-only ZDR or no-training options.
 
-### Upgrading from 2.x? Relax.
+### Upgrading to 4.0.0
 
-Your setup keeps working: the public tools, their names, and your provider keys are unchanged, and updating the plugin is enough — searches and extractions run immediately.
-
-```bash
-hermes plugins update web-search-plus
-```
-
-Two honest notes:
-
-- **One breaking change (since 3.0):** the Perplexity and Kilo answer endpoints are no longer registered — Web Search Plus is source-only by design. Existing keys are ignored, not deleted.
-- **Optional, not required:** `python3 search.py state-migrate` imports your old 2.x routing telemetry (provider health/stats) so adaptive routing keeps its memory. It is dry-run by default, creates a verified backup before `--apply`, and supports rollback. Skipping it loses nothing except that routing re-learns from scratch. Details: [3.0 Migration](docs/V3_MIGRATION.md), then [3.1 Migration](docs/V31_MIGRATION.md) for the opt-in feature matrix.
+The core tools and existing keyed providers remain available, but the optional Hound integration was removed. If you used Hound, follow the [DonSeTch migration guide](docs/DONSETCH.md#migration-from-hound): install DonSeTch 2.1.0 separately, set `DONSETCH_BIN`, and change explicit `provider="hound"` calls to `provider="donsetch"`.
 
 ### Self-hosted / no-paid-key profile
 
@@ -109,11 +100,11 @@ web_search_plus(query="recent agent framework releases", provider="tinyfish", fr
 
 The adapter calls only TinyFish's fixed source-search endpoint and returns ranked links and snippets. It never sends the optional `purpose` or `fetch` parameters and does not call TinyFish Agent or Browser APIs. Domain filters and result hosts are accepted only as ASCII/Punycode hostnames; raw Unicode hostnames are rejected fail-closed. TinyFish remains outside automatic routing and fallback: its [standard Terms](https://www.tinyfish.ai/terms) permit Customer Data to be used for model training and fine-tuning, and its [Privacy Policy](https://www.tinyfish.ai/privacy-policy) does not provide a fixed deletion period. Treat the integration as high risk unless your contract supplies stronger terms; see the [provider/privacy matrix](https://websearchplus.xyz/providers.html#privacy-terms).
 
-### Local Hound provider
+### Local DonSeTch provider
 
-[Hound](https://github.com/dondai1234/master-fetch), created by [Bishesh Bhandari](https://github.com/dondai1234), is an independent MIT-licensed MCP server for local keyless search and browser-backed extraction. WSP 3.3 connects to a separately installed Hound sidecar on loopback; it does not bundle or fork Hound. Hound is explicit-only by default, so installing it does not change automatic routing or fallback.
+[DonSeTch](https://github.com/dondai44423/donsetch) is an independent AGPL-3.0-only local MCP program for source search, fetching, crawling, and PDF-oriented retrieval. WSP 4.0 connects to a separately installed DonSeTch executable through stdio; it does not bundle or redistribute DonSeTch. DonSeTch is explicit-only by default, so installing it does not change automatic routing or fallback.
 
-Keyless means no commercial API key or per-request provider bill — not offline, anonymous, or cost-free. Public engines and target sites still receive requests from your IP, browser mode consumes local resources, and reliability has no hosted-service SLA. See the [Hound provider guide](docs/HOUND.md) for installation, security boundaries, verification, and the full pros/cons.
+Set `DONSETCH_BIN` to the absolute executable path and see the [DonSeTch provider guide](docs/DONSETCH.md) for installation, migration, security boundaries, verification, and limitations.
 
 Update later with:
 
@@ -121,7 +112,7 @@ Update later with:
 hermes plugins update web-search-plus
 ```
 
-Python 3.10+ is required for the core plugin. The core runtime is standard-library only; the optional Hound bridge uses the MCP SDK and `httpx` supplied by current Hermes runtimes, while Hound itself requires a separate Python 3.11+ installation.
+Python 3.10+ is required for the core plugin. The optional DonSeTch bridge uses the separately installed executable and does not add DonSeTch or its AGPL-3.0-only dependencies to the plugin package.
 
 ---
 
@@ -153,10 +144,10 @@ Full parameters, freshness and locale behavior, provider selection, extraction c
 
 **Where to go next:**
 
-- **Installing or configuring providers** → [User Guide](docs/USER_GUIDE.md) · [Hound local provider](docs/HOUND.md)
+- **Installing or configuring providers** → [User Guide](docs/USER_GUIDE.md) · [DonSeTch local provider](docs/DONSETCH.md)
 - **Comparing provider privacy and terms** → [Provider Privacy & Terms](https://websearchplus.xyz/providers.html#privacy-terms)
-- **Upgrading from 2.x** → [3.0 Migration](docs/V3_MIGRATION.md), then [3.1 Migration](docs/V31_MIGRATION.md)
-- **What changed** → [Changelog](CHANGELOG.md) · [3.4 Release Notes](docs/RELEASE_NOTES_V34.md)
+- **Upgrading to 4.0.0** → [DonSeTch migration](docs/DONSETCH.md#migration-from-hound)
+- **What changed** → [Changelog](CHANGELOG.md) · [4.0 Release Notes](docs/RELEASE_NOTES_V400.md)
 - **Troubleshooting** → [FAQ](docs/FAQ.md) · [Operator Console](docs/V3_OPERATOR_CONSOLE.md)
 - **Contributing or building a provider** → [Contributing](CONTRIBUTING.md) · [Provider SDK](docs/PROVIDER_SDK.md) · [Architecture](docs/ARCHITECTURE.md)
 
@@ -167,8 +158,8 @@ The full reference, including the normative v3 contracts for implementers and re
 - [User Guide](docs/USER_GUIDE.md) — installation, first-run checks, tool usage, and troubleshooting
 - [3.4 Release Notes](docs/RELEASE_NOTES_V34.md) — optional Octen source search via Monid, access/billing, security, and compatibility
 - [3.3 Release Notes](docs/RELEASE_NOTES_V33.md) — heading-aware spans, provenance enrichment, Research quorum, compatibility, and attribution
-- [3.2 Release Notes](docs/RELEASE_NOTES_V32.md) — local Hound integration, keyless trade-offs, compatibility, and attribution
-- [Hound local provider](docs/HOUND.md) — separate installation, loopback service, verification, privacy, and operating costs
+- [4.0 Release Notes](docs/RELEASE_NOTES_V400.md) — DonSeTch integration, Hound removal, migration, and limitations
+- [DonSeTch local provider](docs/DONSETCH.md) — separate installation, stdio configuration, migration, and operating boundaries
 - [3.1 Release Notes](docs/RELEASE_NOTES_V31.md) — 3.1 highlights and compatibility
 - [3.1 Migration](docs/V31_MIGRATION.md) — opt-in matrix, kill switches, verification, and rollback
 - [Provider SDK](docs/PROVIDER_SDK.md) — add a provider with one `providers.d` module
@@ -214,4 +205,4 @@ MIT — see [LICENSE](LICENSE).
 
 - [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) — TypeScript/OpenClaw version
 - [Hermes Agent](https://github.com/NousResearch/hermes-agent) — the agent runtime this plugin extends
-- [Hound](https://github.com/dondai1234/master-fetch) — independent MIT-licensed local web-research MCP server by [Bishesh Bhandari](https://github.com/dondai1234); WSP integrates through a separate loopback sidecar
+- [DonSeTch](https://github.com/dondai44423/donsetch) — independent AGPL-3.0-only local web-research MCP program; WSP integrates through a separate stdio process

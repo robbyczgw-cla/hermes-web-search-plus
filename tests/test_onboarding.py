@@ -422,7 +422,7 @@ def test_setup_dry_run_can_auto_deny_provider(tmp_path, capsys):
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "auto-allow false: hound, octen, parallel, querit, serpbase" in out
+    assert "auto-allow false: donsetch, octen, parallel, querit, serpbase" in out
     assert not env_path.exists()
     assert not config_path.exists()
 
@@ -585,7 +585,7 @@ def test_config_set_extract_priority_writes_isolated_complete_order(tmp_path):
 
     data = json.loads(config_path.read_text())
     assert data["auto_routing"]["extract_provider_priority"] == [
-        "serper", "parallel", "tavily", "exa", "linkup", "firecrawl", "you", "keenable", "hound"
+        "serper", "parallel", "tavily", "exa", "linkup", "firecrawl", "you", "keenable", "donsetch"
     ]
     assert data["auto_routing"]["provider_priority"] == list(wsp._DEFAULT_PROVIDER_PRIORITY)
 

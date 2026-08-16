@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "3.4.2"
+EXPECTED_VERSION = "4.0.0"
 
 
 def _load_plugin_module():
@@ -56,21 +56,21 @@ def test_ci_ruff_policy_is_repo_local_and_pinned():
 
 def test_current_release_surfaces_and_attribution():
     readme = (ROOT / "README.md").read_text()
-    changelog = (ROOT / "CHANGELOG.md").read_text()
-    release_notes = (ROOT / "docs/RELEASE_NOTES_V341.md").read_text()
+    release_notes = (ROOT / "docs/RELEASE_NOTES_V400.md").read_text()
     user_guide = (ROOT / "docs/USER_GUIDE.md").read_text()
-    combined = "\n".join((readme, changelog, release_notes, user_guide))
+    env_template = (ROOT / ".env.template").read_text()
+    current_surfaces = "\n".join((readme, release_notes, user_guide, env_template))
 
-    assert "Current release: **v3.4.2**" in readme
-    assert "docs/RELEASE_NOTES_V342.md" in readme
-    assert "Exa" in release_notes
-    assert "TinyFish" in release_notes
+    assert "Current release: **v4.0.0**" in readme
+    assert "docs/RELEASE_NOTES_V400.md" in readme
+    assert "DonSeTch 2.1.0" in release_notes
     assert "explicit-only" in release_notes
-    assert "training" in release_notes
-    assert "https://github.com/dondai1234/master-fetch" in combined
-    assert "Bishesh Bhandari" in combined
-    assert "MIT-licensed" in combined or "MIT project" in combined
-    assert "https://github.com/dondai1234/hound" not in combined
+    assert "DONSETCH_BIN" in current_surfaces
+    assert "HOUND_MCP_URL" not in env_template
+    assert "https://github.com/dondai44423/donsetch" in current_surfaces
+    assert "AGPL-3.0-only" in current_surfaces
+    assert "https://github.com/dondai1234/master-fetch" not in current_surfaces
+    assert "docs/HOUND.md" not in current_surfaces
 
 
 def test_current_filter_help_mentions_all_new_native_support():

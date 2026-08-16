@@ -205,7 +205,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
         mock_linkup.assert_called_once()
 
     def test_extract_provider_priority_prefers_fast_clean_extractors(self):
-        self.assertEqual(search.EXTRACT_PROVIDER_PRIORITY, ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper", "hound"])
+        self.assertEqual(search.EXTRACT_PROVIDER_PRIORITY, ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper", "donsetch"])
 
     def test_extract_plus_auto_honors_extract_provider_priority(self):
         config = {
@@ -233,7 +233,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
 
         self.assertEqual(
             search.resolve_extract_provider_priority(config),
-            ["serper", "tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "hound"],
+            ["serper", "tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "donsetch"],
         )
 
     def test_extract_priority_ignores_search_only_providers(self):
@@ -246,7 +246,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
 
         self.assertEqual(
             search.resolve_extract_provider_priority(config),
-            ["serper", "parallel", "tavily", "exa", "linkup", "firecrawl", "you", "keenable", "hound"],
+            ["serper", "parallel", "tavily", "exa", "linkup", "firecrawl", "you", "keenable", "donsetch"],
         )
 
     def test_search_provider_priority_does_not_change_extract_order(self):

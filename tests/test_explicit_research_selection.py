@@ -15,7 +15,7 @@ def _routing() -> dict:
         "routing_policy": "routing-v2",
         "top_signals": [],
         "scores": {"you": 1.0},
-        "auto_allow_excluded": ["hound", "serpbase"],
+        "auto_allow_excluded": ["donsetch", "serpbase"],
         "analysis_summary": {"routing_class": "research"},
     }
 
@@ -25,7 +25,7 @@ def _config(tmp_path) -> dict:
     config["auto_routing"]["provider_priority"] = ["you"]
     config["auto_routing"]["disabled_providers"] = []
     config["auto_routing"]["auto_allow"].update(
-        {"hound": False, "serpbase": False, "you": True}
+        {"donsetch": False, "serpbase": False, "you": True}
     )
     config["quality"]["research_quorum"]["enabled"] = False
     v3 = config.setdefault("v3", {})
@@ -66,7 +66,7 @@ def _install_fakes(monkeypatch, calls: list[str], cooldown_provider: str | None 
 
         return execute
 
-    for provider in ("hound", "serpbase", "you"):
+    for provider in ("donsetch", "serpbase", "you"):
         monkeypatch.setitem(
             search.SEARCH_DISPATCH, provider, fake_adapter(provider)
         )
@@ -96,14 +96,14 @@ def test_explicit_research_providers_bypass_auto_allow(tmp_path, monkeypatch):
     _install_fakes(monkeypatch, calls)
 
     result, status = search._execute_search_request_core(
-        _args(config, ["hound", "serpbase", "you"]), config
+        _args(config, ["donsetch", "serpbase", "you"]), config
     )
 
     assert status == 0
-    assert set(calls) == {"hound", "serpbase", "you"}
-    assert result["routing"]["providers_queried"] == ["hound", "serpbase", "you"]
+    assert set(calls) == {"donsetch", "serpbase", "you"}
+    assert result["routing"]["providers_queried"] == ["donsetch", "serpbase", "you"]
     assert result["quality_report"]["eligible_providers"] == [
-        "hound",
+        "donsetch",
         "serpbase",
         "you",
     ]
@@ -112,24 +112,24 @@ def test_explicit_research_providers_bypass_auto_allow(tmp_path, monkeypatch):
 def test_explicit_research_cooldown_skip_is_visible(tmp_path, monkeypatch):
     calls: list[str] = []
     config = _config(tmp_path)
-    _install_fakes(monkeypatch, calls, cooldown_provider="hound")
+    _install_fakes(monkeypatch, calls, cooldown_provider="donsetch")
 
     result, status = search._execute_search_request_core(
-        _args(config, ["hound", "you"]), config
+        _args(config, ["donsetch", "you"]), config
     )
 
     assert status == 0
     assert calls == ["you"]
     assert result["routing"]["providers_skipped"] == [
         {
-            "provider": "hound",
+            "provider": "donsetch",
             "reason": "cooldown",
             "cooldown_remaining_seconds": 42,
         }
     ]
     assert result["quality_report"]["skipped_providers"] == [
         {
-            "provider": "hound",
+            "provider": "donsetch",
             "reason": "cooldown",
             "cooldown_remaining_seconds": 42,
         }

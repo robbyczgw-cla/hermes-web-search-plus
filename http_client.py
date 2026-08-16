@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 
 
 TRANSIENT_HTTP_CODES = {429, 503}
-DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/3.4.2"
+DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/4.0.0"
 
 
 class ProviderRequestError(Exception):

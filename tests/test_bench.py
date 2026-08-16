@@ -39,7 +39,7 @@ PROVIDER_ENV_VARS = [
     "KEENABLE_API_KEY",
     "KEENABLE_ALLOW_PUBLIC",
     "SEARXNG_INSTANCE_URL",
-    "HOUND_MCP_URL",
+    "DONSETCH_BIN",
 ]
 
 
@@ -198,14 +198,14 @@ def test_bench_skips_disabled_and_unknown_providers(monkeypatch):
     ]
 
 
-def test_bench_excludes_guarded_hound_until_auto_allow_opt_in(monkeypatch):
+def test_bench_excludes_guarded_donsetch_until_auto_allow_opt_in(monkeypatch):
     _clear_provider_env(monkeypatch)
-    monkeypatch.setenv("HOUND_MCP_URL", "http://127.0.0.1:8765/mcp")
+    monkeypatch.setenv("DONSETCH_BIN", "/bin/true")
 
     assert bench.bench_eligible_providers({"auto_routing": {}}) == []
     assert bench.bench_eligible_providers(
-        {"auto_routing": {"auto_allow": {"hound": True}}}
-    ) == ["hound"]
+        {"auto_routing": {"auto_allow": {"donsetch": True}}}
+    ) == ["donsetch"]
 
 
 def test_bench_time_budget_skips_remaining_providers(monkeypatch):

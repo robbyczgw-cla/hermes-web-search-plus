@@ -44,7 +44,7 @@ Each provider adapter normalizes provider-specific request and response details 
 Provider capability classes:
 
 - Search-only: Brave, SearXNG, SerpBase, and Querit. Brave participates in the default auto-pool at priority 7; Parallel, SerpBase, and Querit default to `auto_allow=false` and are explicit/guarded unless users opt in.
-- Search and extraction: You.com, Serper, Firecrawl, Tavily, Exa, Linkup, Parallel, Keenable, and the optional local Hound MCP sidecar. Serper extraction uses its webpage scraper (`scrape.serper.dev`) and sits last in the default auto-extraction fallback chain. Hound defaults to `auto_allow=false` for both capabilities and is explicit-only unless deliberately enabled.
+- Search and extraction: You.com, Serper, Firecrawl, Tavily, Exa, Linkup, Parallel, Keenable, and the optional local DonSeTch MCP sidecar. Serper extraction uses its webpage scraper (`scrape.serper.dev`) and sits last in the default auto-extraction fallback chain. DonSeTch defaults to `auto_allow=false` for both capabilities and is explicit-only unless deliberately enabled.
 - Rejected legacy endpoints: native Perplexity and Kilo Perplexity remain metadata-only rejection records because no verified source-only endpoint is registered.
 
 Provider pricing, freshness, ranking, localization, and vertical support are controlled by the providers. The plugin normalizes responses; it does not make providers equivalent.

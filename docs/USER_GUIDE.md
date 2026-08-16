@@ -95,14 +95,14 @@ Presets:
 - `lean`: You.com + Linkup. Small fast search plus extraction.
 - `search`: You.com + Serper + Exa + Firecrawl + Tavily + Linkup. Full default Routing v2 pool.
 - `extract`: Firecrawl + Linkup + Exa + Tavily. Extraction-heavy setup.
-- `self-hosted`: SearXNG + keyless Keenable for automatic routing without a commercial API key. A separately installed Hound sidecar can be layered on for explicit local search and extraction.
+- `self-hosted`: SearXNG + keyless Keenable for automatic routing without a commercial API key. A separately installed DonSeTch sidecar can be layered on for explicit local search and extraction.
 - `all`: prompt for every supported provider.
 
-Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, SearXNG, SerpBase, Querit, Keenable, and the optional local Hound MCP sidecar. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, Keenable, Serper, and Hound. Native Perplexity and Kilo Perplexity are not registered because their legacy answer endpoints do not expose a verified source-only mode.
+Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, SearXNG, SerpBase, Querit, Keenable, and the optional local DonSeTch MCP sidecar. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, Keenable, Serper, and DonSeTch. Native Perplexity and Kilo Perplexity are not registered because their legacy answer endpoints do not expose a verified source-only mode.
 
 Keenable is keyless: set `KEENABLE_API_KEY` for the authenticated endpoints, or opt into its public tier (off by default). In the wizard, skip the Keenable key prompt and answer yes, or run `setup.py setup keenable --keyless-public`; it writes `keenable.allow_public: true` to `config.json` (equivalently `KEENABLE_ALLOW_PUBLIC=1`).
 
-Hound is a different kind of keyless provider: it is a separately installed local MCP service rather than a public WSP endpoint. Set `HOUND_MCP_URL=http://127.0.0.1:8765/mcp` in the Hermes runtime environment, then call `provider="hound"` explicitly. Hound stays outside automatic routing and fallback unless `setup.py config set-auto-allow hound on` is set. See [Hound local MCP provider](HOUND.md) before enabling it; keyless removes commercial credentials and request billing, not local resource use, outbound traffic, rate limits, or website policy obligations.
+DonSeTch is a different kind of keyless provider: it is a separately installed local MCP service rather than a public WSP endpoint. Set `DONSETCH_BIN=/absolute/path/to/donsetch` in the Hermes runtime environment, then call `provider="donsetch"` explicitly. DonSeTch stays outside automatic routing and fallback unless `setup.py config set-auto-allow donsetch on` is set. See [DonSeTch local MCP provider](DONSETCH.md) before enabling it; keyless removes commercial credentials and request billing, not local resource use, outbound traffic, rate limits, or website policy obligations.
 
 With a `KEENABLE_API_KEY` set, requests always use the authenticated endpoints. Without a key and without the opt-in, Keenable is treated as unconfigured: it won't auto-route, fall back, or enable `web_extract_plus`. When the public tier is enabled, queries and fetched URLs are sent to an **unauthenticated** public service with per-IP limits and no SLA — roughly 1,000 requests/hour and 10 requests/second — so treat it as a best-effort last resort, not a dependable provider. The first request that uses the public endpoint logs a one-time warning so the egress is visible, and `web-search-plus doctor` reports keyless providers as `key=no` with a separate `keyless=on/off` badge so key status stays truthful.
 
@@ -111,10 +111,10 @@ With a `KEENABLE_API_KEY` set, requests always use the authenticated endpoints. 
 `Local`, `self-hosted`, and `keyless` describe different boundaries in WSP:
 
 - **SearXNG** is an operator-configured metasearch endpoint and supports search only. The `self_hosted` profile can select it automatically.
-- **Hound** is a separately installed loopback MCP sidecar and supports both search and extraction. It is explicit-only by default and is not installed or silently enabled by the `self-hosted` preset.
+- **DonSeTch** is a separately installed local stdio MCP provider and supports both search and extraction. It is explicit-only by default and is not installed or silently enabled by the `self-hosted` preset.
 - **Keenable's public tier** needs no API key, but it is a remote public service rather than a local provider.
 
-Neither SearXNG nor Hound makes web access offline: searches still reach upstream engines, and extracted URLs still reach destination websites. "Local" means that you operate the control-plane service and its compute, not that requests stay on the machine.
+Neither SearXNG nor DonSeTch makes web access offline: searches still reach upstream engines, and extracted URLs still reach destination websites. "Local" means that you operate the control-plane service and its compute, not that requests stay on the machine.
 
 ### Self-hosted automatic-routing profile
 
@@ -145,22 +145,22 @@ At load time, rather than by saving duplicate routing settings, the profile deri
 
 `setup.py status` is an offline diagnostic: it displays the active profile and effective auto pool, then checks that the SearXNG URL is present and well formed and that Keenable is configured or its keyless public tier is enabled. It never contacts either provider. If neither SearXNG nor Keenable is usable, an automatic request returns the typed `self_hosted_profile_unavailable` error with the local remediation.
 
-#### Add Hound for local Search + Extract
+#### Add DonSeTch for local Search + Extract
 
-The `self-hosted` preset deliberately does not install Hound or add it to the automatic pool. Install and start Hound separately as described in [Hound local MCP provider](HOUND.md), then expose its loopback endpoint to the Hermes process:
+The `self-hosted` preset deliberately does not install DonSeTch or add it to the automatic pool. Install DonSeTch separately as described in [DonSeTch local MCP provider](DONSETCH.md), then set its executable path for the Hermes process:
 
 ```bash
-export HOUND_MCP_URL=http://127.0.0.1:8765/mcp
+export DONSETCH_BIN=/absolute/path/to/donsetch
 ```
 
-Use Hound explicitly for both capabilities:
+Use DonSeTch explicitly for both capabilities:
 
 ```python
-web_search_plus(query="Hermes Agent documentation", provider="hound", count=5)
-web_extract_plus(urls=["https://example.com"], provider="hound")
+web_search_plus(query="Hermes Agent documentation", provider="donsetch", count=5)
+web_extract_plus(urls=["https://example.com"], provider="donsetch")
 ```
 
-This gives a local-first control plane with SearXNG available for automatic search and Hound available for deliberate search or extraction. Hound remains outside automatic routing and fallback unless an operator explicitly opts it in after measuring local reliability and latency.
+This gives a local-first control plane with SearXNG available for automatic search and DonSeTch available for deliberate search or extraction. DonSeTch remains outside automatic routing and fallback unless an operator explicitly opts it in after measuring local reliability and latency.
 
 The profile governs only automatic routing. An explicit `provider="serper"` (or another keyed provider) still works when its key exists; its result metadata includes `"profile_deviation": true` so the paid-key deviation is visible. Explicit provider requests remain useful for diagnostics and controlled operator overrides.
 
@@ -415,7 +415,7 @@ Parameters:
 
 Parameter semantics:
 
-- `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `parallel`, `searxng`, `serpbase`, `querit`, or `hound`. Brave joins the default auto-pool at priority 7; Parallel, SerpBase, Querit, and Hound remain available for explicit calls but default to `auto_allow=false`.
+- `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `parallel`, `searxng`, `serpbase`, `querit`, or `donsetch`. Brave joins the default auto-pool at priority 7; Parallel, SerpBase, Querit, and DonSeTch remain available for explicit calls but default to `auto_allow=false`.
 - `count`: result count, from 1 to 20.
 - `time_range`: `day`, `week`, `month`, or `year` where supported.
 - `freshness`: unified recency filter with the values `day`, `week`, `month`, or `year` (case-insensitive; invalid values return a clear error). It is applied natively by Serper, Brave, Querit, Firecrawl, Keenable, You.com, SearXNG, Exa, and TinyFish, each translated into that provider's own format (for example Brave `pw`, Serper `tbs=qdr:w`, Exa absolute UTC `startPublishedDate`/`endPublishedDate` bounds, or TinyFish publication-time filters). Providers without recency support (Tavily, Linkup, Parallel, SerpBase) still run the search normally; result metadata reports `freshness.applied=false` instead of silently dropping the filter. In `mode="research"` the applied status is reported per provider.
@@ -444,7 +444,7 @@ Parameters:
 | `include_raw_html` | boolean | `false` | Include raw HTML when supported |
 | `render_js` | boolean | `false` | Render JavaScript before extraction when supported |
 
-Auto extraction defaults to Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, then Serper when those providers are configured. Hound is extraction-capable but excluded from automatic extraction and fallback unless explicitly opted in. Change only this order with `setup.py config set-extract-priority ...`; the setting is stored as `auto_routing.extract_provider_priority` and does not inherit search `provider_priority`. Partial lists are completed with missing extract providers in registry order. Serper's webpage scraper (`https://scrape.serper.dev`, overridable via config `serper.scrape_url`, timeout via `serper.extract_timeout`) remains the public default's last-resort fallback. Each URL is returned independently; one failed URL does not discard successful results from the same call.
+Auto extraction defaults to Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, then Serper when those providers are configured. DonSeTch is extraction-capable but excluded from automatic extraction and fallback unless explicitly opted in. Change only this order with `setup.py config set-extract-priority ...`; the setting is stored as `auto_routing.extract_provider_priority` and does not inherit search `provider_priority`. Partial lists are completed with missing extract providers in registry order. Serper's webpage scraper (`https://scrape.serper.dev`, overridable via config `serper.scrape_url`, timeout via `serper.extract_timeout`) remains the public default's last-resort fallback. Each URL is returned independently; one failed URL does not discard successful results from the same call.
 
 Parallel extraction explicitly requests `full_content`. Its default budget is 60,000 characters per result and 120,000 characters total so long documents are not unfairly shortened compared with other extraction providers. Operators can override those request-side limits in `config.json` with `parallel.max_chars_per_result` and `parallel.max_chars_total`.
 
@@ -499,7 +499,7 @@ The plugin is designed to fail visibly rather than invent confidence.
 - Use `--no-cache` in CLI tests when you need a fresh provider call.
 - Transient provider errors are retried with short backoff.
 - Repeated provider failures put that provider on cooldown, stepping from 1 minute to 5 minutes to 25 minutes to 1 hour.
-- Research mode harvests providers in completion order but keeps the public result order deterministic. By default it may stop waiting after at least two providers contribute a sufficiently diverse result head; every provider skipped by this optimization remains visible as `preempted_after_quorum` in routing diagnostics. Tune or disable this under `quality.research_quorum` (`enabled`, `min_contributing_providers`, `result_target_cap`, `min_unique_domains`). This design adapts ideas from the independent MIT-licensed [Hound/Master-Fetch](https://github.com/dondai1234/master-fetch) project by [Bishesh Bhandari (`dondai1234`)](https://github.com/dondai1234), reworked for WSP's contracts.
+- Research mode harvests providers in completion order but keeps the public result order deterministic. By default it may stop waiting after at least two providers contribute a sufficiently diverse result head; every provider skipped by this optimization remains visible as `preempted_after_quorum` in routing diagnostics. Tune or disable this under `quality.research_quorum` (`enabled`, `min_contributing_providers`, `result_target_cap`, `min_unique_domains`). This behavior is implemented for WSP's own provider, budget, provenance, and receipt contracts; it does not make heterogeneous providers equivalent.
 - `research_time_budget` remains a best-effort wall-clock bound, not a provider-side billing limit.
 - Missing extraction keys, empty results, quota failures, and budget exhaustion are returned as warnings or metadata where possible.
 

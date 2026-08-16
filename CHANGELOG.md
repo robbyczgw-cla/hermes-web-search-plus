@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+## [v4.0.0] — 2026-08-16
+
+### Removed
+- Removed the optional Hound provider and `HOUND_MCP_URL` integration.
+
+### Added
+- Added the separately installed DonSeTch 2.1.0 stdio provider via `DONSETCH_BIN`.
+- Kept DonSeTch explicit-only by default; browser retrieval remains environment-dependent.
+- Added migration and attribution guidance in `docs/DONSETCH.md` and `docs/RELEASE_NOTES_V400.md`.
+
 ## [v3.4.2] — 2026-08-07
 
 ### 🐛 Fixed

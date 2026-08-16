@@ -129,18 +129,18 @@ python ~/.hermes/plugins/web-search-plus/setup.py setup you
 python ~/.hermes/plugins/web-search-plus/setup.py config set-default you
 ```
 
-Extraction requires an extraction-capable provider such as Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, or the separately installed local Hound sidecar.
+Extraction requires an extraction-capable provider such as Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, or the separately installed local DonSeTch sidecar.
 
 ## Can I run fully offline?
 
-No. The plugin calls external provider APIs for search and extraction. You can use a self-hosted SearXNG instance or local Hound sidecar, but searches and fetched URLs still produce outbound requests to public engines or destination websites. Local and keyless do not mean offline or anonymous.
+No. The plugin calls external provider APIs for search and extraction. You can use a self-hosted SearXNG instance or local DonSeTch sidecar, but searches and fetched URLs still produce outbound requests to public engines or destination websites. Local and keyless do not mean offline or anonymous.
 
 ## Does the plugin log or send results anywhere else?
 
 The normal data flow is:
 
 ```text
-Hermes tool call → web-search-plus plugin → configured provider API or local Hound sidecar → plugin response → Hermes agent
+Hermes tool call → web-search-plus plugin → configured provider API or local DonSeTch sidecar → plugin response → Hermes agent
 ```
 
 The plugin writes local cache files and provider health state under the cache directory. It does not add a separate analytics service. Provider APIs still receive the queries or URLs you ask them to process.

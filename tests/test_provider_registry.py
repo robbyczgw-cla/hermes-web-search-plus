@@ -21,11 +21,11 @@ def test_provider_registry_is_the_complete_capability_source():
         "searxng",
         "keenable",
     )
-    assert registry.SEARCH_PROVIDER_IDS[-3:] == ("hound", "octen", "tinyfish")
+    assert registry.SEARCH_PROVIDER_IDS[-3:] == ("donsetch", "octen", "tinyfish")
     assert registry.EXTRACT_PROVIDER_IDS == (
-        "tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper", "hound"
+        "tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper", "donsetch"
     )
-    assert registry.PROVIDER_SPECS["hound"].auto_allowed_by_default is False
+    assert registry.PROVIDER_SPECS["donsetch"].auto_allowed_by_default is False
     assert registry.PROVIDER_SPECS["serper"].supports_extract is True
     assert registry.PROVIDER_SPECS["keenable"].supports_extract is True
     assert registry.PROVIDER_SPECS["keenable"].supports_search is True
@@ -40,7 +40,7 @@ def test_provider_registry_is_the_complete_capability_source():
         "serpbase": False,
         "querit": False,
         "parallel": False,
-        "hound": False,
+        "donsetch": False,
         "octen": False,
         "tinyfish": False,
     }
