@@ -19,7 +19,11 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v4.0.0** — see the [Changelog](CHANGELOG.md) and [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+Current release: **v4.0.1** — see the [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+
+### What's new in 4.0.1
+
+DonSeTch now reuses one stdio MCP session for every URL in a single extract call, reaps the child on timeout or MCP failure, and reports binary readiness from `setup.py status`. Search and Extract stay explicit-only.
 
 ### What's new in 4.0.0
 
@@ -67,7 +71,7 @@ Provider privacy is not uniform. Before sending sensitive queries or URLs, revie
 
 ### Upgrading to 4.0.0
 
-The core tools and existing keyed providers remain available, but the optional Hound integration was removed. If you used Hound, follow the [DonSeTch migration guide](docs/DONSETCH.md#migration-from-hound): install DonSeTch 2.1.0 separately, set `DONSETCH_BIN`, and change explicit `provider="hound"` calls to `provider="donsetch"`.
+The core tools and existing keyed providers remain available, but the optional Hound integration was removed. If you used Hound, follow the [DonSeTch migration guide](docs/DONSETCH.md#migration-from-hound): install DonSeTch 2.3.1 separately, set `DONSETCH_BIN`, and change explicit `provider="hound"` calls to `provider="donsetch"`.
 
 ### Self-hosted / no-paid-key profile
 

@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v4.0.0
+web-search-plus — Hermes Plugin v4.0.1
 Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "4.0.0"
+__version__ = "4.0.1"
 
 import argparse
 import getpass
@@ -684,6 +684,26 @@ def _profile_status(config: Mapping[str, Any], env: Mapping[str, str]) -> Dict[s
     }
 
 
+def _donsetch_status(env: Mapping[str, str], config: Mapping[str, Any]) -> Dict[str, Any]:
+    """DonSeTch readiness is a binary path, not an API key."""
+    try:
+        spec = PROVIDER_SPECS.get("donsetch")
+        inspect = getattr(getattr(spec, "execute_search", None), "__globals__", {}).get(
+            "inspect_donsetch_readiness"
+        )
+    except Exception:
+        inspect = None
+    if inspect is None:
+        return {
+            "state": "missing",
+            "version": None,
+            "tested_version": "2.3.1",
+            "compatibility": "unknown",
+            "binary_configured": bool(_clean_env_value(env.get("DONSETCH_BIN") or "")),
+        }
+    return inspect(key=_clean_env_value(env.get("DONSETCH_BIN") or ""), config=dict(config))
+
+
 def _status_payload(env: Optional[Mapping[str, str]] = None, config: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     active_env = env if env is not None else os.environ
     active_config = dict(config or _default_behavior_config())
@@ -691,6 +711,7 @@ def _status_payload(env: Optional[Mapping[str, str]] = None, config: Optional[Ma
         "providers": _provider_config_status(active_env),
         "profile": _profile_status(active_config, active_env),
         "routing": active_config,
+        "donsetch": _donsetch_status(active_env, active_config),
     }
 
 
@@ -1156,6 +1177,15 @@ def _web_search_plus_cli_command(args: Any) -> None:
         else:
             print(_render_setup_guidance(env=env, fancy=not getattr(args, "plain", False)))
             print("\n" + _routing_summary(config))
+            donsetch = payload.get("donsetch") or {}
+            if donsetch.get("binary_configured") or donsetch.get("state") != "missing":
+                print(
+                    "\nDonSeTch binary: "
+                    f"state={donsetch.get('state')}, "
+                    f"version={donsetch.get('version') or 'unknown'}, "
+                    f"compatibility={donsetch.get('compatibility')}, "
+                    f"tested={donsetch.get('tested_version')}"
+                )
             if payload["profile"]["active"] == "self_hosted":
                 print("\n" + _render_profile_checks(payload["profile"]))
         return

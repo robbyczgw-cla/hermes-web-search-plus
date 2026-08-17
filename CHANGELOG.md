@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+## [v4.0.1] — 2026-08-17
+
+### Fixed
+- DonSeTch multi-URL extraction now reuses one initialized stdio MCP session per `web_extract_plus` request instead of starting a new process for every URL.
+- DonSeTch subprocesses are reaped on timeout, initialize failure, tool errors, malformed MCP output, and broken pipes.
+- `setup.py status` reports DonSeTch binary readiness (missing / not executable / version / compatibility) instead of treating `DONSETCH_BIN` as an API key.
+
+### Changed
+- Bump the tested DonSeTch version to 2.3.1 (live-tested for stdio Search and multi-URL Fetch).
+- DonSeTch captures a bounded, sanitized stderr excerpt for diagnostics. Successful Search/Extract payloads do not include raw stderr.
+
 ## [v4.0.0] — 2026-08-16
 
 ### Removed
