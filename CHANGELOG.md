@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- Parallel Search accepts an optional `parallel.mode` (`turbo`, `fast`, `basic`, `advanced`) in config. The default stays unset so the vendor default (`advanced`) is unchanged, and Parallel remains explicit-only.
+
 ## [v4.0.1] — 2026-08-17
 
 ### Fixed

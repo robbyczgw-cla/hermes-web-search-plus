@@ -28,6 +28,27 @@ class SelfHostedProfileError(ProviderConfigError):
     error_type = "self_hosted_profile_unavailable"
 
 
+PARALLEL_SEARCH_MODES = ("turbo", "fast", "basic", "advanced")
+
+
+def normalize_parallel_search_mode(value: Any) -> Optional[str]:
+    """Return a Parallel Search API mode or None to keep the vendor default.
+
+    Parallel omits ``mode`` as ``advanced``. We keep that wire shape unless an
+    operator explicitly sets turbo, fast, basic, or advanced.
+    """
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    if text not in PARALLEL_SEARCH_MODES:
+        raise ValueError(
+            "parallel.mode must be one of turbo, fast, basic, advanced"
+        )
+    return text
+
+
 SUPPORTED_PROFILES = frozenset({"standard", "self_hosted"})
 SELF_HOSTED_SEARCH_PROVIDER_IDS = ("searxng", *KEYLESS_PROVIDER_IDS)
 SELF_HOSTED_EXTRACT_PROVIDER_IDS = tuple(KEYLESS_EXTRACT_PROVIDER_IDS)
@@ -169,6 +190,7 @@ DEFAULT_CONFIG = {
         "timeout": 45,
         "extract_timeout": 60,
         "client_model": None,
+        "mode": None,
         "max_chars_total": 120000,
         "max_chars_per_result": 60000
     },
@@ -398,6 +420,14 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     if policy_mode not in {"classic", "shadow"}:
         raise ValueError("routing.policy_mode must be classic or shadow")
     routing["policy_mode"] = policy_mode
+    parallel = config.get("parallel")
+    if parallel is None:
+        parallel = dict(DEFAULT_CONFIG["parallel"])
+        config["parallel"] = parallel
+    if not isinstance(parallel, dict):
+        raise ValueError("parallel must be an object")
+    if "mode" in parallel:
+        parallel["mode"] = normalize_parallel_search_mode(parallel.get("mode"))
     budget_preflight = config.get(
         "budget_preflight", dict(DEFAULT_CONFIG["budget_preflight"])
     )
