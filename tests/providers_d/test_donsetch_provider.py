@@ -45,8 +45,10 @@ def test_donsetch_registers_as_explicit_only_search_and_extract_provider():
     assert "hound" not in provider_registry.PROVIDER_SPECS
 
 
-def test_donsetch_binary_resolution_is_explicit_and_fail_closed(tmp_path):
+def test_donsetch_binary_resolution_is_explicit_and_fail_closed(tmp_path, monkeypatch):
+    monkeypatch.delenv("DONSETCH_BIN", raising=False)
     _spec, module = _provider()
+    monkeypatch.setattr(module["shutil"], "which", lambda _name: None)
     with pytest.raises(RuntimeError, match="donsetch_binary_not_configured"):
         module["_resolve_binary"](None, {})
     binary = tmp_path / "donsetch"

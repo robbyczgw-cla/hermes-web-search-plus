@@ -110,7 +110,7 @@ _BUILTIN_PROVIDER_SPECS = (
         provider="parallel", env_var="PARALLEL_API_KEY", display_name="Parallel",
         description="LLM-ready web search and fast URL extraction with long source excerpts.",
         config_section="parallel", supports_search=True, supports_extract=True,
-        capability_labels=("search", "extract", "citations"), auto_allowed_by_default=False,
+        capability_labels=("search", "extract", "citations"), auto_allowed_by_default=True,
         signup_url="https://platform.parallel.ai",
     ),
     ProviderSpec(

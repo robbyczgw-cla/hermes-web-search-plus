@@ -166,7 +166,7 @@ The profile governs only automatic routing. An explicit `provider="serper"` (or 
 
 ### Migration note for v2.0.0
 
-Routing v2 changes the default `provider="auto"` behavior. Existing configs keep explicit user choices, but missing `auto_allow` entries inherit the guarded defaults: SerpBase, Querit, and Parallel stay explicit-only until you opt them into automatic routing; Brave joins the default auto-pool at priority 7. Perplexity provider IDs from older configs are ignored because those endpoints are no longer registered.
+Routing v2 changes the default `provider="auto"` behavior. Existing configs keep explicit user choices, but missing `auto_allow` entries inherit the guarded defaults: SerpBase and Querit stay explicit-only until you opt them into automatic routing; Brave joins the default auto-pool at priority 7 and Parallel at priority 8 when a key is configured. Perplexity provider IDs from older configs are ignored because those endpoints are no longer registered.
 
 ```bash
 python ~/.hermes/plugins/web-search-plus/setup.py config show --json
@@ -310,7 +310,7 @@ Example pattern:
 }
 ```
 
-Read that as: guarded providers can have keys but remain explicit-only for `provider="auto"`, and the router selected the best eligible provider. If you want SerpBase, Brave, Querit, or Parallel to participate in automatic routing, opt in with `set-auto-allow <provider> on`; if a provider is cooled down, wait or inspect local provider health state.
+Read that as: guarded providers can have keys but remain explicit-only for `provider="auto"`, and the router selected the best eligible provider. If you want SerpBase or Querit to participate in automatic routing, opt in with `set-auto-allow <provider> on`; if a provider is cooled down, wait or inspect local provider health state.
 
 ## Search locale defaults
 
@@ -360,7 +360,7 @@ Backward compatibility: without `defaults.locale` and without flags, everything 
 
 Some providers can be configured for explicit use without being selected automatically. That is what `auto_allow` controls.
 
-SerpBase, Querit, and Parallel default to `auto_allow=false`. Setting their keys makes explicit calls work; configured Brave keys participate in automatic routing by default:
+SerpBase and Querit default to `auto_allow=false`. Setting their keys makes explicit calls work; configured Brave and Parallel keys participate in automatic routing by default:
 
 ```python
 web_search_plus(query="best DAC reviews", provider="serpbase")
@@ -415,7 +415,7 @@ Parameters:
 
 Parameter semantics:
 
-- `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `parallel`, `searxng`, `serpbase`, `querit`, or `donsetch`. Brave joins the default auto-pool at priority 7; Parallel, SerpBase, Querit, and DonSeTch remain available for explicit calls but default to `auto_allow=false`.
+- `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `parallel`, `searxng`, `serpbase`, `querit`, or `donsetch`. Brave joins the default auto-pool at priority 7; Parallel joins at priority 8 when a key is configured. SerpBase, Querit, and DonSeTch remain available for explicit calls but default to `auto_allow=false`.
 - `count`: result count, from 1 to 20.
 - `time_range`: `day`, `week`, `month`, or `year` where supported.
 - `freshness`: unified recency filter with the values `day`, `week`, `month`, or `year` (case-insensitive; invalid values return a clear error). It is applied natively by Serper, Brave, Querit, Firecrawl, Keenable, You.com, SearXNG, Exa, and TinyFish, each translated into that provider's own format (for example Brave `pw`, Serper `tbs=qdr:w`, Exa absolute UTC `startPublishedDate`/`endPublishedDate` bounds, or TinyFish publication-time filters). Providers without recency support (Tavily, Linkup, Parallel, SerpBase) still run the search normally; result metadata reports `freshness.applied=false` instead of silently dropping the filter. In `mode="research"` the applied status is reported per provider.
@@ -446,7 +446,7 @@ Parameters:
 
 Auto extraction defaults to Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, then Serper when those providers are configured. DonSeTch is extraction-capable but excluded from automatic extraction and fallback unless explicitly opted in. Change only this order with `setup.py config set-extract-priority ...`; the setting is stored as `auto_routing.extract_provider_priority` and does not inherit search `provider_priority`. Partial lists are completed with missing extract providers in registry order. Serper's webpage scraper (`https://scrape.serper.dev`, overridable via config `serper.scrape_url`, timeout via `serper.extract_timeout`) remains the public default's last-resort fallback. Each URL is returned independently; one failed URL does not discard successful results from the same call.
 
-Parallel extraction explicitly requests `full_content`. Its default budget is 60,000 characters per result and 120,000 characters total so long documents are not unfairly shortened compared with other extraction providers. Operators can override those request-side limits in `config.json` with `parallel.max_chars_per_result` and `parallel.max_chars_total`. Search quality/latency can be tuned with `parallel.mode` (`turbo`, `fast`, `basic`, `advanced`); omit the key to keep Parallel's vendor default (`advanced`). Parallel remains explicit-only.
+Parallel extraction explicitly requests `full_content`. Its default budget is 60,000 characters per result and 120,000 characters total so long documents are not unfairly shortened compared with other extraction providers. Operators can override those request-side limits in `config.json` with `parallel.max_chars_per_result` and `parallel.max_chars_total`. Search quality/latency can be tuned with `parallel.mode` (`turbo`, `fast`, `basic`, `advanced`); omit the key to keep Parallel's vendor default (`advanced`). Parallel now joins automatic routing when configured.
 
 Large extracted pages are not returned as raw token bombs. `web_extract_plus` sanitizes inline base64 images, stores the full cleaned text under `cache/web`, and returns a bounded head/tail preview with a footer containing the stored file path plus an exact `read_file(path=..., offset=..., limit=500)` call for paging into the omitted middle. Configure the inline budget in `config.json`:
 

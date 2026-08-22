@@ -1003,6 +1003,7 @@ class QueryAnalyzer:
             "exa": discovery_score + (1.0 if re.search(r"\b(similar|alternatives?|examples?)\b", query, re.IGNORECASE) else 0.0) + (exa_deep_score * 0.5) + (exa_deep_reasoning_score * 0.5),
 
             "you": rag_score + (recency_score * 0.25),  # You.com good for real-time + RAG
+            "parallel": (rag_score * 0.55) + (research_score * 0.45) + (recency_score * 0.25) + (discovery_score * 0.25),
             "searxng": privacy_score,  # SearXNG for privacy/multi-source queries
             "firecrawl": discovery_score + (research_score * 0.35) + (recency_score * 0.25),
         }
@@ -1031,6 +1032,7 @@ class QueryAnalyzer:
             "exa": discovery_matches + exa_deep_matches + exa_deep_reasoning_matches,
 
             "you": rag_matches,
+            "parallel": rag_matches + research_matches + discovery_matches,
             "searxng": privacy_matches,
             "firecrawl": discovery_matches + research_matches,
         }

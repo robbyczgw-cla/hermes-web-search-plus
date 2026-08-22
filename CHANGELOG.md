@@ -2,8 +2,11 @@
 
 ## [Unreleased]
 
+## [v4.0.2] — 2026-08-22
+
 ### Added
-- Parallel Search accepts an optional `parallel.mode` (`turbo`, `fast`, `basic`, `advanced`) in config. The default stays unset so the vendor default (`advanced`) is unchanged, and Parallel remains explicit-only.
+- Parallel Search accepts an optional `parallel.mode` (`turbo`, `fast`, `basic`, `advanced`) in config. The default stays unset so the vendor default (`advanced`) is unchanged.
+- Parallel now joins the default auto-routing pool when a key is configured. Operators can still set `auto_allow.parallel=false`.
 
 ## [v4.0.1] — 2026-08-17
 

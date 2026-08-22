@@ -100,10 +100,10 @@ def test_extract_parallel_defaults_use_peer_level_full_content_budget():
     assert body["advanced_settings"]["full_content"]["max_chars_per_result"] == 60000
 
 
-def test_parallel_is_explicit_provider_but_blocked_from_auto_by_default():
+def test_parallel_is_auto_allowed_when_configured():
     config = search._deepcopy_default_config()
     assert "parallel" in config["auto_routing"]["provider_priority"]
-    assert config["auto_routing"]["auto_allow"]["parallel"] is False
+    assert config["auto_routing"]["auto_allow"].get("parallel", True) is True
 
     with mock.patch.dict(os.environ, {"PARALLEL_API_KEY": "parallel-test-key"}, clear=False):
         assert search.validate_api_key("parallel", config) == "parallel-test-key"
@@ -157,14 +157,14 @@ def test_search_parallel_rejects_unknown_mode():
         raise AssertionError("search_parallel should reject unknown modes")
 
 
-def test_parallel_mode_config_default_is_unset_and_stays_explicit_only():
+def test_parallel_mode_config_default_is_unset_and_stays_auto_allowed():
     config = search._deepcopy_default_config()
     assert config["parallel"].get("mode") is None
-    assert config["auto_routing"]["auto_allow"]["parallel"] is False
+    assert config["auto_routing"]["auto_allow"].get("parallel", True) is True
 
     validated = search._validate_runtime_config(config)
     assert validated["parallel"].get("mode") is None
-    assert validated["auto_routing"]["auto_allow"]["parallel"] is False
+    assert validated["auto_routing"]["auto_allow"].get("parallel", True) is True
 
 
 def test_validate_runtime_config_normalizes_and_rejects_parallel_mode():
