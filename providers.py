@@ -1190,8 +1190,8 @@ def search_parallel(
 
     Parallel returns source URLs plus long LLM-ready excerpts. Its API does not
     currently accept a generic max_results parameter, so results are trimmed
-    locally to the requested count. ``mode`` is optional; omitting it keeps the
-    vendor default (advanced).
+    locally to the requested count. ``mode`` defaults to ``fast``; set turbo,
+    basic, or advanced to override.
     """
     search_query = query
     if include_domains:
@@ -1199,7 +1199,7 @@ def search_parallel(
     if exclude_domains:
         search_query += " " + " ".join(f"-site:{domain}" for domain in exclude_domains)
 
-    normalized_mode = normalize_parallel_search_mode(mode)
+    normalized_mode = normalize_parallel_search_mode(mode) or "fast"
     body: Dict[str, Any] = {
         "objective": query,
         "search_queries": [search_query],

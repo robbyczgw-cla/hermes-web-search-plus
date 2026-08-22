@@ -51,8 +51,8 @@ def test_search_parallel_normalizes_excerpts_and_request_shape():
     assert body["objective"] == "Parallel AI Search API"
     assert body["search_queries"] == ["Parallel AI Search API site:docs.parallel.ai -site:example.com"]
     assert "max_results" not in body
-    assert "mode" not in body
-    assert result["metadata"]["mode"] is None
+    assert body["mode"] == "fast"
+    assert result["metadata"]["mode"] == "fast"
 
 
 def test_extract_parallel_requests_full_content_and_normalizes_results():
@@ -157,13 +157,13 @@ def test_search_parallel_rejects_unknown_mode():
         raise AssertionError("search_parallel should reject unknown modes")
 
 
-def test_parallel_mode_config_default_is_unset_and_stays_auto_allowed():
+def test_parallel_mode_config_default_is_fast_and_stays_auto_allowed():
     config = search._deepcopy_default_config()
-    assert config["parallel"].get("mode") is None
+    assert config["parallel"].get("mode") == "fast"
     assert config["auto_routing"]["auto_allow"].get("parallel", True) is True
 
     validated = search._validate_runtime_config(config)
-    assert validated["parallel"].get("mode") is None
+    assert validated["parallel"].get("mode") == "fast"
     assert validated["auto_routing"]["auto_allow"].get("parallel", True) is True
 
 

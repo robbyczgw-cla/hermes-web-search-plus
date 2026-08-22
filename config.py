@@ -32,10 +32,10 @@ PARALLEL_SEARCH_MODES = ("turbo", "fast", "basic", "advanced")
 
 
 def normalize_parallel_search_mode(value: Any) -> Optional[str]:
-    """Return a Parallel Search API mode or None to keep the vendor default.
+    """Return a Parallel Search API mode. Empty/None keeps the caller default.
 
-    Parallel omits ``mode`` as ``advanced``. We keep that wire shape unless an
-    operator explicitly sets turbo, fast, basic, or advanced.
+    Web Search Plus defaults to ``fast``. Operators can still set turbo, basic,
+    or advanced for slower/deeper Parallel calls.
     """
     if value is None:
         return None
@@ -190,7 +190,7 @@ DEFAULT_CONFIG = {
         "timeout": 45,
         "extract_timeout": 60,
         "client_model": None,
-        "mode": None,
+        "mode": "fast",
         "max_chars_total": 120000,
         "max_chars_per_result": 60000
     },
@@ -426,8 +426,7 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
         config["parallel"] = parallel
     if not isinstance(parallel, dict):
         raise ValueError("parallel must be an object")
-    if "mode" in parallel:
-        parallel["mode"] = normalize_parallel_search_mode(parallel.get("mode"))
+    parallel["mode"] = normalize_parallel_search_mode(parallel.get("mode", "fast")) or "fast"
     budget_preflight = config.get(
         "budget_preflight", dict(DEFAULT_CONFIG["budget_preflight"])
     )
