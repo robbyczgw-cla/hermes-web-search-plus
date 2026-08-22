@@ -207,6 +207,7 @@ def _call_parallel_search(search_module, prov, args, key, config, routing_info):
         api_url=parallel_config.get("api_url", "https://api.parallel.ai/v1/search"),
         timeout=int(parallel_config.get("timeout", 45)),
         client_model=parallel_config.get("client_model"),
+        mode=parallel_config.get("mode"),
     )
 
 

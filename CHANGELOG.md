@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+## [v4.0.2] — 2026-08-22
+
+### Added
+- Parallel Search accepts `parallel.mode` (`turbo`, `fast`, `basic`, `advanced`). The default is `fast`; set `advanced` or use research mode for deeper work.
+- Parallel now joins the default auto-routing pool when a key is configured. Operators can still set `auto_allow.parallel=false`.
+
 ## [v4.0.1] — 2026-08-17
 
 ### Fixed

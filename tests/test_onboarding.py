@@ -405,7 +405,7 @@ def test_default_behavior_config_blocks_low_trust_auto_providers():
     assert config["auto_routing"]["auto_allow"]["serpbase"] is False
     assert config["auto_routing"]["auto_allow"]["querit"] is False
     assert config["auto_routing"]["auto_allow"].get("brave", True) is True
-    assert config["auto_routing"]["auto_allow"]["parallel"] is False
+    assert config["auto_routing"]["auto_allow"].get("parallel", True) is True
 
 
 
@@ -422,7 +422,7 @@ def test_setup_dry_run_can_auto_deny_provider(tmp_path, capsys):
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "auto-allow false: donsetch, octen, parallel, querit, serpbase" in out
+    assert "auto-allow false: donsetch, octen, querit, serpbase, tinyfish" in out
     assert not env_path.exists()
     assert not config_path.exists()
 

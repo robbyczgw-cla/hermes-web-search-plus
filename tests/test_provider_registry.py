@@ -39,7 +39,6 @@ def test_provider_registry_is_the_complete_capability_source():
     assert registry.DEFAULT_AUTO_ALLOW == {
         "serpbase": False,
         "querit": False,
-        "parallel": False,
         "donsetch": False,
         "octen": False,
         "tinyfish": False,

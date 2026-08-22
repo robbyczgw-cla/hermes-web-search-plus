@@ -67,7 +67,7 @@ EXPECTED_SEARCH_KWARGS = {
     "linkup": {"query", "api_key", "max_results", "depth", "output_type", "include_domains", "exclude_domains", "api_url", "timeout"},
     "exa": {"query", "api_key", "max_results", "search_type", "exa_depth", "category", "start_date", "end_date", "similar_url", "include_domains", "exclude_domains", "text_verbosity", "freshness"},
     "firecrawl": {"query", "api_key", "max_results", "country", "time_range", "sources", "include_domains", "exclude_domains", "scrape_markdown", "ignore_invalid_urls", "api_url", "timeout_ms"},
-    "parallel": {"query", "api_key", "max_results", "include_domains", "exclude_domains", "api_url", "timeout", "client_model"},
+    "parallel": {"query", "api_key", "max_results", "include_domains", "exclude_domains", "api_url", "timeout", "client_model", "mode"},
     "perplexity": {"query", "api_key", "max_results", "model", "api_url", "freshness", "provider_name"},
     "kilo-perplexity": {"query", "api_key", "max_results", "model", "api_url", "freshness", "provider_name"},
     "you": {"query", "api_key", "max_results", "country", "language", "freshness", "safesearch", "include_news", "livecrawl"},
