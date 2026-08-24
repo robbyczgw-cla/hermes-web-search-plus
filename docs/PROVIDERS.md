@@ -97,7 +97,7 @@ Independent web index for search and extraction; works keyless, optional key rai
 
 ### DonSeTch (local MCP)
 
-Local DonSeTch 2.x stdio MCP provider for metasearch, direct extraction, PDF/OCR-aware fetching, and optional browser escalation.
+Local DonSeTch 3.x stdio MCP provider for metasearch, direct extraction, PDF/OCR-aware fetching, and optional browser escalation.
 
 ### Octen via Monid
 
