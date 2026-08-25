@@ -1,8 +1,12 @@
+from pathlib import Path
+
 import provider_registry as registry
 import config
 import extract
 import search
 import __init__ as plugin
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_provider_registry_is_the_complete_capability_source():
@@ -70,3 +74,11 @@ def test_provider_argparse_choices_stay_in_registry_sync():
     parser = search.build_parser_for_tests()
     provider_action = next(action for action in parser._actions if "--provider" in action.option_strings)
     assert tuple(choice for choice in provider_action.choices if choice != "auto") == registry.SEARCH_PROVIDER_IDS
+
+
+def test_architecture_auto_allow_examples_match_registry_defaults():
+    text = (ROOT / "docs" / "ARCHITECTURE.md").read_text()
+    assert '"brave": false' not in text
+    assert '"parallel": false' not in text
+    for name in registry.DEFAULT_AUTO_ALLOW:
+        assert f'"{name}": false' in text

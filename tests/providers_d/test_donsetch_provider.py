@@ -510,17 +510,17 @@ def test_version_detection_classifies_missing_tested_compatible_and_incompatible
         path.chmod(0o700)
         return str(path)
 
-    tested = module["inspect_donsetch_readiness"](binary=_version_bin("2.3.1"))
+    tested = module["inspect_donsetch_readiness"](binary=_version_bin("3.2.1"))
     assert tested["state"] == "executable"
-    assert tested["version"] == "2.3.1"
+    assert tested["version"] == "3.2.1"
     assert tested["compatibility"] == "tested"
-    assert tested["tested_version"] == "2.3.1"
+    assert tested["tested_version"] == "3.2.1"
     assert "api_key" not in tested
 
-    other = module["inspect_donsetch_readiness"](binary=_version_bin("2.1.0"))
+    other = module["inspect_donsetch_readiness"](binary=_version_bin("3.0.0"))
     assert other["compatibility"] == "compatible_unverified"
-    assert other["version"] == "2.1.0"
+    assert other["version"] == "3.0.0"
 
-    major = module["inspect_donsetch_readiness"](binary=_version_bin("3.0.0"))
+    major = module["inspect_donsetch_readiness"](binary=_version_bin("2.3.1"))
     assert major["compatibility"] == "incompatible_major"
     assert major["state"] == "executable"

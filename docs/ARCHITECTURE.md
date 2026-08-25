@@ -69,8 +69,9 @@ Default routing config includes:
     "auto_allow": {
       "serpbase": false,
       "querit": false,
-      "brave": false,
-      "parallel": false
+      "octen": false,
+      "tinyfish": false,
+      "donsetch": false
     },
     "confidence_threshold": 0.3
   }
@@ -107,17 +108,19 @@ Example:
 ```json
 "auto_allow": {
   "serpbase": false,
-  "parallel": false,
   "querit": false,
-  "brave": false
+  "octen": false,
+  "tinyfish": false,
+  "donsetch": false
 }
 ```
 
 With this config:
 
 - `provider="serpbase"` can work when `SERPBASE_API_KEY` is present.
-- `provider="parallel"` can work when `PARALLEL_API_KEY` is present.
-- `provider="auto"` will not select guarded providers such as SerpBase or Parallel unless opted in.
+- `provider="donsetch"` can work when `DONSETCH_BIN` is present.
+- `provider="auto"` will not select SerpBase, Querit, Octen, TinyFish, or DonSeTch unless opted in.
+- Brave and Parallel join automatic routing when their keys are configured.
 - fallback lists will not silently choose guarded providers.
 - `quality_report` can surface guarded providers under `auto_allow_excluded`.
 

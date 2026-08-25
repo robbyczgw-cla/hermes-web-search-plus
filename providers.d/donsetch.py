@@ -26,7 +26,7 @@ from wsp_sdk import ProviderSpec, extract_result, search_result, source_result
 _ALLOWED_OUTPUT_FORMATS = {"markdown"}
 _ALLOWED_SEARCH_TYPES = {"search", "news"}
 _ALLOWED_INTENTS = {"auto", "web", "code", "paper", "news", "entity"}
-TESTED_VERSION = "2.3.1"
+TESTED_VERSION = "3.2.1"
 STDERR_LIMIT = 2048
 _VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 _SECRET_RE = re.compile(
@@ -630,7 +630,7 @@ PROVIDER = ProviderSpec(
     env_var="DONSETCH_BIN",
     display_name="DonSeTch (local MCP)",
     description=(
-        "Local DonSeTch 2.x stdio MCP provider for metasearch, direct extraction, "
+        "Local DonSeTch 3.x stdio MCP provider for metasearch, direct extraction, "
         "PDF/OCR-aware fetching, and optional browser escalation."
     ),
     config_section="donsetch",

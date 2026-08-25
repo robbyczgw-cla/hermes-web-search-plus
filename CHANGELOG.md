@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [v4.0.3] — 2026-08-25
+
+### Changed
+- Bump the tested DonSeTch version to 3.2.1. Live stdio Search and Fetch still
+  work; 2.x binaries now report `incompatible_major`.
+- Correct Architecture `auto_allow` examples so Brave and Parallel match the
+  live registry defaults.
+
 ## [v4.0.2] — 2026-08-22
 
 ### Added
