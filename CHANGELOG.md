@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v4.0.4] — 2026-09-04
+
 ### Fixed
 
 - Preserve queries beginning with `-` through structured search requests and subprocess adapters. Treat `spans_query` as data even when it resembles a CLI flag.

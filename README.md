@@ -19,7 +19,11 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v4.0.3** — see the [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+Current release: **v4.0.4** — see the [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+
+### What's new in 4.0.4
+
+Queries beginning with `-`, such as `-site:reddit.com`, now remain search text across the API and subprocess paths. This patch also consolidates budget and adapter checks while preserving existing interfaces. See the [4.0.4 release notes](docs/RELEASE_NOTES_V404.md).
 
 ### What's new in 4.0.3
 

@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v4.0.3
+web-search-plus — Hermes Plugin v4.0.4
 Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "4.0.3"
+__version__ = "4.0.4"
 
 import argparse
 import getpass
