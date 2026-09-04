@@ -583,6 +583,15 @@ def build_parser_for_tests() -> argparse.ArgumentParser:
     return parser
 
 
+class _StoreQueryText(argparse.Action):
+    """Preserve literal -- on Python 3.10 as well as newer argparse versions."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        # Python 3.10 strips '--' even from a single attached option value.
+        # With nargs=None this empty list cannot represent omitted input.
+        setattr(namespace, self.dest, "--" if values == [] else values)
+
+
 def build_parser(config: Dict[str, Any]) -> argparse.ArgumentParser:
     """Build the search.py CLI argument parser.
 
@@ -675,7 +684,7 @@ Full docs: See README.md and SKILL.md
     )
     parser.add_argument(
         "--query", "-q", 
-        help="Search query"
+        action=_StoreQueryText, help="Search query"
     )
     parser.add_argument(
         "--extract-urls",
@@ -693,7 +702,7 @@ Full docs: See README.md and SKILL.md
     parser.add_argument("--include-raw-html", action="store_true", help="Include raw HTML when supported")
     parser.add_argument("--render-js", action="store_true", help="Render JavaScript before extraction when supported")
     parser.add_argument("--spans", action="store_true", help="Select deterministic semantic spans from extracted text")
-    parser.add_argument("--spans-query", help="Query used to rank extracted semantic spans")
+    parser.add_argument("--spans-query", action=_StoreQueryText, help="Query used to rank extracted semantic spans")
     parser.add_argument(
         "--max-results", "-n", 
         type=int, 

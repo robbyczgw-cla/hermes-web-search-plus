@@ -13,7 +13,7 @@ boundary = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(boundary)
 
 
-@pytest.mark.parametrize("text", ["--help", "-site:reddit.com", "--", "normal query"])
+@pytest.mark.parametrize("text", ["--help", "-site:reddit.com", "--", "", "normal query"])
 @pytest.mark.parametrize("capability", ["search", "extract"])
 def test_subprocess_arguments_preserve_free_text(text, capability, monkeypatch):
     seen = []
