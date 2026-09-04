@@ -9,11 +9,16 @@ from __future__ import annotations
 
 import ast
 import importlib.util
-import inspect
 import os
 import re
 from pathlib import Path
 from typing import Dict, Iterable
+
+from provider_adapter_protocol import (
+    SEARCH_ADAPTER_PARAMETERS as _SEARCH_PARAMETERS,
+    EXTRACT_ADAPTER_PARAMETERS as _EXTRACT_PARAMETERS,
+    _signature_matches,
+)
 
 from wsp_sdk import (
     DuplicateProviderError,
@@ -34,14 +39,6 @@ def _non_production_discovery_allowed() -> bool:
 
 _PROVIDER_ID_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _ENV_VAR_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
-_SEARCH_PARAMETERS = (
-    "search_module", "prov", "args", "key", "config", "routing_info",
-)
-_EXTRACT_PARAMETERS = (
-    "extract_module", "prov", "urls", "key", "output_format",
-    "include_images", "include_raw_html", "render_js", "config",
-    "keyless_allowed",
-)
 
 
 # These records retain every pre-SDK default explicitly.  Discovered providers
@@ -206,20 +203,6 @@ def _refresh_derived_surfaces() -> None:
     KEYLESS_PROVIDER_IDS = tuple(spec.provider for spec in _provider_specs if spec.keyless)
     KEYLESS_EXTRACT_PROVIDER_IDS = tuple(
         spec.provider for spec in _provider_specs if spec.keyless and spec.supports_extract
-    )
-
-
-def _signature_matches(adapter: object, expected: tuple[str, ...]) -> bool:
-    if not callable(adapter):
-        return False
-    try:
-        parameters = tuple(inspect.signature(adapter).parameters.values())
-    except (TypeError, ValueError):
-        return False
-    return tuple(parameter.name for parameter in parameters) == expected and all(
-        parameter.kind in {inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}
-        and parameter.default is inspect.Parameter.empty
-        for parameter in parameters
     )
 
 

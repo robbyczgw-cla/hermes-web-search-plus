@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve queries beginning with `-` through structured search requests and subprocess adapters. Treat `spans_query` as data even when it resembles a CLI flag.
+- Reject malformed section shapes in the shared budget-preflight helper.
+- Update the schema-test dependency `fast-uri` to 3.1.7 to remove its URI parsing advisories.
+
+### Changed
+
+- Share daily-budget settings and adapter-signature validation without removing either enforcement boundary.
+- Replace prose-only compatibility assertions with export and defensive-copy checks; remove the nonexistent `search_provider` from the compatibility inventory.
+- Remove empty section headers and the pass-through contract-error factory.
+
 ## [v4.0.3] — 2026-08-25
 
 ### Changed

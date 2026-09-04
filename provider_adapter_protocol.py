@@ -139,10 +139,6 @@ def assert_dispatch_conformance(
         raise RuntimeError("provider adapter protocol violation: " + ";".join(errors))
 
 
-def _contract_failure(code: str) -> ProviderContractFailure:
-    return ProviderContractFailure(code)
-
-
 def validate_adapter_result(
     provider: str,
     capability: str,
@@ -155,32 +151,32 @@ def validate_adapter_result(
     """
 
     if capability not in {"search", "extract"}:
-        raise _contract_failure("unsupported_capability")
+        raise ProviderContractFailure("unsupported_capability")
     if not isinstance(payload, dict):
-        raise _contract_failure("envelope_not_mutable_mapping")
+        raise ProviderContractFailure("envelope_not_mutable_mapping")
     if payload.get("provider") != provider:
-        raise _contract_failure("provider_mismatch")
+        raise ProviderContractFailure("provider_mismatch")
 
     results = payload.get("results")
     if not isinstance(results, list):
-        raise _contract_failure("results_not_list")
+        raise ProviderContractFailure("results_not_list")
     for item in results:
         if not isinstance(item, dict):
-            raise _contract_failure("result_not_mapping")
+            raise ProviderContractFailure("result_not_mapping")
         url = item.get("url")
         if not isinstance(url, str) or (capability == "search" and not url):
-            raise _contract_failure("result_url_invalid")
+            raise ProviderContractFailure("result_url_invalid")
 
     answer = payload.get("answer")
     if answer not in {None, ""}:
-        raise _contract_failure("non_source_answer")
+        raise ProviderContractFailure("non_source_answer")
 
     if capability == "search":
         if not isinstance(payload.get("query"), str):
-            raise _contract_failure("search_query_invalid")
+            raise ProviderContractFailure("search_query_invalid")
         if "images" in payload and not isinstance(payload["images"], list):
-            raise _contract_failure("search_images_invalid")
+            raise ProviderContractFailure("search_images_invalid")
         if "metadata" in payload and not isinstance(payload["metadata"], dict):
-            raise _contract_failure("search_metadata_invalid")
+            raise ProviderContractFailure("search_metadata_invalid")
 
     return payload

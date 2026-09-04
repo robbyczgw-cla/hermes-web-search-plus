@@ -1,26 +1,23 @@
-import importlib.util
-from pathlib import Path
+import search
 
-SEARCH_PATH = Path(__file__).resolve().parents[1] / "search.py"
-search_spec = importlib.util.spec_from_file_location("wsp_search_shim_policy_under_test", SEARCH_PATH)
-assert search_spec is not None
-search = importlib.util.module_from_spec(search_spec)
-assert search_spec.loader is not None
-search_spec.loader.exec_module(search)
+import pytest
 
 
-def test_compatibility_shim_policy_documents_public_surface_and_removal_path():
+PUBLIC_EXPORTS = (
+    "QueryAnalyzer", "auto_route_provider", "extract_plus",
+    "get_cached_result", "cache_search_result", "clear_cache", "get_cache_stats",
+)
+
+
+def test_legacy_public_exports_remain_callable():
+    for name in PUBLIC_EXPORTS:
+        assert callable(getattr(search, name)), name
+    assert set(search.get_compatibility_shim_policy()["public_surface"]) == set(PUBLIC_EXPORTS)
+
+
+@pytest.mark.parametrize("field", ["public_surface", "internal_shims"])
+def test_policy_lists_are_defensive_copies(field):
     policy = search.get_compatibility_shim_policy()
-
-    assert policy["tracking_issue"] == "#34"
-    assert "ProviderSpec registry" in policy["removal_target"]
-    assert "one documented minor release window" in policy["removal_target"]
-    assert "v2.3" not in policy["removal_target"]
-    assert "QueryAnalyzer" in policy["public_surface"]
-    assert "extract_plus" in policy["public_surface"]
-    assert "extract_url_content" not in policy["public_surface"]
-    assert "_sync_provider_dependencies" in policy["internal_shims"]
-    assert "do not remove wrappers" in policy["policy"]
-
-    policy["public_surface"].append("mutated")
-    assert "mutated" not in search.get_compatibility_shim_policy()["public_surface"]
+    original = policy[field].copy()
+    policy[field].append("mutated")
+    assert search.get_compatibility_shim_policy()[field] == original

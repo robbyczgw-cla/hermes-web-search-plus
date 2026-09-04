@@ -2,8 +2,30 @@
 
 from __future__ import annotations
 
+import os
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Literal, Mapping, Sequence
+
+
+def daily_preflight_budget(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Return the optional global provider-call ledger settings for attempts."""
+    raw_off = os.environ.get("WSP_BUDGET_PREFLIGHT_OFF")
+    if raw_off is not None and raw_off.strip().strip('"').strip("'").lower() not in {
+        "", "0", "false", "no", "off",
+    }:
+        return {}
+    section = config.get("budget_preflight", {})
+    if not isinstance(section, dict):
+        raise ValueError("budget_preflight must be an object")
+    limit = section.get("max_daily_provider_calls")
+    if section.get("enabled") is not True or isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+        return {}
+    return {
+        "daily_budget_scope": "daily_provider_calls",
+        "daily_budget_window": time.strftime("%Y-%m-%d", time.gmtime()),
+        "daily_budget_limit_units": limit,
+    }
 
 
 CHECK_NAMES = (
