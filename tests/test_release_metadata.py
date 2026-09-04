@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "4.0.3"
+EXPECTED_VERSION = "4.0.4"
 
 
 def _load_plugin_module():
@@ -61,7 +61,7 @@ def test_current_release_surfaces_and_attribution():
     env_template = (ROOT / ".env.template").read_text()
     current_surfaces = "\n".join((readme, release_notes, user_guide, env_template))
 
-    assert "Current release: **v4.0.3**" in readme
+    assert "Current release: **v4.0.4**" in readme
     assert "docs/RELEASE_NOTES_V400.md" in readme
     assert "DonSeTch 2.1.0" in release_notes
     assert "explicit-only" in release_notes

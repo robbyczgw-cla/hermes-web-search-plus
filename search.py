@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 4.0.3
+Version: 4.0.4
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
 Brave Search, SerpBase, Querit, Parallel, SearXNG, Keenable.
 Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com, Keenable, Serper.
@@ -26,6 +26,7 @@ Examples:
 
 from __future__ import annotations
 
+
 import argparse
 import json
 import os
@@ -49,6 +50,8 @@ from cache import (
     cache_put,
     cache_stats,
 )
+from budget_preflight_v3 import daily_preflight_budget as _daily_preflight_budget
+
 from config import (  # noqa: F401 - re-exported for backward-compatible tests/imports
     DEFAULT_CONFIG,
     ProviderConfigError,
@@ -138,7 +141,6 @@ COMPATIBILITY_SHIM_DEPRECATION = {
     "public_surface": [
         "QueryAnalyzer",
         "auto_route_provider",
-        "search_provider",
         "extract_plus",
         "get_cached_result",
         "cache_search_result",
@@ -191,111 +193,6 @@ def explain_routing(*args, **kwargs):
 
 def _provider_auto_allowed(*args, **kwargs):
     return _routing._provider_auto_allowed(*args, **kwargs)
-
-
-
-
-
-
-# =============================================================================
-# Intelligent Auto-Routing Engine
-# =============================================================================
-
-
-
-
-
-
-
-
-
-
-
-
-
-# ProviderRequestError and TRANSIENT_HTTP_CODES live in http_client.py.
-# Provider cooldown/backoff constants live in provider_health.py.
-
-
-
-
-
-
-# =============================================================================
-# HTTP Client
-# =============================================================================
-
-
-
-# HTTP request helpers live in http_client.py and are imported above for backward-compatible monkeypatching.
-
-
-# =============================================================================
-# Serper (Google Search API)
-# =============================================================================
-
-
-
-# =============================================================================
-# SerpBase (Google SERP API)
-# =============================================================================
-
-
-
-
-
-
-
-# =============================================================================
-# Brave Search
-# =============================================================================
-
-
-
-# =============================================================================
-# Tavily (Research Search)
-# =============================================================================
-
-
-
-# =============================================================================
-# Querit (Multi-lingual search API for AI, with rich metadata and real-time information)
-# =============================================================================
-
-
-
-
-
-# =============================================================================
-# Linkup Search
-# =============================================================================
-
-
-
-# =============================================================================
-# Firecrawl Search
-# =============================================================================
-
-
-
-
-
-# =============================================================================
-# Extract Plus (URL Content Extraction)
-# =============================================================================
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -686,6 +583,15 @@ def build_parser_for_tests() -> argparse.ArgumentParser:
     return parser
 
 
+class _StoreQueryText(argparse.Action):
+    """Preserve literal -- on Python 3.10 as well as newer argparse versions."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        # Python 3.10 strips '--' even from a single attached option value.
+        # With nargs=None this empty list cannot represent omitted input.
+        setattr(namespace, self.dest, "--" if values == [] else values)
+
+
 def build_parser(config: Dict[str, Any]) -> argparse.ArgumentParser:
     """Build the search.py CLI argument parser.
 
@@ -778,7 +684,7 @@ Full docs: See README.md and SKILL.md
     )
     parser.add_argument(
         "--query", "-q", 
-        help="Search query"
+        action=_StoreQueryText, help="Search query"
     )
     parser.add_argument(
         "--extract-urls",
@@ -796,7 +702,7 @@ Full docs: See README.md and SKILL.md
     parser.add_argument("--include-raw-html", action="store_true", help="Include raw HTML when supported")
     parser.add_argument("--render-js", action="store_true", help="Render JavaScript before extraction when supported")
     parser.add_argument("--spans", action="store_true", help="Select deterministic semantic spans from extracted text")
-    parser.add_argument("--spans-query", help="Query used to rank extracted semantic spans")
+    parser.add_argument("--spans-query", action=_StoreQueryText, help="Query used to rank extracted semantic spans")
     parser.add_argument(
         "--max-results", "-n", 
         type=int, 
@@ -1862,60 +1768,34 @@ def _plan_search_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
     return ProviderPlan(tuple(candidates), selected, routing_metadata=dict(routed))
 
 
-def _daily_preflight_budget(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Return the optional global provider-call ledger settings for attempts."""
-    raw_off = os.environ.get("WSP_BUDGET_PREFLIGHT_OFF")
-    if raw_off is not None and raw_off.strip().strip('"').strip("'").lower() not in {
-        "", "0", "false", "no", "off",
-    }:
-        return {}
-    section = config.get("budget_preflight") or {}
-    limit = section.get("max_daily_provider_calls") if isinstance(section, dict) else None
-    if section.get("enabled") is not True or isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
-        return {}
-    return {
-        "daily_budget_scope": "daily_provider_calls",
-        "daily_budget_window": time.strftime("%Y-%m-%d", time.gmtime()),
-        "daily_budget_limit_units": limit,
-    }
-
-
 def _search_args_from_v3(request: RequestV3, config: Dict[str, Any]):
+    # Keep CLI defaults, but never parse request data as command-line syntax.
+    args = build_parser(config).parse_args([])
     options = request.options
     routing_request = request.routing
-    argv: List[str] = [
-        "--query", request.input["query"],
-        "--provider", str(routing_request.get("provider") or "auto"),
-        "--max-results", str(options.get("max_results", 5)),
-    ]
-    if options.get("depth", "normal") != "normal":
-        argv += ["--exa-depth", str(options["depth"])]
-    if options.get("time_range"):
-        argv += ["--time-range", str(options["time_range"])]
-    if options.get("freshness"):
-        argv += ["--freshness", str(options["freshness"])]
-    if options.get("search_type"):
-        argv += ["--search-type", str(options["search_type"])]
-    if options.get("include_domains"):
-        argv += ["--include-domains", *options["include_domains"]]
-    if options.get("exclude_domains"):
-        argv += ["--exclude-domains", *options["exclude_domains"]]
-    if options.get("mode", "normal") != "normal":
-        argv += ["--mode", str(options["mode"]), "--research-time-budget", str(options.get("research_time_budget", 55.0))]
-    if options.get("quality_report"):
-        argv += ["--quality-report"]
+    args.query = request.input["query"]
+    args.provider = routing_request.get("provider") or "auto"
+    args.max_results = options.get("max_results", 5)
+    args.exa_depth = options.get("depth", "normal")
+    for name in ("time_range", "freshness", "search_type", "quality_report"):
+        if options.get(name):
+            setattr(args, name, options[name])
+    for name in ("include_domains", "exclude_domains"):
+        if options.get(name):
+            setattr(args, name, list(options[name]))
+    args.mode = options.get("mode", "normal")
+    if args.mode != "normal":
+        args.research_time_budget = options.get("research_time_budget", 55.0)
     locale = options.get("locale") or {}
-    if locale.get("language"):
-        argv += ["--language", str(locale["language"])]
-    if locale.get("country"):
-        argv += ["--country", str(locale["country"])]
+    for name in ("language", "country"):
+        if locale.get(name):
+            setattr(args, name, locale[name])
     if routing_request.get("allow_fallback") and routing_request.get("mode") == "fixed":
-        argv += ["--allow-fallback"]
+        args.allow_fallback = True
     if request.cache.get("mode") == "bypass":
-        argv += ["--no-cache"]
+        args.no_cache = True
     if "ttl_seconds" in request.cache:
-        argv += ["--cache-ttl", str(request.cache["ttl_seconds"])]
-    args = build_parser(config).parse_args(argv)
+        args.cache_ttl = request.cache["ttl_seconds"]
     args._v3_no_legacy_cache_write = True
     return args
 

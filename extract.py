@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+from budget_preflight_v3 import daily_preflight_budget as _daily_preflight_budget
+
 from config import (
     ProviderConfigError,
     SELF_HOSTED_EXTRACT_PROVIDER_IDS,
@@ -80,24 +82,6 @@ def _extract_provider_auto_allowed(provider: str, auto_config: Dict[str, Any]) -
     if not isinstance(auto_allow, dict):
         return default_allowed
     return bool(auto_allow.get(provider, default_allowed))
-
-
-def _daily_preflight_budget(config: Dict[str, Any]) -> Dict[str, Any]:
-    """Return the optional global provider-call ledger settings for attempts."""
-    raw_off = os.environ.get("WSP_BUDGET_PREFLIGHT_OFF")
-    if raw_off is not None and raw_off.strip().strip('"').strip("'").lower() not in {
-        "", "0", "false", "no", "off",
-    }:
-        return {}
-    section = config.get("budget_preflight") or {}
-    limit = section.get("max_daily_provider_calls") if isinstance(section, dict) else None
-    if section.get("enabled") is not True or isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
-        return {}
-    return {
-        "daily_budget_scope": "daily_provider_calls",
-        "daily_budget_window": time.strftime("%Y-%m-%d", time.gmtime()),
-        "daily_budget_limit_units": limit,
-    }
 
 
 def resolve_extract_provider_priority(config: Optional[Dict[str, Any]] = None) -> List[str]:
