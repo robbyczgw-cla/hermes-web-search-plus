@@ -7,6 +7,7 @@
 - Add the opt-in `wsp` native Hermes backend for `web_search` and `web_extract`, using the existing in-process WSP engine. Search and extraction can be selected independently.
 - Keep the Plus tools and existing routing defaults. Native calls return an error rather than starting the CLI fallback when the in-process engine is unavailable.
 - Make the Fastpath doctor aware of native backend selection and profile-specific `HERMES_HOME`.
+- Thanks to [LugMuad](https://github.com/LugMuad) for the native-backend proposal and follow-up testing in [#125](https://github.com/robbyczgw-cla/hermes-web-search-plus/issues/125).
 
 - Support DonSeTch 3.6.1 compact MCP evidence and namespaced diagnostics; retain older structured responses.
 - Preserve rank/URL binding and force stdio only for the DonSeTch child process.
