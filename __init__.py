@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v4.0.4
+web-search-plus — Hermes Plugin v4.1.0
 Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "4.0.4"
+__version__ = "4.1.0"
 
 import argparse
 import getpass
@@ -193,7 +193,8 @@ def _get_plugin_config_path() -> Path:
 
 def _get_hermes_config_path() -> Path:
     """Return the default Hermes config path inspected by the fast-path doctor."""
-    return Path(os.environ.get("HERMES_CONFIG", Path.home() / ".hermes" / "config.yaml"))
+    home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    return Path(os.environ.get("HERMES_CONFIG") or home / "config.yaml")
 
 
 def _yamlish_has_list_item(text: str, key: str, item: str) -> bool:
@@ -259,6 +260,42 @@ def _yamlish_nested_list_item(text: str, parent: str, key: str, item: str) -> bo
     return False
 
 
+def _native_backend_hints(text: str) -> List[str]:
+    """Inspect native backend pins; stdlib setup supports simple block YAML.
+
+    Use the real YAML parser when installed (as it is in Hermes), retaining a
+    conservative block-scalar fallback for standalone, dependency-free setup.
+    This is advisory only, never a runtime configuration parser.
+    """
+    try:
+        import yaml
+    except ImportError:
+        web: Dict[str, Any] = {}
+        in_web = False
+        for line in text.splitlines():
+            if not line.strip() or line.lstrip().startswith("#"):
+                continue
+            if not line[0].isspace():
+                in_web = bool(re.fullmatch(r"web:\s*(?:#.*)?", line))
+                continue
+            if in_web:
+                match = re.fullmatch(
+                    r"\s+(backend|search_backend|extract_backend):\s*['\"]?([a-z0-9_-]+)['\"]?\s*(?:#.*)?", line
+                )
+                if match:
+                    web[match[1]] = match[2]
+    else:
+        try:
+            data = yaml.safe_load(text)
+            web = data.get("web", {}) if isinstance(data, dict) else {}
+            if not isinstance(web, dict):
+                web = {}
+        except yaml.YAMLError:
+            web = {}
+    return [kind for kind in ("search", "extract")
+            if (web.get(kind + "_backend") or web.get("backend")) == "wsp"]
+
+
 def _build_fastpath_report(config_path: Optional[Path] = None) -> Dict[str, Any]:
     """Inspect local plugin/Hermes hints that affect perceived WSP latency."""
     config_path = config_path or _get_hermes_config_path()
@@ -304,14 +341,25 @@ def _build_fastpath_report(config_path: Optional[Path] = None) -> Dict[str, Any]
             "recommendation": "On current public Hermes builds, set agent.disabled_toolsets: [web] when you want Web Search Plus to be the preferred web path.",
         },
     ])
+    native_capabilities = _native_backend_hints(config_text)
+    if native_capabilities:
+        checks = [check for check in checks if check["id"] != "legacy_web_toolset_disabled"]
+        checks.append({
+            "id": "native_web_toolset_enabled",
+            "ok": not legacy_web_disabled,
+            "detail": "Native WSP selection needs the Hermes web toolset enabled",
+            "recommendation": "Remove only web from agent.disabled_toolsets; preserve other disabled toolsets.",
+        })
     ok = all(check["ok"] for check in checks if check["id"] in {"plugin_tools_declared", "standalone_setup_available"})
-    preferred = ok and legacy_web_disabled
+    preferred = ok and (not legacy_web_disabled if native_capabilities else legacy_web_disabled)
     return {
         "ok": ok,
+        "mode": "native" if native_capabilities else "plus",
+        "native_capabilities": native_capabilities,
         "preferred_web_path_configured": preferred,
         "hermes_config": str(config_path),
         "checks": checks,
-        "recommended_hermes_config": {
+        "recommended_hermes_config": {} if native_capabilities else {
             "agent.disabled_toolsets": ["web"],
         },
         "notes": [
@@ -335,6 +383,14 @@ def _render_fastpath_report(report: Mapping[str, Any]) -> str:
         lines.append(f"  {marker} {check.get('id')}: {check.get('detail')}")
         if not check.get("ok") and check.get("recommendation"):
             lines.append(f"    Tip: {check.get('recommendation')}")
+    if report.get("mode") == "native":
+        lines.extend([
+            "",
+            "Native WSP selected for: " + ", ".join(report.get("native_capabilities", [])),
+            "Keep the Hermes web toolset enabled. This check inspects config only;",
+            "plugin registration and provider readiness require a runtime smoke.",
+        ])
+        return "\n".join(lines)
     lines.extend([
         "",
         "Recommended Hermes config for current public Hermes builds:",
@@ -697,7 +753,7 @@ def _donsetch_status(env: Mapping[str, str], config: Mapping[str, Any]) -> Dict[
         return {
             "state": "missing",
             "version": None,
-            "tested_version": "3.2.1",
+            "tested_version": "3.6.1",
             "compatibility": "unknown",
             "binary_configured": bool(_clean_env_value(env.get("DONSETCH_BIN") or "")),
         }
@@ -1408,6 +1464,8 @@ def _run_search(
     language: Optional[str] = None,
     country: Optional[str] = None,
     subprocess_timeout: int = 75,
+    *,
+    inprocess_only: bool = False,
 ) -> dict:
     """Run a search in-process (fast path), falling back to the subprocess engine.
 
@@ -1418,6 +1476,8 @@ def _run_search(
     timeout = _search_timeout(mode, research_time_budget, subprocess_timeout)
     search = None if _force_subprocess() else _load_search_module()
     if search is None:
+        if inprocess_only:
+            return {"error": "WSP in-process engine unavailable; no sidecar fallback", "results": []}
         return _run_search_subprocess(
             query=query, provider=provider, count=count, exa_depth=exa_depth,
             time_range=time_range, freshness=freshness, search_type=search_type,
@@ -1528,10 +1588,14 @@ def _run_extract(
     spans: bool = False,
     spans_query: Optional[str] = None,
     subprocess_timeout: int = 90,
+    *,
+    inprocess_only: bool = False,
 ) -> dict:
     """Run URL extraction in-process (fast path), falling back to the subprocess."""
     search = None if _force_subprocess() else _load_search_module()
     if search is None:
+        if inprocess_only:
+            return {"error": "WSP in-process engine unavailable; no sidecar fallback", "results": []}
         return _run_extract_subprocess(
             urls, provider=provider, output_format=output_format,
             include_images=include_images, include_raw_html=include_raw_html,
@@ -2048,3 +2112,25 @@ def register(ctx: Any) -> None:
 
     if hasattr(ctx, "register_hook"):
         ctx.register_hook("on_session_start", _on_session_start)
+
+    # Opt-in native Hermes WebSearchProvider bridge (name: wsp).
+    # Selected only via web.search_backend / web.extract_backend / web.backend.
+    # Never auto-selected; Plus tools remain the default surface.
+    try:
+        import importlib.util as _ilu
+
+        _nb_path = _PLUGIN_DIR / "native_backend.py"
+        _nb_name = __name__ + "._native_backend"
+        _nb_mod = sys.modules.get(_nb_name)
+        if _nb_mod is None and _nb_path.is_file():
+            _nb_spec = _ilu.spec_from_file_location(_nb_name, _nb_path)
+            if _nb_spec and _nb_spec.loader:
+                _nb_mod = _ilu.module_from_spec(_nb_spec)
+                # Publish only a completely imported module, under this plugin's
+                # namespace. Host modules called native_backend remain untouched.
+                _nb_spec.loader.exec_module(_nb_mod)
+                sys.modules[_nb_name] = _nb_mod
+        if _nb_mod is not None:
+            _nb_mod.register_native_backend(ctx, sys.modules[__name__])
+    except Exception:  # pragma: no cover - never break Plus registration
+        logger.warning("web-search-plus: native wsp backend registration skipped")
