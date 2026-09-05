@@ -19,7 +19,11 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v4.0.4** — see the [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+Current release: **v4.0.5** — see the [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+
+### What's new in 4.0.5
+
+The DonSeTch adapter supports the 3.6.1 compact MCP response format while retaining older structured responses. Search titles and snippets remain attached to their source URLs; fetch diagnostics are read from namespaced metadata. See the [4.0.5 release notes](docs/RELEASE_NOTES_V405.md).
 
 ### What's new in 4.0.4
 
@@ -83,7 +87,7 @@ Provider privacy is not uniform. Before sending sensitive queries or URLs, revie
 
 ### Upgrading to 4.0.0
 
-The core tools and existing keyed providers remain available, but the optional Hound integration was removed. If you used Hound, follow the [DonSeTch migration guide](docs/DONSETCH.md#migration-from-hound): install DonSeTch 3.2.1 separately, set `DONSETCH_BIN`, and change explicit `provider="hound"` calls to `provider="donsetch"`.
+The core tools and existing keyed providers remain available, but the optional Hound integration was removed. If you used Hound, follow the [DonSeTch migration guide](docs/DONSETCH.md#migration-from-hound): install DonSeTch 3.6.1 separately, set `DONSETCH_BIN`, and change explicit `provider="hound"` calls to `provider="donsetch"`.
 
 ### Self-hosted / no-paid-key profile
 

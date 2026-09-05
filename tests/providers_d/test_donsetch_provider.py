@@ -65,12 +65,14 @@ def test_mcp_response_parser_extracts_structured_content():
         "result": {
             "content": [{"type": "text", "text": "body"}],
             "structuredContent": {"content_ok": True, "status": 200},
+            "_meta": {"com.donsetch/fetch-debug": {"title": "Example", "status": 200}},
         },
     }
     parsed = module["_mcp_response_from_stdout"](json.dumps(response), 2)
     assert parsed == {
         "structured": {"content_ok": True, "status": 200},
         "text": "body",
+        "meta": {"com.donsetch/fetch-debug": {"title": "Example", "status": 200}},
     }
 
 
@@ -93,7 +95,7 @@ def test_stdio_handshake_waits_for_initialize_response(tmp_path):
     )
     binary.chmod(0o700)
     result = module["_call_donsetch_tool"](str(binary), "web_search", {"query": "test"}, 5)
-    assert result == {"structured": {"ok": True}, "text": "body"}
+    assert result == {"structured": {"ok": True}, "text": "body", "meta": {}}
 
 
 def test_search_projects_donsetch_results_and_metadata(monkeypatch):
@@ -510,17 +512,330 @@ def test_version_detection_classifies_missing_tested_compatible_and_incompatible
         path.chmod(0o700)
         return str(path)
 
-    tested = module["inspect_donsetch_readiness"](binary=_version_bin("3.2.1"))
+    tested = module["inspect_donsetch_readiness"](binary=_version_bin("3.6.1"))
     assert tested["state"] == "executable"
-    assert tested["version"] == "3.2.1"
+    assert tested["version"] == "3.6.1"
     assert tested["compatibility"] == "tested"
-    assert tested["tested_version"] == "3.2.1"
+    assert tested["tested_version"] == "3.6.1"
     assert "api_key" not in tested
 
-    other = module["inspect_donsetch_readiness"](binary=_version_bin("3.0.0"))
+    other = module["inspect_donsetch_readiness"](binary=_version_bin("3.2.1"))
     assert other["compatibility"] == "compatible_unverified"
-    assert other["version"] == "3.0.0"
+    assert other["version"] == "3.2.1"
 
     major = module["inspect_donsetch_readiness"](binary=_version_bin("2.3.1"))
     assert major["compatibility"] == "incompatible_major"
     assert major["state"] == "executable"
+
+
+def test_child_env_pins_stdio_transport_even_when_host_sets_http(monkeypatch):
+    _spec, module = _provider()
+    monkeypatch.setenv("DONSETCH_TRANSPORT", "http")
+    monkeypatch.setenv("OTHER_HOST_VAR", "keep-me")
+    env = module["_child_env"]()
+    assert env["DONSETCH_TRANSPORT"] == "stdio"
+    assert env["OTHER_HOST_VAR"] == "keep-me"
+    assert os.environ.get("DONSETCH_TRANSPORT") == "http"
+
+
+def test_parse_search_evidence_handles_handles_urls_colon_titles_and_footers():
+    _spec, module = _provider()
+    structured = [
+        {
+            "rank": 1,
+            "url": "https://docs.rs/tokio/latest/tokio/",
+            "handle": "So9aiJHFd",
+        },
+        {
+            "rank": 2,
+            "url": "https://example.com/path",
+        },
+        {
+            "rank": 3,
+            "url": "https://tokio.rs/tokio/tutorial",
+            "handle": "SUYE3n6Qg",
+        },
+    ]
+    text = "\n".join(
+        [
+            "# Search results",
+            "1. So9aiJHFd · tokio - Rust - Docs.rs : docs.rs",
+            "   Tokio is an event-driven runtime",
+            "   second snippet line",
+            "2. https://example.com/path · Title: with: colons : example.com",
+            "   Example snippet",
+            "3. SUYE3n6Qg · Tutorial | Tokio : tokio.rs · ⚠ needs browser (~+6s)",
+            "   Tutorial body",
+            "Degraded retrieval : 8/9 backends available.",
+            "Weak results : low cross-source agreement.",
+            "4. SBAD · stray should not bind without structured rank : evil.com",
+            "   bad",
+        ]
+    )
+    evidence = module["parse_search_evidence"](text, structured)
+    assert evidence[1]["title"] == "tokio - Rust - Docs.rs"
+    assert evidence[1]["snippet"] == "Tokio is an event-driven runtime\nsecond snippet line"
+    assert evidence[2]["title"] == "Title: with: colons"
+    assert evidence[2]["reference"] == "https://example.com/path"
+    assert evidence[3]["title"] == "Tutorial | Tokio"
+    assert evidence[3]["snippet"] == "Tutorial body"
+    assert 4 not in evidence
+
+
+def test_parse_search_evidence_rejects_mismatched_reference_for_rank():
+    _spec, module = _provider()
+    structured = [
+        {"rank": 1, "url": "https://a.example/x", "handle": "Sreal1"},
+        {"rank": 2, "url": "https://b.example/y", "handle": "Sreal2"},
+    ]
+    text = "\n".join(
+        [
+            "1. Swrong · Stolen title : a.example",
+            "   should not attach to rank 1",
+            "2. Sreal2 · Keep me : b.example",
+            "   ok",
+        ]
+    )
+    evidence = module["parse_search_evidence"](text, structured)
+    assert 1 not in evidence
+    assert evidence[2]["title"] == "Keep me"
+
+
+def test_compact_search_projects_text_evidence_and_debug_meta_before_domain_filter(monkeypatch):
+    spec, module = _provider()
+    calls = []
+
+    def fake_call(binary, tool, arguments, timeout):
+        calls.append((binary, tool, arguments, timeout))
+        return {
+            "structured": {
+                "weak": False,
+                "results": [
+                    {
+                        "rank": 1,
+                        "url": "https://example.org/nope",
+                        "handle": "Snope1",
+                    },
+                    {
+                        "rank": 2,
+                        "url": "https://tokio.rs/tokio/tutorial",
+                        "handle": "Skeep2",
+                    },
+                    {
+                        "rank": 3,
+                        "url": "https://docs.rs/tokio",
+                        "handle": "Sdrop3",
+                    },
+                ],
+            },
+            "text": "\n".join(
+                [
+                    "# Search results",
+                    "1. Snope1 · Nope Title : example.org",
+                    "   nope snippet",
+                    "2. Skeep2 · Tutorial | Tokio : tokio.rs",
+                    "   keep snippet",
+                    "3. Sdrop3 · Docs : docs.rs",
+                    "   other",
+                    "Degraded retrieval : 1/2 backends available.",
+                ]
+            ),
+            "meta": {
+                "com.donsetch/search-debug": {
+                    "intent": "Code",
+                    "cached": False,
+                    "elapsed_ms": 321,
+                    "weak": False,
+                    "engines": [
+                        {"engine": "ddg", "status": "ok"},
+                        {"engine": "brave", "status": "blocked:429"},
+                    ],
+                    "results": [
+                        {"score": 9.9, "consensus": 1, "engines": ["ddg"]},
+                        {"score": 1.5, "consensus": 3, "engines": ["ddg", "brave"]},
+                        {"score": 0.1, "consensus": 1, "engines": ["brave"]},
+                    ],
+                    "noise_field": "must-not-leak",
+                }
+            },
+        }
+
+    monkeypatch.setitem(module, "_call_donsetch_tool", fake_call)
+    result = spec.execute_search(
+        None,
+        "donsetch",
+        _search_args(include_domains=["tokio.rs"]),
+        "/bin/true",
+        {"donsetch": {"timeout": 30}},
+        {},
+    )
+    assert [item["url"] for item in result["results"]] == [
+        "https://tokio.rs/tokio/tutorial"
+    ]
+    hit = result["results"][0]
+    assert hit["title"] == "Tutorial | Tokio"
+    assert hit["snippet"] == "keep snippet"
+    assert hit["score"] == 1.5
+    assert hit["engines_consensus"] == "3"
+    assert hit["engines"] == ["ddg", "brave"]
+    assert hit["position"] == 2
+    assert result["metadata"]["engines_used"] == ["ddg"]
+    assert result["metadata"]["engine_blocked"] == ["brave"]
+    assert result["metadata"]["duration_ms"] == 321.0
+    assert result["metadata"]["intent"] == "Code"
+    dumped = json.dumps(result)
+    assert "noise_field" not in dumped
+    assert "must-not-leak" not in dumped
+
+
+def test_compact_fetch_uses_debug_whitelist_and_ignores_foreign_meta(monkeypatch):
+    spec, module = _provider()
+
+    class FakeSession:
+        def __init__(self, _binary, _timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def call(self, tool, arguments):
+            assert tool == "web_fetch"
+            return {
+                "structured": {
+                    "url": "https://example.org/page",
+                    "content_ok": True,
+                    "content_kind": "Article",
+                    "lang": "en",
+                    "next_offset": 1000,
+                },
+                "text": "# Example\nhttps://example.org/page\n\nBody",
+                "meta": {
+                    "com.donsetch/fetch-debug": {
+                        "status": 200,
+                        "title": "Example",
+                        "quality": 0.8,
+                        "site": "example.org",
+                        "verdict": "ContentOk",
+                        "tokens_est": 99,
+                    },
+                    "com.other/noise": {"secret": "nope"},
+                },
+            }
+
+    monkeypatch.setitem(module, "DonsetchSession", FakeSession)
+    result = spec.execute_extract(
+        None,
+        "donsetch",
+        ["https://example.org/page"],
+        "/bin/true",
+        "markdown",
+        False,
+        False,
+        False,
+        {"donsetch": {"timeout": 30}},
+        False,
+    )
+    item = result["results"][0]
+    assert item["title"] == "Example"
+    assert item["status"] == 200
+    assert item["quality"] == 0.8
+    assert item["site"] == "example.org"
+    assert item["content"].startswith("# Example")
+    assert item["next_offset"] == 1000
+    dumped = json.dumps(result)
+    assert "tokens_est" not in dumped
+    assert "com.other/noise" not in dumped
+    assert "nope" not in dumped
+
+
+def test_legacy_search_and_fetch_shapes_still_project(monkeypatch):
+    """Pre-3.6 structured title/snippet/status remain valid."""
+    spec, module = _provider()
+
+    def fake_call(binary, tool, arguments, timeout):
+        return {
+            "structured": {
+                "intent": "Code",
+                "cached": False,
+                "weak": False,
+                "elapsed_ms": 10,
+                "engines": [{"engine": "ddg", "status": "ok"}],
+                "results": [
+                    {
+                        "url": "https://tokio.rs/tokio/tutorial",
+                        "title": "Legacy Title",
+                        "snippet": "Legacy snippet",
+                        "score": 2.0,
+                        "consensus": 2,
+                        "engines": ["ddg"],
+                    }
+                ],
+            },
+            "text": "",
+            "meta": {},
+        }
+
+    monkeypatch.setitem(module, "_call_donsetch_tool", fake_call)
+    search = spec.execute_search(
+        None,
+        "donsetch",
+        _search_args(),
+        "/bin/true",
+        {"donsetch": {"timeout": 5}},
+        {},
+    )
+    assert search["results"][0]["title"] == "Legacy Title"
+    assert search["results"][0]["snippet"] == "Legacy snippet"
+
+    class FakeSession:
+        def __init__(self, *_a):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_e):
+            return False
+
+        def call(self, tool, arguments):
+            return {
+                "structured": {
+                    "url": arguments["url"],
+                    "title": "Legacy Fetch",
+                    "status": 200,
+                    "content_ok": True,
+                    "content_kind": "Page",
+                    "verdict": "ContentOk",
+                    "quality": 0.5,
+                    "site": "example.org",
+                },
+                "text": "legacy body",
+                "meta": {},
+            }
+
+    monkeypatch.setitem(module, "DonsetchSession", FakeSession)
+    extract = spec.execute_extract(
+        None,
+        "donsetch",
+        ["https://example.org/page"],
+        "/bin/true",
+        "markdown",
+        False,
+        False,
+        False,
+        {},
+        False,
+    )
+    assert extract["results"][0]["title"] == "Legacy Fetch"
+    assert extract["results"][0]["content"] == "legacy body"
+
+
+def test_indented_footer_words_remain_source_snippets():
+    _, module = _provider()
+    rows = [{"rank": 1, "url": "https://example.org/", "handle": "Sone"}]
+    text = "1. Sone · Study : example.org\n   Weak results are discussed in this study.\nDegraded retrieval : 1/2 backends available."
+    result = module["parse_search_evidence"](text, rows)
+    assert result[1]["snippet"] == "Weak results are discussed in this study."

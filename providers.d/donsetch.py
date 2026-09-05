@@ -6,6 +6,12 @@ for every URL, then shuts the child down. The adapter projects structured
 ``web_search`` and ``web_fetch`` responses into WSP's source-only envelopes.
 No shell is used. The binary path comes from ``DONSETCH_BIN`` or the
 ``donsetch.binary`` config field — it is a filesystem path, not an API key.
+
+DonSeTch 3.6+ keeps model evidence in the text block and only actionable state
+on ``structuredContent``. Transport diagnostics live under namespaced
+``_meta`` keys (``com.donsetch/search-debug``, ``com.donsetch/fetch-debug``).
+This adapter whitelists those diagnostic fields and still accepts the older
+pre-compact structured shape so 3.2.x binaries keep working.
 """
 
 from __future__ import annotations
@@ -26,13 +32,24 @@ from wsp_sdk import ProviderSpec, extract_result, search_result, source_result
 _ALLOWED_OUTPUT_FORMATS = {"markdown"}
 _ALLOWED_SEARCH_TYPES = {"search", "news"}
 _ALLOWED_INTENTS = {"auto", "web", "code", "paper", "news", "entity"}
-TESTED_VERSION = "3.2.1"
+TESTED_VERSION = "3.6.1"
 STDERR_LIMIT = 2048
 _VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 _SECRET_RE = re.compile(
     r"(?i)\b(api[_-]?key|token|secret|password|authorization|bearer)\b\s*[:=]\s*\S+"
 )
 _HOME_RE = re.compile(r"(?i)(/root|/home/[^/\s]+|/Users/[^/\s]+)")
+_SEARCH_HEADER_RE = re.compile(r"^(\d+)\.\s+(.+)$")
+_SEARCH_HINT_RE = re.compile(r"\s+(·\s+⚠.*)$")
+_SEARCH_FOOTER_PREFIXES = (
+    "Weak results",
+    "Degraded retrieval",
+    "No results.",
+    "*degraded:",
+    "*fetch results",
+)
+_SEARCH_DEBUG_KEY = "com.donsetch/search-debug"
+_FETCH_DEBUG_KEY = "com.donsetch/fetch-debug"
 
 _last_stderr = ""
 _stderr_lock = threading.Lock()
@@ -104,6 +121,13 @@ def _url_allowed_by_domains(
     return not include_domains or any(
         _domain_matches(hostname, domain) for domain in include_domains
     )
+
+
+def _hostname_of(url: str) -> str:
+    try:
+        return (urlsplit(url).hostname or "").lower().rstrip(".")
+    except (TypeError, ValueError):
+        return ""
 
 
 def _candidate_binary(key: str | None, config: dict[str, Any]) -> str:
@@ -208,6 +232,39 @@ def inspect_donsetch_readiness(
     return report
 
 
+def _child_env() -> dict[str, str]:
+    """Copy the process env but pin DonSeTch to stdio for this child only."""
+    env = os.environ.copy()
+    env["DONSETCH_TRANSPORT"] = "stdio"
+    return env
+
+
+def _namespaced_meta(meta: Any, key: str) -> dict[str, Any]:
+    if not isinstance(meta, dict):
+        return {}
+    value = meta.get(key)
+    return value if isinstance(value, dict) else {}
+
+
+def _payload_from_tool_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Decode one MCP tools/call result into structured/text/meta."""
+    if result.get("isError") or result.get("is_error"):
+        raise RuntimeError("donsetch_tool_error")
+    structured = result.get("structuredContent")
+    if not isinstance(structured, dict):
+        structured = result.get("structured_content")
+    if not isinstance(structured, dict):
+        structured = {}
+    meta = result.get("_meta")
+    if not isinstance(meta, dict):
+        meta = {}
+    return {
+        "structured": structured,
+        "text": _text_content(result.get("content")),
+        "meta": meta,
+    }
+
+
 def _mcp_response_from_stdout(stdout: str, request_id: int) -> dict[str, Any]:
     for line in stdout.splitlines():
         try:
@@ -221,17 +278,7 @@ def _mcp_response_from_stdout(stdout: str, request_id: int) -> dict[str, Any]:
         result = message.get("result")
         if not isinstance(result, dict):
             raise RuntimeError("donsetch_mcp_contract_failed")
-        if result.get("isError") or result.get("is_error"):
-            raise RuntimeError("donsetch_tool_error")
-        structured = result.get("structuredContent")
-        if not isinstance(structured, dict):
-            structured = result.get("structured_content")
-        if not isinstance(structured, dict):
-            structured = {}
-        return {
-            "structured": structured,
-            "text": _text_content(result.get("content")),
-        }
+        return _payload_from_tool_result(result)
     raise RuntimeError("donsetch_mcp_contract_failed")
 
 
@@ -266,18 +313,170 @@ def _mcp_result(message: dict[str, Any], request_id: int) -> dict[str, Any]:
     return result
 
 
-def _payload_from_tool_result(result: dict[str, Any]) -> dict[str, Any]:
-    if result.get("isError") or result.get("is_error"):
-        raise RuntimeError("donsetch_tool_error")
-    structured = result.get("structuredContent")
-    if not isinstance(structured, dict):
-        structured = result.get("structured_content")
-    if not isinstance(structured, dict):
-        structured = {}
-    return {
-        "structured": structured,
-        "text": _text_content(result.get("content")),
-    }
+def _split_search_title_host(after_dot: str, expected_host: str | None) -> tuple[str, str]:
+    """Split ``title : host`` after the reference marker, preserving colon titles."""
+    text = after_dot
+    hint_match = _SEARCH_HINT_RE.search(text)
+    if hint_match:
+        text = text[: hint_match.start()]
+    if expected_host:
+        suffix = f" : {expected_host}"
+        if text.endswith(suffix):
+            return text[: -len(suffix)], expected_host
+        # Tolerate trailing path fragments or case differences on the host token.
+        lowered = text.lower()
+        host_l = expected_host.lower()
+        marker = f" : {host_l}"
+        idx = lowered.rfind(marker)
+        if idx >= 0 and idx + len(marker) == len(lowered):
+            return text[:idx], expected_host
+    if " : " not in text:
+        return text, expected_host or ""
+    title, host = text.rsplit(" : ", 1)
+    host = host.strip().split()[0] if host.strip() else ""
+    return title, host
+
+
+def parse_search_evidence(text: str, structured_results: list[dict[str, Any]] | None = None) -> dict[int, dict[str, str]]:
+    """Parse compact DonSeTch search markdown into rank-keyed title/snippet maps.
+
+    Rank binding happens before any domain filter. Malformed or mismatched
+    evidence lines are ignored rather than assigned to a different URL.
+    """
+    hosts_by_rank: dict[int, str] = {}
+    handles_by_rank: dict[int, str] = {}
+    urls_by_rank: dict[int, str] = {}
+    if isinstance(structured_results, list):
+        for index, item in enumerate(structured_results):
+            if not isinstance(item, dict):
+                continue
+            rank = _safe_int(item.get("rank"), index + 1)
+            if rank <= 0:
+                rank = index + 1
+            url = item.get("url") if isinstance(item.get("url"), str) else ""
+            handle = item.get("handle") if isinstance(item.get("handle"), str) else ""
+            urls_by_rank[rank] = url
+            if handle:
+                handles_by_rank[rank] = handle
+            host = _hostname_of(url)
+            if host:
+                hosts_by_rank[rank] = host
+
+    evidence: dict[int, dict[str, str]] = {}
+    current_rank: int | None = None
+    snippet_parts: list[str] = []
+
+    def _flush() -> None:
+        nonlocal current_rank, snippet_parts
+        if current_rank is None:
+            return
+        bucket = evidence.setdefault(current_rank, {"title": "", "snippet": "", "reference": ""})
+        if snippet_parts:
+            bucket["snippet"] = "\n".join(snippet_parts).strip()
+        snippet_parts = []
+
+    for raw_line in (text or "").splitlines():
+        line = raw_line.rstrip()
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#"):
+            continue
+        if not line.startswith("   ") and any(stripped.startswith(prefix) for prefix in _SEARCH_FOOTER_PREFIXES):
+            _flush()
+            current_rank = None
+            continue
+        header = _SEARCH_HEADER_RE.match(line)
+        if header:
+            _flush()
+            rank = int(header.group(1))
+            body = header.group(2).strip()
+            # When structured results are present, only bind ranks they declare.
+            if urls_by_rank and rank not in urls_by_rank:
+                current_rank = None
+                continue
+            expected_host = hosts_by_rank.get(rank)
+            expected_handle = handles_by_rank.get(rank)
+            expected_url = urls_by_rank.get(rank)
+            reference = ""
+            title = ""
+            if " · " in body:
+                reference, after = body.split(" · ", 1)
+                reference = reference.strip()
+                title, _host = _split_search_title_host(after, expected_host)
+            else:
+                reference = body
+            # Reject rank/reference mismatches so evidence never drifts onto another URL.
+            if expected_handle or expected_url:
+                allowed = {value for value in (expected_handle, expected_url) if value}
+                ok = reference in allowed
+                if not ok and expected_url:
+                    ok = reference.rstrip("/") == expected_url.rstrip("/")
+                if not ok:
+                    current_rank = None
+                    continue
+            evidence[rank] = {
+                "title": title.strip(),
+                "snippet": "",
+                "reference": reference,
+            }
+            current_rank = rank
+            snippet_parts = []
+            continue
+        if current_rank is None:
+            continue
+        if line.startswith("   "):
+            snippet_parts.append(line[3:].rstrip())
+            continue
+        # Non-indented non-header body: ignore rather than attaching to the wrong hit.
+    _flush()
+    return evidence
+
+
+def _whitelist_search_debug(meta: dict[str, Any]) -> dict[str, Any]:
+    debug = _namespaced_meta(meta, _SEARCH_DEBUG_KEY)
+    if not debug:
+        return {}
+    out: dict[str, Any] = {}
+    if "intent" in debug:
+        out["intent"] = debug.get("intent")
+    if "cached" in debug:
+        out["cached"] = bool(debug.get("cached"))
+    if "elapsed_ms" in debug:
+        out["elapsed_ms"] = _safe_float(debug.get("elapsed_ms"))
+    if "weak" in debug:
+        out["weak"] = bool(debug.get("weak"))
+    engines = debug.get("engines")
+    if isinstance(engines, list):
+        out["engines"] = engines
+    results = debug.get("results")
+    if isinstance(results, list):
+        cleaned = []
+        for item in results:
+            if not isinstance(item, dict):
+                cleaned.append({})
+                continue
+            entry: dict[str, Any] = {}
+            if "score" in item:
+                entry["score"] = item.get("score")
+            if "consensus" in item:
+                entry["consensus"] = item.get("consensus")
+            if "engines" in item:
+                entry["engines"] = item.get("engines")
+            cleaned.append(entry)
+        out["results"] = cleaned
+    return out
+
+
+def _whitelist_fetch_debug(meta: dict[str, Any]) -> dict[str, Any]:
+    debug = _namespaced_meta(meta, _FETCH_DEBUG_KEY)
+    if not debug:
+        return {}
+    out: dict[str, Any] = {}
+    for key in ("status", "title", "quality", "site", "verdict", "tier"):
+        if key in debug:
+            out[key] = debug.get(key)
+    return out
 
 
 class DonsetchSession:
@@ -317,7 +516,7 @@ class DonsetchSession:
             encoding="utf-8",
             errors="replace",
             bufsize=1,
-            env=os.environ.copy(),
+            env=_child_env(),
         )
         self._stderr_thread = threading.Thread(target=self._collect_stderr, daemon=True)
         self._stderr_thread.start()
@@ -479,51 +678,92 @@ def execute_search(search_module, prov, args, key, config, routing_info):
     if not isinstance(upstream_results, list):
         raise RuntimeError("donsetch_search_contract_failed")
 
+    # Bind text evidence and debug diagnostics by original rank/index before
+    # any domain filtering so dropped hits cannot steal another row's fields.
+    evidence = parse_search_evidence(payload.get("text") or "", upstream_results)
+    debug = _whitelist_search_debug(payload.get("meta") or {})
+    debug_results = debug.get("results") if isinstance(debug.get("results"), list) else []
+
     projected = []
-    for position, item in enumerate(upstream_results, start=1):
+    for index, item in enumerate(upstream_results):
         if not isinstance(item, dict):
             continue
         url = item.get("url")
         if not isinstance(url, str) or not url:
             continue
+        rank = _safe_int(item.get("rank"), index + 1)
+        if rank <= 0:
+            rank = index + 1
+        bound = evidence.get(rank) or {}
+        debug_item = debug_results[index] if index < len(debug_results) and isinstance(debug_results[index], dict) else {}
+
+        # Compact contract: title/snippet live in text. Legacy: still on item.
+        title = str(bound.get("title") or item.get("title") or "")
+        snippet = str(bound.get("snippet") or item.get("snippet") or "")
+        score_raw = item.get("score")
+        if score_raw is None:
+            score_raw = debug_item.get("score")
+        consensus_raw = item.get("consensus")
+        if consensus_raw is None:
+            consensus_raw = debug_item.get("consensus")
+        engines = item.get("engines")
+        if not isinstance(engines, (list, tuple)):
+            engines = debug_item.get("engines")
+        engines = _clean_string_list(engines)
+
         if not _url_allowed_by_domains(url, include_domains, exclude_domains):
             continue
-        engines = _clean_string_list(item.get("engines"))
         projected.append(
             source_result(
                 url,
-                title=str(item.get("title") or ""),
-                snippet=str(item.get("snippet") or ""),
-                score=_safe_float(item.get("score")),
-                position=position,
+                title=title,
+                snippet=snippet,
+                score=_safe_float(score_raw),
+                position=rank,
                 source="donsetch",
                 engines=engines,
-                engines_consensus=str(item.get("consensus") or ""),
+                engines_consensus=str(consensus_raw or ""),
                 source_type="web",
             )
         )
 
     engines = structured.get("engines")
+    if not isinstance(engines, list):
+        engines = debug.get("engines") if isinstance(debug.get("engines"), list) else []
     engines_used = []
     engines_blocked = []
     if isinstance(engines, list):
-        for item in engines:
-            if not isinstance(item, dict):
+        for engine_item in engines:
+            if not isinstance(engine_item, dict):
                 continue
-            name = item.get("engine")
+            name = engine_item.get("engine")
             if not isinstance(name, str) or not name:
                 continue
-            if str(item.get("status", "")).lower() == "ok":
+            if str(engine_item.get("status", "")).lower() == "ok":
                 engines_used.append(name)
             else:
                 engines_blocked.append(name)
+
+    intent = structured.get("intent")
+    if intent in (None, ""):
+        intent = debug.get("intent")
+    cached = structured.get("cached")
+    if cached is None:
+        cached = debug.get("cached", False)
+    weak = structured.get("weak")
+    if weak is None:
+        weak = debug.get("weak", False)
+    elapsed = structured.get("elapsed_ms")
+    if elapsed is None:
+        elapsed = debug.get("elapsed_ms", 0)
+
     metadata = {
         "engines_used": engines_used,
         "engine_blocked": engines_blocked,
-        "intent": str(structured.get("intent") or ""),
-        "cached": bool(structured.get("cached")),
-        "weak": bool(structured.get("weak")),
-        "duration_ms": _safe_float(structured.get("elapsed_ms")),
+        "intent": str(intent or ""),
+        "cached": bool(cached),
+        "weak": bool(weak),
+        "duration_ms": _safe_float(elapsed),
         "provider": "donsetch",
     }
     return search_result(
@@ -538,29 +778,45 @@ def _project_fetch_item(payload: dict[str, Any], fallback_url: str) -> dict[str,
     structured = payload.get("structured")
     if not isinstance(structured, dict):
         return {"url": fallback_url, "error": "donsetch_fetch_contract_failed", "status": 0}
+    debug = _whitelist_fetch_debug(payload.get("meta") or {})
     observed_url = structured.get("url")
     url = observed_url if isinstance(observed_url, str) and observed_url else fallback_url
-    status = _safe_int(structured.get("status"))
+
+    # Compact contract moved title/status/quality/site/verdict into fetch-debug.
+    # Legacy binaries still place them on structuredContent — prefer structured.
+    def _field(name: str, default: Any = None) -> Any:
+        if name in structured and structured.get(name) is not None:
+            return structured.get(name)
+        if name in debug and debug.get(name) is not None:
+            return debug.get(name)
+        return default
+
+    status = _safe_int(_field("status", 0))
+    verdict = str(_field("verdict") or "")
+    title = str(_field("title") or "")
     content = str(payload.get("text") or "")
+    content_ok = structured.get("content_ok")
+    if content_ok is None:
+        content_ok = verdict == "ContentOk" and status and status < 400
     if (
-        not structured.get("content_ok")
-        or structured.get("verdict") in {"Error", "Blocked", "Failed"}
+        not content_ok
+        or verdict in {"Error", "Blocked", "Failed"}
         or status >= 400
         or not content.strip()
     ):
         return {"url": url, "error": "donsetch_fetch_failed", "status": status}
     return source_result(
         url,
-        title=str(structured.get("title") or ""),
+        title=title,
         content=content,
         images=[],
         status=status,
         fetcher="donsetch",
         page_type=str(structured.get("content_kind") or ""),
         source_type="web",
-        quality=_safe_float(structured.get("quality")),
+        quality=_safe_float(_field("quality", 0.0)),
         lang=str(structured.get("lang") or ""),
-        site=str(structured.get("site") or ""),
+        site=str(_field("site") or ""),
         pdf=structured.get("pdf") if isinstance(structured.get("pdf"), dict) else None,
         next_offset=_safe_int(structured.get("next_offset")) if structured.get("next_offset") is not None else None,
     )
