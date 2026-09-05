@@ -19,11 +19,13 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v4.0.5** — see the [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+Current release: **v4.1.0** (unreleased candidate) — see the [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
 
-### What's new in 4.0.5
+### What's new in 4.1.0
 
-The DonSeTch adapter supports the 3.6.1 compact MCP response format while retaining older structured responses. Search titles and snippets remain attached to their source URLs; fetch diagnostics are read from namespaced metadata. See the [4.0.5 release notes](docs/RELEASE_NOTES_V405.md).
+The opt-in `wsp` backend routes Hermes' native `web_search` and `web_extract` calls through the existing WSP engine in-process. Existing Plus tools remain available and installation does not select the new backend. See [Native Hermes backend](docs/NATIVE_BACKEND.md) for selection, mixed routing, and runtime limits.
+
+The DonSeTch adapter also supports the 3.6.1 compact MCP response format while retaining older structured responses. Search titles and snippets remain attached to their source URLs; fetch diagnostics are read from namespaced metadata.
 
 ### What's new in 4.0.4
 

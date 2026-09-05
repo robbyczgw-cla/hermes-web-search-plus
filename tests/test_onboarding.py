@@ -935,6 +935,61 @@ def test_fastpath_cli_outputs_json_without_core_patch_dependency(tmp_path, capsy
     assert "never_defer" not in json.dumps(data)
 
 
+def test_native_inprocess_only_never_falls_back(tmp_path, monkeypatch):
+    monkeypatch.setattr(wsp, "_load_search_module", lambda: None)
+    monkeypatch.setattr(wsp, "_force_subprocess", lambda: False)
+    def forbidden(*args, **kwargs):
+        raise AssertionError("native must not launch a subprocess")
+    monkeypatch.setattr(wsp, "_run_search_subprocess", forbidden)
+    monkeypatch.setattr(wsp, "_run_extract_subprocess", forbidden)
+    assert wsp._run_search("query", inprocess_only=True)["error"]
+    assert wsp._run_extract(["https://example.org"], inprocess_only=True)["error"]
+
+
+def test_fastpath_config_path_respects_profile_home(tmp_path, monkeypatch):
+    monkeypatch.delenv("HERMES_CONFIG", raising=False)
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+    assert wsp._get_hermes_config_path() == tmp_path / "config.yaml"
+    explicit = tmp_path / "explicit.yaml"
+    monkeypatch.setenv("HERMES_CONFIG", str(explicit))
+    assert wsp._get_hermes_config_path() == explicit
+
+
+def test_fastpath_native_selection_keeps_web_enabled(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("web:\n  search_backend: wsp\nagent:\n  disabled_toolsets: []\n")
+    report = wsp._build_fastpath_report(path)
+    assert report["mode"] == "native"
+    assert report["native_capabilities"] == ["search"]
+    assert report["preferred_web_path_configured"] is True
+    assert report["recommended_hermes_config"] == {}
+    assert "disabled_toolsets: [web]" not in wsp._render_fastpath_report(report)
+
+
+def test_fastpath_native_selection_reports_disabled_web_conflict(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("web:\n  backend: wsp\nagent:\n  disabled_toolsets: [web, browser]\n")
+    report = wsp._build_fastpath_report(path)
+    assert report["native_capabilities"] == ["search", "extract"]
+    assert report["preferred_web_path_configured"] is False
+    checks = {row["id"]: row for row in report["checks"]}
+    assert checks["native_web_toolset_enabled"]["ok"] is False
+    assert "Remove only web" in checks["native_web_toolset_enabled"]["recommendation"]
+    assert "disabled_toolsets: [web]" not in wsp._render_fastpath_report(report)
+
+
+def test_fastpath_native_overrides_and_unrelated_sections(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "other:\n  search_backend: wsp\nweb:\n  backend: wsp\n"
+        "  search_backend: searxng\n  extract_backend: 'wsp' # explicit\n"
+    )
+    report = wsp._build_fastpath_report(path)
+    assert report["native_capabilities"] == ["extract"]
+    path.write_text("other:\n  backend: wsp\nweb:\n  search_backend: searxng\n")
+    assert wsp._build_fastpath_report(path)["mode"] == "plus"
+
+
 def test_fastpath_report_handles_missing_hermes_config(tmp_path):
     config_path = tmp_path / "missing-config.yaml"
 

@@ -1,5 +1,5 @@
 name: web-search-plus
-version: "4.0.5"
+version: "4.1.0"
 description: "Multi-provider web search, URL extraction, quality reports, and opt-in research mode"
 author: robbyczgw-cla
 requires_env: []
@@ -22,6 +22,8 @@ optional_env:
 provides_tools:
   - web_search_plus
   - web_extract_plus
+provides_web_providers:
+  - wsp
 provides_hooks:
   - on_session_start
 onboarding:
