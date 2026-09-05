@@ -20,7 +20,7 @@ Native calls do not fall back to the WSP CLI when the in-process engine cannot l
 
 The adapter now reads compact MCP evidence and namespaced fetch diagnostics while retaining older structured responses. Search titles and snippets stay bound to their ranked source URLs. The stdio transport setting applies only to the DonSeTch child process.
 
-[DonSeTch](https://github.com/dondai1234/donsetch), by [Bishesh Bhandari (dondai1234)](https://github.com/dondai1234), is a separately installed AGPL-3.0-only program, not bundled WSP code. It remains explicit-only unless the operator opts it into WSP routing. A local installation still performs outbound web requests and consumes local resources.
+[DonSeTch](https://github.com/dondai44423/donsetch), maintained by [dondai44423](https://github.com/dondai44423), is a separately installed AGPL-3.0-only program, not bundled WSP code. It remains explicit-only unless the operator opts it into WSP routing. A local installation still performs outbound web requests and consumes local resources.
 
 Historical Hound integration and source-enrichment work credit [Hound / Master-Fetch](https://github.com/dondai1234/master-fetch), Bishesh Bhandari's independent MIT-licensed project. The removed Hound provider is not restored by this release.
 
