@@ -133,3 +133,53 @@ def test_tavily_dispatch_applies_freshness():
         "provider": "tavily",
         "native_value": "week",
     }
+
+
+def _run_tavily_search(**kwargs):
+    seen = {}
+
+    def fake_tavily(**call):
+        seen.update(call)
+        return {
+            "provider": "tavily",
+            "query": call["query"],
+            "results": [{"url": "https://example.test/a", "title": "A", "snippet": "s"}],
+            "images": [],
+            "answer": "",
+            "metadata": {},
+        }
+
+    with mock.patch.object(search, "provider_in_cooldown", lambda p: (False, 0)):
+        with mock.patch.object(search, "cache_get", lambda **kw: None):
+            with mock.patch.object(search, "cache_put", lambda **kw: None):
+                with mock.patch.object(search, "reset_provider_health", lambda p: None):
+                    with mock.patch.dict("os.environ", {"TAVILY_API_KEY": "tavily-test-key"}):
+                        with mock.patch.object(search, "search_tavily", fake_tavily):
+                            result = search.run_search_request(
+                                query="latest tavily changelog",
+                                provider="tavily",
+                                **kwargs,
+                            )
+    return seen, result
+
+
+def test_tavily_time_range_wins_over_freshness_in_body_and_metadata():
+    seen, result = _run_tavily_search(freshness="week", time_range="day")
+    assert seen["time_range"] == "day"
+    assert result["metadata"]["freshness"] == {
+        "requested": "day",
+        "applied": True,
+        "provider": "tavily",
+        "native_value": "day",
+    }
+
+
+def test_tavily_time_range_only_reports_applied_metadata():
+    seen, result = _run_tavily_search(time_range="week")
+    assert seen["time_range"] == "week"
+    assert result["metadata"]["freshness"] == {
+        "requested": "week",
+        "applied": True,
+        "provider": "tavily",
+        "native_value": "week",
+    }

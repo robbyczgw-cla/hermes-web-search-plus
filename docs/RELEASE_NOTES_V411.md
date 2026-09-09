@@ -5,8 +5,8 @@
 Search adapters now keep more of the evidence the upstream APIs already return.
 
 - Exa search prefers the requested `highlights` over the first 800 characters of page text when both are present. If Exa returns no highlights, the snippet still uses the leading text.
-- Parallel Search sends `max_results` and domain include/exclude in `advanced_settings.source_policy`. It no longer rewrites the query with `site:` operators. Results are still trimmed locally as a safety cap.
-- Tavily Search applies the unified `freshness` filter as native `time_range`. Result metadata reports `freshness.applied=true` for Tavily. Linkup, Parallel, and SerpBase still run unfiltered and report `applied=false`.
+- Parallel Search sends `max_results` in `advanced_settings` and domain include/exclude in `advanced_settings.source_policy`. It no longer rewrites the query with `site:` operators. Results are still trimmed locally as a safety cap.
+- Tavily Search applies the unified `freshness` filter as native `time_range`. `--time-range` wins if both are set. Result metadata reports the value that was actually sent, including time-range-only requests. Linkup, Parallel, and SerpBase still run unfiltered and report `applied=false`.
 
 Existing tool names, defaults, and Plus/native routing stay the same.
 

@@ -141,6 +141,17 @@ def map_freshness_for_provider(provider: str, freshness: Optional[str]) -> Optio
     return None
 
 
+def effective_recency(
+    time_range: Optional[str] = None,
+    freshness: Optional[str] = None,
+) -> Optional[str]:
+    """Return the recency value adapters actually send.
+
+    ``time_range`` wins when both are set, matching provider dispatch.
+    """
+    return time_range or freshness
+
+
 def freshness_metadata(
     provider: str,
     requested: str,
