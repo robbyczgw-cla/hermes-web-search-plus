@@ -62,7 +62,7 @@ EXPECTED_SEARCH_KWARGS = {
     "serper": {"query", "api_key", "max_results", "country", "language", "search_type", "time_range", "include_images"},
     "serpbase": {"query", "api_key", "max_results", "country", "language", "page", "api_url", "timeout"},
     "brave": {"query", "api_key", "max_results", "country", "language", "time_range", "safesearch"},
-    "tavily": {"query", "api_key", "max_results", "depth", "topic", "include_domains", "exclude_domains", "include_images", "include_raw_content"},
+    "tavily": {"query", "api_key", "max_results", "depth", "topic", "include_domains", "exclude_domains", "include_images", "include_raw_content", "time_range"},
     "querit": {"query", "api_key", "max_results", "language", "country", "time_range", "include_domains", "exclude_domains", "base_url", "base_path", "timeout"},
     "linkup": {"query", "api_key", "max_results", "depth", "output_type", "include_domains", "exclude_domains", "api_url", "timeout"},
     "exa": {"query", "api_key", "max_results", "search_type", "exa_depth", "category", "start_date", "end_date", "similar_url", "include_domains", "exclude_domains", "text_verbosity", "freshness"},

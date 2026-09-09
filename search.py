@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 4.1.0
+Version: 4.1.1
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
 Brave Search, SerpBase, Querit, Parallel, SearXNG, Keenable.
 Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com, Keenable, Serper.
@@ -777,7 +777,7 @@ Full docs: See README.md and SKILL.md
         help=(
             "Unified recency filter (day, week, month, year; case-insensitive). "
             "Applied natively where the provider supports it (serper, brave, querit, firecrawl, "
-            "keenable, you, searxng, exa, and tinyfish); otherwise the search runs "
+            "keenable, you, searxng, exa, tavily, and tinyfish); otherwise the search runs "
             "unfiltered and result metadata reports freshness.applied=false"
         )
     )
@@ -1160,7 +1160,7 @@ def _legacy_search_cache_context(
     return {
         "locale": f"{locale_country}:{locale_language}",
         "freshness": args.freshness,
-        "time_range": args.time_range,
+        "time_range": getattr(args, "time_range", None),
         "include_domains": sorted(args.include_domains)
         if args.include_domains
         else None,
@@ -1237,6 +1237,18 @@ def _research_quorum_settings(config: Dict[str, Any]) -> Dict[str, Any]:
     return settings
 
 
+def _result_freshness(provider, requested, result):
+    """Preserve execution evidence, including cached and per-provider receipts."""
+    metadata = result.setdefault("metadata", {})
+    existing = metadata.get("freshness")
+    if isinstance(existing, dict) and existing.get("requested") == requested:
+        return existing
+    return _providers.freshness_metadata(
+        provider, requested,
+        applied_published_dates=metadata.pop("applied_published_dates", None) or {},
+    )
+
+
 def _finalize_research_result(
     result: Dict[str, Any],
     *,
@@ -1246,6 +1258,7 @@ def _finalize_research_result(
     providers_considered: List[str],
     research_providers: List[str],
     cooldown_skips: List[Dict[str, Any]],
+    provider_payloads: Optional[Dict[str, Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     """Apply the shared public Research Mode metadata and quality envelope."""
     final_routing = dict(routing_info)
@@ -1263,15 +1276,16 @@ def _finalize_research_result(
             }
             for item in cooldown_skips
         ]
-    if args.freshness:
+    requested_freshness = _providers.effective_recency(
+        getattr(args, "time_range", None), args.freshness
+    )
+    if requested_freshness:
         result.setdefault("metadata", {})["freshness"] = {
-            "requested": args.freshness,
+            "requested": requested_freshness,
             "providers": [
-                _providers.freshness_metadata(
-                    provider,
-                    args.freshness,
-                    start_date=getattr(args, "start_date", None),
-                    end_date=getattr(args, "end_date", None),
+                _result_freshness(
+                    provider, requested_freshness,
+                    (provider_payloads or {}).get(provider) or {},
                 )
                 for provider in research_providers
             ],
@@ -1410,6 +1424,8 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
     # kwargs-building lives in provider_dispatch.SEARCH_DISPATCH; the caller
     # namespace (globals()) is passed so adapters resolve search_<provider>
     # late and honour monkeypatches on this module (search.search_you etc.).
+    provider_payloads = {}
+
     def execute_search(prov: str) -> Dict[str, Any]:
         validate_provider_mode(prov, "search")
         key = validate_api_key(prov, config)
@@ -1427,6 +1443,7 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
                 for item in (provider_result.get("results") or [])
                 if isinstance(item, dict)
             ]
+        provider_payloads[prov] = provider_result
         return provider_result
 
     def execute_with_retry(prov: str) -> Dict[str, Any]:
@@ -1530,6 +1547,7 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             providers_considered=providers_considered,
             research_providers=research_providers,
             cooldown_skips=cooldown_skips,
+            provider_payloads=provider_payloads,
         )
         return result, 0
 
@@ -1640,12 +1658,12 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
 
         result["routing"] = routing_info
 
-        if args.freshness:
-            result.setdefault("metadata", {})["freshness"] = _providers.freshness_metadata(
-                successful_provider or provider,
-                args.freshness,
-                start_date=getattr(args, "start_date", None),
-                end_date=getattr(args, "end_date", None),
+        requested_freshness = _providers.effective_recency(
+            getattr(args, "time_range", None), args.freshness
+        )
+        if requested_freshness:
+            result.setdefault("metadata", {})["freshness"] = _result_freshness(
+                successful_provider or provider, requested_freshness, result,
             )
 
         requested_search_type = getattr(args, "search_type", None)
@@ -1991,6 +2009,7 @@ def _execute_research_v3(
         providers_considered=providers,
         research_providers=providers,
         cooldown_skips=[],
+        provider_payloads=payloads_by_provider,
     )
 
     raw_results = []

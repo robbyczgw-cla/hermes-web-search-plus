@@ -62,10 +62,18 @@ PROVIDER_FRESHNESS_FORMATS: Dict[str, Dict[str, str]] = {
     "searxng": {"day": "day", "week": "week", "month": "month", "year": "year"},
     # search_exa: accepts the unified value and converts it to absolute
     # startPublishedDate/endPublishedDate bounds inside the provider function.
-    "exa": {"day": "day", "week": "week", "month": "month", "year": "year"},
+    "exa": {"hour": "hour", "day": "day", "week": "week", "month": "month", "year": "year"},
+    # search_tavily: body["time_range"] uses the unified values natively.
+    "tavily": {"day": "day", "week": "week", "month": "month", "year": "year"},
 }
 
-_EXA_FRESHNESS_DAYS = {"day": 1, "week": 7, "month": 30, "year": 365}
+_EXA_FRESHNESS_DELTAS = {
+    "hour": timedelta(hours=1),
+    "day": timedelta(days=1),
+    "week": timedelta(days=7),
+    "month": timedelta(days=30),
+    "year": timedelta(days=365),
+}
 
 
 def exa_date_bounds(
@@ -76,8 +84,11 @@ def exa_date_bounds(
     """Convert unified freshness into Exa's absolute publication-date bounds."""
     if not freshness:
         return None, None
+    delta = _EXA_FRESHNESS_DELTAS.get(freshness)
+    if delta is None:
+        return None, None
     end = now or datetime.now(timezone.utc)
-    start = end - timedelta(days=_EXA_FRESHNESS_DAYS[freshness])
+    start = end - delta
     return (
         start.isoformat(timespec="seconds").replace("+00:00", "Z"),
         end.isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -139,26 +150,42 @@ def map_freshness_for_provider(provider: str, freshness: Optional[str]) -> Optio
     return None
 
 
+def effective_recency(
+    time_range: Optional[str] = None,
+    freshness: Optional[str] = None,
+) -> Optional[str]:
+    """Return the recency value adapters actually send.
+
+    ``time_range`` wins when both are set, matching provider dispatch.
+    """
+    return time_range or freshness
+
+
 def freshness_metadata(
     provider: str,
     requested: str,
     *,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    applied_published_dates: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    """Describe whether a provider applied the requested freshness filter."""
-    if provider == "exa" and provider_supports_freshness(provider):
-        generated_start, generated_end = exa_date_bounds(requested)
-        start = start_date or generated_start
-        end = end_date or generated_end
+    """Describe native recency; Exa receipts must use already-resolved wire dates.
+
+    An empty date dict means no filter was sent, not permission to read the clock.
+    The date kwargs remain a compatibility seam for callers with resolved dates.
+    """
+    if provider == "exa":
+        dates = dict(applied_published_dates) if applied_published_dates is not None else {
+            key: value for key, value in (
+                ("startPublishedDate", start_date), ("endPublishedDate", end_date)
+            ) if value
+        }
         return {
             "requested": requested,
-            "applied": True,
+            "applied": bool(dates),
             "provider": provider,
-            "native_value": {
-                "startPublishedDate": start,
-                "endPublishedDate": end,
-            },
+            "native_value": dates,
+            **({} if dates else {"reason": "no publication date bounds reported by provider"}),
         }
     native = map_freshness_for_provider(provider, requested)
     if native is not None:
@@ -461,6 +488,7 @@ def search_tavily(
     exclude_domains: Optional[List[str]] = None,
     include_images: bool = False,
     include_raw_content: bool = False,
+    time_range: Optional[str] = None,
 ) -> dict:
     """Search using Tavily (AI Research Search)."""
     endpoint = "https://api.tavily.com/search"
@@ -480,6 +508,8 @@ def search_tavily(
         body["include_domains"] = include_domains
     if exclude_domains:
         body["exclude_domains"] = exclude_domains
+    if time_range:
+        body["time_range"] = time_range
 
     headers = {"Content-Type": "application/json"}
     validate_outbound_body("tavily", body)
@@ -1150,11 +1180,15 @@ def search_exa(
     # Standard source-result parsing
     for item in data.get("results", [])[:max_results]:
         text_content = item.get("text", "") or ""
-        highlights = item.get("highlights", [])
-        if text_content:
-            snippet = text_content[:800]
-        elif highlights:
+        highlights = [
+            highlight
+            for highlight in (item.get("highlights") or [])
+            if isinstance(highlight, str) and highlight.strip()
+        ]
+        if highlights:
             snippet = " ... ".join(highlights[:2])
+        elif text_content:
+            snippet = text_content[:800]
         else:
             snippet = ""
 
@@ -1167,12 +1201,17 @@ def search_exa(
             "author": item.get("author"),
         })
 
+    applied_published_dates = {}
+    if start_date:
+        applied_published_dates["startPublishedDate"] = start_date
+    if end_date:
+        applied_published_dates["endPublishedDate"] = end_date
     return {
         "provider": "exa",
         "query": query if not similar_url else f"Similar to: {similar_url}",
         "results": results,
         "images": [],
-        "metadata": {},
+        "metadata": {"applied_published_dates": applied_published_dates},
     }
 
 def search_parallel(
@@ -1188,21 +1227,24 @@ def search_parallel(
 ) -> dict:
     """Search using Parallel's web search API.
 
-    Parallel returns source URLs plus long LLM-ready excerpts. Its API does not
-    currently accept a generic max_results parameter, so results are trimmed
-    locally to the requested count. ``mode`` defaults to ``fast``; set turbo,
-    basic, or advanced to override.
+    Parallel returns source URLs plus long LLM-ready excerpts. Requested count
+    and domain filters go in ``advanced_settings``; results are still trimmed
+    locally as a safety cap. ``mode`` defaults to ``fast``; set turbo, basic,
+    or advanced to override.
     """
-    search_query = query
-    if include_domains:
-        search_query += " " + " ".join(f"site:{domain}" for domain in include_domains)
-    if exclude_domains:
-        search_query += " " + " ".join(f"-site:{domain}" for domain in exclude_domains)
-
     normalized_mode = normalize_parallel_search_mode(mode) or "fast"
+    advanced_settings: Dict[str, Any] = {"max_results": max_results}
+    source_policy: Dict[str, Any] = {}
+    if include_domains:
+        source_policy["include_domains"] = include_domains
+    if exclude_domains:
+        source_policy["exclude_domains"] = exclude_domains
+    if source_policy:
+        advanced_settings["source_policy"] = source_policy
     body: Dict[str, Any] = {
         "objective": query,
-        "search_queries": [search_query],
+        "search_queries": [query],
+        "advanced_settings": advanced_settings,
     }
     if client_model:
         body["client_model"] = client_model

@@ -38,7 +38,8 @@ class FreshnessMappingTests(unittest.TestCase):
             "perplexity": {"day": "day", "week": "week", "month": "month", "year": "year"},
             "kilo-perplexity": {"day": "day", "week": "week", "month": "month", "year": "year"},
             "searxng": {"day": "day", "week": "week", "month": "month", "year": "year"},
-            "exa": {"day": "day", "week": "week", "month": "month", "year": "year"},
+            "exa": {"hour": "hour", "day": "day", "week": "week", "month": "month", "year": "year"},
+            "tavily": {"day": "day", "week": "week", "month": "month", "year": "year"},
         }
         self.assertEqual(providers.PROVIDER_FRESHNESS_FORMATS, expected)
 
@@ -49,8 +50,9 @@ class FreshnessMappingTests(unittest.TestCase):
         self.assertIsNone(providers.map_freshness_for_provider("brave", None))
 
     def test_unsupported_providers_are_not_in_table(self):
-        for provider in ("tavily", "linkup", "parallel", "serpbase"):
+        for provider in ("linkup", "parallel", "serpbase"):
             self.assertFalse(providers.provider_supports_freshness(provider), provider)
+        self.assertTrue(providers.provider_supports_freshness("tavily"))
 
     def test_exa_freshness_uses_absolute_utc_bounds(self):
         start, end = providers.exa_date_bounds(
@@ -59,6 +61,12 @@ class FreshnessMappingTests(unittest.TestCase):
         )
         self.assertEqual(start, "2026-07-18T12:34:56Z")
         self.assertEqual(end, "2026-07-25T12:34:56Z")
+        hour_start, hour_end = providers.exa_date_bounds(
+            "hour",
+            now=datetime(2026, 7, 25, 12, 34, 56, tzinfo=timezone.utc),
+        )
+        self.assertEqual(hour_start, "2026-07-25T11:34:56Z")
+        self.assertEqual(hour_end, "2026-07-25T12:34:56Z")
 
     def test_table_matches_existing_provider_mappers(self):
         # The central table must never drift from the maps the provider
@@ -78,21 +86,34 @@ class FreshnessMappingTests(unittest.TestCase):
             "provider": "brave",
             "native_value": "pw",
         })
-        skipped = providers.freshness_metadata("tavily", "week")
+        tavily = providers.freshness_metadata("tavily", "week")
+        self.assertEqual(tavily, {
+            "requested": "week",
+            "applied": True,
+            "provider": "tavily",
+            "native_value": "week",
+        })
+        skipped = providers.freshness_metadata("linkup", "week")
         self.assertEqual(skipped, {
             "requested": "week",
             "applied": False,
-            "provider": "tavily",
-            "reason": "provider tavily does not support freshness",
+            "provider": "linkup",
+            "reason": "provider linkup does not support freshness",
         })
 
         with mock.patch.object(
             providers,
             "exa_date_bounds",
             return_value=("2026-07-18T12:34:56Z", "2026-07-25T12:34:56Z"),
-        ) as bounds:
-            exa = providers.freshness_metadata("exa", "week")
+        ) as bounds, mock.patch.object(providers, "make_request", return_value={"results": []}) as http:
+            result = providers.search_exa("q", "exa-test-key", freshness="week")
+            exa = providers.freshness_metadata(
+                "exa", "week", applied_published_dates=result["metadata"]["applied_published_dates"]
+            )
         bounds.assert_called_once_with("week")
+        self.assertEqual(exa["native_value"], {
+            key: http.call_args.args[2][key] for key in ("startPublishedDate", "endPublishedDate")
+        })
         self.assertEqual(exa, {
             "requested": "week",
             "applied": True,
@@ -107,12 +128,15 @@ class FreshnessMappingTests(unittest.TestCase):
             providers,
             "exa_date_bounds",
             return_value=("2026-07-18T12:34:56Z", "2026-07-25T12:34:56Z"),
-        ):
+        ) as bounds, mock.patch.object(providers, "make_request", return_value={"results": []}) as http:
+            result = providers.search_exa("q", "exa-test-key", freshness="week", start_date="2020-01-01T00:00:00Z")
             exa_override = providers.freshness_metadata(
-                "exa",
-                "week",
-                start_date="2020-01-01T00:00:00Z",
+                "exa", "week", applied_published_dates=result["metadata"]["applied_published_dates"]
             )
+        bounds.assert_called_once_with("week")
+        self.assertEqual(exa_override["native_value"], {
+            key: http.call_args.args[2][key] for key in ("startPublishedDate", "endPublishedDate")
+        })
         self.assertEqual(exa_override["native_value"], {
             "startPublishedDate": "2020-01-01T00:00:00Z",
             "endPublishedDate": "2026-07-25T12:34:56Z",
@@ -274,16 +298,16 @@ class FreshnessPipelineTests(unittest.TestCase):
     def test_unsupported_provider_still_searches_and_reports_not_applied(self):
         with contextlib.ExitStack() as stack:
             self._isolate(stack)
-            stack.enter_context(mock.patch.dict("os.environ", {"TAVILY_API_KEY": "tavily-test-key"}))
-            stack.enter_context(mock.patch.object(search, "search_tavily", lambda **kw: _canned("tavily")))
-            result = search.run_search_request(query="how does https work", provider="tavily", freshness="week")
+            stack.enter_context(mock.patch.dict("os.environ", {"LINKUP_API_KEY": "linkup-test-key"}))
+            stack.enter_context(mock.patch.object(search, "search_linkup", lambda **kw: _canned("linkup")))
+            result = search.run_search_request(query="how does https work", provider="linkup", freshness="week")
 
         self.assertEqual(result["results"][0]["url"], "https://example.test/a")
         self.assertEqual(result["metadata"]["freshness"], {
             "requested": "week",
             "applied": False,
-            "provider": "tavily",
-            "reason": "provider tavily does not support freshness",
+            "provider": "linkup",
+            "reason": "provider linkup does not support freshness",
         })
 
     def test_research_mode_reports_freshness_per_provider(self):
@@ -320,8 +344,8 @@ class FreshnessPipelineTests(unittest.TestCase):
         by_provider = {m["provider"]: m for m in payload["metadata"]["freshness"]["providers"]}
         self.assertEqual(payload["metadata"]["freshness"]["requested"], "week")
         self.assertTrue(by_provider["serper"]["applied"])
-        self.assertFalse(by_provider["tavily"]["applied"])
-        self.assertIn("does not support freshness", by_provider["tavily"]["reason"])
+        self.assertTrue(by_provider["tavily"]["applied"])
+        self.assertEqual(by_provider["tavily"]["native_value"], "week")
 
     def test_cli_parser_lowercases_freshness(self):
         parser = search.build_parser({})

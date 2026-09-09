@@ -49,7 +49,12 @@ def test_search_parallel_normalizes_excerpts_and_request_shape():
     assert url == "https://api.parallel.ai/v1/search"
     assert headers["x-api-key"] == "parallel-test-key"
     assert body["objective"] == "Parallel AI Search API"
-    assert body["search_queries"] == ["Parallel AI Search API site:docs.parallel.ai -site:example.com"]
+    assert body["search_queries"] == ["Parallel AI Search API"]
+    assert body["advanced_settings"]["max_results"] == 1
+    assert body["advanced_settings"]["source_policy"] == {
+        "include_domains": ["docs.parallel.ai"],
+        "exclude_domains": ["example.com"],
+    }
     assert "max_results" not in body
     assert body["mode"] == "fast"
     assert result["metadata"]["mode"] == "fast"

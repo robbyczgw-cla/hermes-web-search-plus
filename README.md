@@ -19,7 +19,11 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v4.1.0** — see the [release notes](docs/RELEASE_NOTES_V410.md) and [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+Current release: **v4.1.1** — see the [release notes](docs/RELEASE_NOTES_V411.md) and [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+
+### What's new in 4.1.1
+
+Exa search keeps requested highlights instead of replacing them with the start of the page. Parallel Search sends result count and domain filters through `advanced_settings`. Tavily Search applies the unified `freshness` filter as native `time_range`. See the [4.1.1 release notes](docs/RELEASE_NOTES_V411.md).
 
 ### What's new in 4.1.0
 
