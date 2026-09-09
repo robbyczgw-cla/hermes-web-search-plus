@@ -1,5 +1,6 @@
 """4.1.1 adapter fidelity: keep provider evidence and requested filters."""
 
+from datetime import datetime
 from unittest import mock
 
 import providers
@@ -183,3 +184,57 @@ def test_tavily_time_range_only_reports_applied_metadata():
         "provider": "tavily",
         "native_value": "week",
     }
+
+
+def _run_exa_search(**kwargs):
+    seen = {}
+
+    def fake_exa(**call):
+        seen.update(call)
+        return {
+            "provider": "exa",
+            "query": call["query"],
+            "results": [{"url": "https://example.test/a", "title": "A", "snippet": "s"}],
+            "images": [],
+            "answer": "",
+            "metadata": {},
+        }
+
+    with mock.patch.object(search, "provider_in_cooldown", lambda p: (False, 0)):
+        with mock.patch.object(search, "cache_get", lambda **kw: None):
+            with mock.patch.object(search, "cache_put", lambda **kw: None):
+                with mock.patch.object(search, "reset_provider_health", lambda p: None):
+                    with mock.patch.dict("os.environ", {"EXA_API_KEY": "exa-test-key"}):
+                        with mock.patch.object(search, "search_exa", fake_exa):
+                            result = search.run_search_request(
+                                query="latest exa changelog",
+                                provider="exa",
+                                **kwargs,
+                            )
+    return seen, result
+
+
+def _exa_window_hours(native):
+    start = datetime.fromisoformat(native["startPublishedDate"].replace("Z", "+00:00"))
+    end = datetime.fromisoformat(native["endPublishedDate"].replace("Z", "+00:00"))
+    return (end - start).total_seconds() / 3600
+
+
+def test_exa_time_range_wins_over_freshness_in_body_and_metadata():
+    seen, result = _run_exa_search(freshness="week", time_range="day")
+    assert seen["freshness"] == "day"
+    meta = result["metadata"]["freshness"]
+    assert meta["requested"] == "day"
+    assert meta["applied"] is True
+    assert meta["provider"] == "exa"
+    assert 20 <= _exa_window_hours(meta["native_value"]) <= 28
+
+
+def test_exa_time_range_only_applies_native_freshness():
+    seen, result = _run_exa_search(time_range="week")
+    assert seen["freshness"] == "week"
+    meta = result["metadata"]["freshness"]
+    assert meta["requested"] == "week"
+    assert meta["applied"] is True
+    assert meta["provider"] == "exa"
+    assert 160 <= _exa_window_hours(meta["native_value"]) <= 176
