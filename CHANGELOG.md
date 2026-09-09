@@ -9,6 +9,7 @@
 - Prefer Exa `highlights` over the leading page text when both are present, so query-relevant passages survive the search snippet.
 - Send Parallel Search `max_results` and domain include/exclude through `advanced_settings` instead of stuffing `site:` operators into the query.
 - Apply the unified `freshness` filter on Tavily Search as native `time_range`. `--time-range` wins if both are set, and result metadata reports the value that was actually sent.
+- Compute Exa publication-date bounds once for the request and reuse them in freshness receipts, including Research Mode. `--time-range hour` is a one-hour window.
 
 ## [v4.1.0] — 2026-09-05
 
