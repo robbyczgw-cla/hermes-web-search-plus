@@ -238,3 +238,55 @@ def test_exa_time_range_only_applies_native_freshness():
     assert meta["applied"] is True
     assert meta["provider"] == "exa"
     assert 160 <= _exa_window_hours(meta["native_value"]) <= 176
+
+
+def test_exa_search_returns_the_bounds_put_on_the_wire():
+    captured = {}
+
+    def fake_request(_url, _headers, body, timeout=30):
+        captured["body"] = body
+        return {"results": []}
+
+    with mock.patch.object(providers, "make_request", fake_request):
+        result = providers.search_exa("latest exa changelog", "exa-test-key", freshness="week")
+
+    native = result["metadata"]["applied_published_dates"]
+    assert captured["body"]["startPublishedDate"] == native["startPublishedDate"]
+    assert captured["body"]["endPublishedDate"] == native["endPublishedDate"]
+
+
+def test_exa_metadata_keeps_sent_bounds_when_clock_would_move():
+    sent = {
+        "startPublishedDate": "2026-01-01T00:00:00Z",
+        "endPublishedDate": "2026-01-02T00:00:00Z",
+    }
+
+    def fake_exa(**call):
+        return {
+            "provider": "exa",
+            "query": call["query"],
+            "results": [{"url": "https://example.test/a", "title": "A", "snippet": "s"}],
+            "images": [],
+            "answer": "",
+            "metadata": {"applied_published_dates": dict(sent)},
+        }
+
+    with mock.patch.object(search, "provider_in_cooldown", lambda p: (False, 0)):
+        with mock.patch.object(search, "cache_get", lambda **kw: None):
+            with mock.patch.object(search, "cache_put", lambda **kw: None):
+                with mock.patch.object(search, "reset_provider_health", lambda p: None):
+                    with mock.patch.dict("os.environ", {"EXA_API_KEY": "exa-test-key"}):
+                        with mock.patch.object(
+                            providers,
+                            "exa_date_bounds",
+                            return_value=("2099-01-01T00:00:00Z", "2099-01-08T00:00:00Z"),
+                        ):
+                            with mock.patch.object(search, "search_exa", fake_exa):
+                                result = search.run_search_request(
+                                    query="latest exa changelog",
+                                    provider="exa",
+                                    time_range="day",
+                                )
+
+    assert result["metadata"]["freshness"]["native_value"] == sent
+    assert "applied_published_dates" not in result["metadata"]

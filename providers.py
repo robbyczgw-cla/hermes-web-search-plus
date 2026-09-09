@@ -161,9 +161,12 @@ def freshness_metadata(
 ) -> Dict[str, Any]:
     """Describe whether a provider applied the requested freshness filter."""
     if provider == "exa" and provider_supports_freshness(provider):
-        generated_start, generated_end = exa_date_bounds(requested)
-        start = start_date or generated_start
-        end = end_date or generated_end
+        if start_date and end_date:
+            start, end = start_date, end_date
+        else:
+            generated_start, generated_end = exa_date_bounds(requested)
+            start = start_date or generated_start
+            end = end_date or generated_end
         return {
             "requested": requested,
             "applied": True,
@@ -1187,12 +1190,21 @@ def search_exa(
             "author": item.get("author"),
         })
 
+    applied_published_dates = {}
+    if start_date:
+        applied_published_dates["startPublishedDate"] = start_date
+    if end_date:
+        applied_published_dates["endPublishedDate"] = end_date
     return {
         "provider": "exa",
         "query": query if not similar_url else f"Similar to: {similar_url}",
         "results": results,
         "images": [],
-        "metadata": {},
+        "metadata": (
+            {"applied_published_dates": applied_published_dates}
+            if applied_published_dates
+            else {}
+        ),
     }
 
 def search_parallel(

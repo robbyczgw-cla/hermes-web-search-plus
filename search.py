@@ -1647,11 +1647,14 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             getattr(args, "time_range", None), args.freshness
         )
         if requested_freshness:
+            applied_dates = {}
+            if isinstance(result.get("metadata"), dict):
+                applied_dates = result["metadata"].pop("applied_published_dates", None) or {}
             result.setdefault("metadata", {})["freshness"] = _providers.freshness_metadata(
                 successful_provider or provider,
                 requested_freshness,
-                start_date=getattr(args, "start_date", None),
-                end_date=getattr(args, "end_date", None),
+                start_date=applied_dates.get("startPublishedDate") or getattr(args, "start_date", None),
+                end_date=applied_dates.get("endPublishedDate") or getattr(args, "end_date", None),
             )
 
         requested_search_type = getattr(args, "search_type", None)

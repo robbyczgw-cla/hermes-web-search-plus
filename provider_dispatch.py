@@ -174,7 +174,7 @@ def _call_exa_search(search_module, prov, args, key, config, routing_info):
         include_domains=args.include_domains,
         exclude_domains=args.exclude_domains,
         text_verbosity=args.exa_verbosity,
-        freshness=args.time_range or args.freshness,
+        freshness=getattr(args, "time_range", None) or args.freshness,
     )
 
 
@@ -221,7 +221,7 @@ def _call_you_search(search_module, prov, args, key, config, routing_info):
         max_results=args.max_results,
         country=country,
         language=language,
-        freshness=args.time_range or args.freshness,
+        freshness=getattr(args, "time_range", None) or args.freshness,
         safesearch=args.you_safesearch,
         include_news=not args.no_news,
         livecrawl=args.livecrawl,
