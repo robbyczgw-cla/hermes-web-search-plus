@@ -38,7 +38,7 @@ class FreshnessMappingTests(unittest.TestCase):
             "perplexity": {"day": "day", "week": "week", "month": "month", "year": "year"},
             "kilo-perplexity": {"day": "day", "week": "week", "month": "month", "year": "year"},
             "searxng": {"day": "day", "week": "week", "month": "month", "year": "year"},
-            "exa": {"day": "day", "week": "week", "month": "month", "year": "year"},
+            "exa": {"hour": "hour", "day": "day", "week": "week", "month": "month", "year": "year"},
             "tavily": {"day": "day", "week": "week", "month": "month", "year": "year"},
         }
         self.assertEqual(providers.PROVIDER_FRESHNESS_FORMATS, expected)
@@ -61,6 +61,12 @@ class FreshnessMappingTests(unittest.TestCase):
         )
         self.assertEqual(start, "2026-07-18T12:34:56Z")
         self.assertEqual(end, "2026-07-25T12:34:56Z")
+        hour_start, hour_end = providers.exa_date_bounds(
+            "hour",
+            now=datetime(2026, 7, 25, 12, 34, 56, tzinfo=timezone.utc),
+        )
+        self.assertEqual(hour_start, "2026-07-25T11:34:56Z")
+        self.assertEqual(hour_end, "2026-07-25T12:34:56Z")
 
     def test_table_matches_existing_provider_mappers(self):
         # The central table must never drift from the maps the provider

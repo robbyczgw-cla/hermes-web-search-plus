@@ -240,6 +240,16 @@ def test_exa_time_range_only_applies_native_freshness():
     assert 160 <= _exa_window_hours(meta["native_value"]) <= 176
 
 
+def test_exa_time_range_hour_applies_one_hour_window():
+    seen, result = _run_exa_search(time_range="hour")
+    assert seen["freshness"] == "hour"
+    assert not result.get("error")
+    meta = result["metadata"]["freshness"]
+    assert meta["requested"] == "hour"
+    assert meta["applied"] is True
+    assert 0.5 <= _exa_window_hours(meta["native_value"]) <= 1.5
+
+
 def test_exa_search_returns_the_bounds_put_on_the_wire():
     captured = {}
 

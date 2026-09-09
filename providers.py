@@ -62,12 +62,18 @@ PROVIDER_FRESHNESS_FORMATS: Dict[str, Dict[str, str]] = {
     "searxng": {"day": "day", "week": "week", "month": "month", "year": "year"},
     # search_exa: accepts the unified value and converts it to absolute
     # startPublishedDate/endPublishedDate bounds inside the provider function.
-    "exa": {"day": "day", "week": "week", "month": "month", "year": "year"},
+    "exa": {"hour": "hour", "day": "day", "week": "week", "month": "month", "year": "year"},
     # search_tavily: body["time_range"] uses the unified values natively.
     "tavily": {"day": "day", "week": "week", "month": "month", "year": "year"},
 }
 
-_EXA_FRESHNESS_DAYS = {"day": 1, "week": 7, "month": 30, "year": 365}
+_EXA_FRESHNESS_DELTAS = {
+    "hour": timedelta(hours=1),
+    "day": timedelta(days=1),
+    "week": timedelta(days=7),
+    "month": timedelta(days=30),
+    "year": timedelta(days=365),
+}
 
 
 def exa_date_bounds(
@@ -78,8 +84,11 @@ def exa_date_bounds(
     """Convert unified freshness into Exa's absolute publication-date bounds."""
     if not freshness:
         return None, None
+    delta = _EXA_FRESHNESS_DELTAS.get(freshness)
+    if delta is None:
+        return None, None
     end = now or datetime.now(timezone.utc)
-    start = end - timedelta(days=_EXA_FRESHNESS_DAYS[freshness])
+    start = end - delta
     return (
         start.isoformat(timespec="seconds").replace("+00:00", "Z"),
         end.isoformat(timespec="seconds").replace("+00:00", "Z"),

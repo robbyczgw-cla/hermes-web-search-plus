@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import unicodedata
+from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, List, Mapping
 from urllib.parse import urlsplit, urlunsplit
@@ -647,6 +648,15 @@ def response_from_legacy(
                     "reason": "spam_domain",
                 }
             )
+    freshness = (payload.get("metadata") or {}).get("freshness")
+    if isinstance(freshness, dict):
+        warnings.append(
+            {
+                "code": "wsp.freshness.applied",
+                "message": "Native recency filter applied to the provider request.",
+                "details": {"freshness": deepcopy(freshness)},
+            }
+        )
     return ResponseV3(
         request_id=request_id,
         execution_id=plan.execution_id,
