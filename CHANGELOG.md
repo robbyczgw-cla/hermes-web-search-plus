@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [v4.1.1] — 2026-09-09
+
+### Fixed
+
+- Prefer Exa `highlights` over the leading page text when both are present, so query-relevant passages survive the search snippet.
+- Send Parallel Search `max_results` and domain include/exclude through `advanced_settings` instead of stuffing `site:` operators into the query.
+- Apply the unified `freshness` filter on Tavily Search as native `time_range`. Result metadata now reports `freshness.applied=true` for Tavily.
+
 ## [v4.1.0] — 2026-09-05
 
 - Add the opt-in `wsp` native Hermes backend for `web_search` and `web_extract`, using the existing in-process WSP engine. Search and extraction can be selected independently.

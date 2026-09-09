@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 4.1.0
+Version: 4.1.1
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
 Brave Search, SerpBase, Querit, Parallel, SearXNG, Keenable.
 Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com, Keenable, Serper.
@@ -777,7 +777,7 @@ Full docs: See README.md and SKILL.md
         help=(
             "Unified recency filter (day, week, month, year; case-insensitive). "
             "Applied natively where the provider supports it (serper, brave, querit, firecrawl, "
-            "keenable, you, searxng, exa, and tinyfish); otherwise the search runs "
+            "keenable, you, searxng, exa, tavily, and tinyfish); otherwise the search runs "
             "unfiltered and result metadata reports freshness.applied=false"
         )
     )

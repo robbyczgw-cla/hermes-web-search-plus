@@ -39,6 +39,7 @@ class FreshnessMappingTests(unittest.TestCase):
             "kilo-perplexity": {"day": "day", "week": "week", "month": "month", "year": "year"},
             "searxng": {"day": "day", "week": "week", "month": "month", "year": "year"},
             "exa": {"day": "day", "week": "week", "month": "month", "year": "year"},
+            "tavily": {"day": "day", "week": "week", "month": "month", "year": "year"},
         }
         self.assertEqual(providers.PROVIDER_FRESHNESS_FORMATS, expected)
 
@@ -49,8 +50,9 @@ class FreshnessMappingTests(unittest.TestCase):
         self.assertIsNone(providers.map_freshness_for_provider("brave", None))
 
     def test_unsupported_providers_are_not_in_table(self):
-        for provider in ("tavily", "linkup", "parallel", "serpbase"):
+        for provider in ("linkup", "parallel", "serpbase"):
             self.assertFalse(providers.provider_supports_freshness(provider), provider)
+        self.assertTrue(providers.provider_supports_freshness("tavily"))
 
     def test_exa_freshness_uses_absolute_utc_bounds(self):
         start, end = providers.exa_date_bounds(
@@ -78,12 +80,19 @@ class FreshnessMappingTests(unittest.TestCase):
             "provider": "brave",
             "native_value": "pw",
         })
-        skipped = providers.freshness_metadata("tavily", "week")
+        tavily = providers.freshness_metadata("tavily", "week")
+        self.assertEqual(tavily, {
+            "requested": "week",
+            "applied": True,
+            "provider": "tavily",
+            "native_value": "week",
+        })
+        skipped = providers.freshness_metadata("linkup", "week")
         self.assertEqual(skipped, {
             "requested": "week",
             "applied": False,
-            "provider": "tavily",
-            "reason": "provider tavily does not support freshness",
+            "provider": "linkup",
+            "reason": "provider linkup does not support freshness",
         })
 
         with mock.patch.object(
@@ -274,16 +283,16 @@ class FreshnessPipelineTests(unittest.TestCase):
     def test_unsupported_provider_still_searches_and_reports_not_applied(self):
         with contextlib.ExitStack() as stack:
             self._isolate(stack)
-            stack.enter_context(mock.patch.dict("os.environ", {"TAVILY_API_KEY": "tavily-test-key"}))
-            stack.enter_context(mock.patch.object(search, "search_tavily", lambda **kw: _canned("tavily")))
-            result = search.run_search_request(query="how does https work", provider="tavily", freshness="week")
+            stack.enter_context(mock.patch.dict("os.environ", {"LINKUP_API_KEY": "linkup-test-key"}))
+            stack.enter_context(mock.patch.object(search, "search_linkup", lambda **kw: _canned("linkup")))
+            result = search.run_search_request(query="how does https work", provider="linkup", freshness="week")
 
         self.assertEqual(result["results"][0]["url"], "https://example.test/a")
         self.assertEqual(result["metadata"]["freshness"], {
             "requested": "week",
             "applied": False,
-            "provider": "tavily",
-            "reason": "provider tavily does not support freshness",
+            "provider": "linkup",
+            "reason": "provider linkup does not support freshness",
         })
 
     def test_research_mode_reports_freshness_per_provider(self):
@@ -320,8 +329,8 @@ class FreshnessPipelineTests(unittest.TestCase):
         by_provider = {m["provider"]: m for m in payload["metadata"]["freshness"]["providers"]}
         self.assertEqual(payload["metadata"]["freshness"]["requested"], "week")
         self.assertTrue(by_provider["serper"]["applied"])
-        self.assertFalse(by_provider["tavily"]["applied"])
-        self.assertIn("does not support freshness", by_provider["tavily"]["reason"])
+        self.assertTrue(by_provider["tavily"]["applied"])
+        self.assertEqual(by_provider["tavily"]["native_value"], "week")
 
     def test_cli_parser_lowercases_freshness(self):
         parser = search.build_parser({})

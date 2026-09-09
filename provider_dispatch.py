@@ -123,6 +123,7 @@ def _call_tavily_search(search_module, prov, args, key, config, routing_info):
         exclude_domains=args.exclude_domains,
         include_images=args.images,
         include_raw_content=args.raw_content,
+        time_range=args.time_range or args.freshness,
     )
 
 

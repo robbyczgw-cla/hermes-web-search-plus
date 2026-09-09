@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "4.1.0"
+EXPECTED_VERSION = "4.1.1"
 
 
 def _load_plugin_module():
@@ -80,8 +80,8 @@ def test_current_filter_help_mentions_all_new_native_support():
 
     assert "google.serper.dev/news) and tinyfish" in init_py
     assert "currently serper and tinyfish" in search_py
-    assert "searxng, exa, and tinyfish" in search_py
-    assert "searxng, exa, and tinyfish" in user_guide
+    assert "searxng, exa, tavily, and tinyfish" in search_py
+    assert "searxng, exa, tavily, and tinyfish" in user_guide
     assert "tinyfish serves it through its native news-domain mode" in user_guide
 
 

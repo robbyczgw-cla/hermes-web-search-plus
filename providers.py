@@ -63,6 +63,8 @@ PROVIDER_FRESHNESS_FORMATS: Dict[str, Dict[str, str]] = {
     # search_exa: accepts the unified value and converts it to absolute
     # startPublishedDate/endPublishedDate bounds inside the provider function.
     "exa": {"day": "day", "week": "week", "month": "month", "year": "year"},
+    # search_tavily: body["time_range"] uses the unified values natively.
+    "tavily": {"day": "day", "week": "week", "month": "month", "year": "year"},
 }
 
 _EXA_FRESHNESS_DAYS = {"day": 1, "week": 7, "month": 30, "year": 365}
@@ -461,6 +463,7 @@ def search_tavily(
     exclude_domains: Optional[List[str]] = None,
     include_images: bool = False,
     include_raw_content: bool = False,
+    time_range: Optional[str] = None,
 ) -> dict:
     """Search using Tavily (AI Research Search)."""
     endpoint = "https://api.tavily.com/search"
@@ -480,6 +483,8 @@ def search_tavily(
         body["include_domains"] = include_domains
     if exclude_domains:
         body["exclude_domains"] = exclude_domains
+    if time_range:
+        body["time_range"] = time_range
 
     headers = {"Content-Type": "application/json"}
     validate_outbound_body("tavily", body)
@@ -1150,11 +1155,15 @@ def search_exa(
     # Standard source-result parsing
     for item in data.get("results", [])[:max_results]:
         text_content = item.get("text", "") or ""
-        highlights = item.get("highlights", [])
-        if text_content:
-            snippet = text_content[:800]
-        elif highlights:
+        highlights = [
+            highlight
+            for highlight in (item.get("highlights") or [])
+            if isinstance(highlight, str) and highlight.strip()
+        ]
+        if highlights:
             snippet = " ... ".join(highlights[:2])
+        elif text_content:
+            snippet = text_content[:800]
         else:
             snippet = ""
 
@@ -1188,21 +1197,24 @@ def search_parallel(
 ) -> dict:
     """Search using Parallel's web search API.
 
-    Parallel returns source URLs plus long LLM-ready excerpts. Its API does not
-    currently accept a generic max_results parameter, so results are trimmed
-    locally to the requested count. ``mode`` defaults to ``fast``; set turbo,
-    basic, or advanced to override.
+    Parallel returns source URLs plus long LLM-ready excerpts. Requested count
+    and domain filters go in ``advanced_settings``; results are still trimmed
+    locally as a safety cap. ``mode`` defaults to ``fast``; set turbo, basic,
+    or advanced to override.
     """
-    search_query = query
-    if include_domains:
-        search_query += " " + " ".join(f"site:{domain}" for domain in include_domains)
-    if exclude_domains:
-        search_query += " " + " ".join(f"-site:{domain}" for domain in exclude_domains)
-
     normalized_mode = normalize_parallel_search_mode(mode) or "fast"
+    advanced_settings: Dict[str, Any] = {"max_results": max_results}
+    source_policy: Dict[str, Any] = {}
+    if include_domains:
+        source_policy["include_domains"] = include_domains
+    if exclude_domains:
+        source_policy["exclude_domains"] = exclude_domains
+    if source_policy:
+        advanced_settings["source_policy"] = source_policy
     body: Dict[str, Any] = {
         "objective": query,
-        "search_queries": [search_query],
+        "search_queries": [query],
+        "advanced_settings": advanced_settings,
     }
     if client_model:
         body["client_model"] = client_model
