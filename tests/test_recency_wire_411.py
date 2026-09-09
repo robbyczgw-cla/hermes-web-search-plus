@@ -111,8 +111,8 @@ def test_exa_wire_survives_run_search_request_and_v3_serialization(
     if sent:
         expected = timedelta(hours=1) if recency == "hour" else timedelta(days=7)
         assert (
-            datetime.fromisoformat(sent["endPublishedDate"])
-            - datetime.fromisoformat(sent["startPublishedDate"])
+            datetime.fromisoformat(sent["endPublishedDate"].replace("Z", "+00:00"))
+            - datetime.fromisoformat(sent["startPublishedDate"].replace("Z", "+00:00"))
             == expected
         )
     bounds.assert_called_once_with(recency)
