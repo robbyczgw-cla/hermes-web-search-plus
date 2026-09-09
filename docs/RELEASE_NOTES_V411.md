@@ -10,6 +10,13 @@ Search adapters now keep more of the evidence the upstream APIs already return.
 
 Existing tool names, defaults, and Plus/native routing stay the same.
 
+Exa publication bounds are computed once for the HTTP body and carried into
+freshness receipts unchanged, including Research Mode. `--time-range hour`
+selects a one-hour window and takes precedence over `--freshness week`.
+Unknown Exa recency tokens apply no relative date filter. Canonical v3 output
+preserves the receipt in `warnings[].details.freshness` under
+`wsp.freshness.applied`; the `applied` field records whether a filter was sent.
+
 ## Compatibility
 
 - No Hermes tool is renamed or removed.

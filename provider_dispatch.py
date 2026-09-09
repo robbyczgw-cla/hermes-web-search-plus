@@ -78,7 +78,7 @@ def _call_serper_search(search_module, prov, args, key, config, routing_info):
         country=country,
         language=language,
         search_type=args.search_type,
-        time_range=args.time_range or args.freshness,
+        time_range=getattr(args, "time_range", None) or args.freshness,
         include_images=args.images,
     )
 
@@ -107,7 +107,7 @@ def _call_brave_search(search_module, prov, args, key, config, routing_info):
         max_results=args.max_results,
         country=country,
         language=language,
-        time_range=args.time_range or args.freshness,
+        time_range=getattr(args, "time_range", None) or args.freshness,
         safesearch=brave_config.get("safesearch", "moderate"),
     )
 
@@ -123,7 +123,7 @@ def _call_tavily_search(search_module, prov, args, key, config, routing_info):
         exclude_domains=args.exclude_domains,
         include_images=args.images,
         include_raw_content=args.raw_content,
-        time_range=args.time_range or args.freshness,
+        time_range=getattr(args, "time_range", None) or args.freshness,
     )
 
 
@@ -151,7 +151,7 @@ def _call_querit_search(search_module, prov, args, key, config, routing_info):
         max_results=args.max_results,
         language=language,
         country=country,
-        time_range=args.time_range or args.freshness,
+        time_range=getattr(args, "time_range", None) or args.freshness,
         include_domains=args.include_domains,
         exclude_domains=args.exclude_domains,
         base_url=args.querit_base_url,
@@ -186,7 +186,7 @@ def _call_firecrawl_search(search_module, prov, args, key, config, routing_info)
         api_key=key,
         max_results=args.max_results,
         country=country,
-        time_range=args.time_range or args.freshness,
+        time_range=getattr(args, "time_range", None) or args.freshness,
         sources=args.firecrawl_sources,
         include_domains=args.include_domains,
         exclude_domains=args.exclude_domains,
@@ -241,7 +241,7 @@ def _call_searxng_search(search_module, prov, args, key, config, routing_info):
         categories=args.categories,
         engines=args.engines,
         language=language,
-        time_range=args.time_range or args.freshness,
+        time_range=getattr(args, "time_range", None) or args.freshness,
         safesearch=args.searxng_safesearch,
     )
 
@@ -252,7 +252,7 @@ def _call_keenable_search(search_module, prov, args, key, config, routing_info):
         query=args.query,
         api_key=key,
         max_results=args.max_results,
-        time_range=args.time_range or args.freshness,
+        time_range=getattr(args, "time_range", None) or args.freshness,
         include_domains=args.include_domains,
         public=keyless_public_allowed(prov, config),
         api_url=keenable_config.get("search_url", "https://api.keenable.ai/v1/search"),

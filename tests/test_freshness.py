@@ -105,9 +105,15 @@ class FreshnessMappingTests(unittest.TestCase):
             providers,
             "exa_date_bounds",
             return_value=("2026-07-18T12:34:56Z", "2026-07-25T12:34:56Z"),
-        ) as bounds:
-            exa = providers.freshness_metadata("exa", "week")
+        ) as bounds, mock.patch.object(providers, "make_request", return_value={"results": []}) as http:
+            result = providers.search_exa("q", "exa-test-key", freshness="week")
+            exa = providers.freshness_metadata(
+                "exa", "week", applied_published_dates=result["metadata"]["applied_published_dates"]
+            )
         bounds.assert_called_once_with("week")
+        self.assertEqual(exa["native_value"], {
+            key: http.call_args.args[2][key] for key in ("startPublishedDate", "endPublishedDate")
+        })
         self.assertEqual(exa, {
             "requested": "week",
             "applied": True,
@@ -122,12 +128,15 @@ class FreshnessMappingTests(unittest.TestCase):
             providers,
             "exa_date_bounds",
             return_value=("2026-07-18T12:34:56Z", "2026-07-25T12:34:56Z"),
-        ):
+        ) as bounds, mock.patch.object(providers, "make_request", return_value={"results": []}) as http:
+            result = providers.search_exa("q", "exa-test-key", freshness="week", start_date="2020-01-01T00:00:00Z")
             exa_override = providers.freshness_metadata(
-                "exa",
-                "week",
-                start_date="2020-01-01T00:00:00Z",
+                "exa", "week", applied_published_dates=result["metadata"]["applied_published_dates"]
             )
+        bounds.assert_called_once_with("week")
+        self.assertEqual(exa_override["native_value"], {
+            key: http.call_args.args[2][key] for key in ("startPublishedDate", "endPublishedDate")
+        })
         self.assertEqual(exa_override["native_value"], {
             "startPublishedDate": "2020-01-01T00:00:00Z",
             "endPublishedDate": "2026-07-25T12:34:56Z",

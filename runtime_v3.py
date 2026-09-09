@@ -653,7 +653,7 @@ def response_from_legacy(
         warnings.append(
             {
                 "code": "wsp.freshness.applied",
-                "message": "Native recency filter applied to the provider request.",
+                "message": "Provider recency application receipt (see details for applied status).",
                 "details": {"freshness": deepcopy(freshness)},
             }
         )

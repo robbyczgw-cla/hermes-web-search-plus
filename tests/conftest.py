@@ -1,9 +1,29 @@
+import socket
+
 import pytest
 
 import cache
 import extract
 import provider_stats
 import search
+
+
+@pytest.fixture(autouse=True)
+def _example_dns_fixture(monkeypatch):
+    """Mock the example.com/example.org hosts used by mocked extraction tests.
+
+    Keep URL/IP security validation enabled, without requiring live DNS. Safety
+    tests can still replace getaddrinfo themselves to exercise private addresses,
+    resolution errors and rebinding. All other hosts retain the real resolver.
+    """
+    resolve = socket.getaddrinfo
+
+    def fixture_address(host, port, *args, **kwargs):
+        if host in {"example.com", "example.org"}:
+            host = "93.184.216.34"  # Public-address fixture, not a live DNS claim.
+        return resolve(host, port, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", fixture_address)
 
 
 @pytest.fixture(autouse=True)

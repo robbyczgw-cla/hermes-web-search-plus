@@ -167,23 +167,25 @@ def freshness_metadata(
     *,
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
+    applied_published_dates: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    """Describe whether a provider applied the requested freshness filter."""
-    if provider == "exa" and provider_supports_freshness(provider):
-        if start_date and end_date:
-            start, end = start_date, end_date
-        else:
-            generated_start, generated_end = exa_date_bounds(requested)
-            start = start_date or generated_start
-            end = end_date or generated_end
+    """Describe native recency; Exa receipts must use already-resolved wire dates.
+
+    An empty date dict means no filter was sent, not permission to read the clock.
+    The date kwargs remain a compatibility seam for callers with resolved dates.
+    """
+    if provider == "exa":
+        dates = dict(applied_published_dates) if applied_published_dates is not None else {
+            key: value for key, value in (
+                ("startPublishedDate", start_date), ("endPublishedDate", end_date)
+            ) if value
+        }
         return {
             "requested": requested,
-            "applied": True,
+            "applied": bool(dates),
             "provider": provider,
-            "native_value": {
-                "startPublishedDate": start,
-                "endPublishedDate": end,
-            },
+            "native_value": dates,
+            **({} if dates else {"reason": "no publication date bounds reported by provider"}),
         }
     native = map_freshness_for_provider(provider, requested)
     if native is not None:
@@ -1209,11 +1211,7 @@ def search_exa(
         "query": query if not similar_url else f"Similar to: {similar_url}",
         "results": results,
         "images": [],
-        "metadata": (
-            {"applied_published_dates": applied_published_dates}
-            if applied_published_dates
-            else {}
-        ),
+        "metadata": {"applied_published_dates": applied_published_dates},
     }
 
 def search_parallel(
