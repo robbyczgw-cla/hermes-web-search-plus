@@ -18,7 +18,10 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
 
-import fcntl
+try:  # POSIX only; Windows has no fcntl module.
+    import fcntl
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None
 
 import operator_privacy_v3 as privacy
 import providers as _providers

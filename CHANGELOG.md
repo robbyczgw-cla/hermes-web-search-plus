@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Import the plugin on Windows when `fcntl` is missing. POSIX lock and journal paths still fail closed. Contributed by [@gzwahoo](https://github.com/gzwahoo) in [#129](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/129).
+
 ## [v4.1.1] — 2026-09-09
 
 ### Fixed
