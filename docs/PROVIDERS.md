@@ -25,6 +25,7 @@ and the plugin provider catalog; regenerate it with `python scripts/gen_provider
 | Keenable | ✅ | ✅ | `KEENABLE_API_KEY` | yes (`KEENABLE_ALLOW_PUBLIC` opt-in) | yes (priority 12) | Keyless public tier; optional key for higher limits | https://keenable.ai |
 | DonSeTch (local MCP) | ✅ | ✅ | `DONSETCH_BIN` | — | explicit-only (`auto_allow=false`) | Free local binary; no API key | https://github.com/dondai44423/donsetch |
 | Octen via Monid | ✅ | — | `MONID_API_KEY` | — | explicit-only (`auto_allow=false`) | No free-tier claim; Monid API key and wallet balance required | https://app.monid.ai/access/api-keys |
+| Search1API | ✅ | ✅ | `SEARCH1API_KEY` | — | explicit-only (`auto_allow=false`) | Free plan: 100 credits; 1 credit per search/news/crawl call | https://s1.dev |
 | TinyFish Search | ✅ | — | `TINYFISH_API_KEY` | — | explicit-only (`auto_allow=false`) | Search does not consume credits; API access required (30 rpm Free/PAYG) | https://agent.tinyfish.ai/api-keys |
 
 `priority N` is the provider's position in the default routing priority list.
@@ -102,6 +103,10 @@ Local DonSeTch 3.x stdio MCP provider for metasearch, direct extraction, PDF/OCR
 ### Octen via Monid
 
 Explicit-only Octen source-result web search through Monid, with native recency and domain filtering.
+
+### Search1API
+
+Web search, news vertical, and page extraction through one Search1API key. search_type=news uses the /news endpoint; extraction returns Markdown text (html/raw-html/render-js flags have no upstream effect). Review https://blog.s1.dev/pages/terms and https://s1.dev/privacy before use. Explicit-only by default.
 
 ### TinyFish Search
 

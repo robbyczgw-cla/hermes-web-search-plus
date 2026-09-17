@@ -211,6 +211,8 @@ SEARCH_TYPE_VALUES = ("search", "news")
 PROVIDER_SEARCH_TYPES: Dict[str, Dict[str, str]] = {
     # search_serper: endpoint path https://google.serper.dev/<type>
     "serper": {"search": "search", "news": "news"},
+    # search1api SDK provider: endpoint path api.search1api.com/<search|news>
+    "search1api": {"search": "search", "news": "news"},
 }
 
 

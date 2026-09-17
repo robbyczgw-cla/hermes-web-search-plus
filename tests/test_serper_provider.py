@@ -114,8 +114,12 @@ class SerperNewsParsingTests(unittest.TestCase):
 class SearchTypeContractTests(unittest.TestCase):
     def test_support_table(self):
         self.assertEqual(providers.SEARCH_TYPE_VALUES, ("search", "news"))
-        self.assertEqual(providers.PROVIDER_SEARCH_TYPES, {"serper": {"search": "search", "news": "news"}})
+        self.assertEqual(providers.PROVIDER_SEARCH_TYPES, {
+            "serper": {"search": "search", "news": "news"},
+            "search1api": {"search": "search", "news": "news"},
+        })
         self.assertTrue(providers.provider_supports_search_type("serper", "news"))
+        self.assertTrue(providers.provider_supports_search_type("search1api", "news"))
         self.assertFalse(providers.provider_supports_search_type("tavily", "news"))
 
     def test_normalize_search_type(self):

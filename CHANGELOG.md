@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Search1API as a bundled, source-only Search and Extract provider via the public Provider SDK. The adapter supports native news, freshness, and include/exclude-domain filters and remains explicit-only by default (`auto_allow=false`).
+- Send credentials only to Search1API's fixed HTTPS API origin, reject redirects, and cap response bodies. Crawl is exposed as source-text extraction only; HTML, raw-HTML, and JS-rendering output modes are not claimed.
+- Multi-URL extraction records deterministic per-URL failures and continues, while a transient upstream failure stops the batch to avoid spending quota against an unhealthy endpoint.
+
 ### Fixed
 
 - Import the plugin on Windows when `fcntl` is missing. POSIX lock and journal paths still fail closed. Contributed by [@gzwahoo](https://github.com/gzwahoo) in [#129](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/129).
