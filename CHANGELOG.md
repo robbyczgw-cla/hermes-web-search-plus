@@ -6,7 +6,7 @@
 
 ### Added
 
-- Optional Jev (TypeSafe System One) for three gated decisions: `search_type` overlay, extract quality, and language fill. Default off. Enable with `setup --jev --jev-key-file PATH`. The key is never written to `config.json`.
+- Optional **Jev**, default off. Three gated decisions: search-type overlay, extract quality, and language fill. Enable with `setup --jev --jev-key-file PATH`. The key is never written to `config.json`.
 - Search-type overlay: keyword heuristics propose `news`; Jev confirms only at confidence ≥ 0.95; otherwise the request stays `search`. Explicit `--search-type news` is unchanged. Shopping/local labels are not new search types.
 
 ### Fixed

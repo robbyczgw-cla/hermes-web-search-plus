@@ -1,15 +1,15 @@
 # Web Search Plus 4.2.0
 
-Optional Jev (TypeSafe System One) is available and **off by default**. It is not a search provider.
+Optional **Jev** is available and **off by default**. It is not a search provider.
 
 ## Enable
 
 ```bash
-python3 ~/.hermes/plugins/web-search-plus/setup.py setup --preset lean \\
-  --jev --jev-key-file /path/to/typesafe_api_key
+python3 ~/.hermes/plugins/web-search-plus/setup.py setup --preset lean \
+  --jev --jev-key-file /path/to/jev_api_key
 ```
 
-Interactive setup asks `[y/N]` and defaults to no. Store the TypeSafe key in a file (`TYPESAFE_API_KEY_FILE`, mode 600). Do not put the key in `config.json`.
+Interactive setup asks `[y/N]` and defaults to no. Store the key in a file (`TYPESAFE_API_KEY_FILE`, mode 600). Do not put the key in `config.json`.
 
 Leave Jev off with `--no-jev` or by skipping the prompt.
 

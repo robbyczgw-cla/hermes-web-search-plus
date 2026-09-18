@@ -103,7 +103,7 @@ def status_payload(env: Optional[Mapping[str, str]] = None, config: Optional[Map
 
 def plan_lines(*, want_enable: Optional[bool], decisions: Sequence[str], has_key: bool) -> list[str]:
     lines = [
-        "Optional Jev (TypeSafe System One) — default off. Not a search provider.",
+        "Optional Jev — default off. Not a search provider.",
         f"  Signup: {JEV_SIGNUP}",
         "  Uses TYPESAFE_API_KEY_FILE (preferred) or TYPESAFE_API_KEY. Secrets are never printed.",
         "  Decisions: search_type overlay, extract_quality, language_fill.",

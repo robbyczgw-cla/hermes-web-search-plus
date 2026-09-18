@@ -1021,7 +1021,7 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     setup.add_argument("--fallback-provider", help="Fallback provider when no route is available")
     setup.add_argument("--confidence-threshold", type=float, help="Auto-routing confidence threshold 0.0-1.0")
     jev = setup.add_mutually_exclusive_group()
-    jev.add_argument("--jev", action="store_true", help="Enable optional Jev (TypeSafe System One) during setup")
+    jev.add_argument("--jev", action="store_true", help="Enable optional Jev during setup")
     jev.add_argument("--no-jev", action="store_true", help="Leave optional Jev disabled (default)")
     setup.add_argument(
         "--jev-decisions",

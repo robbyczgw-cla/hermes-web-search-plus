@@ -23,7 +23,13 @@ Current release: **v4.2.0** — see the [release notes](docs/RELEASE_NOTES_V420.
 
 ### What's new in 4.2.0
 
-Optional Jev (TypeSafe System One) can confirm a `news` search type, score extract bodies, and fill language when WSP inferred none. It stays off until `setup --jev`. The TypeSafe key lives in `TYPESAFE_API_KEY_FILE`, not in `config.json`. See the [4.2.0 release notes](docs/RELEASE_NOTES_V420.md).
+Optional **Jev** can confirm a `news` search type, score extract bodies, and fill language when WSP inferred none. It is not a search provider and stays **off** until you pass `setup --jev`.
+
+- Search-type overlay: keywords may propose `news`; Jev confirms only at confidence ≥ 0.95; otherwise the request stays `search`. Explicit `--search-type news` is unchanged.
+- Extract quality: Jev may keep a long page that looked like a bot wall, or reject chrome.
+- Language fill: only when WSP inferred none.
+
+Keep the key in `TYPESAFE_API_KEY_FILE` (mode 600), never in `config.json`. If you enable Jev, install `typesafe-sdk` separately — the plugin stays stdlib-only. See the [4.2.0 release notes](docs/RELEASE_NOTES_V420.md).
 
 Windows import no longer requires `fcntl`. Contributed by [@gzwahoo](https://github.com/gzwahoo) in [#129](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/129).
 
