@@ -148,6 +148,15 @@ DEFAULT_CONFIG = {
         "full_text_ttl_seconds": 604800,
         "full_text_max_bytes": 268435456,
     },
+    "jev": {
+        "enabled": False,
+        "search_type": False,
+        "extract_quality": False,
+        "language_fill": False,
+        "min_confidence": 0.85,
+        "search_type_min_confidence": 0.95,
+        "timeout_s": 8.0,
+    },
     # Note: provider country/language keys are intentionally absent from the
     # built-in defaults so search_locale.resolve_locale can treat a present
     # key as an explicit user override from config.json.
@@ -520,6 +529,36 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
         not isinstance(cache_root, str) or not cache_root.strip()
     ):
         raise ValueError("bounded_context.cache_root must be a non-empty string")
+    jev = config.get("jev", DEFAULT_CONFIG["jev"])
+    if not isinstance(jev, dict):
+        raise ValueError("jev must be an object")
+    if "api_key" in jev and str(jev.get("api_key") or "").strip():
+        raise ValueError("jev.api_key is not allowed; use TYPESAFE_API_KEY_FILE")
+    for flag in ("enabled", "search_type", "extract_quality", "language_fill"):
+        if not isinstance(jev.get(flag, False), bool):
+            raise ValueError(f"jev.{flag} must be a boolean")
+    for name, default in (("min_confidence", 0.85), ("search_type_min_confidence", 0.95)):
+        value = jev.get(name, default)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"jev.{name} must be a number")
+        if not 0.0 <= float(value) <= 1.0:
+            raise ValueError(f"jev.{name} must be between 0.0 and 1.0")
+    timeout = jev.get("timeout_s", 8.0)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or float(timeout) < 1.0:
+        raise ValueError("jev.timeout_s must be a number >= 1")
+    key_file = jev.get("api_key_file")
+    if key_file is not None and (not isinstance(key_file, str) or not key_file.strip()):
+        raise ValueError("jev.api_key_file must be a non-empty string")
+    config["jev"] = {
+        "enabled": bool(jev.get("enabled", False)),
+        "search_type": bool(jev.get("search_type", False)),
+        "extract_quality": bool(jev.get("extract_quality", False)),
+        "language_fill": bool(jev.get("language_fill", False)),
+        "min_confidence": float(jev.get("min_confidence", 0.85)),
+        "search_type_min_confidence": float(jev.get("search_type_min_confidence", 0.95)),
+        "timeout_s": float(jev.get("timeout_s", 8.0)),
+        **({"api_key_file": key_file.strip()} if isinstance(key_file, str) and key_file.strip() else {}),
+    }
     config["auto_routing"] = auto
     config["routing"] = routing
     config["budget_preflight"] = budget_preflight

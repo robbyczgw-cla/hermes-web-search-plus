@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 4.1.1
+Version: 4.2.0
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
 Brave Search, SerpBase, Querit, Parallel, SearXNG, Keenable.
 Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com, Keenable, Serper.
@@ -1331,6 +1331,13 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
     instead of spawning a subprocess.
     """
     config = apply_profile_effects(config)
+    if getattr(args, "query", None):
+        from jev_optional import maybe_search_type
+
+        resolved, _jev_meta = maybe_search_type(
+            args.query, getattr(args, "search_type", None), config=config
+        )
+        args.search_type = resolved
 
     # Determine provider
     if args.provider == "auto" or (args.provider is None and not args.similar_url):

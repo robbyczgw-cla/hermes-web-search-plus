@@ -299,6 +299,21 @@ def _extract_plus_core(
                 else execute_provider_with_retry(prov, execute_extract)
             )
             res_list = result.get("results") or []
+            from jev_optional import filter_extract_results
+
+            res_list, jev_meta = filter_extract_results(res_list, config=config)
+            result["results"] = res_list
+            if jev_meta:
+                result.setdefault("metadata", {})["jev_extract_quality"] = jev_meta
+            if not res_list and jev_meta:
+                if engine_owned_attempt:
+                    raise ProviderContractFailure("jev_extract_quality_rejected")
+                errors.append({
+                    "provider": prov,
+                    "error": "jev_extract_quality_rejected",
+                    "details": jev_meta,
+                })
+                continue
             all_failed = bool(res_list) and all(r.get("error") for r in res_list)
             if all_failed:
                 if engine_owned_attempt:

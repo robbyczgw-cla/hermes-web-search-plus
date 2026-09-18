@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [v4.2.0] — 2026-09-18
+
+### Added
+
+- Optional Jev (TypeSafe System One) for three gated decisions: `search_type` overlay, extract quality, and language fill. Default off. Enable with `setup --jev --jev-key-file PATH`. The key is never written to `config.json`.
+- Search-type overlay: keyword heuristics propose `news`; Jev confirms only at confidence ≥ 0.95; otherwise the request stays `search`. Explicit `--search-type news` is unchanged. Shopping/local labels are not new search types.
+
 ### Fixed
 
 - Import the plugin on Windows when `fcntl` is missing. POSIX lock and journal paths still fail closed. Contributed by [@gzwahoo](https://github.com/gzwahoo) in [#129](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/129).
