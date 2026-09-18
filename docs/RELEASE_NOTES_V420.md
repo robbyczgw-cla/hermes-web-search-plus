@@ -47,4 +47,4 @@ Install `typesafe-sdk` separately if you enable Jev. The plugin stays stdlib-onl
 
 ## Also in 4.2.0
 
-Import on Windows when `fcntl` is missing. POSIX lock and journal paths still fail closed ([#129](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/129)).
+Import on Windows when `fcntl` is missing. POSIX lock and journal paths still fail closed. Contributed by [@gzwahoo](https://github.com/gzwahoo) in [#129](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/129).

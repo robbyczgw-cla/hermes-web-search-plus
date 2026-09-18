@@ -25,7 +25,7 @@ Current release: **v4.2.0** — see the [release notes](docs/RELEASE_NOTES_V420.
 
 Optional Jev (TypeSafe System One) can confirm a `news` search type, score extract bodies, and fill language when WSP inferred none. It stays off until `setup --jev`. The TypeSafe key lives in `TYPESAFE_API_KEY_FILE`, not in `config.json`. See the [4.2.0 release notes](docs/RELEASE_NOTES_V420.md).
 
-Windows import no longer requires `fcntl` ([#129](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/129)).
+Windows import no longer requires `fcntl`. Contributed by [@gzwahoo](https://github.com/gzwahoo) in [#129](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/129).
 
 ### What's new in 4.1.1
 
