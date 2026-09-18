@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v4.1.1
+web-search-plus — Hermes Plugin v4.2.0
 Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "4.1.1"
+__version__ = "4.2.0"
 
 import argparse
 import getpass
@@ -54,6 +54,7 @@ try:  # Package load path used by Hermes plugin discovery.
         apply_profile_effects,
         load_config,
     )
+    from . import jev_setup
 except ImportError:  # Direct script/test imports from the plugin directory.
     from provider_registry import (
         DEFAULT_AUTO_ALLOW,
@@ -72,6 +73,7 @@ except ImportError:  # Direct script/test imports from the plugin directory.
     from env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, is_truthy, load_env_files
     from cache import MAX_STORED_TEXT_CHARS, store_web_text
     from config import apply_profile_effects, load_config
+    import jev_setup
 
 try:
     from .daemon_tasks import DaemonTask
@@ -768,6 +770,7 @@ def _status_payload(env: Optional[Mapping[str, str]] = None, config: Optional[Ma
         "profile": _profile_status(active_config, active_env),
         "routing": active_config,
         "donsetch": _donsetch_status(active_env, active_config),
+        "jev": jev_setup.status_payload(active_env, active_config),
     }
 
 
@@ -1017,6 +1020,17 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     setup.add_argument("--auto-deny", help="Comma-separated providers blocked from auto-routing but still usable explicitly")
     setup.add_argument("--fallback-provider", help="Fallback provider when no route is available")
     setup.add_argument("--confidence-threshold", type=float, help="Auto-routing confidence threshold 0.0-1.0")
+    jev = setup.add_mutually_exclusive_group()
+    jev.add_argument("--jev", action="store_true", help="Enable optional Jev (TypeSafe System One) during setup")
+    jev.add_argument("--no-jev", action="store_true", help="Leave optional Jev disabled (default)")
+    setup.add_argument(
+        "--jev-decisions",
+        help="Comma-separated Jev decisions: search_type,extract_quality,language_fill (default: all three)",
+    )
+    setup.add_argument(
+        "--jev-key-file",
+        help="Path to TYPESAFE_API_KEY_FILE. The key value is never written to config.json",
+    )
 
     list_cmd = subs.add_parser("list", help="List supported providers, capabilities, and signup URLs")
     list_cmd.add_argument("--json", action="store_true", help="Print provider catalog as JSON")
@@ -1244,6 +1258,10 @@ def _web_search_plus_cli_command(args: Any) -> None:
                 )
             if payload["profile"]["active"] == "self_hosted":
                 print("\n" + _render_profile_checks(payload["profile"]))
+            jev = payload.get("jev") or {}
+            on = "on" if jev.get("enabled") else "off"
+            key = "yes" if jev.get("key_present") else "no"
+            print(f"\nJev: {on}, key={key}, source={jev.get('key_source') or 'none'}")
         return
 
     if command == "setup":
@@ -1268,6 +1286,26 @@ def _web_search_plus_cli_command(args: Any) -> None:
         print(f"\nTarget env file: {env_path}")
         print(f"Target config file: {config_path}")
         print(_routing_summary(config))
+        if getattr(args, "jev", False):
+            want_jev = True
+        elif getattr(args, "no_jev", False):
+            want_jev = False
+        else:
+            want_jev = None
+        try:
+            jev_decisions = jev_setup.parse_decisions(getattr(args, "jev_decisions", None))
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        env_now = _read_env_file(env_path)
+        print(
+            "\n".join(
+                jev_setup.plan_lines(
+                    want_enable=want_jev,
+                    decisions=jev_decisions,
+                    has_key=jev_setup.key_present(env_now, config),
+                )
+            )
+        )
         if getattr(args, "dry_run", False):
             print("Dry run only; no keys or routing config written.")
             return
@@ -1302,6 +1340,51 @@ def _web_search_plus_cli_command(args: Any) -> None:
                 keyless_enable.append(item["provider"])
         for provider in keyless_enable:
             config.setdefault(PROVIDER_SPECS[provider].config_section, {})["allow_public"] = True
+        jev_wrote = False
+        if want_jev is None:
+            if sys.stdin.isatty():
+                try:
+                    answer = input(
+                        "Enable optional Jev (TypeSafe) for search-type overlay, extract quality, and language fill? [y/N]: "
+                    ).strip().lower()
+                except (EOFError, OSError):
+                    answer = ""
+                want_jev = answer in ("y", "yes")
+            else:
+                want_jev = False
+        if want_jev:
+            key_file = getattr(args, "jev_key_file", None)
+            merged_env = dict(env_now)
+            merged_env.update(values)
+            if key_file:
+                path = Path(str(key_file)).expanduser()
+                try:
+                    present = bool(path.read_text(encoding="utf-8").strip())
+                except OSError:
+                    present = False
+                if not present:
+                    print("Jev not enabled: --jev-key-file is missing or empty.")
+                    want_jev = False
+                else:
+                    values[jev_setup.JEV_ENV_FILE] = str(path)
+            elif not jev_setup.key_present(merged_env, config):
+                prompt = f"TypeSafe / Jev key ({jev_setup.JEV_ENV}, Enter to skip): "
+                try:
+                    if getattr(args, "show_values", False):
+                        secret = input(prompt).strip()
+                    else:
+                        secret = getpass.getpass(prompt).strip()
+                except (EOFError, OSError):
+                    secret = ""
+                if secret:
+                    stored = jev_setup.persist_key_file(secret)
+                    values[jev_setup.JEV_ENV_FILE] = str(stored)
+                else:
+                    print("Jev not enabled: no TypeSafe key provided.")
+                    want_jev = False
+        if want_jev:
+            jev_setup.apply_jev_config(config, enabled=True, decisions=jev_decisions)
+            jev_wrote = True
         routing_args_present = any(
             getattr(args, name, None) is not None
             for name in ["routing", "default_provider", "provider_priority", "disable_providers", "fallback_provider", "confidence_threshold"]
@@ -1314,13 +1397,18 @@ def _web_search_plus_cli_command(args: Any) -> None:
             print(f"\n✓ Configured {len(changed)} provider key(s) in {env_path}: " + ", ".join(changed))
             print("✓ Secrets were not printed.")
             wrote_any = True
-        if routing_args_present or keyless_enable:
+        if routing_args_present or keyless_enable or jev_wrote:
             _write_behavior_config(config_path, config)
             if routing_args_present:
                 print(f"✓ Saved routing preferences in {config_path}")
             if keyless_enable:
                 names = ", ".join(PROVIDER_SPECS[p].display_name for p in keyless_enable)
                 print(f"✓ Enabled keyless public search for {names} in {config_path}")
+            if jev_wrote:
+                print(
+                    f"✓ Optional Jev enabled in {config_path} "
+                    f"(decisions: {', '.join(jev_decisions)})."
+                )
             wrote_any = True
         if not wrote_any:
             print("No keys entered; nothing changed.")

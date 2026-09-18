@@ -149,6 +149,7 @@ def resolve_locale(
 
     default_language = locale_defaults.get("language")
     auto_language = isinstance(default_language, str) and _normalize(default_language) == AUTO_LANGUAGE
+    jev_lang_meta = None
     if cli_language:
         language, language_source = _normalize(cli_language), "cli"
     elif language_key and section.get(language_key):
@@ -160,11 +161,24 @@ def resolve_locale(
         if inferred:
             language, language_source = inferred, "inferred"
         else:
-            language, language_source = FALLBACK_LANGUAGE, "fallback"
+            if auto_language:
+                from jev_optional import maybe_fill_language
+
+                filled, jev_lang_meta = maybe_fill_language(
+                    query or "", inferred, config=config
+                )
+                if filled:
+                    language, language_source = filled, "jev"
+                else:
+                    language, language_source = FALLBACK_LANGUAGE, "fallback"
+            else:
+                language, language_source = FALLBACK_LANGUAGE, "fallback"
 
     metadata = {
         "country": country,
         "language": language,
         "source": {"country": country_source, "language": language_source},
     }
+    if jev_lang_meta:
+        metadata["jev_language"] = jev_lang_meta
     return country, language, metadata

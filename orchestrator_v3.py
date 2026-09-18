@@ -425,6 +425,19 @@ def execute_v3_request(
     if request.capability is not adapter.capability:
         raise ValueError("request and adapter capability differ")
     runtime_config: Dict[str, Any] = config or {}
+    if request.capability is Capability.SEARCH:
+        from jev_optional import maybe_search_type
+
+        resolved, _jev_meta = maybe_search_type(
+            str(request.input.get("query") or ""),
+            request.options.get("search_type"),
+            config=runtime_config,
+        )
+        if resolved != request.options.get("search_type"):
+            request = replace(
+                request,
+                options={**request.options, "search_type": resolved},
+            )
     policy_mode = _effective_policy_mode(request, runtime_config)
     if request.routing.get("policy_mode") != policy_mode:
         request = replace(

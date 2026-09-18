@@ -19,7 +19,13 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v4.1.1** — see the [release notes](docs/RELEASE_NOTES_V411.md) and [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+Current release: **v4.2.0** — see the [release notes](docs/RELEASE_NOTES_V420.md) and [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+
+### What's new in 4.2.0
+
+Optional Jev (TypeSafe System One) can confirm a `news` search type, score extract bodies, and fill language when WSP inferred none. It stays off until `setup --jev`. The TypeSafe key lives in `TYPESAFE_API_KEY_FILE`, not in `config.json`. See the [4.2.0 release notes](docs/RELEASE_NOTES_V420.md).
+
+Windows import no longer requires `fcntl`. Contributed by [@gzwahoo](https://github.com/gzwahoo) in [#129](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/129).
 
 ### What's new in 4.1.1
 
@@ -88,6 +94,13 @@ python3 search.py --query "Hermes Agent latest release" --provider auto --qualit
 ```
 
 Web Search Plus supports 15 search and 9 extraction providers — you do **not** need them all. One search-capable key or configured local endpoint enables `web_search_plus`; one extraction-capable key or endpoint enables `web_extract_plus`; more providers just make controlled routing more flexible. The setup helper stores keys in the active Hermes environment file — never commit them to the repository.
+
+Optional Jev stays off unless you pass `--jev`:
+
+```bash
+python3 ~/.hermes/plugins/web-search-plus/setup.py setup --preset lean \
+  --jev --jev-key-file "$HOME/.hermes/secrets/typesafe_api_key"
+```
 
 Provider privacy is not uniform. Before sending sensitive queries or URLs, review the maintained [Provider Privacy & Terms guide](https://websearchplus.xyz/providers.html#privacy-terms), which distinguishes standard self-serve terms from enterprise-only ZDR or no-training options.
 
