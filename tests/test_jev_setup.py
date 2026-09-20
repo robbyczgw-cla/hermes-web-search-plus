@@ -103,6 +103,50 @@ def test_setup_jev_dry_run_shows_enable_plan(monkeypatch, capsys):
     assert "apikey_" not in out
 
 
+def test_status_reports_jev_enabled_after_config_reload(tmp_path, capsys):
+    config_path = tmp_path / "config.json"
+    env_path = tmp_path / ".env"
+    env_path.write_text("", encoding="utf-8")
+    written = apply_jev_config(
+        wsp._default_behavior_config(),
+        enabled=True,
+        decisions=JEV_DECISIONS,
+    )
+    wsp._write_behavior_config(config_path, written)
+    on_disk = json.loads(config_path.read_text(encoding="utf-8"))
+    assert on_disk["jev"]["enabled"] is True
+
+    loaded = wsp._load_behavior_config(config_path)
+    payload = wsp._status_payload({}, loaded)
+    assert loaded.get("jev", {}).get("enabled") is True
+    assert payload["jev"]["enabled"] is True
+    assert payload["jev"]["decisions"]["search_type"] is True
+    assert payload["jev"]["decisions"]["extract_quality"] is True
+    assert payload["jev"]["decisions"]["language_fill"] is True
+
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(
+        ["status", "--plain", "--config-path", str(config_path), "--env-path", str(env_path)]
+    )
+    args.func(args)
+    out = capsys.readouterr().out
+    assert "Jev: on" in out
+
+
+def test_apply_profile_effects_keeps_jev_block():
+    from config import apply_profile_effects
+
+    kept = apply_profile_effects(
+        {
+            "profile": "self_hosted",
+            "jev": {"enabled": True, "search_type": True},
+        }
+    )
+    assert kept["jev"]["enabled"] is True
+    assert kept["jev"]["search_type"] is True
+
+
 def test_setup_no_jev_dry_run_stays_disabled(monkeypatch, capsys):
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)

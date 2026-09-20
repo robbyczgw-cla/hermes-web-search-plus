@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `setup.py status` now reports optional Jev from the on-disk `jev` block instead of always printing `off`. Reported by [@prismatic7](https://github.com/prismatic7) in [#133](https://github.com/robbyczgw-cla/hermes-web-search-plus/issues/133).
+
 ## [v4.2.0] — 2026-09-18
 
 ### Added

@@ -521,13 +521,17 @@ def _merge_behavior_config(user_config: Mapping[str, Any]) -> Dict[str, Any]:
     if profile not in {"standard", "self_hosted"}:
         raise SystemExit("profile must be standard or self_hosted")
     config["profile"] = profile
-    # Status needs the self-hosted prerequisites without loading the full
-    # runtime config (and therefore without DNS validation). Keep these
-    # provider sections intact while routing preferences are merged below.
-    for section in ("searxng", "keenable"):
+    # Status needs the self-hosted prerequisites and optional Jev flags
+    # without loading the full runtime config (and therefore without DNS
+    # validation). Keep these sections intact while routing preferences
+    # are merged below.
+    for section in ("searxng", "keenable", "jev"):
         value = user_config.get(section)
         if isinstance(value, Mapping):
-            config[section] = dict(value)
+            copied = dict(value)
+            if section == "jev":
+                copied.pop("api_key", None)
+            config[section] = copied
     default_provider = user_config.get("default_provider")
     if default_provider:
         config["default_provider"] = _normalize_routing_provider(str(default_provider))
