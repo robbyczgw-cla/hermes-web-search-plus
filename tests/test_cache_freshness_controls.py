@@ -67,6 +67,38 @@ def test_recency_ttl_caps_latest_below_default_hour():
     assert cache.effective_search_cache_ttl("latest python", requested_ttl=3600) == 300
 
 
+def test_cache_ttl_uses_wire_time_range_precedence():
+    from types import SimpleNamespace
+
+    import orchestrator_v3
+    import search
+
+    for time_range, freshness, expected in (
+        ("day", "year", 300),
+        ("year", "day", 3600),
+        (None, "day", 300),
+    ):
+        request = compat_v3.legacy_request_to_v3(
+            Capability.SEARCH,
+            {"query": "python documentation", "provider": "serper",
+             "time_range": time_range, "freshness": freshness, "cache_ttl": 3600},
+        )
+        assert orchestrator_v3._request_cache_ttl(request) == expected
+        with mock.patch.object(search, "peek_legacy_search") as peek:
+            peek.return_value = SimpleNamespace(legacy_payload=None)
+            search._lookup_legacy_search_v3(
+                request, SimpleNamespace(selected_provider="serper"), {}
+            )
+            assert peek.call_args.kwargs["ttl_seconds"] == expected
+        args = search._search_args_from_v3(request, {})
+        with mock.patch.object(search, "cache_get", side_effect=RuntimeError("cache-probe")) as get:
+            try:
+                search._execute_search_request_core(args, {})
+            except RuntimeError as exc:
+                assert str(exc) == "cache-probe"
+            assert get.call_args.kwargs["ttl"] == expected
+
+
 def test_auto_routed_formatter_keeps_cache_age_visible():
     output = plugin._format_results(
         {

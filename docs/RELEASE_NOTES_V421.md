@@ -1,10 +1,12 @@
 # Web Search Plus 4.2.1
 
-Point release on the 4.2 line. Plugin APIs stay the same.
+Point release on the 4.2 line. Search adds two optional cache controls; existing calls remain supported.
 
 ## Cache freshness
 
 `web_search_plus` now exposes `no_cache` and `cache_ttl`, matching the CLI. Recency queries and freshness filters cap the search-cache TTL (`live`/`hour` 60s, `latest`/`day` 300s, `week` 1800s). Cached hits show age. Research source summaries stay 500 characters and prefer a query-ranked span over the page prefix.
+
+When both `time_range` and `freshness` are set, the cache TTL follows `time_range`, matching the provider's filter.
 
 ## DonSeTch 4.2.9
 

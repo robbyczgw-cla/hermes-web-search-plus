@@ -59,7 +59,7 @@ def _request_cache_ttl(request: RequestV3) -> int:
     if isinstance(request.input, dict):
         query = str(request.input.get("query") or "")
     options = request.options if isinstance(request.options, dict) else {}
-    freshness = options.get("freshness") or options.get("time_range")
+    freshness = options.get("time_range") or options.get("freshness")
     return legacy_cache.effective_search_cache_ttl(
         query, freshness=freshness, requested_ttl=requested
     )
