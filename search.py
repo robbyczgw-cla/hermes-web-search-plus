@@ -49,6 +49,7 @@ from cache import (
     cache_get,
     cache_put,
     cache_stats,
+    effective_search_cache_ttl,
 )
 from budget_preflight_v3 import daily_preflight_budget as _daily_preflight_budget
 
@@ -1561,12 +1562,17 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
     # Check cache first (unless --no-cache is set)
     cached_result = None
     cache_hit = False
+    search_cache_ttl = effective_search_cache_ttl(
+        args.query or "",
+        freshness=getattr(args, "freshness", None) or getattr(args, "time_range", None),
+        requested_ttl=args.cache_ttl,
+    )
     if not args.no_cache and args.query:
         cached_result = cache_get(
             query=args.query,
             provider=provider,
             max_results=args.max_results,
-            ttl=args.cache_ttl,
+            ttl=search_cache_ttl,
             params=cache_context,
         )
         if cached_result:
@@ -1840,7 +1846,12 @@ def _lookup_legacy_search_v3(
         params=_legacy_search_cache_context(
             legacy_args, plan.selected_provider, config
         ),
-        ttl_seconds=int(request.cache.get("ttl_seconds", 3600)),
+        ttl_seconds=effective_search_cache_ttl(
+            legacy_args.query or "",
+            freshness=getattr(legacy_args, "freshness", None)
+            or getattr(legacy_args, "time_range", None),
+            requested_ttl=int(request.cache.get("ttl_seconds", 3600)),
+        ),
         now=int(time.time()),
     )
     if legacy_lookup.legacy_payload is None:
@@ -2232,6 +2243,8 @@ def run_search_request(
     research_time_budget: float = 55.0,
     language: Optional[str] = None,
     country: Optional[str] = None,
+    no_cache: bool = False,
+    cache_ttl: Optional[int] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Run a search in-process and return the result dict the CLI would emit.
@@ -2267,6 +2280,8 @@ def run_search_request(
             "research_time_budget": research_time_budget,
             "language": language,
             "country": country,
+            "no_cache": bool(no_cache),
+            "cache_ttl": int(cache_ttl) if cache_ttl is not None else 3600,
         },
     )
     execution = execute_v3_request(request, _search_adapter(), config)

@@ -1558,6 +1558,8 @@ def _run_search(
     subprocess_timeout: int = 75,
     *,
     inprocess_only: bool = False,
+    no_cache: bool = False,
+    cache_ttl: Optional[int] = None,
 ) -> dict:
     """Run a search in-process (fast path), falling back to the subprocess engine.
 
@@ -1576,7 +1578,7 @@ def _run_search(
             include_domains=include_domains,
             exclude_domains=exclude_domains, mode=mode, quality_report=quality_report,
             research_time_budget=research_time_budget, language=language, country=country,
-            subprocess_timeout=timeout,
+            subprocess_timeout=timeout, no_cache=no_cache, cache_ttl=cache_ttl,
         )
 
     def call() -> dict:
@@ -1586,6 +1588,7 @@ def _run_search(
             include_domains=include_domains,
             exclude_domains=exclude_domains, mode=mode, quality_report=quality_report,
             research_time_budget=research_time_budget, language=language, country=country,
+            no_cache=no_cache, cache_ttl=cache_ttl,
         )
 
     try:
@@ -1612,6 +1615,8 @@ def _run_search_subprocess(
     language: Optional[str] = None,
     country: Optional[str] = None,
     subprocess_timeout: int = 75,
+    no_cache: bool = False,
+    cache_ttl: Optional[int] = None,
 ) -> dict:
     """Legacy fallback: call search.py as a subprocess and return parsed JSON."""
     cmd = [
@@ -1644,6 +1649,10 @@ def _run_search_subprocess(
         cmd += ["--language", language]
     if country and country != "auto":
         cmd += ["--country", country]
+    if no_cache:
+        cmd.append("--no-cache")
+    if cache_ttl is not None:
+        cmd += ["--cache-ttl", str(int(cache_ttl))]
 
     env = os.environ.copy()
 
@@ -1760,6 +1769,28 @@ def _run_extract_subprocess(
         return {"error": str(e), "provider": provider, "results": []}
 
 
+def _source_summary_excerpt(content: str, query: Optional[str] = None, limit: int = 500) -> str:
+    """Keep 500 chars, preferring a query-ranked span over the page prefix."""
+    text = (content or "").strip()
+    if len(text) <= limit:
+        return text
+    excerpt = text[:limit]
+    kind = "first"
+    if query:
+        try:
+            from span_extraction_v3 import select_spans
+
+            spans = select_spans(text, query, max_spans=1, max_span_chars=limit)
+            if spans and spans[0].get("text"):
+                ranked = str(spans[0]["text"])
+                if ranked.strip():
+                    excerpt = ranked[:limit]
+                    kind = "query-ranked"
+        except Exception:
+            pass
+    return f"{excerpt} [TRUNCATED: showing {kind} {len(excerpt)} of {len(text)} characters]"
+
+
 def _format_results(data: dict) -> str:
     """Format search results for LLM consumption."""
     if "error" in data and not data.get("results"):
@@ -1769,15 +1800,31 @@ def _format_results(data: dict) -> str:
     provider = data.get("provider", "unknown")
     routing = data.get("routing", {})
     cached = data.get("cached", False)
+    cache_age = data.get("cache_age_seconds")
+    query = data.get("query") or ""
 
     lines = []
 
+    header_bits = [f"Provider: {provider}"]
     if routing.get("auto_routed"):
-        confidence = routing.get("confidence_level", "")
-        reason = routing.get("reason", "")
-        lines.append(f"[Provider: {provider} | auto-routed | {confidence} confidence | {reason}]")
-    else:
-        lines.append(f"[Provider: {provider}{' | cached' if cached else ''}]")
+        header_bits.append("auto-routed")
+        if routing.get("confidence_level"):
+            header_bits.append(f"{routing['confidence_level']} confidence")
+        if routing.get("reason"):
+            header_bits.append(str(routing["reason"]))
+    if cached:
+        if isinstance(cache_age, int):
+            header_bits.append(f"cached {cache_age}s ago")
+        else:
+            header_bits.append("cached")
+        try:
+            from routing import QueryAnalyzer
+
+            if query and QueryAnalyzer({})._detect_recency_intent(query)[0]:
+                header_bits.append("recency query")
+        except Exception:
+            pass
+    lines.append("[" + " | ".join(header_bits) + "]")
 
     freshness_meta = (data.get("metadata") or {}).get("freshness")
     if isinstance(freshness_meta, dict) and freshness_meta.get("requested"):
@@ -1830,10 +1877,7 @@ def _format_results(data: dict) -> str:
             content = (src.get("content") or src.get("raw_content") or "").strip()
             lines.append(f"{i}. {url}")
             if content:
-                summary = content[:500]
-                if len(content) > 500:
-                    summary += f" [TRUNCATED: showing first 500 of {len(content)} characters]"
-                lines.append(f"   {summary}")
+                lines.append(f"   {_source_summary_excerpt(content, query)}")
         lines.append("")
 
     for i, r in enumerate(results, 1):
@@ -2059,6 +2103,17 @@ def register(ctx: Any) -> None:
                     "type": "string",
                     "description": "ISO 639-1 language override for providers with language parameters (e.g. 'de'). Beats configured locale defaults and 'auto' query language inference. Optional.",
                 },
+                "no_cache": {
+                    "type": "boolean",
+                    "description": "Bypass the search cache and fetch live results. Use for recency queries when a cached hit would be stale.",
+                    "default": False,
+                },
+                "cache_ttl": {
+                    "type": "integer",
+                    "description": "Search-cache TTL in seconds. Recency queries and freshness filters cap this automatically (hour/live 60s, day/latest 300s, week 1800s, otherwise 3600s).",
+                    "minimum": 1,
+                    "maximum": 86400,
+                },
             },
             "required": ["query"],
         },
@@ -2070,7 +2125,8 @@ def register(ctx: Any) -> None:
                 include_domains: Optional[List[str]] = None,
                 exclude_domains: Optional[List[str]] = None, mode: str = "normal",
                 quality_report: bool = False, research_time_budget: float = 55.0,
-                country: Optional[str] = None, language: Optional[str] = None, **kwargs) -> str:
+                country: Optional[str] = None, language: Optional[str] = None,
+                no_cache: bool = False, cache_ttl: Optional[int] = None, **kwargs) -> str:
         # Hermes registry passes the entire input dict as first positional arg
         if isinstance(args_or_query, dict):
             query = args_or_query.get("query", "")
@@ -2087,8 +2143,14 @@ def register(ctx: Any) -> None:
             research_time_budget = args_or_query.get("research_time_budget", research_time_budget)
             country = args_or_query.get("country", country)
             language = args_or_query.get("language", language)
+            no_cache = bool(args_or_query.get("no_cache", no_cache))
+            cache_ttl = args_or_query.get("cache_ttl", cache_ttl)
         else:
             query = args_or_query
+            no_cache = bool(kwargs.get("no_cache", no_cache))
+            cache_ttl = kwargs.get("cache_ttl", cache_ttl)
+        if cache_ttl is not None:
+            cache_ttl = int(cache_ttl)
         data = _run_search(
             query=query,
             provider=provider,
@@ -2104,6 +2166,8 @@ def register(ctx: Any) -> None:
             research_time_budget=research_time_budget,
             language=language,
             country=country,
+            no_cache=no_cache,
+            cache_ttl=cache_ttl,
         )
         return _format_results(data)
 

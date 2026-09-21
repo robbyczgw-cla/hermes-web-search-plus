@@ -51,6 +51,20 @@ PIPELINE_STAGES: Tuple[str, ...] = (
 )
 
 
+def _request_cache_ttl(request: RequestV3) -> int:
+    requested = int(request.cache.get("ttl_seconds", 3600))
+    if request.capability is not Capability.SEARCH:
+        return requested
+    query = ""
+    if isinstance(request.input, dict):
+        query = str(request.input.get("query") or "")
+    options = request.options if isinstance(request.options, dict) else {}
+    freshness = options.get("freshness") or options.get("time_range")
+    return legacy_cache.effective_search_cache_ttl(
+        query, freshness=freshness, requested_ttl=requested
+    )
+
+
 @dataclass(frozen=True)
 class ProviderPlan:
     candidate_order: Tuple[str, ...]
@@ -490,7 +504,7 @@ def execute_v3_request(
     if cache_enabled:
         lookup = response_cache.get(
             cache_request,
-            ttl_seconds=int(request.cache.get("ttl_seconds", 3600)),
+            ttl_seconds=_request_cache_ttl(request),
             allow_stale_seconds=int(request.cache.get("allow_stale_seconds", 0)),
             now=int(time.time()),
             vary=cache_vary,
@@ -505,7 +519,7 @@ def execute_v3_request(
                     "disposition": lookup.disposition,
                     "entry_id": lookup.entry_id,
                     "age_seconds": lookup.age_seconds,
-                    "ttl_seconds": int(request.cache.get("ttl_seconds", 3600)),
+                    "ttl_seconds": _request_cache_ttl(request),
                     "served_stale": lookup.disposition == "stale_hit",
                     "source_contract_version": "3.0",
                     "origin_execution_id": lookup.payload.get("origin_execution_id"),
@@ -517,7 +531,7 @@ def execute_v3_request(
                     disposition=lookup.disposition,
                     entry_id=str(lookup.entry_id or ""),
                     age_seconds=int(lookup.age_seconds or 0),
-                    ttl_seconds=int(request.cache.get("ttl_seconds", 3600)),
+                    ttl_seconds=_request_cache_ttl(request),
                 )
                 cached_response = ResponseV3.from_dict(cached_payload)
                 cached_routing = {

@@ -399,3 +399,43 @@ def cache_stats() -> Dict[str, Any]:
         "cache_dir": str(CACHE_DIR),
         "exists": True,
     }
+
+
+FRESHNESS_CACHE_TTL = {
+    "hour": 60,
+    "day": 300,
+    "week": 1800,
+    "month": 3600,
+    "year": 3600,
+}
+
+
+def recency_cache_ttl_cap(query: str, freshness: Optional[str] = None) -> int:
+    """Shortest TTL allowed for this query's recency/freshness signals."""
+    caps = [DEFAULT_CACHE_TTL]
+    if freshness:
+        caps.append(
+            FRESHNESS_CACHE_TTL.get(str(freshness).strip().lower(), DEFAULT_CACHE_TTL)
+        )
+    try:
+        from routing import QueryAnalyzer
+
+        is_recency, score = QueryAnalyzer({})._detect_recency_intent(query or "")
+    except Exception:
+        is_recency, score = False, 0.0
+    if is_recency:
+        caps.append(60 if score >= 3.0 else 300)
+    return min(caps)
+
+
+def effective_search_cache_ttl(
+    query: str,
+    *,
+    freshness: Optional[str] = None,
+    requested_ttl: Optional[int] = None,
+) -> int:
+    """Cap the search-cache TTL. Explicit no_cache still bypasses lookup."""
+    requested = DEFAULT_CACHE_TTL if requested_ttl is None else int(requested_ttl)
+    if requested <= 0:
+        requested = DEFAULT_CACHE_TTL
+    return min(requested, recency_cache_ttl_cap(query, freshness))

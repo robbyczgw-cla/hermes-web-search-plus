@@ -494,9 +494,9 @@ The default is diagnostic-only. To let Research Mode stably move URL/content dup
 
 The plugin is designed to fail visibly rather than invent confidence.
 
-- Search result cache TTL is 1 hour by default.
+- Search result cache TTL is 1 hour by default. Recency queries and `freshness`/`time_range` cap that automatically: live/hour 60s, latest/day 300s, week 1800s.
 - Cache files and provider health state live under `WSP_CACHE_DIR`, or the plugin cache directory if unset.
-- Use `--no-cache` in CLI tests when you need a fresh provider call.
+- Use `no_cache=true` on `web_search_plus`, or `--no-cache` in CLI tests, when you need a fresh provider call. Cached hits include age; recency queries are labeled.
 - Transient provider errors are retried with short backoff.
 - Repeated provider failures put that provider on cooldown, stepping from 1 minute to 5 minutes to 25 minutes to 1 hour.
 - Research mode harvests providers in completion order but keeps the public result order deterministic. By default it may stop waiting after at least two providers contribute a sufficiently diverse result head; every provider skipped by this optimization remains visible as `preempted_after_quorum` in routing diagnostics. Tune or disable this under `quality.research_quorum` (`enabled`, `min_contributing_providers`, `result_target_cap`, `min_unique_domains`). This behavior is implemented for WSP's own provider, budget, provenance, and receipt contracts; it does not make heterogeneous providers equivalent.
