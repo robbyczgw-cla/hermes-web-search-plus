@@ -1564,7 +1564,7 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
     cache_hit = False
     search_cache_ttl = effective_search_cache_ttl(
         args.query or "",
-        freshness=getattr(args, "freshness", None) or getattr(args, "time_range", None),
+        freshness=getattr(args, "time_range", None) or getattr(args, "freshness", None),
         requested_ttl=args.cache_ttl,
     )
     if not args.no_cache and args.query:
@@ -1848,8 +1848,8 @@ def _lookup_legacy_search_v3(
         ),
         ttl_seconds=effective_search_cache_ttl(
             legacy_args.query or "",
-            freshness=getattr(legacy_args, "freshness", None)
-            or getattr(legacy_args, "time_range", None),
+            freshness=getattr(legacy_args, "time_range", None)
+            or getattr(legacy_args, "freshness", None),
             requested_ttl=int(request.cache.get("ttl_seconds", 3600)),
         ),
         now=int(time.time()),
