@@ -2,9 +2,12 @@
 
 ## [Unreleased]
 
+## [v4.2.1] — 2026-09-21
+
 ### Added
 
 - `web_search_plus` now exposes `no_cache` and `cache_ttl`, matching the CLI. Recency queries and freshness filters cap the search-cache TTL (`live`/`hour` 60s, `latest`/`day` 300s, `week` 1800s). Cached hits show age, and recency queries are labeled. Research source summaries keep 500 characters but prefer a query-ranked span over the page prefix.
+- Pin the optional DonSeTch adapter `TESTED_VERSION` to **4.2.9**. Status reports `tested` for 4.2.9 and `compatible_unverified` for any other parsed version, including 3.x. A different major is not treated as broken. DonSeTch stays separately installed and is not bundled. Attribution: [dondai44423/donsetch](https://github.com/dondai44423/donsetch), AGPL-3.0-only.
 
 ### Fixed
 

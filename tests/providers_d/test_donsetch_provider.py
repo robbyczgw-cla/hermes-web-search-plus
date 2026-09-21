@@ -512,20 +512,21 @@ def test_version_detection_classifies_missing_tested_compatible_and_incompatible
         path.chmod(0o700)
         return str(path)
 
-    tested = module["inspect_donsetch_readiness"](binary=_version_bin("3.6.1"))
+    tested = module["inspect_donsetch_readiness"](binary=_version_bin("4.2.9"))
     assert tested["state"] == "executable"
-    assert tested["version"] == "3.6.1"
+    assert tested["version"] == "4.2.9"
     assert tested["compatibility"] == "tested"
-    assert tested["tested_version"] == "3.6.1"
+    assert tested["tested_version"] == "4.2.9"
     assert "api_key" not in tested
 
-    other = module["inspect_donsetch_readiness"](binary=_version_bin("3.2.1"))
+    other = module["inspect_donsetch_readiness"](binary=_version_bin("4.2.8"))
     assert other["compatibility"] == "compatible_unverified"
-    assert other["version"] == "3.2.1"
+    assert other["version"] == "4.2.8"
 
-    major = module["inspect_donsetch_readiness"](binary=_version_bin("2.3.1"))
-    assert major["compatibility"] == "incompatible_major"
-    assert major["state"] == "executable"
+    other_major = module["inspect_donsetch_readiness"](binary=_version_bin("3.6.1"))
+    assert other_major["compatibility"] == "compatible_unverified"
+    assert other_major["version"] == "3.6.1"
+    assert other_major["state"] == "executable"
 
 
 def test_child_env_pins_stdio_transport_even_when_host_sets_http(monkeypatch):
