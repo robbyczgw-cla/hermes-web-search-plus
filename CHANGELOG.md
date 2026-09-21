@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `web_search_plus` now exposes `no_cache` and `cache_ttl`, matching the CLI. Recency queries and freshness filters cap the search-cache TTL (`live`/`hour` 60s, `latest`/`day` 300s, `week` 1800s). Cached hits show age, and recency queries are labeled. Research source summaries keep 500 characters but prefer a query-ranked span over the page prefix.
+
 ### Fixed
 
 - `setup.py status` now reports optional Jev from the on-disk `jev` block instead of always printing `off`. Reported by [@prismatic7](https://github.com/prismatic7) in [#133](https://github.com/robbyczgw-cla/hermes-web-search-plus/issues/133).
