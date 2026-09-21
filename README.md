@@ -19,7 +19,15 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v4.2.0** — see the [release notes](docs/RELEASE_NOTES_V420.md) and [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+Current release: **v4.2.1** — see the [release notes](docs/RELEASE_NOTES_V421.md) and [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+
+### What's new in 4.2.1
+
+Search cache controls are now on the plugin API: `no_cache` and `cache_ttl`, matching the CLI. Recency queries cap cache TTL. Cached hits show age.
+
+The optional DonSeTch adapter is tested against **4.2.9**. Install it separately (`npm install -g donsetch@4.2.9`); it is not bundled. Other parsed versions, including 3.x, are `compatible_unverified`.
+
+See the [4.2.1 release notes](docs/RELEASE_NOTES_V421.md).
 
 ### What's new in 4.2.0
 
@@ -112,7 +120,7 @@ Provider privacy is not uniform. Before sending sensitive queries or URLs, revie
 
 ### Upgrading to 4.0.0
 
-The core tools and existing keyed providers remain available, but the optional Hound integration was removed. If you used Hound, follow the [DonSeTch migration guide](docs/DONSETCH.md#migration-from-hound): install DonSeTch 3.6.1 separately, set `DONSETCH_BIN`, and change explicit `provider="hound"` calls to `provider="donsetch"`.
+The core tools and existing keyed providers remain available, but the optional Hound integration was removed. If you used Hound, follow the [DonSeTch migration guide](docs/DONSETCH.md#migration-from-hound): install DonSeTch 4.2.9 separately, set `DONSETCH_BIN`, and change explicit `provider="hound"` calls to `provider="donsetch"`.
 
 ### Self-hosted / no-paid-key profile
 

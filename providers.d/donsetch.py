@@ -32,7 +32,7 @@ from wsp_sdk import ProviderSpec, extract_result, search_result, source_result
 _ALLOWED_OUTPUT_FORMATS = {"markdown"}
 _ALLOWED_SEARCH_TYPES = {"search", "news"}
 _ALLOWED_INTENTS = {"auto", "web", "code", "paper", "news", "entity"}
-TESTED_VERSION = "3.6.1"
+TESTED_VERSION = "4.2.9"
 STDERR_LIMIT = 2048
 _VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 _SECRET_RE = re.compile(
@@ -181,13 +181,9 @@ def _parse_version(text: str) -> str | None:
 def _compatibility(version: str | None) -> str:
     if not version:
         return "unknown"
-    major, minor, patch = (int(part) for part in version.split("."))
-    tested_major, tested_minor, tested_patch = (int(part) for part in TESTED_VERSION.split("."))
-    if (major, minor, patch) == (tested_major, tested_minor, tested_patch):
+    if version == TESTED_VERSION:
         return "tested"
-    if major == tested_major:
-        return "compatible_unverified"
-    return "incompatible_major"
+    return "compatible_unverified"
 
 
 def inspect_donsetch_readiness(
