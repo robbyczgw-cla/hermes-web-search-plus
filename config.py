@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -592,6 +593,175 @@ def _quarantine_runtime_config(config_path: Path, reason: str) -> None:
         }), file=sys.stderr)
 
 
+_DESKTOP_SETTING_KEYS = ("country", "language", "max_results", "auto_routing", "searxng_url")
+
+
+def _coerce_yamlish_scalar(raw: str) -> Any:
+    text = raw.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+        text = text[1:-1]
+    lowered = text.lower()
+    if lowered in {"true", "false"}:
+        return lowered == "true"
+    if re.fullmatch(r"-?\d+", text):
+        return int(text)
+    return text
+
+
+def _yamlish_block_mapping(text: str) -> Optional[Dict[str, Any]]:
+    """Parse a nested block map of scalars. Anything richer returns None.
+
+    This is the stdlib fallback for Desktop settings when PyYAML is absent.
+    Flow collections, lists, and tabs are rejected instead of guessed.
+    """
+    lines = text.splitlines()
+
+    def parse_map(index: int, min_indent: int) -> tuple[Dict[str, Any], int]:
+        mapping: Dict[str, Any] = {}
+        child_indent: Optional[int] = None
+        while index < len(lines):
+            line = lines[index]
+            if not line.strip() or line.lstrip().startswith("#"):
+                index += 1
+                continue
+            indent = len(line) - len(line.lstrip(" "))
+            if line[:indent].find("\t") != -1 or indent < min_indent:
+                break
+            if child_indent is None:
+                child_indent = indent
+            if indent != child_indent:
+                if indent < child_indent:
+                    break
+                raise ValueError("inconsistent YAML indent")
+            body = line.strip()
+            if body.startswith("-") or ":" not in body:
+                raise ValueError("unsupported YAML shape")
+            key, rest = body.split(":", 1)
+            key = key.strip()
+            rest = rest.strip()
+            if not re.fullmatch(r"[A-Za-z0-9_-]+", key):
+                raise ValueError("unsupported YAML key")
+            index += 1
+            if rest == "":
+                mapping[key], index = parse_map(index, child_indent + 1)
+            elif rest[0] in "[{":
+                raise ValueError("flow YAML is not accepted")
+            else:
+                comment = re.search(r"\s+#", rest)
+                if comment and rest[0] not in {'"', "'"}:
+                    rest = rest[:comment.start()].strip()
+                mapping[key] = _coerce_yamlish_scalar(rest)
+        return mapping, index
+
+    try:
+        parsed, index = parse_map(0, 0)
+    except ValueError:
+        return None
+    while index < len(lines):
+        if lines[index].strip() and not lines[index].lstrip().startswith("#"):
+            return None
+        index += 1
+    return parsed
+
+
+def _read_yaml_mapping(text: str) -> Optional[Dict[str, Any]]:
+    try:
+        import yaml
+    except ImportError:
+        return _yamlish_block_mapping(text)
+    try:
+        data = yaml.safe_load(text)
+    except Exception:
+        return None
+    if data is None:
+        return {}
+    return data if isinstance(data, dict) else None
+
+
+def _desktop_settings(config_path: Path) -> Dict[str, Any]:
+    """Read the flat Desktop settings block for this plugin config, or {}.
+
+    Only ``<home>/plugins/config.json`` consults ``<home>/config.yaml``. A
+    config path outside that layout, including sterile tests, is ignored.
+    Secret and undeclared keys never leave this allowlist.
+    """
+    try:
+        if config_path.name != "config.json" or config_path.parent.name != "plugins":
+            return {}
+        yaml_path = config_path.parent.parent / "config.yaml"
+        if not yaml_path.is_file():
+            return {}
+        data = _read_yaml_mapping(yaml_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return {}
+        plugins = data.get("plugins")
+        entries = plugins.get("entries") if isinstance(plugins, dict) else None
+        plugin = entries.get("web-search-plus") if isinstance(entries, dict) else None
+        settings = plugin.get("settings") if isinstance(plugin, dict) else None
+        if not isinstance(settings, dict):
+            return {}
+        return {key: settings[key] for key in _DESKTOP_SETTING_KEYS if key in settings}
+    except Exception:
+        return {}
+
+
+def _present_desktop_text(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
+
+
+def _apply_desktop_settings(config: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
+    """Overlay declared Desktop scalars onto config.json. Empty and 0 do not wipe."""
+    if not settings:
+        return config
+    defaults = config.get("defaults")
+    if not isinstance(defaults, dict):
+        defaults = {}
+        config["defaults"] = defaults
+    locale = defaults.get("locale")
+    if not isinstance(locale, dict):
+        locale = {}
+        defaults["locale"] = locale
+    if "country" in settings:
+        country = _present_desktop_text(settings.get("country"))
+        if country:
+            locale["country"] = country.lower()
+    if "language" in settings:
+        language = _present_desktop_text(settings.get("language"))
+        if language:
+            locale["language"] = language.lower()
+    if "max_results" in settings:
+        raw_results = settings.get("max_results")
+        if isinstance(raw_results, str) and raw_results.strip().isdigit():
+            raw_results = int(raw_results.strip())
+        if isinstance(raw_results, int) and not isinstance(raw_results, bool) and raw_results > 0:
+            defaults["max_results"] = raw_results
+    if "auto_routing" in settings:
+        raw_routing = settings.get("auto_routing")
+        enabled: Optional[bool] = None
+        if isinstance(raw_routing, bool):
+            enabled = raw_routing
+        elif isinstance(raw_routing, str) and raw_routing.strip().lower() in {"true", "false"}:
+            enabled = raw_routing.strip().lower() == "true"
+        if enabled is not None:
+            auto = config.get("auto_routing")
+            if not isinstance(auto, dict):
+                auto = {}
+                config["auto_routing"] = auto
+            auto["enabled"] = enabled
+    if "searxng_url" in settings:
+        url = _present_desktop_text(settings.get("searxng_url"))
+        if url:
+            searxng = config.get("searxng")
+            if not isinstance(searxng, dict):
+                searxng = {}
+                config["searxng"] = searxng
+            searxng["base_url"] = url
+    return config
+
+
 def load_config() -> Dict[str, Any]:
     """Load configuration from config.json if it exists, with defaults."""
     config = _deepcopy_default_config()
@@ -611,6 +781,7 @@ def load_config() -> Dict[str, Any]:
             _quarantine_runtime_config(config_path, str(e))
             config = _deepcopy_default_config()
 
+    config = _apply_desktop_settings(config, _desktop_settings(config_path))
     # Defaults need no migration, but applying this here keeps direct/default
     # loads on the same profile-derived path as persisted configurations.
     return apply_profile_effects(config)

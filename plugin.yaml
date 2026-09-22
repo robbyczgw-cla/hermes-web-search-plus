@@ -55,3 +55,14 @@ onboarding:
       description: "Linkup — cheap clean extraction (€5 free monthly credits)"
       url: "https://www.linkup.so"
       secret: true
+config_schema:
+  country: {type: str, label: "Country", description: "ISO 3166-1 alpha-2 hint. Empty leaves config.json unchanged."}
+  language: {type: str, label: "Language", description: "ISO 639-1 hint. Empty leaves config.json unchanged."}
+  max_results: {type: int, default: 5, label: "Max results", description: "Default result count. 0 leaves config.json unchanged."}
+  auto_routing: {type: bool, label: "Auto routing", description: "Turn automatic provider routing on or off. Priority and budgets stay in config.json."}
+  searxng_url: {type: str, label: "SearXNG URL", description: "SearXNG base URL. Not a secret. Empty leaves config.json unchanged."}
+  serper_api_key: {type: secret, env: SERPER_API_KEY, description: "Serper API key"}
+  brave_api_key: {type: secret, env: BRAVE_API_KEY, description: "Brave Search API key"}
+  tavily_api_key: {type: secret, env: TAVILY_API_KEY, description: "Tavily API key"}
+  you_api_key: {type: secret, env: YOU_API_KEY, description: "You.com API key"}
+  linkup_api_key: {type: secret, env: LINKUP_API_KEY, description: "Linkup API key"}
