@@ -4,7 +4,7 @@
 
 ### Added
 
-- Hermes Desktop can edit a flat settings form for country, language, max results, auto-routing, SearXNG URL, and five provider keys. Values in `plugins.entries.web-search-plus.settings` overlay `config.json` one way. Secrets stay in `.env`. Priority, budgets, and other nested settings stay in `config.json`.
+- Hermes Desktop can edit a flat settings form for country, language, max results, auto-routing, SearXNG URL, and every provider API key from `optional_env`. Values in `plugins.entries.web-search-plus.settings` overlay `config.json` one way. Secrets stay in `.env` and never overlay. `DONSETCH_BIN` and a second SearXNG env field stay out. Priority, budgets, and other nested settings stay in `config.json`.
 
 ## [v4.2.1] — 2026-09-21
 

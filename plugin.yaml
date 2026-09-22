@@ -66,3 +66,11 @@ config_schema:
   tavily_api_key: {type: secret, env: TAVILY_API_KEY, description: "Tavily API key"}
   you_api_key: {type: secret, env: YOU_API_KEY, description: "You.com API key"}
   linkup_api_key: {type: secret, env: LINKUP_API_KEY, description: "Linkup API key"}
+  serpbase_api_key: {type: secret, env: SERPBASE_API_KEY, description: "SerpBase API key (explicit-only; enable in config.json)"}
+  exa_api_key: {type: secret, env: EXA_API_KEY, description: "Exa API key"}
+  querit_api_key: {type: secret, env: QUERIT_API_KEY, description: "Querit API key (explicit-only; enable in config.json)"}
+  firecrawl_api_key: {type: secret, env: FIRECRAWL_API_KEY, description: "Firecrawl API key"}
+  parallel_api_key: {type: secret, env: PARALLEL_API_KEY, description: "Parallel API key"}
+  keenable_api_key: {type: secret, env: KEENABLE_API_KEY, description: "Keenable API key"}
+  monid_api_key: {type: secret, env: MONID_API_KEY, description: "Monid API key (explicit-only; enable in config.json)"}
+  tinyfish_api_key: {type: secret, env: TINYFISH_API_KEY, description: "TinyFish API key (explicit-only; enable in config.json)"}
