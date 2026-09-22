@@ -8,6 +8,7 @@ does not consult Hermes config, so sterile tests stay sterile.
 
 from __future__ import annotations
 
+import builtins
 import json
 from pathlib import Path
 
@@ -19,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _write_plugin_config(home: Path, body: dict) -> Path:
     plugins = home / "plugins"
-    plugins.mkdir(parents=True)
+    plugins.mkdir(parents=True, exist_ok=True)
     path = plugins / "config.json"
     path.write_text(json.dumps(body), encoding="utf-8")
     return path
@@ -180,3 +181,186 @@ def test_secret_settings_never_overlay(tmp_path, monkeypatch):
 
     for poison in poisons.values():
         assert poison not in dumped
+
+
+def test_flow_style_settings_overlay_without_pyyaml(tmp_path, monkeypatch):
+    path = _write_plugin_config(tmp_path, {
+        "version": 1,
+        "defaults": {"locale": {"country": "fr", "language": "fr"}, "max_results": 5},
+        "auto_routing": {"enabled": True, "provider_priority": ["serper"]},
+        "searxng": {"base_url": "https://old.example"},
+    })
+    (tmp_path / "config.yaml").write_text(
+        "\n".join([
+            "model:",
+            "  default: grok",
+            "plugins:",
+            "  enabled:",
+            "    - memory",
+            "  entries:",
+            "    web-search-plus:",
+            "      settings: {country: AT, language: de, max_results: 3, auto_routing: false, searxng_url: https://search.example, serper_api_key: should-not-leak, provider_priority: evil}",
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(path))
+    real_import = builtins.__import__
+
+    def _block_yaml(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "yaml":
+            raise ImportError("PyYAML absent")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _block_yaml)
+
+    loaded = load_config()
+
+    assert loaded["defaults"]["locale"]["country"] == "at"
+    assert loaded["defaults"]["locale"]["language"] == "de"
+    assert loaded["defaults"]["max_results"] == 3
+    assert loaded["auto_routing"]["enabled"] is False
+    assert loaded["auto_routing"]["provider_priority"][0] == "serper"
+    assert loaded["searxng"]["base_url"] == "https://search.example"
+    dumped = json.dumps(loaded)
+    assert "should-not-leak" not in dumped
+    assert "evil" not in dumped
+
+
+def test_nested_flow_settings_are_ignored_without_pyyaml(tmp_path, monkeypatch):
+    path = _write_plugin_config(tmp_path, {
+        "version": 1,
+        "defaults": {"locale": {"country": "fr"}, "max_results": 5},
+    })
+    (tmp_path / "config.yaml").write_text(
+        "plugins:\n  entries:\n    web-search-plus:\n      settings: {country: AT, nested: {a: 1}}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(path))
+    real_import = builtins.__import__
+
+    def _block_yaml(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "yaml":
+            raise ImportError("PyYAML absent")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _block_yaml)
+
+    loaded = load_config()
+
+    assert loaded["defaults"]["locale"]["country"] == "fr"
+    assert loaded["defaults"]["max_results"] == 5
+
+
+def test_desktop_overlay_without_pyyaml(tmp_path, monkeypatch):
+    path = _write_plugin_config(tmp_path, {
+        "version": 1,
+        "defaults": {"locale": {"country": "fr"}, "max_results": 5},
+    })
+    (tmp_path / "config.yaml").write_text(
+        "\n".join([
+            "model:",
+            "  default: grok",
+            "plugins:",
+            "  enabled:",
+            "    - memory",
+            "  entries:",
+            "    web-search-plus:",
+            "      settings:",
+            "        country: AT",
+            "        auto_routing: false",
+            "        max_results: 0",
+            "        serper_api_key: should-not-leak",
+            "        profile: self_hosted",
+            "        note: not-a-setting",
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(path))
+    real_import = builtins.__import__
+
+    def _block_yaml(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "yaml":
+            raise ImportError("PyYAML absent")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _block_yaml)
+
+    loaded = load_config()
+
+    assert loaded["defaults"]["locale"]["country"] == "at"
+    assert loaded["defaults"]["max_results"] == 5
+    assert loaded["auto_routing"]["enabled"] is False
+    assert loaded.get("profile", "standard") == "standard"
+    dumped = json.dumps(loaded)
+    assert "should-not-leak" not in dumped
+    assert "not-a-setting" not in dumped
+
+
+def _load_desktop_yaml(tmp_path, monkeypatch, text: str, *, block_yaml: bool):
+    path = _write_plugin_config(tmp_path, {
+        "version": 1,
+        "defaults": {"locale": {"country": "fr", "language": "fr"}, "max_results": 5},
+        "auto_routing": {"enabled": True, "provider_priority": ["serper"]},
+        "searxng": {"base_url": "https://old.example"},
+    })
+    (tmp_path / "config.yaml").write_text(text, encoding="utf-8")
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(path))
+    if block_yaml:
+        real_import = builtins.__import__
+
+        def _block(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "yaml":
+                raise ImportError("PyYAML absent")
+            return real_import(name, globals, locals, fromlist, level)
+
+        monkeypatch.setattr(builtins, "__import__", _block)
+    return load_config()
+
+
+_AGREEMENT_CASES = (
+    (
+        "flat flow",
+        "plugins:\n  entries:\n    web-search-plus:\n      settings: {country: AT, language: de, max_results: 3, auto_routing: false, searxng_url: https://search.example, serper_api_key: leak}\n",
+        {"country": "at", "language": "de", "max_results": 3, "routing": False, "url": "https://search.example"},
+    ),
+    (
+        "quoted hash and comma",
+        'plugins:\n  entries:\n    web-search-plus:\n      settings: {country: "AT", searxng_url: "https://x.example/a#b,c"}\n',
+        {"country": "at", "language": "fr", "max_results": 5, "routing": True, "url": "https://x.example/a#b,c"},
+    ),
+    (
+        "null and tilde do not wipe",
+        "plugins:\n  entries:\n    web-search-plus:\n      settings: {country: null, language: ~, max_results: 0, auto_routing: null}\n",
+        {"country": "fr", "language": "fr", "max_results": 5, "routing": True, "url": "https://old.example"},
+    ),
+    (
+        "yaml 1.1 bool and trailing comma",
+        "plugins:\n  entries:\n    web-search-plus:\n      settings: {country: AT, auto_routing: yes, max_results: 4,}\n",
+        {"country": "at", "language": "fr", "max_results": 4, "routing": True, "url": "https://old.example"},
+    ),
+    (
+        "quoted null stays text, empty country does not wipe",
+        'plugins:\n  entries:\n    web-search-plus:\n      settings: {country: "", language: "null"}\n',
+        {"country": "fr", "language": "null", "max_results": 5, "routing": True, "url": "https://old.example"},
+    ),
+    (
+        "broken flow applies nothing",
+        "plugins:\n  entries:\n    web-search-plus:\n      settings: {country: AT\n",
+        {"country": "fr", "language": "fr", "max_results": 5, "routing": True, "url": "https://old.example"},
+    ),
+)
+
+
+def test_pyyaml_and_fallback_apply_the_same_overlay(tmp_path, monkeypatch):
+    real_import = builtins.__import__
+    for name, text, expect in _AGREEMENT_CASES:
+        for block_yaml in (False, True):
+            loaded = _load_desktop_yaml(tmp_path, monkeypatch, text, block_yaml=block_yaml)
+            label = f"{name} fallback={block_yaml}"
+            assert loaded["defaults"]["locale"]["country"] == expect["country"], label
+            assert loaded["defaults"]["locale"]["language"] == expect["language"], label
+            assert loaded["defaults"]["max_results"] == expect["max_results"], label
+            assert loaded["auto_routing"]["enabled"] is expect["routing"], label
+            assert loaded["searxng"]["base_url"] == expect["url"], label
+            assert "leak" not in json.dumps(loaded), label
+            monkeypatch.setattr(builtins, "__import__", real_import)

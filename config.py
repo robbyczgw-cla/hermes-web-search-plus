@@ -597,15 +597,95 @@ _DESKTOP_SETTING_KEYS = ("country", "language", "max_results", "auto_routing", "
 
 
 def _coerce_yamlish_scalar(raw: str) -> Any:
+    """Match PyYAML for the scalars Desktop can write, plus the usual hand edits.
+
+    Quoted text stays a string. Unquoted null/~ and the YAML 1.1 booleans
+    match ``yaml.safe_load`` so the fallback cannot apply a different value.
+    """
     text = raw.strip()
     if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
-        text = text[1:-1]
+        return text[1:-1]
+    if text in {"", "~"} or text.lower() == "null":
+        return None
     lowered = text.lower()
-    if lowered in {"true", "false"}:
-        return lowered == "true"
+    if lowered in {"true", "yes", "on"}:
+        return True
+    if lowered in {"false", "no", "off"}:
+        return False
     if re.fullmatch(r"-?\d+", text):
         return int(text)
     return text
+
+
+def _yamlish_key_rest(lines: List[str], key: str) -> Optional[str]:
+    """Inline text after ``key:``. ``None`` if the key is absent.
+
+    An empty string means the value is a nested block. A non-empty string is
+    the same-line value, including a flow map.
+    """
+    escaped = re.escape(key)
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        match = re.match(rf"^(\s*){escaped}\s*:\s*(.*)$", line)
+        if not match:
+            continue
+        rest = match.group(2).strip()
+        if rest.startswith("#"):
+            rest = ""
+        return rest
+    return None
+
+
+def _yamlish_flow_map(raw: str) -> Optional[Dict[str, Any]]:
+    """Parse one flat ``{key: scalar, ...}`` map. Nested values refuse the map."""
+    text = raw.strip()
+    if "#" in text:
+        head, _, _comment = text.partition("#")
+        if head.strip().endswith("}"):
+            text = head.strip()
+    if len(text) < 2 or text[0] != "{" or text[-1] != "}":
+        return None
+    inner = text[1:-1].strip()
+    if not inner:
+        return {}
+    parts: List[str] = []
+    buf: List[str] = []
+    quote: Optional[str] = None
+    for char in inner:
+        if quote:
+            buf.append(char)
+            if char == quote:
+                quote = None
+            continue
+        if char in {'"', "'"}:
+            quote = char
+            buf.append(char)
+            continue
+        if char in "{}[]":
+            return None
+        if char == ",":
+            parts.append("".join(buf))
+            buf = []
+            continue
+        buf.append(char)
+    if quote is not None:
+        return None
+    parts.append("".join(buf))
+    parsed: Dict[str, Any] = {}
+    for part in parts:
+        piece = part.strip()
+        if not piece:
+            continue
+        if ":" not in piece:
+            return None
+        key, rest = piece.split(":", 1)
+        key = key.strip()
+        rest = rest.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", key) or rest[:1] in "[{":
+            return None
+        parsed[key] = _coerce_yamlish_scalar(rest)
+    return parsed
 
 
 def _yamlish_child_lines(lines: List[str], key: str) -> Optional[List[str]]:
@@ -678,19 +758,28 @@ def _yamlish_block_mapping(text: str) -> Optional[Dict[str, Any]]:
     A real Hermes ``config.yaml`` contains lists. This does not parse the
     whole file. It walks ``plugins.entries.web-search-plus.settings`` and
     returns only that scalar map, wrapped so the caller can use one path.
+    A one-line ``settings: {key: scalar}`` map is accepted. Nested flow
+    values are refused. Hermes Desktop itself writes block style.
     """
     lines = text.splitlines()
     plugins = _yamlish_child_lines(lines, "plugins")
     entries = _yamlish_child_lines(plugins or [], "entries")
     plugin = _yamlish_child_lines(entries or [], "web-search-plus")
-    settings = _yamlish_child_lines(plugin or [], "settings")
-    if settings is None:
+    if plugin is None:
         return {}
+    inline = _yamlish_key_rest(plugin, "settings")
+    if inline is None:
+        return {}
+    if inline:
+        settings_map = _yamlish_flow_map(inline) or {}
+    else:
+        settings = _yamlish_child_lines(plugin, "settings")
+        settings_map = _yamlish_scalar_map(settings or [])
     return {
         "plugins": {
             "entries": {
                 "web-search-plus": {
-                    "settings": _yamlish_scalar_map(settings),
+                    "settings": settings_map,
                 }
             }
         }
