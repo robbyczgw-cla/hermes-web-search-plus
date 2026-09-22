@@ -46,6 +46,8 @@ def test_declared_desktop_settings_overlay_config_json(tmp_path, monkeypatch):
             "        searxng_url: https://search.example",
             "        serper_api_key: should-not-leak",
             "        note: not-a-setting",
+            "        profile: self_hosted",
+            "        provider_priority: evil",
         ]) + "\n",
         encoding="utf-8",
     )
@@ -58,10 +60,13 @@ def test_declared_desktop_settings_overlay_config_json(tmp_path, monkeypatch):
     assert loaded["defaults"]["max_results"] == 3
     assert loaded["auto_routing"]["enabled"] is False
     assert loaded["auto_routing"]["provider_priority"][0] == "serper"
+    assert "evil" not in loaded["auto_routing"]["provider_priority"]
     assert loaded["searxng"]["base_url"] == "https://search.example"
+    assert loaded.get("profile", "standard") == "standard"
     dumped = json.dumps(loaded)
     assert "should-not-leak" not in dumped
     assert "not-a-setting" not in dumped
+    assert "evil" not in dumped
     assert "note" not in loaded
 
 
@@ -136,11 +141,20 @@ def test_desktop_overlay_without_pyyaml(tmp_path, monkeypatch):
     })
     (tmp_path / "config.yaml").write_text(
         "\n".join([
+            "model:",
+            "  default: grok",
             "plugins:",
+            "  enabled:",
+            "    - memory",
             "  entries:",
             "    web-search-plus:",
             "      settings:",
             "        country: AT",
+            "        auto_routing: false",
+            "        max_results: 0",
+            "        serper_api_key: should-not-leak",
+            "        profile: self_hosted",
+            "        note: not-a-setting",
         ]) + "\n",
         encoding="utf-8",
     )
@@ -157,3 +171,9 @@ def test_desktop_overlay_without_pyyaml(tmp_path, monkeypatch):
     loaded = load_config()
 
     assert loaded["defaults"]["locale"]["country"] == "at"
+    assert loaded["defaults"]["max_results"] == 5
+    assert loaded["auto_routing"]["enabled"] is False
+    assert loaded.get("profile", "standard") == "standard"
+    dumped = json.dumps(loaded)
+    assert "should-not-leak" not in dumped
+    assert "not-a-setting" not in dumped

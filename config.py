@@ -608,60 +608,93 @@ def _coerce_yamlish_scalar(raw: str) -> Any:
     return text
 
 
-def _yamlish_block_mapping(text: str) -> Optional[Dict[str, Any]]:
-    """Parse a nested block map of scalars. Anything richer returns None.
+def _yamlish_child_lines(lines: List[str], key: str) -> Optional[List[str]]:
+    """Return the indented block under ``key``, using the setup-helper walk.
 
-    This is the stdlib fallback for Desktop settings when PyYAML is absent.
-    Flow collections, lists, and tabs are rejected instead of guessed.
+    Same shape as ``_yamlish_nested_list_item``: one indent level is peeled
+    off so a later search still sees relative structure. Inline and flow
+    values are not blocks. Lists elsewhere in the file are left untouched.
+    """
+    escaped = re.escape(key)
+    for idx, line in enumerate(lines):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        match = re.match(rf"^(\s*){escaped}\s*:\s*(.*)$", line)
+        if not match:
+            continue
+        rest = match.group(2).strip()
+        if rest.startswith("#"):
+            rest = ""
+        if rest:
+            continue
+        parent_indent = len(match.group(1))
+        block: List[str] = []
+        for child in lines[idx + 1:]:
+            if not child.strip() or child.lstrip().startswith("#"):
+                block.append("")
+                continue
+            indent = len(child) - len(child.lstrip(" "))
+            if indent <= parent_indent:
+                break
+            block.append(child[parent_indent + 1:] if len(child) > parent_indent else child)
+        return block
+    return None
+
+
+def _yamlish_scalar_map(lines: List[str]) -> Dict[str, Any]:
+    """Read one level of scalar keys. Nested and list values are skipped."""
+    parsed: Dict[str, Any] = {}
+    base: Optional[int] = None
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if "\t" in line[:indent]:
+            return {}
+        if base is None:
+            base = indent
+        if indent != base:
+            continue
+        body = line.strip()
+        if body.startswith("-") or ":" not in body:
+            continue
+        key, rest = body.split(":", 1)
+        key = key.strip()
+        rest = rest.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", key):
+            continue
+        if rest == "" or rest[0] in "[{":
+            continue
+        comment = re.search(r"\s+#", rest)
+        if comment and rest[0] not in {'"', "'"}:
+            rest = rest[:comment.start()].strip()
+        parsed[key] = _coerce_yamlish_scalar(rest)
+    return parsed
+
+
+def _yamlish_block_mapping(text: str) -> Optional[Dict[str, Any]]:
+    """Stdlib fallback for the Desktop settings block when PyYAML is absent.
+
+    A real Hermes ``config.yaml`` contains lists. This does not parse the
+    whole file. It walks ``plugins.entries.web-search-plus.settings`` and
+    returns only that scalar map, wrapped so the caller can use one path.
     """
     lines = text.splitlines()
-
-    def parse_map(index: int, min_indent: int) -> tuple[Dict[str, Any], int]:
-        mapping: Dict[str, Any] = {}
-        child_indent: Optional[int] = None
-        while index < len(lines):
-            line = lines[index]
-            if not line.strip() or line.lstrip().startswith("#"):
-                index += 1
-                continue
-            indent = len(line) - len(line.lstrip(" "))
-            if line[:indent].find("\t") != -1 or indent < min_indent:
-                break
-            if child_indent is None:
-                child_indent = indent
-            if indent != child_indent:
-                if indent < child_indent:
-                    break
-                raise ValueError("inconsistent YAML indent")
-            body = line.strip()
-            if body.startswith("-") or ":" not in body:
-                raise ValueError("unsupported YAML shape")
-            key, rest = body.split(":", 1)
-            key = key.strip()
-            rest = rest.strip()
-            if not re.fullmatch(r"[A-Za-z0-9_-]+", key):
-                raise ValueError("unsupported YAML key")
-            index += 1
-            if rest == "":
-                mapping[key], index = parse_map(index, child_indent + 1)
-            elif rest[0] in "[{":
-                raise ValueError("flow YAML is not accepted")
-            else:
-                comment = re.search(r"\s+#", rest)
-                if comment and rest[0] not in {'"', "'"}:
-                    rest = rest[:comment.start()].strip()
-                mapping[key] = _coerce_yamlish_scalar(rest)
-        return mapping, index
-
-    try:
-        parsed, index = parse_map(0, 0)
-    except ValueError:
-        return None
-    while index < len(lines):
-        if lines[index].strip() and not lines[index].lstrip().startswith("#"):
-            return None
-        index += 1
-    return parsed
+    plugins = _yamlish_child_lines(lines, "plugins")
+    entries = _yamlish_child_lines(plugins or [], "entries")
+    plugin = _yamlish_child_lines(entries or [], "web-search-plus")
+    settings = _yamlish_child_lines(plugin or [], "settings")
+    if settings is None:
+        return {}
+    return {
+        "plugins": {
+            "entries": {
+                "web-search-plus": {
+                    "settings": _yamlish_scalar_map(settings),
+                }
+            }
+        }
+    }
 
 
 def _read_yaml_mapping(text: str) -> Optional[Dict[str, Any]]:
