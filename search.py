@@ -1455,11 +1455,16 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         return provider_result
 
     def execute_with_retry(prov: str) -> Dict[str, Any]:
-        if engine_owned_attempt:
-            return execute_search(prov)
+        # The v3 AttemptEngine owns retries and circuit state, so an
+        # engine-owned call runs once here and the engine retries around it.
+        # Adaptive routing samples are a separate signal and are recorded on
+        # both paths; otherwise v3 traffic never trains the router.
         started = time.monotonic()
         try:
-            provider_result = execute_provider_with_retry(prov, lambda: execute_search(prov))
+            if engine_owned_attempt:
+                provider_result = execute_search(prov)
+            else:
+                provider_result = execute_provider_with_retry(prov, lambda: execute_search(prov))
         except ProviderRequestError:
             # Only real provider interactions count as performance signal;
             # config/validation errors (e.g. missing keys) are not recorded.

@@ -110,7 +110,14 @@ def test_engine_owned_provider_call_bypasses_all_legacy_retry_and_health(monkeyp
     monkeypatch.setattr(search, "execute_provider_with_retry", forbidden)
     monkeypatch.setattr(search, "mark_provider_failure", forbidden)
     monkeypatch.setattr(search, "reset_provider_health", forbidden)
-    monkeypatch.setattr(search, "record_provider_outcome", forbidden)
+    # Adaptive routing samples are not legacy health: the engine owns retry
+    # and circuit state, but every real provider call still trains the router.
+    outcomes = []
+    monkeypatch.setattr(
+        search,
+        "record_provider_outcome",
+        lambda provider, **kwargs: outcomes.append((provider, kwargs["error"])),
+    )
     monkeypatch.setattr(
         search,
         "search_you",
@@ -121,6 +128,8 @@ def test_engine_owned_provider_call_bypasses_all_legacy_retry_and_health(monkeyp
 
     with pytest.raises(ProviderRequestError):
         search._execute_search_request_core(args, config)
+
+    assert outcomes == [("you", True)]
 
 
 def test_engine_owned_extract_call_bypasses_legacy_retry_and_health(monkeypatch):
