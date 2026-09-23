@@ -9,6 +9,8 @@
 ### Fixed
 
 - The `web_search_plus` tool now uses `defaults.max_results` when the agent omits `count`. Before, the tool always asked for 5, so `max_results` in `config.json` and the new Desktop "Max results" field only affected the CLI. An explicit `count` still wins, and the value is clamped to the tool range 1–20.
+- Adaptive routing learns again. Since the v3 attempt engine (3.0), engine-owned search calls skipped `record_provider_outcome`, so `provider_stats.json` stopped growing, `performance_adjustments()` returned nothing after the 7-day window, and the Operator Console provider-health view showed old data. Every real v3 provider call, including research members and each retry, now records latency, result count, and error. Cache hits, config errors, and bench runs still record nothing. The engine keeps sole ownership of retries and circuit state.
+- `provider_stats.json` writes now take a file lock (POSIX). Before, two processes recording at once, such as the gateway and a CLI run, overwrote each other and lost up to half of the samples.
 
 ## [v4.2.1] — 2026-09-21
 
