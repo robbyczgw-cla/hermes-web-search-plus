@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Provider HTTP calls reuse keep-alive connections per host, so repeated searches skip TCP and TLS setup. Live medians dropped 6–17 % per provider (Serper −0.14 s, Tavily −0.30 s). Proxies, non-HTTP(S) URLs, and `WSP_HTTP_KEEPALIVE=0` keep the old `urlopen` path. A stale pooled connection is retried once on a fresh socket; the pool is dropped after `fork()`. Error mapping, redirects, gzip, and timeouts are unchanged.
+
 ## [v4.3.0] — 2026-09-23
 
 ### Added
