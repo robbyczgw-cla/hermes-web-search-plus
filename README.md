@@ -19,7 +19,15 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v4.2.1** — see the [release notes](docs/RELEASE_NOTES_V421.md) and [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+Current release: **v4.3.0** — see the [release notes](docs/RELEASE_NOTES_V430.md) and [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+
+### What's new in 4.3.0
+
+Hermes Desktop can configure Web Search Plus from its plugin settings form: country, language, max results, auto-routing, SearXNG URL, and one API key field per provider. Keys go to `.env`, never to `config.json`.
+
+Adaptive routing learns again. Since the 3.0 engine, searches no longer recorded provider samples, so routing fell back to static priority. `provider_stats.json` writes are now locked across processes, and the agent tool honours `defaults.max_results` when `count` is omitted.
+
+See the [4.3.0 release notes](docs/RELEASE_NOTES_V430.md).
 
 ### What's new in 4.2.1
 
