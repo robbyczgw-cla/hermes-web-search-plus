@@ -221,7 +221,7 @@ def urlopen(req, timeout: float = 30):
     if scheme not in {"http", "https"} or _proxy_applies(scheme, parts.hostname):
         return _urllib_request.urlopen(req, timeout=timeout)
     return _pooled_open(req, timeout)
-DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/4.3.0"
+DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/4.3.1"
 
 
 class ProviderRequestError(Exception):
