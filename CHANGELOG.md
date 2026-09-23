@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v4.3.0] — 2026-09-23
+
 ### Added
 
 - Hermes Desktop can edit a flat settings form for country, language, max results, auto-routing, SearXNG URL, and every provider API key from `optional_env`. Values in `plugins.entries.web-search-plus.settings` overlay `config.json` one way. Secrets stay in `.env` and never overlay. `DONSETCH_BIN` and a second SearXNG env field stay out. Priority, budgets, and other nested settings stay in `config.json`. The PyYAML-free fallback reads a one-line `settings: {key: scalar}` map, ignores nested flow values, and matches PyYAML for unquoted null, `~`, and `yes`/`no`/`on`/`off`.
