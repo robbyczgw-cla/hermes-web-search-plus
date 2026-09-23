@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -592,6 +593,297 @@ def _quarantine_runtime_config(config_path: Path, reason: str) -> None:
         }), file=sys.stderr)
 
 
+_DESKTOP_SETTING_KEYS = ("country", "language", "max_results", "auto_routing", "searxng_url")
+
+
+def _coerce_yamlish_scalar(raw: str) -> Any:
+    """Match PyYAML for the scalars Desktop can write, plus the usual hand edits.
+
+    Quoted text stays a string. Unquoted null/~ and the YAML 1.1 booleans
+    match ``yaml.safe_load`` so the fallback cannot apply a different value.
+    """
+    text = raw.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {'"', "'"}:
+        return text[1:-1]
+    if text in {"", "~"} or text.lower() == "null":
+        return None
+    lowered = text.lower()
+    if lowered in {"true", "yes", "on"}:
+        return True
+    if lowered in {"false", "no", "off"}:
+        return False
+    if re.fullmatch(r"-?\d+", text):
+        return int(text)
+    return text
+
+
+def _yamlish_key_rest(lines: List[str], key: str) -> Optional[str]:
+    """Inline text after ``key:``. ``None`` if the key is absent.
+
+    An empty string means the value is a nested block. A non-empty string is
+    the same-line value, including a flow map.
+    """
+    escaped = re.escape(key)
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        match = re.match(rf"^(\s*){escaped}\s*:\s*(.*)$", line)
+        if not match:
+            continue
+        rest = match.group(2).strip()
+        if rest.startswith("#"):
+            rest = ""
+        return rest
+    return None
+
+
+def _yamlish_flow_map(raw: str) -> Optional[Dict[str, Any]]:
+    """Parse one flat ``{key: scalar, ...}`` map. Nested values refuse the map."""
+    text = raw.strip()
+    if "#" in text:
+        head, _, _comment = text.partition("#")
+        if head.strip().endswith("}"):
+            text = head.strip()
+    if len(text) < 2 or text[0] != "{" or text[-1] != "}":
+        return None
+    inner = text[1:-1].strip()
+    if not inner:
+        return {}
+    parts: List[str] = []
+    buf: List[str] = []
+    quote: Optional[str] = None
+    for char in inner:
+        if quote:
+            buf.append(char)
+            if char == quote:
+                quote = None
+            continue
+        if char in {'"', "'"}:
+            quote = char
+            buf.append(char)
+            continue
+        if char in "{}[]":
+            return None
+        if char == ",":
+            parts.append("".join(buf))
+            buf = []
+            continue
+        buf.append(char)
+    if quote is not None:
+        return None
+    parts.append("".join(buf))
+    parsed: Dict[str, Any] = {}
+    for part in parts:
+        piece = part.strip()
+        if not piece:
+            continue
+        if ":" not in piece:
+            return None
+        key, rest = piece.split(":", 1)
+        key = key.strip()
+        rest = rest.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", key) or rest[:1] in "[{":
+            return None
+        parsed[key] = _coerce_yamlish_scalar(rest)
+    return parsed
+
+
+def _yamlish_child_lines(lines: List[str], key: str) -> Optional[List[str]]:
+    """Return the indented block under ``key``, using the setup-helper walk.
+
+    Same shape as ``_yamlish_nested_list_item``: one indent level is peeled
+    off so a later search still sees relative structure. Inline and flow
+    values are not blocks. Lists elsewhere in the file are left untouched.
+    """
+    escaped = re.escape(key)
+    for idx, line in enumerate(lines):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        match = re.match(rf"^(\s*){escaped}\s*:\s*(.*)$", line)
+        if not match:
+            continue
+        rest = match.group(2).strip()
+        if rest.startswith("#"):
+            rest = ""
+        if rest:
+            continue
+        parent_indent = len(match.group(1))
+        block: List[str] = []
+        for child in lines[idx + 1:]:
+            if not child.strip() or child.lstrip().startswith("#"):
+                block.append("")
+                continue
+            indent = len(child) - len(child.lstrip(" "))
+            if indent <= parent_indent:
+                break
+            block.append(child[parent_indent + 1:] if len(child) > parent_indent else child)
+        return block
+    return None
+
+
+def _yamlish_scalar_map(lines: List[str]) -> Dict[str, Any]:
+    """Read one level of scalar keys. Nested and list values are skipped."""
+    parsed: Dict[str, Any] = {}
+    base: Optional[int] = None
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if "\t" in line[:indent]:
+            return {}
+        if base is None:
+            base = indent
+        if indent != base:
+            continue
+        body = line.strip()
+        if body.startswith("-") or ":" not in body:
+            continue
+        key, rest = body.split(":", 1)
+        key = key.strip()
+        rest = rest.strip()
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", key):
+            continue
+        if rest == "" or rest[0] in "[{":
+            continue
+        comment = re.search(r"\s+#", rest)
+        if comment and rest[0] not in {'"', "'"}:
+            rest = rest[:comment.start()].strip()
+        parsed[key] = _coerce_yamlish_scalar(rest)
+    return parsed
+
+
+def _yamlish_block_mapping(text: str) -> Optional[Dict[str, Any]]:
+    """Stdlib fallback for the Desktop settings block when PyYAML is absent.
+
+    A real Hermes ``config.yaml`` contains lists. This does not parse the
+    whole file. It walks ``plugins.entries.web-search-plus.settings`` and
+    returns only that scalar map, wrapped so the caller can use one path.
+    A one-line ``settings: {key: scalar}`` map is accepted. Nested flow
+    values are refused. Hermes Desktop itself writes block style.
+    """
+    lines = text.splitlines()
+    plugins = _yamlish_child_lines(lines, "plugins")
+    entries = _yamlish_child_lines(plugins or [], "entries")
+    plugin = _yamlish_child_lines(entries or [], "web-search-plus")
+    if plugin is None:
+        return {}
+    inline = _yamlish_key_rest(plugin, "settings")
+    if inline is None:
+        return {}
+    if inline:
+        settings_map = _yamlish_flow_map(inline) or {}
+    else:
+        settings = _yamlish_child_lines(plugin, "settings")
+        settings_map = _yamlish_scalar_map(settings or [])
+    return {
+        "plugins": {
+            "entries": {
+                "web-search-plus": {
+                    "settings": settings_map,
+                }
+            }
+        }
+    }
+
+
+def _read_yaml_mapping(text: str) -> Optional[Dict[str, Any]]:
+    try:
+        import yaml
+    except ImportError:
+        return _yamlish_block_mapping(text)
+    try:
+        data = yaml.safe_load(text)
+    except Exception:
+        return None
+    if data is None:
+        return {}
+    return data if isinstance(data, dict) else None
+
+
+def _desktop_settings(config_path: Path) -> Dict[str, Any]:
+    """Read the flat Desktop settings block for this plugin config, or {}.
+
+    Only ``<home>/plugins/config.json`` consults ``<home>/config.yaml``. A
+    config path outside that layout, including sterile tests, is ignored.
+    Secret and undeclared keys never leave this allowlist.
+    """
+    try:
+        if config_path.name != "config.json" or config_path.parent.name != "plugins":
+            return {}
+        yaml_path = config_path.parent.parent / "config.yaml"
+        if not yaml_path.is_file():
+            return {}
+        data = _read_yaml_mapping(yaml_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return {}
+        plugins = data.get("plugins")
+        entries = plugins.get("entries") if isinstance(plugins, dict) else None
+        plugin = entries.get("web-search-plus") if isinstance(entries, dict) else None
+        settings = plugin.get("settings") if isinstance(plugin, dict) else None
+        if not isinstance(settings, dict):
+            return {}
+        return {key: settings[key] for key in _DESKTOP_SETTING_KEYS if key in settings}
+    except Exception:
+        return {}
+
+
+def _present_desktop_text(value: Any) -> Optional[str]:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
+
+
+def _apply_desktop_settings(config: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
+    """Overlay declared Desktop scalars onto config.json. Empty and 0 do not wipe."""
+    if not settings:
+        return config
+    defaults = config.get("defaults")
+    if not isinstance(defaults, dict):
+        defaults = {}
+        config["defaults"] = defaults
+    locale = defaults.get("locale")
+    if not isinstance(locale, dict):
+        locale = {}
+        defaults["locale"] = locale
+    if "country" in settings:
+        country = _present_desktop_text(settings.get("country"))
+        if country:
+            locale["country"] = country.lower()
+    if "language" in settings:
+        language = _present_desktop_text(settings.get("language"))
+        if language:
+            locale["language"] = language.lower()
+    if "max_results" in settings:
+        raw_results = settings.get("max_results")
+        if isinstance(raw_results, str) and raw_results.strip().isdigit():
+            raw_results = int(raw_results.strip())
+        if isinstance(raw_results, int) and not isinstance(raw_results, bool) and raw_results > 0:
+            defaults["max_results"] = raw_results
+    if "auto_routing" in settings:
+        raw_routing = settings.get("auto_routing")
+        enabled: Optional[bool] = None
+        if isinstance(raw_routing, bool):
+            enabled = raw_routing
+        elif isinstance(raw_routing, str) and raw_routing.strip().lower() in {"true", "false"}:
+            enabled = raw_routing.strip().lower() == "true"
+        if enabled is not None:
+            auto = config.get("auto_routing")
+            if not isinstance(auto, dict):
+                auto = {}
+                config["auto_routing"] = auto
+            auto["enabled"] = enabled
+    if "searxng_url" in settings:
+        url = _present_desktop_text(settings.get("searxng_url"))
+        if url:
+            searxng = config.get("searxng")
+            if not isinstance(searxng, dict):
+                searxng = {}
+                config["searxng"] = searxng
+            searxng["base_url"] = url
+    return config
+
+
 def load_config() -> Dict[str, Any]:
     """Load configuration from config.json if it exists, with defaults."""
     config = _deepcopy_default_config()
@@ -611,6 +903,7 @@ def load_config() -> Dict[str, Any]:
             _quarantine_runtime_config(config_path, str(e))
             config = _deepcopy_default_config()
 
+    config = _apply_desktop_settings(config, _desktop_settings(config_path))
     # Defaults need no migration, but applying this here keeps direct/default
     # loads on the same profile-derived path as persisted configurations.
     return apply_profile_effects(config)

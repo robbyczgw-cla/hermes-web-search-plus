@@ -2,8 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- Hermes Desktop can edit a flat settings form for country, language, max results, auto-routing, SearXNG URL, and every provider API key from `optional_env`. Values in `plugins.entries.web-search-plus.settings` overlay `config.json` one way. Secrets stay in `.env` and never overlay. `DONSETCH_BIN` and a second SearXNG env field stay out. Priority, budgets, and other nested settings stay in `config.json`. The PyYAML-free fallback reads a one-line `settings: {key: scalar}` map, ignores nested flow values, and matches PyYAML for unquoted null, `~`, and `yes`/`no`/`on`/`off`.
+
 ### Fixed
 
+- The `web_search_plus` tool now uses `defaults.max_results` when the agent omits `count`. Before, the tool always asked for 5, so `max_results` in `config.json` and the new Desktop "Max results" field only affected the CLI. An explicit `count` still wins, and the value is clamped to the tool range 1–20.
 - Adaptive routing learns again. Since the v3 attempt engine (3.0), engine-owned search calls skipped `record_provider_outcome`, so `provider_stats.json` stopped growing, `performance_adjustments()` returned nothing after the 7-day window, and the Operator Console provider-health view showed old data. Every real v3 provider call, including research members and each retry, now records latency, result count, and error. Cache hits, config errors, and bench runs still record nothing. The engine keeps sole ownership of retries and circuit state.
 - `provider_stats.json` writes now take a file lock (POSIX). Before, two processes recording at once, such as the gateway and a CLI run, overwrote each other and lost up to half of the samples.
 
