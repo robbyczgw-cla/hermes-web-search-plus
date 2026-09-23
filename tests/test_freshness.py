@@ -206,7 +206,7 @@ class FreshnessRequestTests(unittest.TestCase):
             return _Resp()
 
         with contextlib.ExitStack() as stack:
-            stack.enter_context(mock.patch("urllib.request.urlopen", side_effect=fake_urlopen))
+            stack.enter_context(mock.patch.object(providers, "urlopen", side_effect=fake_urlopen))
             stack.enter_context(mock.patch.object(
                 providers, "_read_json_response",
                 return_value={"results": {"web": [], "news": []}, "metadata": {}},

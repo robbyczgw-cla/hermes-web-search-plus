@@ -11,7 +11,7 @@ import time
 from typing import Any, Dict, List, Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
-from urllib.request import Request, urlopen
+from urllib.request import Request
 
 from daemon_tasks import DaemonTask
 from http_client import (
@@ -22,6 +22,7 @@ from http_client import (
     _read_response_body,
     make_get_request,
     make_request,
+    urlopen,
 )
 from quality import _title_from_url
 from request_gate_v3 import validate_outbound_body, validate_provider_mode
@@ -1363,7 +1364,6 @@ def search_you(
     }
 
     # Make GET request (You.com uses GET, not POST)
-    from urllib.request import Request, urlopen
     req = Request(url, headers=headers, method="GET")
 
     try:
