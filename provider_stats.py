@@ -16,7 +16,13 @@ import statistics
 import tempfile
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from contextlib import contextmanager
+from typing import Any, Dict, Iterator, List, Optional
+
+try:  # POSIX only; Windows has no fcntl module.
+    import fcntl
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None
 
 from cache import CACHE_DIR
 
@@ -38,6 +44,27 @@ LATENCY_CEILING_SECONDS = 8.0
 PERFORMANCE_BASELINE = 0.75
 
 _STATS_LOCK = threading.Lock()
+
+
+@contextmanager
+def _stats_file_lock() -> Iterator[None]:
+    """Serialize read-modify-write across processes (gateway, CLI, MCP).
+
+    The thread lock only covers one process. Without a file lock, two
+    processes that record at the same time overwrite each other's samples.
+    """
+    with _STATS_LOCK:
+        if fcntl is None:
+            yield
+            return
+        PROVIDER_STATS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        lock_path = PROVIDER_STATS_FILE.with_name(PROVIDER_STATS_FILE.name + ".lock")
+        with open(lock_path, "a", encoding="utf-8") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
 
 
 def _load_stats() -> Dict[str, Any]:
@@ -90,7 +117,7 @@ def record_provider_outcome(
         "err": bool(error),
     }
     try:
-        with _STATS_LOCK:
+        with _stats_file_lock():
             state = _load_stats()
             samples = state.get(provider)
             if not isinstance(samples, list):

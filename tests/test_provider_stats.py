@@ -134,3 +134,33 @@ class TestAdaptiveRouting:
                 result = routing.auto_route_provider("zzqx", config)
 
         assert result["adaptive_adjustments"] == {}
+
+
+def _record_many(stats_file, count):
+    import provider_stats as ps
+
+    ps.PROVIDER_STATS_FILE = stats_file
+    for _ in range(count):
+        ps.record_provider_outcome("serper", latency_seconds=0.1, result_count=1, error=False)
+
+
+def test_concurrent_processes_do_not_lose_samples(tmp_path, monkeypatch):
+    import json
+    import multiprocessing
+
+    import provider_stats as ps
+
+    if getattr(ps, "fcntl", object()) is None:  # pragma: no cover - Windows
+        pytest.skip("cross-process lock needs fcntl")
+    stats_file = tmp_path / "provider_stats.json"
+    monkeypatch.setattr(ps, "PROVIDER_STATS_FILE", stats_file)
+    ctx = multiprocessing.get_context("fork")
+    procs = [ctx.Process(target=_record_many, args=(stats_file, 10)) for _ in range(4)]
+    for proc in procs:
+        proc.start()
+    for proc in procs:
+        proc.join(30)
+        assert proc.exitcode == 0
+
+    samples = json.loads(stats_file.read_text(encoding="utf-8"))["serper"]
+    assert len(samples) == 40
