@@ -12,6 +12,8 @@ import builtins
 import json
 from pathlib import Path
 
+import pytest
+
 from config import _DESKTOP_SETTING_KEYS, load_config
 
 
@@ -364,3 +366,46 @@ def test_pyyaml_and_fallback_apply_the_same_overlay(tmp_path, monkeypatch):
             assert loaded["searxng"]["base_url"] == expect["url"], label
             assert "leak" not in json.dumps(loaded), label
             monkeypatch.setattr(builtins, "__import__", real_import)
+
+
+def _registered_search_handler():
+    import __init__ as plugin
+
+    registered = {}
+
+    class Ctx:
+        def register_tool(self, **kwargs):
+            registered[kwargs["name"]] = kwargs["handler"]
+
+    plugin.register(Ctx())
+    return plugin, registered["web_search_plus"]
+
+
+def _handler_count(monkeypatch, args, max_results):
+    from unittest import mock
+
+    plugin, handler = _registered_search_handler()
+    seen = {}
+
+    def fake_run_search(**kwargs):
+        seen.update(kwargs)
+        return {"provider": "serper", "query": kwargs["query"], "results": []}
+
+    monkeypatch.setattr(plugin, "load_config", lambda: {"defaults": {"max_results": max_results}})
+    with mock.patch.object(plugin, "_run_search", fake_run_search):
+        handler(args)
+    return seen["count"]
+
+
+def test_tool_uses_configured_max_results_when_count_is_omitted(monkeypatch):
+    assert _handler_count(monkeypatch, {"query": "q"}, 8) == 8
+
+
+def test_explicit_tool_count_beats_configured_max_results(monkeypatch):
+    assert _handler_count(monkeypatch, {"query": "q", "count": 3}, 8) == 3
+
+
+@pytest.mark.parametrize("bad", [None, 0, -2, "x", True, 999])
+def test_bad_configured_max_results_falls_back_safely(monkeypatch, bad):
+    count = _handler_count(monkeypatch, {"query": "q"}, bad)
+    assert count == (20 if bad == 999 else 5)

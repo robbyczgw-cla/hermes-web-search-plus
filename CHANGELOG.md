@@ -6,6 +6,10 @@
 
 - Hermes Desktop can edit a flat settings form for country, language, max results, auto-routing, SearXNG URL, and every provider API key from `optional_env`. Values in `plugins.entries.web-search-plus.settings` overlay `config.json` one way. Secrets stay in `.env` and never overlay. `DONSETCH_BIN` and a second SearXNG env field stay out. Priority, budgets, and other nested settings stay in `config.json`. The PyYAML-free fallback reads a one-line `settings: {key: scalar}` map, ignores nested flow values, and matches PyYAML for unquoted null, `~`, and `yes`/`no`/`on`/`off`.
 
+### Fixed
+
+- The `web_search_plus` tool now uses `defaults.max_results` when the agent omits `count`. Before, the tool always asked for 5, so `max_results` in `config.json` and the new Desktop "Max results" field only affected the CLI. An explicit `count` still wins, and the value is clamped to the tool range 1–20.
+
 ## [v4.2.1] — 2026-09-21
 
 ### Added

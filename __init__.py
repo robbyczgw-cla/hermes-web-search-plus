@@ -1918,6 +1918,20 @@ def _sanitize_extract_content(content: str) -> str:
     return content
 
 
+_MAX_TOOL_COUNT = 20
+
+
+def _configured_max_results(fallback: int = 5) -> int:
+    """Return defaults.max_results clamped to the tool range, or the fallback."""
+    try:
+        value = (load_config().get("defaults") or {}).get("max_results")
+    except Exception:
+        return fallback
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return fallback
+    return min(value, _MAX_TOOL_COUNT)
+
+
 def _extract_char_limit() -> int:
     """Read web.extract_char_limit with a safe default for old configs."""
     try:
@@ -2131,7 +2145,12 @@ def register(ctx: Any) -> None:
         if isinstance(args_or_query, dict):
             query = args_or_query.get("query", "")
             provider = args_or_query.get("provider", provider)
-            count = args_or_query.get("count", count)
+            # An explicit count wins; otherwise use defaults.max_results
+            # (config.json or the Desktop "Max results" setting).
+            if args_or_query.get("count") is None:
+                count = _configured_max_results(count)
+            else:
+                count = args_or_query["count"]
             depth = args_or_query.get("depth", depth)
             time_range = args_or_query.get("time_range", time_range)
             freshness = args_or_query.get("freshness", freshness)
