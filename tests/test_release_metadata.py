@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "4.3.1"
+EXPECTED_VERSION = "4.3.2"
 
 
 def _load_plugin_module():

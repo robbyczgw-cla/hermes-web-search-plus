@@ -19,9 +19,13 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v4.3.1** — see the [release notes](docs/RELEASE_NOTES_V431.md) and [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+Current release: **v4.3.2** — see the [release notes](docs/RELEASE_NOTES_V432.md) and [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
 
-### What's new in 4.3.1
+### What's new in 4.3.2
+
+Security hardening: stricter extract URL validation, same-origin-only redirects in the HTTP client, response size limits, no provider error text passed to the model, and an untrusted-web-data notice on results. Some failures are now stricter or less detailed; see the [4.3.2 release notes](docs/RELEASE_NOTES_V432.md).
+
+### Earlier: 4.3.1
 
 Faster searches: provider calls reuse keep-alive connections, so repeated searches skip TCP and TLS setup (live medians −6 % to −17 % per provider). No config changes. See the [4.3.1 release notes](docs/RELEASE_NOTES_V431.md).
 
