@@ -227,6 +227,7 @@ def test_idn_host_that_maps_to_a_private_ip_literal_is_rejected(no_dns):
 
 
 def test_idn_url_reaches_provider_only_as_punycode(monkeypatch):
+    monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test-fake-key")
     monkeypatch.setattr(extract.socket, "getaddrinfo", _resolver("93.184.216.34"))
     with mock.patch("search.extract_firecrawl") as provider:
         provider.return_value = {"provider": "firecrawl", "results": []}
