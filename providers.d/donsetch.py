@@ -213,6 +213,7 @@ def inspect_donsetch_readiness(
     try:
         completed = subprocess.run(
             [candidate, "--version"],
+            env=_child_env(),
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -228,9 +229,31 @@ def inspect_donsetch_readiness(
     return report
 
 
+_CHILD_ENV_ALLOWLIST = frozenset(
+    {
+        # runtime / platform
+        "PATH", "HOME", "USER", "LOGNAME", "LANG", "LANGUAGE", "TZ", "SHELL",
+        "TMPDIR", "TEMP", "TMP", "SYSTEMROOT", "COMSPEC", "PATHEXT", "WINDIR",
+        "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR",
+        # proxy and CA configuration
+        "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+        "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+        "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS",
+    }
+)
+
+
 def _child_env() -> dict[str, str]:
-    """Copy the process env but pin DonSeTch to stdio for this child only."""
-    env = os.environ.copy()
+    """Minimal child environment: allowlisted runtime vars plus DONSETCH_* only.
+
+    Other providers' API keys, cloud credentials and arbitrary parent variables
+    are not inherited. This narrows exposure; it is not an OS sandbox.
+    """
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key in _CHILD_ENV_ALLOWLIST or key.startswith("LC_") or key.startswith("DONSETCH_")
+    }
     env["DONSETCH_TRANSPORT"] = "stdio"
     return env
 

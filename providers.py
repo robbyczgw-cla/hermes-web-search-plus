@@ -19,7 +19,6 @@ from http_client import (
     ProviderRequestError,
     TRANSIENT_HTTP_CODES,
     _read_json_response,
-    _read_response_body,
     make_get_request,
     make_request,
     urlopen,
@@ -384,9 +383,9 @@ def search_serpbase(
     data = make_request(api_url, headers, body, timeout=timeout)
     status = data.get("status", 0)
     if status != 0:
-        message = data.get("message") or data.get("error") or data.get("msg") or "business status failure"
-        transient = status in {1029, 1502, 1503, 1504}
-        raise ProviderRequestError(f"SerpBase error {status}: {message}", transient=transient)
+        code = status if isinstance(status, int) and not isinstance(status, bool) else "unknown"
+        transient = code in {1029, 1502, 1503, 1504}
+        raise ProviderRequestError(f"SerpBase request failed (provider status {code})", transient=transient)
 
     results = []
     for i, item in enumerate(data.get("organic", [])[:max_results]):
@@ -604,8 +603,8 @@ def search_querit(
     error_code = data.get("error_code")
     error_msg = data.get("error_msg")
     if error_msg or (error_code not in (None, 0, 200)):
-        message = error_msg or f"Querit request failed with error_code={error_code}"
-        raise ProviderRequestError(message)
+        code = error_code if isinstance(error_code, int) and not isinstance(error_code, bool) else "unknown"
+        raise ProviderRequestError(f"Querit request failed (provider error code {code})")
 
     raw_results = ((data.get("results") or {}).get("result")) or []
     results = []
@@ -666,7 +665,7 @@ def search_linkup(
 
     data = make_request(api_url, headers, body, timeout=timeout)
     if data.get("error"):
-        raise ProviderRequestError(str(data.get("error")))
+        raise ProviderRequestError("Linkup request failed (provider reported an error)")
 
     raw_results = data.get("results") or data.get("sources") or []
     results = []
@@ -753,7 +752,7 @@ def search_firecrawl(
 
     data = make_request(api_url, headers, body, timeout=max(1, int(timeout_ms / 1000)))
     if data.get("success") is False:
-        raise ProviderRequestError(data.get("error") or data.get("warning") or "Firecrawl request failed")
+        raise ProviderRequestError("Firecrawl request failed (provider reported an error)")
 
     response_data = data.get("data") or {}
     raw_web = response_data.get("web") or []
@@ -778,7 +777,7 @@ def search_firecrawl(
         if metadata.get("statusCode") is not None:
             result["status_code"] = metadata.get("statusCode")
         if metadata.get("error"):
-            result["error"] = metadata.get("error")
+            result["error"] = "Provider could not fetch this result"
         results.append(result)
 
     images = []
@@ -792,7 +791,7 @@ def search_firecrawl(
         "query": query,
         "results": results,
         "images": images,
-        "warning": data.get("warning"),
+        "warning": "Provider returned a warning" if data.get("warning") else None,
         "credits_used": data.get("creditsUsed"),
         "metadata": {
             "id": data.get("id"),
@@ -844,7 +843,7 @@ def extract_firecrawl(
             body["waitFor"] = 1000
         data = make_request(api_url, headers, body, timeout=timeout)
         if data.get("success") is False:
-            results.append(_normalize_extract_result("firecrawl", url, error=data.get("error") or data.get("warning") or "Firecrawl scrape failed"))
+            results.append(_normalize_extract_result("firecrawl", url, error="Firecrawl scrape failed"))
             continue
         payload = data.get("data") if isinstance(data.get("data"), dict) else data
         metadata = payload.get("metadata") or {}
@@ -899,7 +898,7 @@ def extract_linkup(
         }
         data = make_request(api_url, headers, body, timeout=timeout)
         if data.get("error"):
-            return _normalize_extract_result("linkup", url, error=str(data.get("error")))
+            return _normalize_extract_result("linkup", url, error="Linkup fetch failed")
         markdown = data.get("markdown") or ""
         raw_html = data.get("rawHtml") or data.get("raw_html") or ""
         content = raw_html if output_format == "html" else markdown or raw_html
@@ -969,7 +968,7 @@ def extract_tavily(
         ))
     for failed in data.get("failed_results", []) or []:
         failed_url = failed.get("url", "")
-        results.append(_normalize_extract_result("tavily", failed_url, error=failed.get("error") or "Tavily extract failed"))
+        results.append(_normalize_extract_result("tavily", failed_url, error="Tavily extract failed"))
     return {"provider": "tavily", "results": results}
 
 def extract_exa(
@@ -1100,7 +1099,7 @@ def extract_parallel(
         ))
     for failed in data.get("errors", []) or []:
         failed_url = failed.get("url", "") if isinstance(failed, dict) else ""
-        results.append(_normalize_extract_result("parallel", failed_url, error=str(failed)))
+        results.append(_normalize_extract_result("parallel", failed_url, error="Parallel extract failed"))
     return {
         "provider": "parallel",
         "results": results,
@@ -1370,13 +1369,6 @@ def search_you(
         with urlopen(req, timeout=30) as response:
             data = _read_json_response(response)
     except HTTPError as e:
-        error_body = _read_response_body(e).decode("utf-8") if e.fp else str(e)
-        try:
-            error_json = json.loads(error_body)
-            error_detail = error_json.get("error") or error_json.get("message") or error_body
-        except json.JSONDecodeError:
-            error_detail = error_body[:500]
-
         error_messages = {
             401: "Invalid or expired API key. Get one at https://api.you.com",
             403: "Access forbidden. Check your API key permissions.",
@@ -1384,7 +1376,7 @@ def search_you(
             500: "You.com server error. Try again later.",
             503: "You.com service unavailable."
         }
-        friendly_msg = error_messages.get(e.code, f"API error: {error_detail}")
+        friendly_msg = error_messages.get(e.code, "API error")
         raise ProviderRequestError(f"{friendly_msg} (HTTP {e.code})", status_code=e.code, transient=e.code in TRANSIENT_HTTP_CODES)
     except URLError as e:
         reason = str(getattr(e, "reason", e))
@@ -1519,20 +1511,13 @@ def search_searxng(
         with urlopen(req, timeout=30) as response:
             data = _read_json_response(response)
     except HTTPError as e:
-        error_body = _read_response_body(e).decode("utf-8") if e.fp else str(e)
-        try:
-            error_json = json.loads(error_body)
-            error_detail = error_json.get("error") or error_json.get("message") or error_body
-        except json.JSONDecodeError:
-            error_detail = error_body[:500]
-
         error_messages = {
             403: "JSON API disabled on this SearXNG instance. Enable 'json' in search.formats in settings.yml",
             404: "SearXNG instance not found. Check your instance URL.",
             500: "SearXNG server error. Check instance health.",
             503: "SearXNG service unavailable."
         }
-        friendly_msg = error_messages.get(e.code, f"SearXNG error: {error_detail}")
+        friendly_msg = error_messages.get(e.code, "SearXNG error")
         raise ProviderRequestError(f"{friendly_msg} (HTTP {e.code})", status_code=e.code, transient=e.code in TRANSIENT_HTTP_CODES)
     except URLError as e:
         reason = str(getattr(e, "reason", e))
@@ -1720,7 +1705,7 @@ def extract_serper(
         try:
             data = make_request(api_url, headers, {"url": url, "includeMarkdown": True}, timeout=timeout)
             if data.get("error"):
-                results.append(_normalize_extract_result("serper", url, error=str(data.get("error"))))
+                results.append(_normalize_extract_result("serper", url, error="Serper scrape failed"))
                 continue
             # Field names are parsed tolerantly in case Serper renames them.
             markdown = data.get("markdown") or ""

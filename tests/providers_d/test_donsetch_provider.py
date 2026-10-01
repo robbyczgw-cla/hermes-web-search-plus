@@ -535,7 +535,7 @@ def test_child_env_pins_stdio_transport_even_when_host_sets_http(monkeypatch):
     monkeypatch.setenv("OTHER_HOST_VAR", "keep-me")
     env = module["_child_env"]()
     assert env["DONSETCH_TRANSPORT"] == "stdio"
-    assert env["OTHER_HOST_VAR"] == "keep-me"
+    assert "OTHER_HOST_VAR" not in env
     assert os.environ.get("DONSETCH_TRANSPORT") == "http"
 
 

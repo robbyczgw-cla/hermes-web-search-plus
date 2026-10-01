@@ -272,7 +272,13 @@ This local endpoint override is separate from the safety check on extraction **t
 }
 ```
 
-The guard validates the initial extraction target before provider dispatch. If a local/self-hosted backend follows redirects itself, re-validating post-redirect targets is a provider-layer hardening follow-up.
+The guard validates the initial extraction target before any provider or fallback runs. It rejects URLs that Python and a browser-grade (WHATWG) parser could read differently: backslashes, whitespace and control characters, userinfo, percent-escaped or non-ASCII hostnames (only punycode passes), and ambiguous numeric IPv4 forms such as `0177.0.0.1`, `0x7f.1` or `2130706433`. It then checks literal IPs (including IPv4-mapped and NAT64 IPv6) and every DNS answer for loopback, private, link-local, multicast and other non-global ranges.
+
+**Residual risk: this is a pre-flight check, not a network boundary.** The URL is handed to a remote extractor or browser that resolves DNS and follows redirects on its own. A host can answer with a public address during the check and an internal one during the fetch (DNS rebinding), and a public page can redirect to an internal address. Neither can be closed from inside WSP. If the final fetcher can reach internal networks, enforce egress on the fetcher itself: block private, loopback, link-local and metadata ranges at its network layer, validate every redirect hop and every resolved address at connect time, and run it without credentials or access to internal services. A self-hosted backend such as GroktoCrawl needs exactly this policy.
+
+### Untrusted web content
+
+Search and extract results contain titles, snippets, URLs and page text written by third parties. Tool output now starts with a notice saying so before any of that text appears. It is defense in depth for the calling agent, not a sandbox: do not pass result text into privileged tool parameters, and do not follow instructions found in it. Provider error text is never reflected to the model either; errors carry a fixed message plus the HTTP or provider status code.
 
 ### Routing debug walkthrough
 

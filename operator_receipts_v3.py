@@ -138,17 +138,30 @@ class OperatorReceiptJournal:
         finally:
             os.close(descriptor)
 
+    @staticmethod
+    def _open_lock(flags: int, directory_descriptor: int) -> int:
+        """Create/open the lock file, retrying only a transient ENOENT.
+
+        Concurrent first-use O_CREAT|O_NOFOLLOW can report ENOENT on macOS.
+        Every other error (symlink, ownership, permissions) still fails closed,
+        and the retry count is small and fixed.
+        """
+        attempts = 5
+        for attempt in range(attempts):
+            try:
+                return os.open(".receipts.lock", flags, 0o600, dir_fd=directory_descriptor)
+            except FileNotFoundError:
+                if attempt == attempts - 1:
+                    raise
+                time.sleep(0.005 * (attempt + 1))
+        raise AssertionError("unreachable")
+
     @contextmanager
     def _locked(self) -> Iterator[int]:
         with self._journal_directory() as directory_descriptor:
             flags = os.O_RDWR | os.O_CREAT | os.O_CLOEXEC
             flags |= getattr(os, "O_NOFOLLOW", 0)
-            descriptor = os.open(
-                ".receipts.lock",
-                flags,
-                0o600,
-                dir_fd=directory_descriptor,
-            )
+            descriptor = self._open_lock(flags, directory_descriptor)
             try:
                 lock_stat = os.fstat(descriptor)
                 if (

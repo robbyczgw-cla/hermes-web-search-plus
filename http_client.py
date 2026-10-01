@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from email.utils import parsedate_to_datetime
 from http.client import IncompleteRead
-import gzip
 import http.client
 import io
 import json
@@ -33,6 +32,11 @@ _KEEPALIVE_IDLE_SECONDS = 30.0
 _KEEPALIVE_MAX_IDLE_PER_HOST = 8
 _MAX_REDIRECTS = 10
 _REDIRECT_CODES = {301, 302, 303, 307, 308}
+
+# Wire bytes read from the socket and bytes after Content-Encoding decoding are
+# limited separately, so a small compressed body cannot expand without bound.
+MAX_WIRE_RESPONSE_BYTES = 16 * 1024 * 1024
+MAX_DECODED_RESPONSE_BYTES = 16 * 1024 * 1024
 # Errors that mean a reused idle socket was already closed by the server.
 _STALE_CONNECTION_ERRORS = (
     http.client.RemoteDisconnected,
@@ -150,6 +154,106 @@ def _proxy_applies(scheme: str, host: str | None) -> bool:
     return not (host and _urllib_request.proxy_bypass(host))
 
 
+def _too_large() -> "ProviderRequestError":
+    return ProviderRequestError("Provider response too large; refusing to read it.", transient=False)
+
+
+def _redirect_blocked(reason: str) -> "ProviderRequestError":
+    return ProviderRequestError(f"Provider redirect blocked ({reason}).", transient=False)
+
+
+def _origin(url: str):
+    """(scheme, host, effective port) or None when the URL is not plain HTTP(S)."""
+    try:
+        parts = urlsplit(url)
+        scheme = (parts.scheme or "").lower()
+        host = (parts.hostname or "").lower()
+        port = parts.port
+    except ValueError:
+        return None
+    if scheme not in {"http", "https"} or not host:
+        return None
+    return scheme, host, port or (443 if scheme == "https" else 80)
+
+
+def _same_origin(a: str, b: str) -> bool:
+    first, second = _origin(a), _origin(b)
+    return first is not None and first == second
+
+
+def _check_redirect(old_url: str, new_url: str) -> None:
+    """Allow only exact same-origin redirects; credentials travel with the request."""
+    if not isinstance(new_url, str) or any(ord(ch) <= 0x20 or ord(ch) == 0x7F or ch == "\\" for ch in new_url):
+        raise _redirect_blocked("ambiguous target")
+    try:
+        netloc = urlsplit(new_url).netloc
+    except ValueError:
+        raise _redirect_blocked("malformed target") from None
+    if "@" in netloc:
+        raise _redirect_blocked("userinfo in target")
+    if _origin(new_url) is None:
+        raise _redirect_blocked("unsupported scheme or host")
+    if not _same_origin(old_url, new_url):
+        raise _redirect_blocked("different origin")
+
+
+class _SameOriginRedirectHandler(_urllib_request.HTTPRedirectHandler):
+    def http_error_302(self, req, fp, code, msg, headers):
+        # Validate before urllib parses Location itself (it raises ValueError on
+        # malformed targets and would otherwise skip the origin check).
+        location = headers.get("location") or headers.get("uri")
+        if location:
+            try:
+                target = urljoin(req.full_url, location)
+            except ValueError:
+                raise _redirect_blocked("malformed target") from None
+            _check_redirect(req.full_url, target)
+        return super().http_error_302(req, fp, code, msg, headers)
+
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_redirect(req.full_url, newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _safe_opener():
+    """urllib opener with same-origin redirects and no file:/ftp:/data: handlers.
+
+    Built per call on purpose: ProxyHandler snapshots the proxy environment at
+    construction, and a cached opener would freeze it.
+    """
+    # Explicit handler list: filtering opener.handlers afterwards leaves
+    # file:/ftp:/data: registered in opener.handle_open.
+    opener = _urllib_request.OpenerDirector()
+    for handler in (
+        _urllib_request.ProxyHandler(),
+        _urllib_request.UnknownHandler(),
+        _urllib_request.HTTPHandler(),
+        _urllib_request.HTTPSHandler(),
+        _SameOriginRedirectHandler(),
+        _urllib_request.HTTPDefaultErrorHandler(),
+        _urllib_request.HTTPErrorProcessor(),
+    ):
+        opener.add_handler(handler)
+    return opener
+
+
+def _read_bounded_wire(response) -> bytes:
+    """Read at most MAX_WIRE_RESPONSE_BYTES from a response, or refuse."""
+    declared = _response_header(response, "Content-Length").strip()
+    if declared.isdigit() and int(declared) > MAX_WIRE_RESPONSE_BYTES:
+        raise _too_large()
+    try:
+        raw = response.read(MAX_WIRE_RESPONSE_BYTES + 1)
+    except TypeError:
+        # Duck-typed responses whose read() takes no size argument.
+        raw = response.read()
+    if len(raw) > MAX_WIRE_RESPONSE_BYTES:
+        raise _too_large()
+    return raw
+
+
 def _send_once(key: tuple, method: str, target: str, data, headers: dict, timeout: float):
     """Send one request, retrying once on a fresh socket if a reused one was stale."""
     conn, reused = _POOL.acquire(key, timeout)
@@ -157,7 +261,7 @@ def _send_once(key: tuple, method: str, target: str, data, headers: dict, timeou
         try:
             conn.request(method, target, body=data, headers=headers)
             response = conn.getresponse()
-            body = response.read()
+            body = _read_bounded_wire(response)
         except _STALE_CONNECTION_ERRORS:
             conn.close()
             if not reused:
@@ -194,12 +298,15 @@ def _pooled_open(req: Request, timeout: float):
             # Mirror urllib: follow any redirect for GET/HEAD, and 301/302/303
             # for other methods as a body-less GET.
             if status in _REDIRECT_CODES and location and (method in {"GET", "HEAD"} or status in {301, 302, 303}):
-                url = urljoin(url, location)
+                try:
+                    next_url = urljoin(url, location)
+                except ValueError:
+                    raise _redirect_blocked("malformed target") from None
+                _check_redirect(url, next_url)
+                url = next_url
                 if method not in {"GET", "HEAD"}:
                     method, data = "GET", None
                     headers = {k: v for k, v in headers.items() if k.lower() not in {"content-type", "content-length"}}
-                if urlsplit(url).scheme.lower() not in {"http", "https"}:
-                    break
                 continue
             if not 200 <= status < 300:
                 raise HTTPError(url, status, reason, resp_headers, io.BytesIO(body))
@@ -213,14 +320,19 @@ def _pooled_open(req: Request, timeout: float):
 
 
 def urlopen(req, timeout: float = 30):
-    """Drop-in for urllib.request.urlopen that reuses keep-alive connections."""
+    """Drop-in for urllib.request.urlopen: HTTP(S) only, same-origin redirects only."""
+    url = req.full_url if isinstance(req, Request) else str(req)
+    if _origin(url) is None:
+        raise ProviderRequestError("Provider URL must be an http(s) URL.", transient=False)
     if not isinstance(req, Request) or not _keepalive_enabled():
-        return _urllib_request.urlopen(req, timeout=timeout)
-    parts = urlsplit(req.full_url)
+        return _safe_opener().open(req, timeout=timeout)
+    parts = urlsplit(url)
     scheme = parts.scheme.lower()
-    if scheme not in {"http", "https"} or _proxy_applies(scheme, parts.hostname):
-        return _urllib_request.urlopen(req, timeout=timeout)
+    if _proxy_applies(scheme, parts.hostname):
+        return _safe_opener().open(req, timeout=timeout)
     return _pooled_open(req, timeout)
+
+
 DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/4.3.1"
 
 
@@ -258,14 +370,35 @@ def _response_header(response, name: str) -> str:
     return ""
 
 
+def _bounded_inflate(raw: bytes, wbits: int) -> bytes:
+    """Decompress raw (possibly multi-member) data, never exceeding the decoded limit."""
+    out = bytearray()
+    data = raw
+    while True:
+        inflater = zlib.decompressobj(wbits)
+        chunk = inflater.decompress(data, MAX_DECODED_RESPONSE_BYTES - len(out) + 1)
+        out += chunk
+        if len(out) > MAX_DECODED_RESPONSE_BYTES:
+            raise _too_large()
+        if not inflater.eof:
+            raise zlib.error("truncated stream")
+        data = inflater.unused_data
+        if not data or wbits == -zlib.MAX_WBITS:
+            return bytes(out)
+        if wbits > 15 and not data.startswith(b"\x1f\x8b"):
+            return bytes(out)
+
+
 def _read_response_body(response) -> bytes:
-    """Read an urllib response body and decode supported Content-Encoding values."""
-    raw = response.read()
+    """Read a bounded body and decode supported Content-Encoding values (bounded)."""
+    raw = _read_bounded_wire(response)
+    if not raw:
+        return raw
     encoding = _response_header(response, "Content-Encoding").strip().lower()
 
     if encoding in {"gzip", "x-gzip"} or raw.startswith(b"\x1f\x8b"):
         try:
-            return gzip.decompress(raw)
+            return _bounded_inflate(raw, 16 + zlib.MAX_WBITS)
         except (OSError, EOFError, zlib.error):
             raise ProviderRequestError(
                 "Provider sent a corrupted gzip response body. Please retry.",
@@ -273,11 +406,11 @@ def _read_response_body(response) -> bytes:
             )
     if encoding == "deflate":
         try:
-            return zlib.decompress(raw)
+            return _bounded_inflate(raw, zlib.MAX_WBITS)
         except zlib.error:
             # Some servers send raw deflate without the zlib wrapper.
             try:
-                return zlib.decompress(raw, -zlib.MAX_WBITS)
+                return _bounded_inflate(raw, -zlib.MAX_WBITS)
             except zlib.error:
                 raise ProviderRequestError(
                     "Provider sent a corrupted deflate response body. Please retry.",
@@ -289,6 +422,8 @@ def _read_response_body(response) -> bytes:
             "Disable brotli for this provider or install a brotli-capable transport.",
             transient=False,
         )
+    if len(raw) > MAX_DECODED_RESPONSE_BYTES:
+        raise _too_large()
     return raw
 
 
@@ -311,7 +446,8 @@ def _read_json_response(response) -> dict:
         )
 
 
-def _friendly_http_error(code: int, error_detail: str) -> str:
+def _friendly_http_error(code: int, error_detail: str = "") -> str:
+    """Controlled message per status. Provider-supplied text is never reflected."""
     error_messages = {
         401: "Invalid or expired API key. Please check your credentials.",
         403: "Access forbidden. Your API key may not have permission for this operation.",
@@ -319,20 +455,7 @@ def _friendly_http_error(code: int, error_detail: str) -> str:
         500: "Server error. The search provider is experiencing issues.",
         503: "Service unavailable. The search provider may be down.",
     }
-    return error_messages.get(code, f"API error: {error_detail}")
-
-
-def _extract_http_error_detail(error: HTTPError) -> str:
-    try:
-        error_body = _read_response_body(error).decode("utf-8", errors="replace") if error.fp else str(error)
-    except (ProviderRequestError, OSError):
-        # A corrupted error body must not mask the HTTP status we are reporting.
-        return str(error)
-    try:
-        error_json = json.loads(error_body)
-        return error_json.get("error") or error_json.get("message") or error_body
-    except json.JSONDecodeError:
-        return error_body[:500]
+    return error_messages.get(code, "API error")
 
 
 def _parse_retry_after(error: HTTPError) -> float | None:
@@ -354,8 +477,7 @@ def _parse_retry_after(error: HTTPError) -> float | None:
 
 
 def _raise_provider_http_error(error: HTTPError) -> None:
-    error_detail = _extract_http_error_detail(error)
-    friendly_msg = _friendly_http_error(error.code, error_detail)
+    friendly_msg = _friendly_http_error(error.code)
     raise ProviderRequestError(
         f"{friendly_msg} (HTTP {error.code})",
         status_code=error.code,

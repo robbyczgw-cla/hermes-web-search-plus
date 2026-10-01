@@ -203,9 +203,11 @@ def test_proxy_env_falls_back_to_urllib(server, monkeypatch):
     sentinel.__enter__.return_value = sentinel
     sentinel.read.return_value = b'{"via": "urllib"}'
     sentinel.getheader.return_value = None
-    with mock.patch("urllib.request.urlopen", return_value=sentinel) as fallback:
+    opener = mock.MagicMock()
+    opener.open.return_value = sentinel
+    with mock.patch.object(http_client, "_safe_opener", return_value=opener):
         assert make_get_request(f"{base}/json", {}) == {"via": "urllib"}
-    fallback.assert_called_once()
+    opener.open.assert_called_once()
 
 
 def test_keepalive_can_be_disabled(server, monkeypatch):

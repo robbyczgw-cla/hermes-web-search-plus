@@ -296,7 +296,7 @@ class SerperExtractTests(unittest.TestCase):
     def test_extract_error_field_in_payload_becomes_error_item(self):
         with mock.patch("search.make_request", return_value={"error": "Not enough credits"}):
             result = search.extract_serper(["https://example.com"], "k")
-        self.assertEqual(result["results"][0]["error"], "Not enough credits")
+        self.assertEqual(result["results"][0]["error"], "Serper scrape failed")
 
     def test_extract_plus_uses_scrape_url_override_from_config(self):
         captured = {}
