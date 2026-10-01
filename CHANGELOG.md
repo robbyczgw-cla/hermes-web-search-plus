@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [v4.3.3] — 2026-10-01
+
+### Fixed
+
+- Extract converts internationalized hostnames (`müller.de`, `straße.de`, `例え.jp`) to punycode and validates and fetches the converted URL, instead of rejecting them as 4.3.2 did. Labels that mix scripts, use compatibility characters (fullwidth forms, dot variants) or are invalid IDNA are still rejected.
+- Documentation: the same-origin redirect rule applies to the HTTP client that calls provider APIs. It does not affect the pages you extract.
+
 ## [v4.3.2] — 2026-10-01
 
 ### Security

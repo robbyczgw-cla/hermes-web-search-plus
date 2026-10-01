@@ -181,10 +181,79 @@ def _reject_url(url: str, reason: str) -> ExtractUrlSecurityError:
     return ExtractUrlSecurityError(f"Extraction URL blocked: {reason}: {shown}")
 
 
+_IDNA_DEVIATION_CHARS = frozenset("\u00df\u03c2\u200c\u200d")
+
+
+def _label_scripts(label: str) -> set:
+    """Scripts used by the letters of a label (Japanese Han/kana count as one)."""
+    scripts = set()
+    for ch in label:
+        if not ch.isalpha():
+            continue
+        name = unicodedata.name(ch, "UNKNOWN").split(" ", 1)[0]
+        scripts.add("JAPANESE" if name in {"CJK", "HIRAGANA", "KATAKANA"} else name)
+    return scripts
+
+
+def _idn_to_ascii_url(url: str) -> str:
+    """Return ``url`` with a non-ASCII host converted to its punycode form.
+
+    The converted URL is what gets validated *and* what the fetcher receives, so
+    both sides read the same host. With the optional ``idna`` package conversion
+    is IDNA 2008 (as browsers do, so ``straße.de`` stays distinct from
+    ``strasse.de``); without it the stdlib codec is used and the few characters
+    where the two standards differ are refused. Compatibility characters such as
+    fullwidth letters or dot variants are rejected, not mapped.
+    """
+    scheme, sep, rest = url.partition("://")
+    if not sep:
+        return url
+    authority, tail_sep, remainder = rest.partition("/")
+    for mark in ("?", "#"):
+        if mark in authority:
+            authority, _, extra = authority.partition(mark)
+            remainder = mark + extra + (tail_sep + remainder if tail_sep else "")
+            tail_sep = ""
+            break
+    if "@" in authority or authority.startswith("[") or "%" in authority:
+        return url
+    host, colon, port = authority.partition(":")
+    if host.isascii():
+        return url
+    try:  # optional: IDNA 2008 like browsers; the stdlib codec is IDNA 2003
+        import idna
+    except ImportError:
+        idna = None
+    labels = []
+    for label in host.split("."):
+        if label.isascii():
+            labels.append(label)
+            continue
+        label = unicodedata.normalize("NFC", label.lower())
+        if any(unicodedata.normalize("NFKC", ch) != ch for ch in label):
+            raise _reject_url(url, "non-ASCII hostname with compatibility characters")
+        if len(_label_scripts(label)) > 1:
+            raise _reject_url(url, "hostname label mixes scripts")
+        try:
+            if idna is not None:
+                labels.append(idna.encode(label, uts46=False).decode("ascii"))
+            else:
+                # IDNA 2003 maps these differently from browsers (ß -> ss); refuse
+                # them so the converted URL never names a different site.
+                if any(ch in _IDNA_DEVIATION_CHARS for ch in label):
+                    raise _reject_url(url, "hostname needs the 'idna' package (deviation character)")
+                labels.append(label.encode("idna").decode("ascii"))
+        except (UnicodeError, ValueError) as exc:
+            if isinstance(exc, ExtractUrlSecurityError):
+                raise
+            raise _reject_url(url, "invalid internationalized hostname") from None
+    return f"{scheme}://{'.'.join(labels)}{colon}{port}{tail_sep}{remainder}"
+
+
 def _strict_url_host(url: str) -> tuple[str, int]:
     """Return (host, port) using only syntax every URL parser reads the same way.
 
-    The validated string is passed unchanged to a remote or browser fetcher, so
+    The validated string is what a remote or browser fetcher receives, so
     anything Python's urlparse and a WHATWG parser could read differently is
     rejected instead of normalised.
     """
@@ -260,6 +329,7 @@ def _validate_extract_urls(urls: List[str], config: Optional[Dict[str, Any]] = N
         raise ValueError(f"Invalid URL(s) — must start with http:// or https://: {invalid}")
     allow_private = _extract_allows_private_urls(config)
 
+    urls = [_idn_to_ascii_url(u) for u in urls]
     for url in urls:
         hostname, port = _strict_url_host(url)
         if allow_private:
