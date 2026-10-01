@@ -181,6 +181,9 @@ def _reject_url(url: str, reason: str) -> ExtractUrlSecurityError:
     return ExtractUrlSecurityError(f"Extraction URL blocked: {reason}: {shown}")
 
 
+_IDNA_DEVIATION_CHARS = frozenset("\u00df\u03c2\u200c\u200d")
+
+
 def _label_scripts(label: str) -> set:
     """Scripts used by the letters of a label (Japanese Han/kana count as one)."""
     scripts = set()
@@ -196,9 +199,11 @@ def _idn_to_ascii_url(url: str) -> str:
     """Return ``url`` with a non-ASCII host converted to its punycode form.
 
     The converted URL is what gets validated *and* what the fetcher receives, so
-    both sides read the same host. Conversion is IDNA2008 (as browsers do, so
-    ``straße.de`` stays distinct from ``strasse.de``). Compatibility characters
-    such as fullwidth letters or dot variants are rejected, not mapped.
+    both sides read the same host. With the optional ``idna`` package conversion
+    is IDNA 2008 (as browsers do, so ``straße.de`` stays distinct from
+    ``strasse.de``); without it the stdlib codec is used and the few characters
+    where the two standards differ are refused. Compatibility characters such as
+    fullwidth letters or dot variants are rejected, not mapped.
     """
     scheme, sep, rest = url.partition("://")
     if not sep:
@@ -215,10 +220,10 @@ def _idn_to_ascii_url(url: str) -> str:
     host, colon, port = authority.partition(":")
     if host.isascii():
         return url
-    try:
+    try:  # optional: IDNA 2008 like browsers; the stdlib codec is IDNA 2003
         import idna
     except ImportError:
-        raise _reject_url(url, "non-ASCII hostname (install the 'idna' package or use punycode)") from None
+        idna = None
     labels = []
     for label in host.split("."):
         if label.isascii():
@@ -230,8 +235,17 @@ def _idn_to_ascii_url(url: str) -> str:
         if len(_label_scripts(label)) > 1:
             raise _reject_url(url, "hostname label mixes scripts")
         try:
-            labels.append(idna.encode(label, uts46=False).decode("ascii"))
-        except (idna.IDNAError, UnicodeError):
+            if idna is not None:
+                labels.append(idna.encode(label, uts46=False).decode("ascii"))
+            else:
+                # IDNA 2003 maps these differently from browsers (ß -> ss); refuse
+                # them so the converted URL never names a different site.
+                if any(ch in _IDNA_DEVIATION_CHARS for ch in label):
+                    raise _reject_url(url, "hostname needs the 'idna' package (deviation character)")
+                labels.append(label.encode("idna").decode("ascii"))
+        except (UnicodeError, ValueError) as exc:
+            if isinstance(exc, ExtractUrlSecurityError):
+                raise
             raise _reject_url(url, "invalid internationalized hostname") from None
     return f"{scheme}://{'.'.join(labels)}{colon}{port}{tail_sep}{remainder}"
 

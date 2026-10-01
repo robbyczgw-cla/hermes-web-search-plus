@@ -186,7 +186,6 @@ def test_syntax_checks_still_apply_when_private_urls_are_allowed():
     [
         ("https://m\u00fcller.de/a?q=1", "https://xn--mller-kva.de/a?q=1"),
         ("https://B\u00dcCHER.example:8443/x", "https://xn--bcher-kva.example:8443/x"),
-        ("http://stra\u00dfe.example/", "http://xn--strae-oqa.example/"),
         ("https://\u4f8b\u3048.jp/", "https://xn--r8jz45g.jp/"),
         ("https://sub.m\u00fcller.de./", "https://sub.xn--mller-kva.de./"),
     ],
@@ -234,3 +233,50 @@ def test_idn_url_reaches_provider_only_as_punycode(monkeypatch):
         search.extract_plus(["https://m\u00fcller.de/"], provider="firecrawl", config={"extract": {}})
     urls = provider.call_args[0][0]
     assert urls == ["https://xn--mller-kva.de/"]
+
+
+# --- stdlib-only path (the plugin must not require the optional idna package) ---
+
+@pytest.fixture
+def no_idna_package(monkeypatch):
+    import builtins
+    real = builtins.__import__
+
+    def fake(name, *a, **k):
+        if name == "idna":
+            raise ImportError("idna hidden for test")
+        return real(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", fake)
+
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        ("https://m\u00fcller.de/a", "https://xn--mller-kva.de/a"),
+        ("https://B\u00dcCHER.example:8443/x", "https://xn--bcher-kva.example:8443/x"),
+        ("https://\u4f8b\u3048.jp/", "https://xn--r8jz45g.jp/"),
+    ],
+)
+def test_idn_conversion_works_without_the_idna_package(monkeypatch, no_idna_package, url, expected):
+    monkeypatch.setattr(extract.socket, "getaddrinfo", _resolver("93.184.216.34"))
+    assert extract._validate_extract_urls([url], config={}) == [expected]
+
+
+@pytest.mark.parametrize("url", ["https://stra\u00dfe.example/", "https://\u03c3\u03c2.example/", "https://a\u200db.example/"])
+def test_deviation_characters_are_refused_without_the_idna_package(no_dns, no_idna_package, url):
+    with pytest.raises((extract.ExtractUrlSecurityError, ValueError)):
+        extract._validate_extract_urls([url], config={})
+
+
+def test_requirements_stay_free_of_idna():
+    from pathlib import Path
+    text = (Path(__file__).resolve().parents[1] / "requirements.txt").read_text()
+    assert "idna" not in text
+
+
+def test_sharp_s_uses_idna_2008_when_the_package_is_installed(monkeypatch):
+    pytest.importorskip("idna")
+    monkeypatch.setattr(extract.socket, "getaddrinfo", _resolver("93.184.216.34"))
+    out = extract._validate_extract_urls(["http://stra\u00dfe.example/"], config={})
+    assert out == ["http://xn--strae-oqa.example/"]
