@@ -60,9 +60,8 @@ AMBIGUOUS_URLS = [
     "http://user:pass@example.com/",
     "http://example.com:80@127.0.0.1/",
     "https://PUBLIC...test@127.0.0.1/admin",
-    # Unicode hostnames and confusables (only punycode is accepted).
+    # Unicode confusables and compatibility characters (valid IDN hosts are converted, see below).
     "http://exаmple.com/",  # Cyrillic a
-    "http://例え.jp/",
     "http://ｅxample.com/",  # fullwidth e
     "http://ex\u200bample.com/",  # zero-width space
     "http://①②⑦.0.0.1/",  # enclosed digits that NFKC-fold to 127
@@ -178,3 +177,60 @@ def test_syntax_checks_still_apply_when_private_urls_are_allowed():
     with pytest.raises(extract.ExtractUrlSecurityError):
         extract._validate_extract_urls(["http://127.0.0.1\\@example.com/"], config=config)
     assert extract._validate_extract_urls(["http://10.0.0.5/ok"], config=config) == ["http://10.0.0.5/ok"]
+
+
+# --- IDN hosts: converted to punycode, then validated; the fetcher gets the ASCII form ---
+
+@pytest.mark.parametrize(
+    "url, expected",
+    [
+        ("https://m\u00fcller.de/a?q=1", "https://xn--mller-kva.de/a?q=1"),
+        ("https://B\u00dcCHER.example:8443/x", "https://xn--bcher-kva.example:8443/x"),
+        ("http://stra\u00dfe.example/", "http://xn--strae-oqa.example/"),
+        ("https://\u4f8b\u3048.jp/", "https://xn--r8jz45g.jp/"),
+        ("https://sub.m\u00fcller.de./", "https://sub.xn--mller-kva.de./"),
+    ],
+)
+def test_idn_hosts_are_converted_and_the_converted_url_is_returned(monkeypatch, url, expected):
+    seen = []
+
+    def fake(host, port, *args, **kwargs):
+        seen.append(host)
+        return _resolver("93.184.216.34")(host, port)
+
+    monkeypatch.setattr(extract.socket, "getaddrinfo", fake)
+    assert extract._validate_extract_urls([url], config={}) == [expected]
+    assert all(h.isascii() for h in seen) and seen
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://exam\uff45ple.com/",          # fullwidth letter
+        "https://127\u30021\u30020\u30021/",    # ideographic full stops
+        "https://exam\uff0eple.com/",          # fullwidth full stop
+        "https://a\u2024b.com/",               # one dot leader
+        "https://ex\u200bample.com/",          # zero width space
+        "https://exam\u2215ple.com/",          # division slash
+        "https://\u00fc" + "a" * 70 + ".de/",    # over-long label
+        "https://m\u00fcller..de/",             # empty label
+        "https://\u00fc@example.com/",         # userinfo still rejected
+    ],
+)
+def test_idn_lookalikes_and_structure_characters_are_still_rejected(no_dns, url):
+    with pytest.raises((extract.ExtractUrlSecurityError, ValueError)):
+        extract._validate_extract_urls([url], config={})
+
+
+def test_idn_host_that_maps_to_a_private_ip_literal_is_rejected(no_dns):
+    with pytest.raises((extract.ExtractUrlSecurityError, ValueError)):
+        extract._validate_extract_urls(["https://\u00bc.example/"], config={})
+
+
+def test_idn_url_reaches_provider_only_as_punycode(monkeypatch):
+    monkeypatch.setattr(extract.socket, "getaddrinfo", _resolver("93.184.216.34"))
+    with mock.patch("search.extract_firecrawl") as provider:
+        provider.return_value = {"provider": "firecrawl", "results": []}
+        search.extract_plus(["https://m\u00fcller.de/"], provider="firecrawl", config={"extract": {}})
+    urls = provider.call_args[0][0]
+    assert urls == ["https://xn--mller-kva.de/"]
