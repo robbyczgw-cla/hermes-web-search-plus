@@ -71,7 +71,8 @@ class SerpBaseProviderTests(unittest.TestCase):
         with mock.patch.object(search, "make_request", return_value={"status": 1020, "message": "insufficient credits"}):
             with self.assertRaises(search.ProviderRequestError) as ctx:
                 search.search_serpbase("query", "serpbase-test-key-12345")
-        self.assertIn("SerpBase error 1020", str(ctx.exception))
+        self.assertIn("provider status 1020", str(ctx.exception))
+        self.assertNotIn("insufficient credits", str(ctx.exception))
 
     def test_auto_router_excludes_serpbase_and_querit_when_auto_allow_false(self):
         config = search._deepcopy_default_config()

@@ -6,10 +6,11 @@ import os
 import re
 import socket
 import time
+import unicodedata
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse  # noqa: F401 - kept for downstream imports
 
 from budget_preflight_v3 import daily_preflight_budget as _daily_preflight_budget
 
@@ -144,9 +145,102 @@ def _extract_allows_private_urls(config: Dict[str, Any]) -> bool:
     return extract_config.get("allow_private_urls") is True
 
 
+_NAT64_PREFIX = ipaddress.ip_network("64:ff9b::/96")
+_NUMERIC_LABEL = re.compile(r"^(?:0[xX][0-9a-fA-F]*|[0-9]+)$")
+_STRICT_IPV4 = re.compile(r"^(?:0|[1-9][0-9]{0,2})(?:\.(?:0|[1-9][0-9]{0,2})){3}$")
+_HOST_LABEL = re.compile(r"^[A-Za-z0-9_](?:[A-Za-z0-9_-]*[A-Za-z0-9_])?$")
+
+
 def _is_private_or_internal_ip(value: str) -> bool:
+    """True for any address that is not plainly public, including embedded IPv4."""
     ip = ipaddress.ip_address(value)
-    return (not ip.is_global) or ip.is_multicast
+    if isinstance(ip, ipaddress.IPv6Address):
+        embedded = ip.ipv4_mapped
+        if embedded is None and int(ip) >> 32 == 0:
+            # Deprecated IPv4-compatible ::/96 (::127.0.0.1); ::1 and :: are caught below.
+            embedded = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+        if embedded is None and int(ip) >> 32 == 0xFFFF0000:
+            # SIIT ::ffff:0:a.b.c.d
+            embedded = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+        if ip.is_site_local or ip.is_reserved:
+            return True
+        if embedded is None and ip in _NAT64_PREFIX:
+            embedded = ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+        if embedded is None and ip.sixtofour is not None:
+            embedded = ip.sixtofour
+        if embedded is None and ip.teredo is not None:
+            return True
+        if embedded is not None:
+            return _is_private_or_internal_ip(str(embedded))
+    return (not ip.is_global) or ip.is_multicast or ip.is_reserved
+
+
+def _reject_url(url: str, reason: str) -> ExtractUrlSecurityError:
+    shown = url if len(url) <= 120 else url[:117] + "..."
+    shown = "".join(ch if ch.isprintable() else "?" for ch in shown)
+    return ExtractUrlSecurityError(f"Extraction URL blocked: {reason}: {shown}")
+
+
+def _strict_url_host(url: str) -> tuple[str, int]:
+    """Return (host, port) using only syntax every URL parser reads the same way.
+
+    The validated string is passed unchanged to a remote or browser fetcher, so
+    anything Python's urlparse and a WHATWG parser could read differently is
+    rejected instead of normalised.
+    """
+    for ch in url:
+        if ch == "\\":
+            raise _reject_url(url, "backslash in URL")
+        if ord(ch) <= 0x20 or ord(ch) == 0x7F:
+            raise _reject_url(url, "whitespace or control character in URL")
+        if ord(ch) > 0x7F and unicodedata.category(ch)[0] in {"C", "Z"}:
+            raise _reject_url(url, "invisible or separator character in URL")
+    scheme, sep, rest = url.partition("://")
+    if not sep or scheme.lower() not in {"http", "https"}:
+        raise ValueError(f"Invalid URL — must start with http:// or https://: {url}")
+    authority = re.split(r"[/?#]", rest, maxsplit=1)[0]
+    if not authority:
+        raise ValueError(f"Invalid URL — hostname is required: {url}")
+    if "@" in authority:
+        raise _reject_url(url, "userinfo is not allowed")
+    if authority.startswith("["):
+        close = authority.find("]")
+        if close == -1:
+            raise _reject_url(url, "malformed IPv6 literal")
+        host, tail = authority[1:close], authority[close + 1 :]
+        if "%" in host:
+            raise _reject_url(url, "IPv6 zone identifiers are not allowed")
+        try:
+            ipaddress.IPv6Address(host)
+        except ValueError:
+            raise _reject_url(url, "malformed IPv6 literal") from None
+        port_text = tail[1:] if tail.startswith(":") else ""
+        if tail and not tail.startswith(":"):
+            raise _reject_url(url, "malformed authority")
+    else:
+        host, colon, port_text = authority.partition(":")
+        if not colon:
+            port_text = ""
+        if "%" in host:
+            raise _reject_url(url, "percent-escaped hostname")
+        if not host.isascii():
+            raise _reject_url(url, "non-ASCII hostname (use punycode)")
+        host = host.lower()
+        bare = host.rstrip(".")
+        if not bare:
+            raise ValueError(f"Invalid URL — hostname is required: {url}")
+        labels = bare.split(".")
+        if _NUMERIC_LABEL.match(labels[-1]):
+            # Browsers read this as IPv4 in decimal/octal/hex/short forms.
+            if not _STRICT_IPV4.match(bare) or any(int(part) > 255 for part in labels):
+                raise _reject_url(url, "ambiguous numeric IPv4 host")
+        elif not all(_HOST_LABEL.match(label) for label in labels):
+            raise _reject_url(url, "invalid hostname")
+        host = bare
+    if port_text and not (port_text.isascii() and port_text.isdigit() and int(port_text) <= 65535):
+        raise _reject_url(url, "invalid port")
+    default_port = 443 if scheme.lower() == "https" else 80
+    return host, int(port_text) if port_text else default_port
 
 
 def _validate_extract_urls(urls: List[str], config: Optional[Dict[str, Any]] = None) -> List[str]:
@@ -154,20 +248,23 @@ def _validate_extract_urls(urls: List[str], config: Optional[Dict[str, Any]] = N
 
     Provider endpoint URLs are operator-controlled config and are intentionally
     not checked here. This guard only covers user/agent-controlled target URLs.
+
+    Syntax checks always run. Network checks (blocked names, private literals,
+    DNS answers) are skipped only for ``extract.allow_private_urls``. A
+    pre-flight DNS check cannot stop DNS rebinding or redirects followed by the
+    final fetcher; that needs a fetcher-side egress policy.
     """
     config = config or {}
     invalid = [u for u in urls if not (isinstance(u, str) and u.startswith(("http://", "https://")))]
     if invalid:
         raise ValueError(f"Invalid URL(s) — must start with http:// or https://: {invalid}")
-    if _extract_allows_private_urls(config):
-        return urls
+    allow_private = _extract_allows_private_urls(config)
 
     for url in urls:
-        parsed = urlparse(url)
-        hostname = (parsed.hostname or "").strip().lower().rstrip(".")
-        if not hostname:
-            raise ValueError(f"Invalid URL — hostname is required: {url}")
-        if hostname in _BLOCKED_EXTRACT_HOSTS:
+        hostname, port = _strict_url_host(url)
+        if allow_private:
+            continue
+        if hostname in _BLOCKED_EXTRACT_HOSTS or hostname.endswith(".localhost"):
             raise ExtractUrlSecurityError(f"Extraction URL blocked: {hostname} is private/internal")
 
         try:
@@ -179,13 +276,12 @@ def _validate_extract_urls(urls: List[str], config: Optional[Dict[str, Any]] = N
                 raise ExtractUrlSecurityError(f"Extraction URL blocked: {hostname} is private/internal")
             continue
 
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
         try:
             resolved_ips = socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP)
-        except socket.gaierror as exc:
+        except (socket.gaierror, UnicodeError) as exc:
             raise ExtractUrlSecurityError(f"Extraction URL blocked: cannot resolve hostname {hostname}") from exc
         for _family, _type, _proto, _canonname, sockaddr in resolved_ips:
-            ip = ipaddress.ip_address(sockaddr[0])
+            ip = ipaddress.ip_address(str(sockaddr[0]).split("%", 1)[0])
             if _is_private_or_internal_ip(str(ip)):
                 raise ExtractUrlSecurityError(
                     f"Extraction URL blocked: {hostname} resolves to private/internal IP {ip}"

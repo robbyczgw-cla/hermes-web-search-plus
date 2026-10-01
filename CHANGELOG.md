@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [v4.3.2] — 2026-10-01
+
+### Security
+
+- Extract rejects URLs that parse differently across URL parsers (backslash, userinfo, percent-escaped or non-ASCII hosts, ambiguous IPv4) and checks literal IPs and DNS answers, including IPv6 embedded-IPv4 forms.
+- The HTTP client follows only same-origin redirects, so credentials are not forwarded to another origin; the urllib path is http(s)-only.
+- Option-like values behind variadic CLI flags are rejected before a subprocess starts.
+- Responses are limited to 16 MiB on the wire and after decoding.
+- Provider-supplied error text is no longer passed to the model.
+- Results carry an untrusted-web-data notice; DonSeTch runs with an allowlisted environment.
+- Lock creation for receipts retries a transient ENOENT; `fast-uri` 3.1.8.
+
+### Changed
+
+- Redirects across host, port or scheme now fail, and error messages carry a fixed text plus the status code.
+
 ## [v4.3.1] — 2026-09-23
 
 ### Changed
