@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v4.3.4] — 2026-10-07
+
 ### Fixed
 
 - First run without keys: `setup.py status` no longer reports `ready` when no search provider is configured. The profile check moves to `policy_ready`.
@@ -12,6 +14,7 @@
 - `search.py --extract-urls` exits 1 and writes to stderr when no URL returned content.
 - The status dashboard shows `--preset starter` and the reload hint only when they apply; commands use `python3`.
 - Setup presets are defined once in `provider_registry.py` and shared by the wizard and error guidance.
+- DonSeTch: closing a session lets the stderr reader finish before the pipe is closed, so the sanitized stderr excerpt is no longer lost and the reader thread no longer raises `ValueError`.
 
 ## [v4.3.3] — 2026-10-01
 
