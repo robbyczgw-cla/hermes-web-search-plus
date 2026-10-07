@@ -328,8 +328,9 @@ class ExtractPlusCoreTests(unittest.TestCase):
             timeout=30,
         )
 
-        self.assertEqual(completed.returncode, 0, completed.stderr)
-        result = json.loads(completed.stdout)
+        self.assertEqual(completed.returncode, 1, completed.stderr)
+        self.assertEqual(completed.stdout, "")
+        result = json.loads(completed.stderr)
         self.assertEqual(result["results"], [])
         self.assertEqual(result["error"], "No URLs provided")
 

@@ -15,6 +15,7 @@ from urllib.parse import urlparse  # noqa: F401 - kept for downstream imports
 from budget_preflight_v3 import daily_preflight_budget as _daily_preflight_budget
 
 from config import (
+    add_provider_setup_guidance,
     ProviderConfigError,
     SELF_HOSTED_EXTRACT_PROVIDER_IDS,
     get_api_key,
@@ -667,6 +668,8 @@ def _execute_extract_v3(
             "error": "All extraction providers failed",
             "fallback_errors": fallback_errors,
         }
+        add_provider_setup_guidance(payload, "extract", list(plan.candidate_order), config,
+                                    requested_provider=str(request.routing.get("provider") or "auto"))
     else:
         routing = payload.setdefault("routing", {})
         routing["requested_provider"] = str(

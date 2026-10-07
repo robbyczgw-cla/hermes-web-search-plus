@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- First run without keys: `setup.py status` no longer reports `ready` when no search provider is configured. The profile check moves to `policy_ready`.
+- Status counts keys and keyless opt-ins stored in the plugin config, not only `.env`.
+- Search and extract with no configured provider fail with `error_type: provider_setup_required`, the setup command for the matching preset, and that preset's env vars.
+- An explicitly requested provider without a key fails with `requested_provider_not_configured` and `setup.py setup <provider>`, even when other providers are configured.
+- Missing-key hints point to `setup.py setup <provider>` and the profile `.env` instead of inline keys in `config.json`.
+- `search.py --extract-urls` exits 1 and writes to stderr when no URL returned content.
+- The status dashboard shows `--preset starter` and the reload hint only when they apply; commands use `python3`.
+- Setup presets are defined once in `provider_registry.py` and shared by the wizard and error guidance.
+
 ## [v4.3.3] — 2026-10-01
 
 ### Fixed

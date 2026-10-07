@@ -55,6 +55,7 @@ from budget_preflight_v3 import daily_preflight_budget as _daily_preflight_budge
 
 from config import (  # noqa: F401 - re-exported for backward-compatible tests/imports
     DEFAULT_CONFIG,
+    add_provider_setup_guidance,
     ProviderConfigError,
     SELF_HOSTED_SEARCH_PROVIDER_IDS,
     _clean_env_value,
@@ -1076,7 +1077,15 @@ def main():
             config=config,
         )
         indent = None if args.compact else 2
-        print(json.dumps(result, indent=indent, ensure_ascii=False))
+        succeeded = not result.get("error") and any(
+            isinstance(item, dict) and not item.get("error")
+            and any(item.get(field) for field in ("content", "text", "raw_content", "markdown", "html"))
+            for item in result.get("results", [])
+        )
+        print(json.dumps(result, indent=indent, ensure_ascii=False),
+              file=sys.stdout if succeeded else sys.stderr)
+        if not succeeded:
+            sys.exit(1)
         return
     
     if not args.query and not args.similar_url:
@@ -1615,9 +1624,16 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             # Missing/invalid local credentials are configuration errors, not
             # provider health failures. Do not poison shared cooldown state for
             # a provider the runtime never actually contacted.
+            try:
+                detail = json.loads(str(e))
+            except (ValueError, TypeError):
+                detail = {}
+            if not isinstance(detail, dict):
+                detail = {}
             errors.append({
                 "provider": current_provider,
-                "error": str(e),
+                "error": detail.get("error") or str(e),
+                **{key: detail[key] for key in ("env_var", "how_to_fix") if key in detail},
             })
             continue
         except Exception as e:
@@ -1747,6 +1763,8 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             "provider_errors": errors,
             "cooldown_skips": cooldown_skips,
         }
+        add_provider_setup_guidance(error_result, "search", eligible_providers, config,
+                                    requested_provider=getattr(args, "provider", None) or "auto")
         return error_result, 1
 
 
@@ -2185,6 +2203,8 @@ def _execute_search_v3(
                 for receipt in receipts
             ],
         }
+        add_provider_setup_guidance(payload, "search", list(plan.candidate_order), config,
+                                    requested_provider=str(request.routing.get("provider") or "auto"))
     else:
         routing = payload.setdefault("routing", {})
         requested = str(request.routing.get("provider") or "auto")

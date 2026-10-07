@@ -20,6 +20,7 @@ from provider_registry import (
     KEYLESS_PROVIDER_IDS,
     PROVIDER_SPECS,
     keyless_public_env_var,
+    preset_env_vars,
 )
 
 
@@ -960,6 +961,36 @@ def provider_configured(provider: str, config: Dict[str, Any] = None) -> bool:
     return keyless_public_allowed(provider, config)
 
 
+def add_provider_setup_guidance(
+    payload: Dict[str, Any], capability: str, providers: List[str], config: Dict[str, Any],
+    *, requested_provider: str = "auto",
+) -> None:
+    """Annotate an existing failure when none of its candidates is configured.
+
+    This is diagnostic only: do not alter routing, admission, retries or receipts.
+    Configured keyless endpoints count as available without requiring a key.
+    """
+    candidates = list(dict.fromkeys(p for p in providers if p in PROVIDER_SPECS))
+    if not candidates or any(provider_configured(p, config) for p in candidates):
+        return
+    explicit = requested_provider in candidates
+    preset = "self-hosted" if is_self_hosted_profile(config) else ("extract" if capability == "extract" else "starter")
+    target = requested_provider if explicit else f"--preset {preset}"
+    command = f"python3 ~/.hermes/plugins/web-search-plus/setup.py setup {target}"
+    message = (f"Requested provider '{requested_provider}' is not configured." if explicit
+               else f"No configured {capability} provider is available for this request.")
+    payload.update({
+        "error": f"{message} Run: {command}",
+        "error_type": "requested_provider_not_configured" if explicit else "provider_setup_required",
+        "env_vars": ([PROVIDER_SPECS[requested_provider].env_var] if explicit
+                     else preset_env_vars(preset)),
+        "how_to_fix": [
+            command,
+            "Store API keys in your Hermes profile .env, not inline in config.json. Keyless public endpoints require explicit opt-in.",
+        ],
+    })
+
+
 def _validate_searxng_url(url: str) -> str:
     """Validate and sanitize SearXNG instance URL to prevent SSRF.
 
@@ -1083,8 +1114,9 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[s
             "env_var": env_var,
             "how_to_fix": [
                 f"1. Get your API key from {spec.signup_url}",
-                f"2. Add to config.json: \"{provider}\": {{\"api_key\": \"your-key\"}}",
-                f"3. Or set environment variable: export {env_var}=\"your-key\"",
+                f"2. Run: python3 ~/.hermes/plugins/web-search-plus/setup.py setup {provider}",
+                f"3. Or add {env_var} to your Hermes profile .env",
+                f"4. Or set environment variable: export {env_var}=\"your-key\"",
             ],
             "provider": provider
         }

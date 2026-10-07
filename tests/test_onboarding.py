@@ -51,9 +51,10 @@ def test_provider_catalog_has_recommended_starter_metadata():
     catalog = wsp._get_provider_catalog()
     by_provider = {item["provider"]: item for item in catalog}
 
-    assert by_provider["tavily"]["recommended"] is True
-    assert by_provider["tavily"]["env"] == "TAVILY_API_KEY"
-    assert by_provider["tavily"]["signup_url"].startswith("https://")
+    assert by_provider["serper"]["recommended"] is True
+    assert by_provider["tavily"]["recommended"] is False
+    assert by_provider["serper"]["env"] == "SERPER_API_KEY"
+    assert by_provider["serper"]["signup_url"].startswith("https://")
     assert "free" in by_provider["linkup"]["free_tier"].lower()
     assert "search" in by_provider["brave"]["capabilities"]
 
@@ -127,9 +128,10 @@ def test_setup_guidance_points_unconfigured_users_to_one_simple_path():
     assert "No single key is mandatory" in text
     assert "extraction-capable" in text
     assert "Recommended starter" in text
-    assert "TAVILY_API_KEY" in text
+    assert "SERPER_API_KEY" in text
+    assert "YOU_API_KEY" in text
     assert "LINKUP_API_KEY" in text
-    assert "python ~/.hermes/plugins/web-search-plus/setup.py setup" in text
+    assert "python3 ~/.hermes/plugins/web-search-plus/setup.py setup" in text
     assert "hermes web-search-plus setup" not in text
 
 

@@ -85,7 +85,8 @@ class InProcessSearchTests(unittest.TestCase):
             stack.enter_context(mock.patch.dict("os.environ", {}, clear=True))
             result = search.run_search_request(query="anything", provider="serpbase", count=1)
 
-        self.assertEqual(result["error"], "All providers failed")
+        self.assertEqual(result["error_type"], "requested_provider_not_configured")
+        self.assertIn("setup.py setup", result["error"])
         self.assertEqual(result["provider"], "serpbase")
         self.assertTrue(result["provider_errors"])
 

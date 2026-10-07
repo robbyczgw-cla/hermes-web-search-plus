@@ -49,7 +49,7 @@ _BUILTIN_PROVIDER_SPECS = (
         description="Google-like SERP results for facts, shopping, local and news queries, plus webpage scraping.",
         config_section="serper", supports_search=True, supports_extract=True,
         capability_labels=("search", "news", "shopping", "local", "extract"),
-        auto_allowed_by_default=True, free_tier="2,500 one-time credits",
+        auto_allowed_by_default=True, recommended=True, free_tier="2,500 one-time credits",
         signup_url="https://serper.dev/api-key",
     ),
     ProviderSpec(
@@ -72,7 +72,7 @@ _BUILTIN_PROVIDER_SPECS = (
         description="Research/tutorial provider in the Routing v2 default pool.",
         config_section="tavily", supports_search=True, supports_extract=True,
         capability_labels=("search", "extract", "research"), auto_allowed_by_default=True,
-        recommended=True, free_tier="1,000 free searches/month", signup_url="https://tavily.com",
+        free_tier="1,000 free searches/month", signup_url="https://tavily.com",
     ),
     ProviderSpec(
         provider="querit", env_var="QUERIT_API_KEY", display_name="Querit",
@@ -355,6 +355,24 @@ def doctor_catalog() -> Dict[str, Dict[str, object]]:
         }
         for provider, spec in PROVIDER_SPECS.items()
     }
+
+
+# Single source of truth for setup presets. Both the setup wizard and the
+# missing-key guidance read this, so the recommended command and the env vars
+# it lists cannot drift apart.
+SETUP_PRESETS: Dict[str, tuple[str, ...]] = {
+    "starter": ("you", "serper", "linkup"),
+    "lean": ("you", "linkup"),
+    "search": ("you", "serper", "exa", "firecrawl", "tavily", "linkup"),
+    "extract": ("linkup", "firecrawl", "tavily"),
+    "self-hosted": ("searxng", "keenable"),
+}
+
+
+def preset_env_vars(preset: str) -> list[str]:
+    """Return the env vars a named setup preset asks for, in registry order."""
+    names = set(SETUP_PRESETS[preset])
+    return [spec.env_var for spec in PROVIDER_SPECS.values() if spec.provider in names]
 
 
 def plugin_catalog() -> list[Dict[str, object]]:
