@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v4.3.3
+web-search-plus — Hermes Plugin v4.3.4
 Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "4.3.3"
+__version__ = "4.3.4"
 
 import argparse
 import getpass
@@ -45,6 +45,7 @@ try:  # Package load path used by Hermes plugin discovery.
         PROVIDER_SPECS,
         PROVIDER_STARTUP_DIAGNOSTICS,
         SEARCH_PROVIDER_IDS,
+        SETUP_PRESETS,
         keyless_public_env_var,
         plugin_catalog,
     )
@@ -67,6 +68,7 @@ except ImportError:  # Direct script/test imports from the plugin directory.
         PROVIDER_SPECS,
         PROVIDER_STARTUP_DIAGNOSTICS,
         SEARCH_PROVIDER_IDS,
+        SETUP_PRESETS,
         keyless_public_env_var,
         plugin_catalog,
     )
@@ -127,7 +129,7 @@ def _read_env_file(path: Path) -> Dict[str, str]:
     return values
 
 
-def _provider_config_status(env: Optional[Mapping[str, str]] = None) -> Dict[str, Any]:
+def _provider_config_status(env: Optional[Mapping[str, str]] = None, config: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """Describe configured providers by capability tier.
 
     No single provider key is globally required. Search and extraction are
@@ -140,8 +142,15 @@ def _provider_config_status(env: Optional[Mapping[str, str]] = None) -> Dict[str
     configured_search_count = 0
     configured_extract_count = 0
     for item in _PROVIDER_CATALOG:
-        key = item["env"]
-        configured = _clean_env_value(env.get(key) or "") is not None
+        key = str(item["env"])
+        spec = PROVIDER_SPECS[str(item["provider"])]
+        section = (config or {}).get(spec.config_section, {})
+        section = section if isinstance(section, Mapping) else {}
+        configured = _clean_env_value(str(section.get("api_key") or section.get("apiKey") or env.get(key) or "")) is not None
+        if spec.provider == "searxng":
+            configured = _is_well_formed_http_url(section.get("base_url") or section.get("instance_url") or env.get(key))
+        if spec.keyless:
+            configured = configured or is_truthy(section.get("allow_public")) or is_truthy(env.get(keyless_public_env_var(spec.provider)))
         configured_count += int(configured)
         capabilities = item.get("capabilities", [])
         if configured and "search" in capabilities:
@@ -334,7 +343,8 @@ def _build_fastpath_report(config_path: Optional[Path] = None) -> Dict[str, Any]
         {
             "id": "hermes_config_found",
             "ok": config_exists,
-            "detail": f"Hermes config inspected at {config_path}",
+            "detail": (f"Hermes config inspected at {config_path}" if config_exists
+                       else f"Hermes config missing at {config_path}"),
         },
         {
             "id": "legacy_web_toolset_disabled",
@@ -741,7 +751,9 @@ def _profile_status(config: Mapping[str, Any], env: Mapping[str, str]) -> Dict[s
     return {
         "active": profile,
         "effective_auto_pool": effective_pool,
-        "ready": profile != "self_hosted" or searxng_ready or keenable_ready,
+        "policy_ready": profile != "self_hosted" or searxng_ready or keenable_ready,
+        "ready": (profile != "self_hosted" or searxng_ready or keenable_ready)
+        and _provider_config_status(env, config)["search_configured"],
         "checks": checks,
     }
 
@@ -770,7 +782,7 @@ def _status_payload(env: Optional[Mapping[str, str]] = None, config: Optional[Ma
     active_env = env if env is not None else os.environ
     active_config = dict(config or _default_behavior_config())
     return {
-        "providers": _provider_config_status(active_env),
+        "providers": _provider_config_status(active_env, active_config),
         "profile": _profile_status(active_config, active_env),
         "routing": active_config,
         "donsetch": _donsetch_status(active_env, active_config),
@@ -814,9 +826,9 @@ def _capability_badge(enabled: bool, label: str, *, color: Optional[bool] = None
     return _style(rendered, "32;1" if enabled else "2", color=color)
 
 
-def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bool = False) -> str:
+def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bool = False, config: Optional[Mapping[str, Any]] = None) -> str:
     """Return concise user-facing onboarding guidance."""
-    status = _provider_config_status(env)
+    status = _provider_config_status(env, config)
     if fancy:
         return _render_status_dashboard(status)
 
@@ -842,7 +854,7 @@ def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bo
         "web-search-plus is installed but no provider keys are configured.",
         "No single key is mandatory, but at least one search-capable provider is needed for web_search_plus.",
         "Add LINKUP_API_KEY or another extraction-capable provider for web_extract_plus.",
-        "Run `python ~/.hermes/plugins/web-search-plus/setup.py setup` to walk through every supported provider, or add `--preset starter` for the short path.",
+        "Run `python3 ~/.hermes/plugins/web-search-plus/setup.py setup` to walk through every supported provider, or add `--preset starter` for the short path.",
         "",
         "Recommended starter providers:",
     ]
@@ -885,10 +897,14 @@ def _render_status_dashboard(status: Optional[Dict[str, Any]] = None, *, color: 
         lines.append("│ Starter: You + Serper + Linkup is the best first setup.")
     lines.extend([
         "╰─ Next commands",
-        "   python ~/.hermes/plugins/web-search-plus/setup.py setup",
-        "   python ~/.hermes/plugins/web-search-plus/setup.py list",
-        "   python ~/.hermes/plugins/web-search-plus/search.py --query \"Hermes Agent latest release\" --quality-report",
+        "   python3 ~/.hermes/plugins/web-search-plus/setup.py setup" + ("" if status["search_configured"] else " --preset starter"),
+        "   python3 ~/.hermes/plugins/web-search-plus/setup.py list",
     ])
+    if status["search_configured"]:
+        lines.extend([
+            "   After changing keys, start a fresh Hermes session (/reset) to reload them.",
+            "   python3 ~/.hermes/plugins/web-search-plus/search.py --query \"Hermes Agent latest release\" --quality-report",
+        ])
     return "\n".join(lines)
 
 
@@ -914,16 +930,8 @@ def _render_provider_catalog(*, json_output: bool = False, color: Optional[bool]
 def _providers_for_preset(preset: str) -> List[Dict[str, Any]]:
     """Return provider catalog entries for a named setup preset."""
     preset = preset.lower().strip().replace("_", "-")
-    if preset == "starter":
-        names = {"you", "serper", "linkup"}
-    elif preset == "lean":
-        names = {"you", "linkup"}
-    elif preset == "search":
-        names = {"you", "serper", "exa", "firecrawl", "tavily", "linkup"}
-    elif preset == "extract":
-        names = {"linkup", "firecrawl", "tavily"}
-    elif preset == "self-hosted":
-        names = {"searxng", "keenable"}
+    if preset in SETUP_PRESETS:
+        names = set(SETUP_PRESETS[preset])
     elif preset == "all":
         names = {item["provider"] for item in _PROVIDER_CATALOG}
     else:
@@ -1249,7 +1257,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
         if getattr(args, "json", False):
             print(json.dumps(payload, indent=2, sort_keys=True))
         else:
-            print(_render_setup_guidance(env=env, fancy=not getattr(args, "plain", False)))
+            print(_render_setup_guidance(env=env, fancy=not getattr(args, "plain", False), config=config))
             print("\n" + _routing_summary(config))
             donsetch = payload.get("donsetch") or {}
             if donsetch.get("binary_configured") or donsetch.get("state") != "missing":
@@ -1279,7 +1287,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
         config_path = Path(getattr(args, "config_path", None) or _get_plugin_config_path())
         config = _apply_setup_routing_args(_load_behavior_config(config_path), args)
         profile_preset = str(getattr(args, "preset", "") or "").lower().strip().replace("_", "-") == "self-hosted"
-        print(_render_status_dashboard(_provider_config_status(_read_env_file(env_path))))
+        print(_render_status_dashboard(_provider_config_status(_read_env_file(env_path), config)))
         print("\nSetup plan:")
         for item in catalog:
             rec = " recommended" if item.get("recommended") else ""

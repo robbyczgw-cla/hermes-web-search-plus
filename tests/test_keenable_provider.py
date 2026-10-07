@@ -247,7 +247,8 @@ class KeenableExtractTests(unittest.TestCase):
             result = search.run_search_request(query="config smoke", provider="keenable", config={})
 
         self.assertEqual(result["provider"], "keenable")
-        self.assertEqual(result["error"], "All providers failed")
+        self.assertEqual(result["error_type"], "requested_provider_not_configured")
+        self.assertIn("setup.py setup", result["error"])
         self.assertEqual(search.provider_in_cooldown("keenable"), (False, 0))
 
 

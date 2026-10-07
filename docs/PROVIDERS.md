@@ -35,6 +35,8 @@ until opted in with `setup.py config set-auto-allow <provider> on`.
 
 ### Serper
 
+*Recommended starter provider.*
+
 Google-like SERP results for facts, shopping, local and news queries, plus webpage scraping.
 
 ### SerpBase
@@ -46,8 +48,6 @@ Cheap Google-like SERP fallback; WSP exposes search only, explicit/fallback-only
 Independent general web index in the Routing v2 default pool.
 
 ### Tavily
-
-*Recommended starter provider.*
 
 Research/tutorial provider in the Routing v2 default pool.
 

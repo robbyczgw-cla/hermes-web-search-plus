@@ -557,7 +557,8 @@ class DonsetchSession:
                 if len(joined) > STDERR_LIMIT:
                     chunks = [joined[:STDERR_LIMIT]]
                     # Keep draining so the child cannot block on a full pipe.
-        except OSError:
+        except (OSError, ValueError):
+            # ValueError: close() shut the pipe while a read was in flight.
             pass
         self._stderr = "".join(chunks)[:STDERR_LIMIT]
         _remember_stderr(self._stderr)
@@ -629,6 +630,10 @@ class DonsetchSession:
                     process.wait(timeout=1)
                 except subprocess.TimeoutExpired:
                     pass
+        # The child has exited, so the reader sees EOF; let it drain before the
+        # pipe is closed, otherwise the captured stderr can be lost.
+        if self._stderr_thread is not None:
+            self._stderr_thread.join(timeout=1)
         if process.stderr is not None:
             try:
                 process.stderr.close()
