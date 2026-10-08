@@ -10,7 +10,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
+from urllib.parse import quote, urlencode
 from urllib.request import Request
 
 from .daemon_tasks import DaemonTask
@@ -24,6 +24,7 @@ from .http_client import (
     urlopen,
 )
 from .quality import _title_from_url
+from .urls import strip_tracking_params
 from .request_gate_v3 import validate_outbound_body, validate_provider_mode
 from .config import normalize_parallel_search_mode
 
@@ -330,20 +331,6 @@ def search_serper(
         "related_searches": [r.get("query") for r in data.get("relatedSearches", [])]
     }
 
-def _strip_tracking_params(url: str) -> str:
-    """Remove common SERP tracking params while preserving the canonical target URL."""
-    if not url:
-        return ""
-    parsed = urlparse(url)
-    tracking_prefixes = ("utm_",)
-    tracking_names = {"srsltid", "gclid", "fbclid", "mc_cid", "mc_eid"}
-    query = [
-        (key, value)
-        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        if key.lower() not in tracking_names and not key.lower().startswith(tracking_prefixes)
-    ]
-    return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
-
 def _serpbase_related_search_query(item: Any) -> Optional[str]:
     if isinstance(item, dict):
         return item.get("query") or item.get("title")
@@ -388,7 +375,7 @@ def search_serpbase(
     for i, item in enumerate(data.get("organic", [])[:max_results]):
         results.append({
             "title": item.get("title", ""),
-            "url": _strip_tracking_params(item.get("link", "") or item.get("url", "")),
+            "url": strip_tracking_params(item.get("link", "") or item.get("url", "")),
             "snippet": item.get("snippet", ""),
             "score": round(1.0 - i * 0.1, 2),
             "rank": item.get("rank") or item.get("position") or i + 1,

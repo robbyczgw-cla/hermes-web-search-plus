@@ -7,7 +7,7 @@ import unicodedata
 from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, List, Mapping
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from .contract_v3 import (
     AttemptOutcome,
@@ -24,20 +24,7 @@ from .contract_v3 import (
     SkipReason,
 )
 from .orchestrator_v3 import ProviderPlan
-
-
-def _canonical_url(value: str) -> str:
-    parsed = urlsplit(value)
-    host = (parsed.hostname or "").lower()
-    port = parsed.port
-    netloc = host
-    if port and not (
-        (parsed.scheme == "http" and port == 80)
-        or (parsed.scheme == "https" and port == 443)
-    ):
-        netloc = f"{host}:{port}"
-    path = parsed.path or "/"
-    return urlunsplit((parsed.scheme.lower(), netloc, path, parsed.query, ""))
+from .urls import canonical_url
 
 
 def _stable_id(prefix: str, *parts: object) -> str:
@@ -333,7 +320,7 @@ def _observation(
         "provider": provider,
         "endpoint_id": endpoint_id,
         "kind": kind,
-        "url": {"observed": observed_url, "canonical": _canonical_url(observed_url)},
+        "url": {"observed": observed_url, "canonical": canonical_url(observed_url)},
         "title": (
             unicodedata.normalize("NFC", str(item.get("title")))
             if item.get("title") is not None
@@ -388,7 +375,7 @@ def project_results_from_observations(
             clusters.setdefault(observation["url"]["canonical"], []).append(observation)
         emitted = set()
         for item in selected_items:
-            canonical = _canonical_url(str(item.get("url") or ""))
+            canonical = canonical_url(str(item.get("url") or ""))
             members = sorted(clusters.get(canonical) or [], key=_observation_order)
             if not members or canonical in emitted:
                 continue
