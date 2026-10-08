@@ -68,8 +68,6 @@ EXPECTED_SEARCH_KWARGS = {
     "exa": {"query", "api_key", "max_results", "search_type", "exa_depth", "category", "start_date", "end_date", "similar_url", "include_domains", "exclude_domains", "text_verbosity", "freshness"},
     "firecrawl": {"query", "api_key", "max_results", "country", "time_range", "sources", "include_domains", "exclude_domains", "scrape_markdown", "ignore_invalid_urls", "api_url", "timeout_ms"},
     "parallel": {"query", "api_key", "max_results", "include_domains", "exclude_domains", "api_url", "timeout", "client_model", "mode"},
-    "perplexity": {"query", "api_key", "max_results", "model", "api_url", "freshness", "provider_name"},
-    "kilo-perplexity": {"query", "api_key", "max_results", "model", "api_url", "freshness", "provider_name"},
     "you": {"query", "api_key", "max_results", "country", "language", "freshness", "safesearch", "include_news", "livecrawl"},
     "searxng": {"query", "instance_url", "max_results", "categories", "engines", "language", "time_range", "safesearch"},
     "keenable": {"query", "api_key", "max_results", "time_range", "include_domains", "public", "api_url", "timeout"},
@@ -78,7 +76,7 @@ EXPECTED_SEARCH_KWARGS = {
 # The provider function each search adapter must resolve (late) from the
 # calling module's namespace.
 EXPECTED_SEARCH_FUNCTION = {
-    provider: "search_perplexity" if provider in ("perplexity", "kilo-perplexity") else "search_" + provider
+    provider: "search_" + provider
     for provider in EXPECTED_SEARCH_KWARGS
 }
 

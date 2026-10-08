@@ -255,7 +255,6 @@ Outbound requests MUST NOT contain chat messages, system-answer instructions, or
 - Tavily: `include_answer=false`
 - Linkup: `outputType="searchResults"` only
 - Exa: never `deep` or `deep-reasoning`
-- Perplexity/Kilo: fail before network I/O unless a registry-verified source-only endpoint exists
 
 ## 10. Cache origin and legacy sanitization
 

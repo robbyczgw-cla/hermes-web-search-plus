@@ -35,8 +35,6 @@ class FreshnessMappingTests(unittest.TestCase):
             "firecrawl": {"day": "qdr:d", "week": "qdr:w", "month": "qdr:m", "year": "qdr:y"},
             "keenable": {"day": "1d", "week": "7d", "month": "1mo", "year": "1y"},
             "you": {"day": "day", "week": "week", "month": "month", "year": "year"},
-            "perplexity": {"day": "day", "week": "week", "month": "month", "year": "year"},
-            "kilo-perplexity": {"day": "day", "week": "week", "month": "month", "year": "year"},
             "searxng": {"day": "day", "week": "week", "month": "month", "year": "year"},
             "exa": {"hour": "hour", "day": "day", "week": "week", "month": "month", "year": "year"},
             "tavily": {"day": "day", "week": "week", "month": "month", "year": "year"},
@@ -215,11 +213,8 @@ class FreshnessRequestTests(unittest.TestCase):
 
         self.assertIn("freshness=day", captured["url"])
 
-    def test_perplexity_freshness_path_is_rejected_before_network(self):
-        with mock.patch("search.make_request") as request:
-            with self.assertRaisesRegex(ValueError, "no_verified_source_only_endpoint"):
-                search.search_perplexity(query="q", api_key="pplx-key", freshness="year")
-        request.assert_not_called()
+    def test_removed_provider_has_no_freshness_mapping(self):
+        self.assertIsNone(providers.map_freshness_for_provider("perplexity", "year"))
 
     def test_exa_request_includes_absolute_publication_bounds(self):
         captured = {}

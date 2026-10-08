@@ -191,10 +191,6 @@ DEFAULT_CONFIG = {
         "depth": "normal",
         "verbosity": "standard"
     },
-    "perplexity": {
-        "api_url": "https://api.perplexity.ai/chat/completions",
-        "model": "sonar-pro"
-    },
     "parallel": {
         "api_url": "https://api.parallel.ai/v1/search",
         "extract_url": "https://api.parallel.ai/v1/extract",
@@ -204,10 +200,6 @@ DEFAULT_CONFIG = {
         "mode": "fast",
         "max_chars_total": 120000,
         "max_chars_per_result": 60000
-    },
-    "kilo-perplexity": {
-        "api_url": "https://api.kilo.ai/api/gateway/chat/completions",
-        "model": "perplexity/sonar-pro"
     },
     "firecrawl": {
         "api_url": "https://api.firecrawl.dev/v2/search",
@@ -245,12 +237,15 @@ def _deepcopy_default_config() -> Dict[str, Any]:
 
 
 _ROUTING_PROVIDER_NAMES = set(PROVIDER_SPECS)
+REMOVED_PROVIDER_IDS = frozenset({"perplexity", "kilo-perplexity", "kilo_perplexity"})
+
+
+def _is_removed_provider_id(provider: str) -> bool:
+    return str(provider).strip().lower() in REMOVED_PROVIDER_IDS
 
 
 def _normalize_routing_provider_config(provider: str) -> str:
     normalized = (provider or "").strip().lower()
-    if normalized == "kilo_perplexity":
-        normalized = "kilo-perplexity"
     if normalized not in _ROUTING_PROVIDER_NAMES:
         raise ValueError(f"unknown routing provider: {provider}")
     return normalized
@@ -265,15 +260,21 @@ def _normalize_routing_provider_list_config(value: Any) -> List[str]:
         raise ValueError("provider list must be a string or list")
     providers = []
     seen = set()
+    removed_only = bool(raw_values)
     for raw in raw_values:
         if not raw:
             continue
+        if _is_removed_provider_id(raw):
+            continue
+        removed_only = False
         provider = _normalize_routing_provider_config(raw)
         if provider in seen:
             continue
         seen.add(provider)
         providers.append(provider)
     if not providers:
+        if removed_only:
+            return []
         raise ValueError("provider list cannot be empty")
     return providers
 
@@ -304,10 +305,14 @@ def _normalize_extract_provider_list_config(value: Any) -> List[str]:
         raise ValueError("extract provider list must be a string or list")
     providers = []
     seen = set()
+    removed_only = bool(raw_values)
     extract_providers = set(EXTRACT_PROVIDER_IDS)
     for raw in raw_values:
         if not raw:
             continue
+        if _is_removed_provider_id(raw):
+            continue
+        removed_only = False
         provider = _normalize_routing_provider_config(raw)
         if provider not in extract_providers:
             raise ValueError(f"provider does not support extraction: {provider}")
@@ -316,6 +321,8 @@ def _normalize_extract_provider_list_config(value: Any) -> List[str]:
         seen.add(provider)
         providers.append(provider)
     if not providers:
+        if removed_only:
+            return []
         raise ValueError("extract provider list cannot be empty")
     return providers
 
@@ -389,15 +396,23 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(auto, dict):
         raise ValueError("auto_routing must be an object")
     if config.get("default_provider"):
-        config["default_provider"] = _normalize_routing_provider_config(str(config["default_provider"]))
+        if _is_removed_provider_id(config["default_provider"]):
+            config["default_provider"] = DEFAULT_CONFIG["default_provider"]
+        else:
+            config["default_provider"] = _normalize_routing_provider_config(str(config["default_provider"]))
     if auto.get("fallback_provider"):
-        auto["fallback_provider"] = _normalize_routing_provider_config(str(auto["fallback_provider"]))
+        if _is_removed_provider_id(auto["fallback_provider"]):
+            auto["fallback_provider"] = DEFAULT_CONFIG["auto_routing"]["fallback_provider"]
+        else:
+            auto["fallback_provider"] = _normalize_routing_provider_config(str(auto["fallback_provider"]))
     if auto.get("provider_priority"):
         priority = _normalize_routing_provider_list_config(auto["provider_priority"])
+        if not priority:
+            priority = list(DEFAULT_CONFIG["auto_routing"]["provider_priority"])
         auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
     if auto.get("extract_provider_priority"):
         extract_priority = _normalize_extract_provider_list_config(auto["extract_provider_priority"])
-        auto["extract_provider_priority"] = _append_missing_extract_providers(extract_priority)
+        auto["extract_provider_priority"] = _append_missing_extract_providers(extract_priority or list(EXTRACT_PROVIDER_IDS))
     else:
         auto["extract_provider_priority"] = list(EXTRACT_PROVIDER_IDS)
     if "disabled_providers" in auto:
@@ -412,6 +427,8 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
             raise ValueError("auto_allow must be an object mapping provider names to booleans")
         normalized_allow = dict(DEFAULT_CONFIG["auto_routing"].get("auto_allow", {}))
         for raw_provider, allowed in raw_allow.items():
+            if _is_removed_provider_id(raw_provider):
+                continue
             provider = _normalize_routing_provider_config(str(raw_provider))
             normalized_allow[provider] = bool(allowed)
         auto["auto_allow"] = normalized_allow
@@ -896,6 +913,8 @@ def load_config() -> Dict[str, Any]:
             with open(config_path, encoding="utf-8") as f:
                 user_config = json.load(f)
                 for key, value in user_config.items():
+                    if key in REMOVED_PROVIDER_IDS:
+                        continue
                     if isinstance(value, dict) and key in config:
                         config[key] = {**config.get(key, {}), **value}
                     else:

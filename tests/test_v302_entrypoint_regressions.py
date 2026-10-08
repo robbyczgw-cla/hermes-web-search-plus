@@ -1096,10 +1096,8 @@ def test_bounded_extract_is_cached_and_receipted_after_limits(tmp_path, monkeypa
     }
 
 
-def test_public_metadata_does_not_advertise_rejected_answer_providers():
+def test_public_metadata_omits_removed_provider_ids():
     plugin_yaml = (ROOT / "plugin.yaml").read_text()
-    assert "PERPLEXITY_API_KEY" not in plugin_yaml
-    assert "KILOCODE_API_KEY" not in plugin_yaml
 
     spec = importlib.util.spec_from_file_location(
         "wsp_v302_metadata_under_test", ROOT / "__init__.py"
@@ -1117,10 +1115,8 @@ def test_public_metadata_does_not_advertise_rejected_answer_providers():
 
     context = Context()
     module.register(context)
-    search_schema = json.dumps(context.tools["web_search_plus"]["schema"]).lower()
-    assert "perplexity" not in search_schema
-    assert "kilo-perplexity" not in search_schema
-
-    guide = (ROOT / "docs" / "USER_GUIDE.md").read_text().lower()
-    assert "config disable perplexity" not in guide
-    assert "config enable perplexity" not in guide
+    provider_ids = {item["provider"] for item in module._get_provider_catalog()}
+    assert "perplexity" not in provider_ids
+    assert "kilo-perplexity" not in provider_ids
+    assert "PERPLEXITY_API_KEY" not in plugin_yaml
+    assert "KILOCODE_API_KEY" not in plugin_yaml

@@ -52,6 +52,7 @@ try:  # Package load path used by Hermes plugin discovery.
     from .env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, is_truthy, load_env_files
     from .cache import MAX_STORED_TEXT_CHARS, store_web_text
     from .config import (
+        REMOVED_PROVIDER_IDS,
         apply_profile_effects,
         load_config,
     )
@@ -74,7 +75,7 @@ except ImportError:  # Direct script/test imports from the plugin directory.
     )
     from env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, is_truthy, load_env_files
     from cache import MAX_STORED_TEXT_CHARS, store_web_text
-    from config import apply_profile_effects, load_config
+    from config import REMOVED_PROVIDER_IDS, apply_profile_effects, load_config
     import jev_setup
 
 try:
@@ -461,8 +462,6 @@ def _normalize_provider_name(provider: str) -> str:
 def _normalize_routing_provider(provider: str) -> str:
     """Normalize a provider that search.py can actually route to."""
     normalized = (provider or "").strip().lower()
-    if normalized == "kilo_perplexity":
-        normalized = "kilo-perplexity"
     if normalized not in _ROUTING_PROVIDER_NAMES:
         valid = ", ".join(sorted(_ROUTING_PROVIDER_NAMES))
         print(f"Unknown routing provider: {provider}. Valid routing providers: {valid}", file=sys.stderr)
@@ -522,10 +521,43 @@ def _append_missing_extract_providers(providers: List[str]) -> List[str]:
     return list(providers) + [provider for provider in _DEFAULT_EXTRACT_PROVIDER_PRIORITY if provider not in seen]
 
 
+def _drop_removed_provider_ids(user_config: Mapping[str, Any]) -> Dict[str, Any]:
+    """Forget provider IDs removed in 5.0 so old config files keep loading."""
+
+    def removed(value: Any) -> bool:
+        return str(value).strip().lower() in REMOVED_PROVIDER_IDS
+
+    def kept(values: Any) -> Any:
+        if isinstance(values, str):
+            return ",".join(v for v in values.split(",") if not removed(v))
+        if isinstance(values, list):
+            return [v for v in values if not removed(v)]
+        return values
+
+    cleaned = {key: value for key, value in user_config.items() if not removed(key)}
+    if removed(cleaned.get("default_provider") or ""):
+        cleaned.pop("default_provider")
+    auto = cleaned.get("auto_routing")
+    if isinstance(auto, Mapping):
+        auto = dict(auto)
+        if removed(auto.get("fallback_provider") or ""):
+            auto.pop("fallback_provider")
+        for key in ("provider_priority", "extract_provider_priority", "disabled_providers"):
+            if key in auto:
+                auto[key] = kept(auto[key])
+                if key != "disabled_providers" and not auto[key]:
+                    auto.pop(key)
+        if isinstance(auto.get("auto_allow"), Mapping):
+            auto["auto_allow"] = {k: v for k, v in auto["auto_allow"].items() if not removed(k)}
+        cleaned["auto_routing"] = auto
+    return cleaned
+
+
 def _merge_behavior_config(user_config: Mapping[str, Any]) -> Dict[str, Any]:
     config = _default_behavior_config()
     if not isinstance(user_config, Mapping):
         return config
+    user_config = _drop_removed_provider_ids(user_config)
     config["version"] = int(user_config.get("version", 1) or 1)
     profile = user_config.get("profile", "standard")
     if profile not in {"standard", "self_hosted"}:

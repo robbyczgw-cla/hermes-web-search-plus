@@ -4,7 +4,7 @@ from search import _choose_tie_winner
 
 
 class TieBreakerTests(unittest.TestCase):
-    PRIORITY = ["tavily", "querit", "exa", "perplexity",
+    PRIORITY = ["tavily", "querit", "exa",
                 "brave", "serper", "you", "searxng"]
 
     def test_single_winner_returns_same(self):

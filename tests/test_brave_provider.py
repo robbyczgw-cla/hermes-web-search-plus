@@ -46,7 +46,7 @@ class BraveProviderTests(unittest.TestCase):
     def test_query_analyzer_can_route_to_brave(self):
         config = search.DEFAULT_CONFIG.copy()
         config["auto_routing"] = dict(search.DEFAULT_CONFIG["auto_routing"])
-        config["auto_routing"]["provider_priority"] = ["brave", "serper", "tavily", "querit", "exa", "perplexity", "you", "searxng"]
+        config["auto_routing"]["provider_priority"] = ["brave", "serper", "tavily", "querit", "exa", "you", "searxng"]
         analyzer = QueryAnalyzer(config)
 
         env = {

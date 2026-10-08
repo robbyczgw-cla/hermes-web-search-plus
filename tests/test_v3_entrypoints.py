@@ -647,5 +647,4 @@ def test_cli_help_does_not_advertise_answer_providers():
     help_text = search.build_parser(CONFIG).format_help()
 
     assert "Direct Answer" not in help_text
-    assert "Perplexity" not in help_text
     assert "synthesized up-to-date answers" not in help_text

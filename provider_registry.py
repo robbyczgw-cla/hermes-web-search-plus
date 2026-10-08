@@ -111,21 +111,6 @@ _BUILTIN_PROVIDER_SPECS = (
         signup_url="https://platform.parallel.ai",
     ),
     ProviderSpec(
-        provider="perplexity", env_var="PERPLEXITY_API_KEY", display_name="Perplexity",
-        description="Rejected legacy answer endpoint; no source-only mode is registered.",
-        config_section="perplexity", supports_search=False, supports_extract=False,
-        capability_labels=(), auto_allowed_by_default=False,
-        signup_url="https://www.perplexity.ai/settings/api",
-        rejected_reason="no_verified_source_only_endpoint",
-    ),
-    ProviderSpec(
-        provider="kilo-perplexity", env_var="KILOCODE_API_KEY", display_name="Kilo Code Perplexity bridge",
-        description="Rejected legacy answer bridge; no source-only mode is registered.",
-        config_section="kilo-perplexity", supports_search=False, supports_extract=False,
-        capability_labels=(), auto_allowed_by_default=False, free_tier="Depends on Kilo account",
-        signup_url="https://kilo.ai", rejected_reason="no_verified_source_only_endpoint",
-    ),
-    ProviderSpec(
         provider="you", env_var="YOU_API_KEY", display_name="You.com",
         description="Fast Routing v2 core provider for current, multilingual, and LLM-ready search.",
         config_section="you", supports_search=True, supports_extract=True,
