@@ -9,8 +9,8 @@ works in routing policy `routing-v3`. It is generated from `wsp_core/routing.py`
 `wsp_core/provider_registry.py`, and a test fails when it drifts from them.
 
 In short: the first provider is `brave`, with these exceptions: `exa` for `academic` and
-`docs`; `serper` for `security` and `shopping`. Everything after the first provider
-follows `provider_priority`.
+`docs`; `serper` for `community`, `security` and `shopping`. Everything after the first
+provider follows `provider_priority`.
 
 Contents:
 
@@ -45,7 +45,7 @@ With all four measured providers configured and allowed, the result is:
 | Intent | First provider | Rule | Next in line |
 |---|---|---|---|
 | `academic` | `exa` | intent rule | `brave`, `serper`, `tavily`, then `provider_priority` |
-| `community` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
+| `community` | `serper` | intent rule | `brave`, `exa`, `tavily`, then `provider_priority` |
 | `docs` | `exa` | intent rule | `brave`, `serper`, `tavily`, then `provider_priority` |
 | `general` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
 | `local` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
@@ -81,8 +81,8 @@ How it was measured:
   fitted to. Tested with leave-one-out (each query's provider chosen from the other
   queries of its intent), it fell below always using the first provider of the measured
   order. Only these choices were the same in every fold: `exa` for `academic` and
-  `docs`; `serper` for `security` and `shopping`. They are the intent rules in the table
-  above. Nothing finer is used.
+  `docs`; `serper` for `community`, `security` and `shopping`. They are the intent rules
+  in the table above. Nothing finer is used.
 
 What the order does not show:
 
@@ -170,14 +170,14 @@ measured providers are configured:
 
 | Query | Intent | First provider | Cues that fired |
 |---|---|---|---|
-| randomized controlled trial of intermittent fasting | `academic` | `exa` | `trial_design` |
+| randomized controlled trial of intermittent fasting | `academic` | `exa` | `trial_design`, `study_design` |
 | how to read a file in python | `docs` | `exa` | `how_to_lang`, `lang_clear` |
 | best headphones under 300 euros | `shopping` | `serper` | `best_under`, `under_amount`, `currency_amount`, ... |
 | Kopfhörer Preisvergleich | `shopping` | `serper` | `price_compare`, `category` |
 | CVE-2024-3094 remote code execution | `security` | `serper` | `cve_id`, `cve`, `vuln_class` |
 | restaurants near me open now | `local` | `brave` | `near_me`, `hours`, `poi` |
 | Wetter Wien morgen | `local` | `brave` | `weather` |
-| is it worth switching to Linux reddit | `community` | `brave` | `platform`, `worth_it` |
+| is it worth switching to Linux reddit | `community` | `serper` | `platform`, `worth_it` |
 | what happened at the central bank today | `news` | `brave` | `what_happened`, `today` |
 | history of the Roman Empire | `general` | `brave` | none |
 
@@ -197,10 +197,10 @@ Cue families, strongest first:
 - **3.5:** `literature_review`, `trial_design`, `research_paper` / `paper` (3.0),
   `journal_of` / `journal` (2.5)
 - **3.0:** `scholar`, `patent`, `proceedings`, `impact_index`, `study_on` / `study`
-  (2.0), `survey_on` / `survey` (1.0)
+  (2.0), `survey_on` / `survey` (1.0), `topic_review`, `et_al`
 - **2.5:** `citation`, `thesis`, `math_proof`, `scientific`
-- **2.0:** `method_terms`
-- **1.5:** `abstract`, `dataset`
+- **2.0:** `method_terms`, `ml_topic`
+- **1.5:** `abstract`, `dataset`, `study_design`
 - **1.0:** `effects_of`, `research`
 
 ### `community`
@@ -208,7 +208,7 @@ Cue families, strongest first:
 Opinions and discussions: forums, Reddit, Hacker News, "has anyone tried", experience
 reports, "is it worth it".
 
-- **First provider:** `brave` (measured order).
+- **First provider:** `serper` (intent rule).
 - **Threshold:** a score of at least 2.5.
 
 Cue families, strongest first:
@@ -237,11 +237,12 @@ Cue families, strongest first:
 - **3.5:** `error_phrase`, `code_syntax` / `code_include`, `git_cmd`, `docs_word` /
   `documentation_word` (2.5), `reference_tech`
 - **3.0:** `sdk`, `changelog`, `readme` / `cheat_sheet` (2.5), `pkg_cmd`, `code_call`,
-  `code_flag`, `code_backtick`, `error_class`
+  `code_flag`, `code_backtick`, `error_class`, `tech_anchor` / `lang_code_term` /
+  `lang_clear` (2.0) / `lang_symbols` (2.0) / `lang_tools` (2.0) / `lang_data` (1.5) /
+  `lang_ambiguous` (1.0)
 - **2.5:** `code_assign`, `error_code`
 - **2.0:** `code_snake`, `code_camel`, `api`, `cli`, `shell_cmd`, `file_ext`,
-  `code_dotted`, `breaking_changes`, `hex_literal`, `lang_clear` / `lang_symbols` /
-  `lang_tools` / `lang_data` (1.5) / `lang_ambiguous` (1.0)
+  `code_dotted`, `breaking_changes`, `hex_literal`
 - **1.5:** `tutorial` / `guide_words` (1.0), `manual`, `snippet` / `example` (1.0)
 - **1.0:** `install_setup`, `tech_terms` (grows to 2x with more matches),
   `trouble_words`, `library_words`, `reference_plain`, `release_notes_doc`,

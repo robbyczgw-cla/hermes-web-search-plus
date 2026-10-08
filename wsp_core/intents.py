@@ -262,6 +262,20 @@ _cue("academic", "method_terms", 2.0,
 _cue("academic", "dataset", 1.5, r"\bdatasets?\b|\bcorpus\b|\bcorpora\b")
 _cue("academic", "survey_on", 3.0, r"\bsurvey on\b", group="survey")
 _cue("academic", "survey", 1.0, r"\bsurvey\b|\bstate[- ]of[- ]the[- ]art\b|\boverview of\b")
+# Machine-learning research topics: a weak anchor that needs "survey", "study",
+# "paper", ... to reach the threshold ("graph neural networks survey").
+_cue("academic", "ml_topic", 2.0,
+     r"\b(?:neural networks?|deep learning|machine learning|transformers?|language models?|llms?|"
+     r"diffusion models?|reinforcement learning|federated learning|graph neural|retrieval[- ]augmented|"
+     r"generative models?|computer vision|mixture of experts|contrastive learning|self-supervised|"
+     r"llm-as-a-judge)\b", group="ml_topic")
+_cue("academic", "study_design", 1.5,
+     r"\blongitudinal\b|\bcohort\b|\bcross-sectional\b|\bcase-control\b|\bprevalence\b|"
+     r"\bincidence\b|\bdouble-blind\b|\bplacebo\b|\brandomi[sz]ed\b", group="study_design")
+_cue("academic", "topic_review", 3.0,
+     r"\b(?:effects?|estimates?|evidence|outcomes?|mechanisms?|prevalence|efficacy|literature|narrative)"
+     r" review\b", group="review_kind")
+_cue("academic", "et_al", 3.0, r"\bet al\b")
 _cue("academic", "research", 1.0,
      r"\bresearch\w*|\bforsch\w+|\bchercheurs?\b|\binvestigadores\b|\bricercatori\b|\bevidence\b")
 
@@ -336,6 +350,27 @@ _cue("docs", "lang_symbols", 2.0, r"(?<![\w])(?:" + _LANG_SYMBOLS + r")(?![\w])"
 _cue("docs", "lang_tools", 2.0, r"\b(?:" + _LANG_TOOLS + r")(?![\w])", group="lang")
 _cue("docs", "lang_data", 1.5, r"\b(?:" + _LANG_DATA + r")(?![\w])", group="lang")
 _cue("docs", "lang_ambiguous", 1.0, r"\b(?:" + _LANG_AMBIG + r")\b", group="lang")
+# A tool or library name that means nothing outside programming is enough on its own
+# ("numpy broadcasting rules", "systemd service Restart=on-failure").
+_cue("docs", "tech_anchor", 3.0,
+     r"\b(?:typescript|javascript|golang|kotlin|powershell|graphql|webassembly|pytorch|tensorflow|numpy|"
+     r"django|fastapi|laravel|jquery|tailwind(?: ?css)?|kubernetes|k8s|terraform|ansible|"
+     r"postgres(?:ql)?|mysql|sqlite|mongodb|nginx|webpack|pytest|matplotlib|scikit-learn|sklearn|"
+     r"kubectl|cmake|asyncio|tokio|boto3|systemd|"
+     r"pydantic|sqlalchemy|github actions|gitlab ci|dockerfile|docker compose|celery|prisma|"
+     r"useeffect|usestate|usememo|typeorm|elasticsearch|opensearch|grpc|protobuf)(?![\w])", group="lang")
+# An ambiguous name (Swift, Rust, Java, pandas, ...) next to a programming term
+# ("Swift async let", "rust lifetime elision"; not "Taylor Swift", "rust on cast iron").
+_CODE_TERMS = (
+    r"async|await|concurrency|coroutines?|generics?|closures?|structs?|enums?|traits?|macros?|lifetimes?|"
+    r"borrow checker|compiler|interfaces?|lambdas?|annotations?|dataframes?|groupby|merge|join|"
+    r"dependency injection|unit tests?|threads?|streams?|iterators?|hooks?|components?|props|"
+    r"null safety|optionals?|pattern matching|type inference|garbage collect\w*"
+)
+_cue("docs", "lang_code_term", 3.0,
+     r"\b(?:" + _LANG_AMBIG + r"|pandas|python3?|scala|dart|elixir|bash)\b[^.?!\n]{0,40}?\b(?:" + _CODE_TERMS
+     + r")\b|\b(?:" + _CODE_TERMS + r")\b[^.?!\n]{0,40}?\b(?:" + _LANG_AMBIG + r"|pandas|scala|dart)\b",
+     group="lang")
 _cue("docs", "tutorial", 1.5,
      r"\btutorials?\b|\bhow-?tos?\b|\bwalkthrough\b|\bgetting started\b|\bquick-?start\b|"
      r"\btutoriel\b|\btutoriales\b|\bhandbook\b|\bcookbook\b", group="tut")
@@ -404,7 +439,7 @@ _cue("security", "vuln_class", 4.0,
      r"\bsql injection\b|\bxss\b|\bcsrf\b|\bssrf\b|\bremote code execution\b|\brce\b|"
      r"\bprivilege escalation\b|\bbuffer overflow\b|\buse[- ]after[- ]free\b|\bpath traversal\b|"
      r"\bdirectory traversal\b|\bcommand injection\b|\bauthentication bypass\b|\bauth bypass\b|"
-     r"\bcvss\b|\bcwe-\d+\b|\bsandbox escape\b|\bman[- ]in[- ]the[- ]middle\b")
+     r"\bcvss\b|\bcwe-\d+\b|\bsandbox escape\b|\binsecure deserializ\w+|\bdeserializ\w+ (?:attack|vulnerabilit\w*|security|exploit\w*|risk)|\bman[- ]in[- ]the[- ]middle\b")
 _cue("security", "cyber_words", 2.0,
      r"\bcyber ?security\b|\binfosec\b|\bit-sicherheit\b|\bcybersicherheit\b|\bciberseguridad\b|"
      r"\bcybersecurite\b|\bsicurezza informatica\b")

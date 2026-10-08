@@ -53,7 +53,7 @@ def test_community_forum_reviews_demotes_exa():
     routing = _route("best IEM under 300 euro erfahrungen forum measurements")
 
     assert routing["analysis_summary"]["routing_class"] == "community"
-    assert routing["provider"] == "brave"
+    assert routing["provider"] == "serper"
     assert routing["provider"] != "exa"
 
 
@@ -169,7 +169,7 @@ def test_arxiv_academic_routes_to_exa():
 def test_reddit_site_query_routes_away_from_exa():
     routing = _route("site:reddit.com r/hometheater Denon X4800H user impressions HDMI issues")
 
-    assert routing["provider"] == "brave"
+    assert routing["provider"] == "serper"
     assert routing["provider"] != "exa"
     assert routing["analysis_summary"]["routing_class"] == "community"
 

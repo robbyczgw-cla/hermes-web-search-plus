@@ -222,8 +222,11 @@ def infer_query_language(query: Optional[str]) -> Optional[str]:
 # in every leave-one-out fold. Security goes to Serper after a live A/B of the
 # 26 security queries with authority domains: authority hit@5 22/26 on v4.3.5,
 # 16/26 with Brave first, 23/26 with Serper first, at fewer output tokens.
+# Community goes to Serper for the same reason: on the 15 community queries
+# authority hit@5 stayed 15/15 in two live runs, at ~40% fewer tokens than Brave.
 INTENT_FIRST_PROVIDER: Dict[str, str] = {
     "academic": "exa",
+    "community": "serper",
     "docs": "exa",
     "security": "serper",
     "shopping": "serper",
