@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from env_loader import clean_env_value as _shared_clean_env_value, is_truthy, load_env_files
-from errors_v3 import ProviderConfigError
+from errors_v3 import MissingProviderKeyError, ProviderConfigError
 from provider_registry import (
     DEFAULT_AUTO_ALLOW,
     DEFAULT_PROVIDER_PRIORITY,
@@ -1099,18 +1099,7 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[s
     # Special handling for SearXNG - it needs instance URL, not API key
     if provider == "searxng":
         if not key:
-            error_msg = {
-                "error": "Missing SearXNG instance URL",
-                "env_var": "SEARXNG_INSTANCE_URL",
-                "how_to_fix": [
-                    "1. Set up your own SearXNG instance: https://docs.searxng.org/admin/installation.html",
-                    "2. Add to config.json: \"searxng\": {\"instance_url\": \"https://your-instance.example.com\"}",
-                    "3. Or set environment variable: export SEARXNG_INSTANCE_URL=\"https://your-instance.example.com\"",
-                    "Note: SearXNG requires a self-hosted instance with JSON format enabled.",
-                ],
-                "provider": provider
-            }
-            raise ProviderConfigError(json.dumps(error_msg))
+            raise MissingProviderKeyError(provider)
 
         # Validate URL format
         if not key.startswith(("http://", "https://")):
@@ -1126,21 +1115,7 @@ def validate_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[s
         return None
 
     if not key:
-        spec = PROVIDER_SPECS[provider]
-        env_var = spec.env_var
-
-        error_msg = {
-            "error": f"Missing API key for {provider}",
-            "env_var": env_var,
-            "how_to_fix": [
-                f"1. Get your API key from {spec.signup_url}",
-                f"2. Run: python3 ~/.hermes/plugins/web-search-plus/setup.py setup {provider}",
-                f"3. Or add {env_var} to your Hermes profile .env",
-                f"4. Or set environment variable: export {env_var}=\"your-key\"",
-            ],
-            "provider": provider
-        }
-        raise ProviderConfigError(json.dumps(error_msg))
+        raise MissingProviderKeyError(provider)
 
     if len(key) < 10:
         raise ProviderConfigError(json.dumps({

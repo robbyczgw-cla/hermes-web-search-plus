@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- Missing-key guidance in v3 errors is rebuilt from the provider registry for WSP's own missing-key error only. Before, any configuration error whose text had the same JSON shape could place its own setup steps in the response, and a message ending in a newline passed the shape check.
 - Perplexity and Kilo Code API keys no longer make search appear configured in tool availability checks or setup status.
 
 ### Tests
