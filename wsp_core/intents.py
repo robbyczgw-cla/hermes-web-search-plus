@@ -66,6 +66,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Dict, List, NamedTuple, Optional, Tuple
 
 __all__ = ["INTENTS", "IntentDecision", "classify_intent"]
@@ -831,7 +832,20 @@ def _build() -> Tuple[List[_Cue], List[Tuple[int, "re.Pattern[str]"]], Dict[str,
     return cues, units, {k: tuple(v) for k, v in by_prefix.items()}, tuple(always)
 
 
-_CUES, _UNITS, _BY_PREFIX, _ALWAYS = _build()
+@lru_cache(maxsize=1)
+def _tables() -> Tuple[List[_Cue], List[Tuple[int, "re.Pattern[str]"]], Dict[str, Tuple[int, ...]], Tuple[int, ...]]:
+    """The compiled cue table, built on first use so importing stays cheap."""
+    return _build()
+
+
+def __getattr__(name: str):
+    # Read-only access for tests and doc generators: intents._CUES, intents._UNITS, ...
+    tables = {"_CUES": 0, "_UNITS": 1, "_BY_PREFIX": 2, "_ALWAYS": 3}
+    if name in tables:
+        return _tables()[tables[name]]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 _WORD = re.compile(r"[a-z0-9]+")
 _PLACE = re.compile(
     r"\b(?:in|near|nearby|bei|nahe|dans|pres de|cerca de|vicino a|a|en)\s+[A-Z\u00c0-\u00dc][\w'-]+"
@@ -853,9 +867,10 @@ def _normalize(query: str) -> str:
 
 def _candidates(text: str) -> List[int]:
     """Indices (table order) of the units worth trying on ``text``."""
-    found = set(_ALWAYS)
+    _, _, by_prefix, always = _tables()
+    found = set(always)
     for prefix in {w[:3] for w in _WORD.findall(text)}:
-        hit = _BY_PREFIX.get(prefix)
+        hit = by_prefix.get(prefix)
         if hit:
             found.update(hit)
     return sorted(found)
@@ -865,12 +880,13 @@ def _evaluate(
     unit_indices: List[int], text: str, raw: str
 ) -> Tuple[Dict[str, float], Dict[str, float], Dict[str, List[str]]]:
     """Run the given units; return per-intent score, strongest single group, and cue names that fired."""
+    cues, units, _, _ = _tables()
     has_digit = _HAS_DIGIT.search(text) is not None
     has_upper = raw != raw.lower()
     hits: Dict[int, set] = {}
     for u in unit_indices:
-        cue_idx, rx = _UNITS[u]
-        cue = _CUES[cue_idx]
+        cue_idx, rx = units[u]
+        cue = cues[cue_idx]
         if cue.req and not any(
             has_digit if sub is _DIGIT else has_upper if sub is _UPPER else sub in text for sub in cue.req
         ):
@@ -885,7 +901,7 @@ def _evaluate(
     best: Dict[str, Dict[str, float]] = {}
     fired: Dict[str, List[str]] = {}
     for cue_idx in sorted(hits):
-        cue = _CUES[cue_idx]
+        cue = cues[cue_idx]
         weight = cue.weight
         if cue.multi:
             weight *= 1.0 + 0.5 * (min(len(hits[cue_idx]), 3) - 1)
@@ -942,5 +958,5 @@ def _classify_exhaustive(query: str) -> IntentDecision:
         return _EMPTY
     raw = query[:_MAX_QUERY_CHARS]
     text = _normalize(raw)
-    scores, peaks, fired = _evaluate(list(range(len(_UNITS))), text, raw)
+    scores, peaks, fired = _evaluate(list(range(len(_tables()[1]))), text, raw)
     return _decide(scores, peaks, fired)
