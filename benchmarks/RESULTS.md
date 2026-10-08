@@ -89,11 +89,36 @@ remaining growth comes from Exa results reaching the top 5 more often
 (1.73 -> 2.23 per answer); their snippets are long multi-passage highlights.
 
 Passage size was chosen with a judge (Grok 4.7, 0-3 "does this text help
-answer the query") that saw the three variants unlabelled, in a fixed order
-with the old excerpt first, for 53 extracted sources:
+answer the query") that saw the three variants unlabelled and in a random
+order per source, for 53 extracted sources:
 
 | summary shape | mean grade | useful (grade >= 2) |
 |---|---:|---:|
 | 1 x 500 characters (before) | 1.72 | 60% |
 | 2 x 300 characters | 2.02 | 75% |
 | 3 x 250 characters | 1.98 | 77% |
+
+## Long result snippets
+
+Exa highlights and Tavily content often run to 1,000-3,000 characters per
+result, and the tool output printed them whole. 60 long snippets from the
+recorded answers were judged as above (four unlabelled texts per result, random
+order): the full snippet, its first 1,200 characters, and query-ranked
+passages chosen from it.
+
+| shown | mean grade | useful (grade >= 2) | characters |
+|---|---:|---:|---:|
+| full snippet | 2.92 | 100% | 126,413 |
+| first 1,200 characters | 2.70 | 100% | 68,765 |
+| 3 x 400 query-ranked passages | 2.33 | 95% | 39,533 |
+| 2 x 300 query-ranked passages | 1.78 | 62% | 25,141 |
+
+Provider snippets are already query-selected excerpts, so selecting passages
+again loses context; the plain prefix keeps more. The tool output now shows
+the first 1,200 characters of a longer snippet (the payload keeps it whole).
+Output tokens on the recorded queries (core-4 replay):
+
+| mode | before: mean / p95 / max | first 1,200 characters: mean / p95 / max |
+|---|---:|---:|
+| normal (60 queries) | 1056 / 3328 / 4108 | 800 / 1487 / 1680 |
+| research (26 queries) | 2441 / 3126 / 3475 | 1405 / 1830 / 1980 |
