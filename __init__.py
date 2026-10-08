@@ -1679,7 +1679,16 @@ def _format_results(data: dict) -> str:
             url = src.get("url", "")
             content = (src.get("content") or src.get("raw_content") or "").strip()
             lines.append(f"{i}. {url}")
-            if content:
+            # One line per source: page line breaks would break the indentation
+            # and could make page text look like the next numbered source.
+            passages = [" ".join(str(p.get("text") or "").split()) for p in src.get("passages") or [] if isinstance(p, dict)]
+            passages = [text for text in passages if text]
+            if passages:
+                noun = "passage" if len(passages) == 1 else "passages"
+                lines.append(
+                    f"   {' … '.join(passages)} [showing {len(passages)} query-ranked {noun} of {len(content)} characters]"
+                )
+            elif content:
                 lines.append(f"   {_source_summary_excerpt(content, query)}")
         lines.append("")
 
