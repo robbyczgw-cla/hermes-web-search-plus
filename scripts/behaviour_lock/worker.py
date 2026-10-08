@@ -370,12 +370,22 @@ class ReplayTransport(Transport):
                          "error": error, "param_distance": _param_distance(best.get("params") or {},
                                                                             request["params"])})
         status = int(best.get("status") or 200)
-        payload = json.dumps(best["body"]).encode("utf-8") if "body" in best else base64.b64decode(
+        body = best.get("body")
+        requested = {v for k, v in request["params"].items() if k.startswith("body.urls[")}
+        if requested and isinstance(body, dict):
+            # A recorded extraction batch covers the union of several variants'
+            # URLs; answer only for the URLs this request asked for.
+            body = {key: [item for item in value if not isinstance(item, dict) or item.get("url") in requested]
+                    if isinstance(value, list) else value for key, value in body.items()}
+        payload = json.dumps(body).encode("utf-8") if "body" in best else base64.b64decode(
             best.get("body_b64") or b"")
         if fault == "empty":
             payload = json.dumps({"results": [], "organic": [], "web": {"results": []},
                                   "data": {"web": []}}).encode("utf-8")
         return status, {"Content-Type": "application/json"}, payload
+
+
+_CLASS_SWAP_LOCK = threading.Lock()
 
 
 class RecordTransport(Transport):
@@ -392,7 +402,15 @@ class RecordTransport(Transport):
         kwargs = {"timeout": conn.timeout}
         if conn.is_https and conn.context is not None:
             kwargs["context"] = conn.context
-        real = factory(conn.host, conn.port, **kwargs)
+        # HTTPSConnection.__init__ calls super(HTTPSConnection, self) through the
+        # module global, which is patched; construct with the real names in place.
+        with _CLASS_SWAP_LOCK:
+            patched = (http.client.HTTPConnection, http.client.HTTPSConnection)
+            http.client.HTTPConnection, http.client.HTTPSConnection = self.real_http, self.real_https
+            try:
+                real = factory(conn.host, conn.port, **kwargs)
+            finally:
+                http.client.HTTPConnection, http.client.HTTPSConnection = patched
         started = time.monotonic()
         error, status, resp_headers, raw = None, None, {}, b""
         try:
