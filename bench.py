@@ -208,13 +208,6 @@ def _call_provider_search(
             max_results=max_results,
             public=keyless_public_allowed(provider, config),
         )
-    if provider in ("perplexity", "kilo-perplexity"):
-        return search.search_perplexity(
-            query=query,
-            api_key=key,
-            max_results=max_results,
-            provider_name=provider,
-        )
     search_fn = getattr(search, "search_" + provider, None)
     if search_fn is None:
         raise ValueError("Unknown search provider: {}".format(provider))

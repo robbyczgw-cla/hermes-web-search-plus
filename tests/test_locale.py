@@ -165,7 +165,7 @@ class ResolveLocaleTests(unittest.TestCase):
     def test_locale_capability_table(self):
         for provider in ("serper", "serpbase", "brave", "querit", "firecrawl", "you", "searxng"):
             self.assertTrue(provider_supports_locale(provider), provider)
-        for provider in ("tavily", "exa", "linkup", "parallel", "perplexity", "keenable"):
+        for provider in ("tavily", "exa", "linkup", "parallel", "keenable"):
             self.assertFalse(provider_supports_locale(provider), provider)
 
     def test_builtin_defaults_have_no_provider_locale_keys(self):

@@ -7,6 +7,11 @@
 - Routing: the unused direct-answer signal table (17 patterns evaluated on every query, never scored), the no-op URL override branch, the `shopping_at` boost no rule could emit, and the `below_threshold` flag in routing metadata, which nothing read. Routing decisions are unchanged (behaviour lock). `auto_routing.confidence_threshold` is still accepted in config.json and by `setup.py`, but has no effect.
 - The unused source-independence estimator module is gone. The wire warning `wsp.independence.method_degraded` stays in the published contract.
 - Shadow routing is gone. `routing_receipt.shadow_observation` stays on every response and is always null. `routing.policy_mode: "shadow"` in config is accepted and treated as classic. `WSP_ROUTING_CLASSIC_ONLY` is still accepted and does nothing.
+- Perplexity and Kilo-Perplexity: the two rejection records, `search_perplexity` and their config sections. They had no working endpoint since 4.0. Configs that still mention them load unchanged: the IDs are dropped silently, and a default or fallback provider set to one of them uses the normal default.
+
+### Fixed
+
+- Perplexity and Kilo Code API keys no longer make search appear configured in tool availability checks or setup status.
 
 ### Tests
 

@@ -18,8 +18,6 @@ and the plugin provider catalog; regenerate it with `python scripts/gen_provider
 | Exa | ✅ | ✅ | `EXA_API_KEY` | — | yes (priority 3) | 1,000 free searches/month | https://dashboard.exa.ai/api-keys |
 | Firecrawl | ✅ | ✅ | `FIRECRAWL_API_KEY` | — | yes (priority 4) | 500 one-time credits | https://www.firecrawl.dev/app/api-keys |
 | Parallel | ✅ | ✅ | `PARALLEL_API_KEY` | — | yes (priority 8) | API key required | https://platform.parallel.ai |
-| Perplexity | — | — | `PERPLEXITY_API_KEY` | — | — | API key required | https://www.perplexity.ai/settings/api |
-| Kilo Code Perplexity bridge | — | — | `KILOCODE_API_KEY` | — | — | Depends on Kilo account | https://kilo.ai |
 | You.com | ✅ | ✅ | `YOU_API_KEY` | — | yes (priority 1) | Limited/API key required | https://api.you.com |
 | SearXNG | ✅ | — | `SEARXNG_INSTANCE_URL` | — | yes (priority 11) | Free if self-hosted | https://docs.searxng.org/admin/installation.html |
 | Keenable | ✅ | ✅ | `KEENABLE_API_KEY` | yes (`KEENABLE_ALLOW_PUBLIC` opt-in) | yes (priority 12) | Keyless public tier; optional key for higher limits | https://keenable.ai |
@@ -72,14 +70,6 @@ Robust scraping/extraction fallback, especially for JS-heavy pages.
 ### Parallel
 
 LLM-ready web search and fast URL extraction with long source excerpts.
-
-### Perplexity
-
-Rejected legacy answer endpoint; no source-only mode is registered.
-
-### Kilo Code Perplexity bridge
-
-Rejected legacy answer bridge; no source-only mode is registered.
 
 ### You.com
 

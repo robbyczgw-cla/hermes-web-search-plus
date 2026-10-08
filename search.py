@@ -348,10 +348,6 @@ def search_parallel(*args, **kwargs):
     return _providers.search_parallel(*args, **kwargs)
 
 
-def search_perplexity(*args, **kwargs):
-    _sync_provider_dependencies()
-    return _providers.search_perplexity(*args, **kwargs)
-
 
 def search_you(*args, **kwargs):
     _sync_provider_dependencies()
@@ -387,12 +383,6 @@ def extract_serper(*args, **kwargs):
 
 # =============================================================================
 # Parallel (LLM-ready web search)
-# =============================================================================
-
-
-
-# =============================================================================
-# Perplexity-compatible Direct Answers
 # =============================================================================
 
 

@@ -30,7 +30,7 @@ AUTO_LANGUAGE = "auto"
 # DEFAULT_CONFIG no longer ships these keys, so their presence in the merged
 # config means the user set them in config.json — that explicit choice wins
 # over query hints and global defaults. Providers without locale parameters
-# (tavily, exa, linkup, parallel, perplexity, keenable, ...) are absent.
+# (tavily, exa, linkup, parallel, keenable, ...) are absent.
 PROVIDER_LOCALE_CONFIG_KEYS: Dict[str, Tuple[Optional[str], Optional[str]]] = {
     "serper": ("country", "language"),
     "serpbase": ("country", "language"),

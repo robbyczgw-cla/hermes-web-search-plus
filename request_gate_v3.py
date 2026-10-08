@@ -79,5 +79,3 @@ def validate_outbound_body(provider: str, body: Mapping[str, Any]) -> None:
         raise ValueError("linkup source-only mode requires outputType=searchResults")
     if provider == "exa" and body.get("type") in {"deep", "deep-reasoning"}:
         raise ValueError("exa deep modes are not source-only")
-    if provider in {"perplexity", "kilo-perplexity"}:
-        raise ValueError(f"{provider} has no verified source-only endpoint")

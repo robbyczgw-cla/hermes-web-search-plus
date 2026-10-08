@@ -55,9 +55,6 @@ PROVIDER_FRESHNESS_FORMATS: Dict[str, Dict[str, str]] = {
     "keenable": {"day": "1d", "week": "7d", "month": "1mo", "year": "1y"},
     # search_you: params["freshness"] (native values match the unified ones)
     "you": {"day": "day", "week": "week", "month": "month", "year": "year"},
-    # search_perplexity: body["search_recency_filter"]
-    "perplexity": {"day": "day", "week": "week", "month": "month", "year": "year"},
-    "kilo-perplexity": {"day": "day", "week": "week", "month": "month", "year": "year"},
     # search_searxng: params["time_range"]
     "searxng": {"day": "day", "week": "week", "month": "month", "year": "year"},
     # search_exa: accepts the unified value and converts it to absolute
@@ -1286,20 +1283,6 @@ def search_parallel(
             "mode": normalized_mode,
         },
     }
-
-def search_perplexity(
-    query: str,
-    api_key: str,
-    max_results: int = 5,
-    model: str = "sonar-pro",
-    api_url: str = "https://api.perplexity.ai/chat/completions",
-    freshness: Optional[str] = None,
-    provider_name: str = "perplexity",
-) -> dict:
-    """Reject legacy chat-completion providers before any network I/O."""
-    del query, api_key, max_results, model, api_url, freshness
-    validate_provider_mode(provider_name, "search")
-    raise ValueError(f"{provider_name} has no verified source-only endpoint")
 
 
 def search_you(

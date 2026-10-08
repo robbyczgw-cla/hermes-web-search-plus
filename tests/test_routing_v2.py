@@ -261,9 +261,8 @@ def test_cve_security_does_not_route_to_firecrawl():
     assert routing["analysis_summary"]["routing_class"] == "security_advisory"
 
 
-def test_synthesis_query_routes_to_you_without_auto_selecting_kilo():
+def test_synthesis_query_routes_to_you_without_removed_provider():
     routing = _route("Was sind die wichtigsten Unterschiede zwischen Exa Tavily und You.com für Agenten Suche")
 
     assert routing["provider"] == "you"
     assert "answer_mode_recommended" not in routing
-    assert "kilo-perplexity" not in routing["scores"]

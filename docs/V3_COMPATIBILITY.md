@@ -13,7 +13,7 @@ Existing tool calls are projected into native `RequestV3` execution and returned
 
 WSP 3.0 registers 12 source-only search providers and 8 extraction providers. The generated [Provider Reference](PROVIDERS.md) is authoritative.
 
-Native Perplexity and Kilo Perplexity are retained only as rejected registry records with `no_verified_source_only_endpoint`; they are not valid tool or CLI provider choices. This is an intentional charter correction, not a temporary outage.
+Perplexity and Kilo-Perplexity are removed provider IDs. Config migration silently ignores them in legacy routing lists and settings; other unknown provider IDs remain errors.
 
 ## Routing
 

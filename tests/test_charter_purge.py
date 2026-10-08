@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-import provider_dispatch
 import providers
 from provider_registry import PROVIDER_SPECS
 from request_gate_v3 import validate_outbound_body, validate_provider_mode
@@ -55,14 +54,18 @@ def test_cli_help_does_not_advertise_answer_providers():
     assert "synthesized up-to-date answers" not in help_text
 
 
-def test_answer_only_providers_are_explicitly_rejected_and_not_dispatched():
-    for provider in ("perplexity", "kilo-perplexity"):
-        spec = PROVIDER_SPECS[provider]
-        assert spec.supports_search is False
-        assert spec.rejected_reason == "no_verified_source_only_endpoint"
-        assert provider not in provider_dispatch.SEARCH_DISPATCH
-        with pytest.raises(ValueError, match="no_verified_source_only_endpoint"):
-            validate_provider_mode(provider, "search")
+def test_removed_provider_request_is_rejected_as_unknown_before_network(monkeypatch):
+    called = False
+
+    def no_network(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("network reached")
+
+    monkeypatch.setattr(providers, "make_request", no_network)
+    with pytest.raises(ValueError, match="unknown provider"):
+        validate_provider_mode("perplexity", "search")
+    assert called is False
 
 
 def test_formatter_cannot_render_legacy_answer_payload():
@@ -149,21 +152,6 @@ def test_exa_synthesis_depths_fail_before_network(monkeypatch):
     assert called is False
 
 
-def test_perplexity_variants_fail_before_network(monkeypatch):
-    called = False
-
-    def no_network(*args, **kwargs):
-        nonlocal called
-        called = True
-        raise AssertionError("network reached")
-
-    monkeypatch.setattr(providers, "make_request", no_network)
-    for provider in ("perplexity", "kilo-perplexity"):
-        with pytest.raises(ValueError, match="no_verified_source_only_endpoint"):
-            providers.search_perplexity(
-                "charter probe", "secret", provider_name=provider
-            )
-    assert called is False
 
 
 def test_central_gate_rejects_answer_shaped_or_prompt_bodies():

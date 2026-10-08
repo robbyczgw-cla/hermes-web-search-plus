@@ -98,7 +98,7 @@ Presets:
 - `self-hosted`: SearXNG + keyless Keenable for automatic routing without a commercial API key. A separately installed DonSeTch sidecar can be layered on for explicit local search and extraction.
 - `all`: prompt for every supported provider.
 
-Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, SearXNG, SerpBase, Querit, Keenable, and the optional local DonSeTch MCP sidecar. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, Keenable, Serper, and DonSeTch. Native Perplexity and Kilo Perplexity are not registered because their legacy answer endpoints do not expose a verified source-only mode.
+Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, SearXNG, SerpBase, Querit, Keenable, and the optional local DonSeTch MCP sidecar. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, Keenable, Serper, and DonSeTch.
 
 Keenable is keyless: set `KEENABLE_API_KEY` for the authenticated endpoints, or opt into its public tier (off by default). In the wizard, skip the Keenable key prompt and answer yes, or run `setup.py setup keenable --keyless-public`; it writes `keenable.allow_public: true` to `config.json` (equivalently `KEENABLE_ALLOW_PUBLIC=1`).
 
@@ -166,7 +166,7 @@ The profile governs only automatic routing. An explicit `provider="serper"` (or 
 
 ### Migration note for v2.0.0
 
-Routing v2 changes the default `provider="auto"` behavior. Existing configs keep explicit user choices, but missing `auto_allow` entries inherit the guarded defaults: SerpBase and Querit stay explicit-only until you opt them into automatic routing; Brave joins the default auto-pool at priority 7 and Parallel at priority 8 when a key is configured. Perplexity provider IDs from older configs are ignored because those endpoints are no longer registered.
+Routing v2 changes the default `provider="auto"` behavior. Existing configs keep explicit user choices, but missing `auto_allow` entries inherit the guarded defaults: SerpBase and Querit stay explicit-only until you opt them into automatic routing; Brave joins the default auto-pool at priority 7 and Parallel at priority 8 when a key is configured. Removed Perplexity and Kilo-Perplexity IDs in older configs are ignored; other unknown provider IDs still invalidate the config.
 
 ```bash
 python ~/.hermes/plugins/web-search-plus/setup.py config show --json

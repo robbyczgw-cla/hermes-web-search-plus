@@ -265,7 +265,7 @@ def test_setup_dry_run_uses_target_env_path_for_dashboard(tmp_path, monkeypatch,
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "Providers: 1/17 configured" in out
+    assert "Providers: 1/15 configured" in out
     assert "Active: You.com" in out
     assert "Brave Search" not in out.split("Setup plan:", 1)[0]
 
@@ -281,7 +281,7 @@ def test_status_uses_target_env_path_for_dashboard(tmp_path, monkeypatch, capsys
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "Providers: 1/17 configured" in out
+    assert "Providers: 1/15 configured" in out
     assert "Active: Linkup" in out
     assert "Brave Search" not in out
 
@@ -313,6 +313,23 @@ def test_tool_check_functions_treat_missing_or_empty_keys_as_unconfigured(monkey
 
     monkeypatch.setenv("LINKUP_API_KEY", "linkup-test")
     assert ctx.tools["web_extract_plus"]["check_fn"]() is True
+
+
+@pytest.mark.parametrize("removed_key", ["PERPLEXITY_API_KEY", "KILOCODE_API_KEY"])
+def test_removed_provider_keys_do_not_configure_search_tool_or_setup_status(monkeypatch, removed_key):
+    for key in wsp._PROVIDER_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    for key in wsp._EXTRACT_PROVIDER_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv(removed_key, "legacy-key")
+    ctx = FakeCtx()
+
+    wsp.register(ctx)
+
+    assert ctx.tools["web_search_plus"]["check_fn"]() is False
+    status = wsp._provider_config_status(env={removed_key: "legacy-key"})
+    assert status["search_configured"] is False
+    assert status["configured_search_count"] == 0
 
 
 
@@ -628,38 +645,75 @@ def test_no_secret_leaks_across_status_and_config_commands(tmp_path, capsys):
 
 
 
-def test_config_routing_provider_alias_maps_kilo_perplexity_to_distinct_provider(tmp_path):
+
+def test_removed_provider_config_migrates_without_quarantine(tmp_path, monkeypatch):
     config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({
+        "version": 1,
+        "default_provider": "perplexity",
+        "perplexity": {"api_key": "legacy"},
+        "kilo-perplexity": {"model": "legacy"},
+        "auto_routing": {
+            "enabled": False,
+            "fallback_provider": "kilo_perplexity",
+            "provider_priority": ["perplexity", "brave"],
+            "extract_provider_priority": ["kilo-perplexity", "exa"],
+            "disabled_providers": ["kilo_perplexity"],
+            "auto_allow": {"perplexity": True, "kilo-perplexity": False, "brave": True},
+        },
+    }))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
+
+    config = search.load_config()
+
+    assert config["default_provider"] is None
+    assert config["auto_routing"]["fallback_provider"] == "serper"
+    assert "perplexity" not in config["auto_routing"]["provider_priority"]
+    assert "kilo-perplexity" not in config["auto_routing"]["extract_provider_priority"]
+    assert config["auto_routing"]["disabled_providers"] == []
+    assert "perplexity" not in config["auto_routing"]["auto_allow"]
+    assert "kilo-perplexity" not in config["auto_routing"]["auto_allow"]
+    assert "perplexity" not in config and "kilo-perplexity" not in config
+    assert not list(tmp_path.glob("config.json.broken-*"))
+
+
+def test_setup_config_show_migrates_removed_providers_without_quarantine(tmp_path, capsys):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({
+        "version": 1,
+        "default_provider": "kilo_perplexity",
+        "auto_routing": {
+            "fallback_provider": "perplexity",
+            "provider_priority": ["perplexity", "brave"],
+            "extract_provider_priority": ["kilo-perplexity", "exa"],
+            "disabled_providers": ["perplexity"],
+            "auto_allow": {"kilo-perplexity": True, "brave": True},
+        },
+    }))
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
-    args = parser.parse_args(["config", "set-default", "kilo-perplexity", "--config-path", str(config_path)])
+    args = parser.parse_args(["config", "show", "--json", "--config-path", str(config_path)])
 
     args.func(args)
 
-    data = json.loads(config_path.read_text())
-    assert data["default_provider"] == "kilo-perplexity"
+    shown = json.loads(capsys.readouterr().out)
+    assert not list(tmp_path.glob("config.json.broken-*"))
+    assert shown["default_provider"] is None
+    assert shown["auto_routing"]["fallback_provider"] == "serper"
+    assert shown["auto_routing"]["provider_priority"][0] == "brave"
+    assert shown["auto_routing"]["extract_provider_priority"][0] == "exa"
+    assert shown["auto_routing"]["disabled_providers"] == []
+    assert "kilo-perplexity" not in shown["auto_routing"]["auto_allow"]
 
 
-def test_config_routing_provider_alias_maps_kilo_underscore_perplexity_to_distinct_provider(tmp_path):
+def test_config_priority_rejects_unknown_provider(tmp_path):
     config_path = tmp_path / "config.json"
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
-    args = parser.parse_args(["config", "set-default", "kilo_perplexity", "--config-path", str(config_path)])
+    args = parser.parse_args(["config", "set-priority", "tavily,google", "--config-path", str(config_path), "--dry-run"])
 
-    args.func(args)
-
-    data = json.loads(config_path.read_text())
-    assert data["default_provider"] == "kilo-perplexity"
-
-
-def test_config_priority_rejects_non_routing_catalog_provider(tmp_path):
-    config_path = tmp_path / "config.json"
-    parser = wsp.argparse.ArgumentParser()
-    wsp._web_search_plus_cli_setup(parser)
-    args = parser.parse_args(["config", "set-priority", "tavily,kilo-perplexity", "--config-path", str(config_path), "--dry-run"])
-
-    # Alias is valid, so the dry-run should produce canonical search.py provider names.
-    args.func(args)
+    with pytest.raises(SystemExit):
+        args.func(args)
 
 
 
@@ -764,29 +818,6 @@ def test_search_load_config_keeps_multiple_quarantines_in_same_second(tmp_path, 
     assert len(broken_files) == 2
     assert broken_files[0] != broken_files[1]
 
-
-def test_search_load_config_normalizes_kilo_perplexity_alias(tmp_path, monkeypatch):
-    config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "default_provider": "kilo-perplexity", "auto_routing": {"enabled": false, "provider_priority": ["kilo-perplexity"]}}\n')
-    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
-
-    config = search.load_config()
-
-    assert config["default_provider"] == "kilo-perplexity"
-    assert config["auto_routing"]["provider_priority"] == ["kilo-perplexity"]
-    assert not list(tmp_path.glob("config.json.broken-*"))
-
-
-def test_search_load_config_normalizes_kilo_underscore_perplexity_alias(tmp_path, monkeypatch):
-    config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "default_provider": "kilo_perplexity", "auto_routing": {"enabled": false, "provider_priority": ["kilo_perplexity"], "fallback_provider": "kilo_perplexity"}}\n')
-    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
-
-    config = search.load_config()
-
-    assert config["default_provider"] == "kilo-perplexity"
-    assert config["auto_routing"]["provider_priority"] == ["kilo-perplexity"]
-    assert config["auto_routing"]["fallback_provider"] == "kilo-perplexity"
 
 
 def _isolate_keyless_env(monkeypatch, config_path):

@@ -77,12 +77,6 @@ def fake_make_request(url, headers, body, timeout=30):
             "search_id": "parallel-search-id",
             "results": [{"title": "Parallel title", "url": RESULT_URL, "excerpts": [{"text": "Parallel snippet"}]}],
         }
-    if "perplexity" in url or "kilo" in url:
-        return {
-            "choices": [{"message": {"content": "Perplexity answer with https://example.com/source"}}],
-            "citations": [{"url": RESULT_URL, "title": "Perplexity source"}],
-            "usage": {},
-        }
     if "firecrawl" in url and "scrape" in url:
         return {
             "success": True,
