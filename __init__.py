@@ -1763,6 +1763,32 @@ def _sanitize_extract_content(content: str) -> str:
 _MAX_TOOL_COUNT = 20
 
 
+def _clean_tool_count(value: Any, fallback: int = 5) -> int:
+    """Clamp a tool ``count`` to 1.._MAX_TOOL_COUNT before any provider call.
+
+    0, negative or unparsable values used to reach the provider, which was
+    billed and returned nothing.
+    """
+    if isinstance(value, bool):
+        return fallback
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return fallback
+    return max(1, min(number, _MAX_TOOL_COUNT))
+
+
+def _clean_tool_provider(value: Any) -> tuple:
+    """Return (provider, error). Case and surrounding spaces do not matter."""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return "auto", None
+    provider = str(value).strip().lower()
+    if provider == "auto" or provider in SEARCH_PROVIDER_IDS:
+        return provider, None
+    valid = ", ".join(["auto", *SEARCH_PROVIDER_IDS])
+    return provider, f"Search error: unknown provider {value!r}. Valid providers: {valid}"
+
+
 def _configured_max_results(fallback: int = 5) -> int:
     """Return defaults.max_results clamped to the tool range, or the fallback."""
     try:
@@ -2012,6 +2038,10 @@ def register(ctx: Any) -> None:
             cache_ttl = kwargs.get("cache_ttl", cache_ttl)
         if cache_ttl is not None:
             cache_ttl = int(cache_ttl)
+        count = _clean_tool_count(count)
+        provider, provider_error = _clean_tool_provider(provider)
+        if provider_error:
+            return provider_error
         data = _run_search(
             query=query,
             provider=provider,
