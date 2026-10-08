@@ -116,9 +116,6 @@ class WSPNativeBackend(WebSearchProvider):
     # -- in-process readiness (no sidecar) ----------------------------------
 
     def _inprocess_ready(self) -> bool:
-        force = getattr(self.plugin, "_force_subprocess", None)
-        if callable(force) and force():
-            return False
         load = getattr(self.plugin, "_load_search_module", None)
         if not callable(load):
             return False
@@ -152,7 +149,6 @@ class WSPNativeBackend(WebSearchProvider):
                 query=query,
                 provider=self.search_provider,
                 count=count,
-                inprocess_only=True,
             )
         except Exception:  # noqa: BLE001 — do not expose vendor exception details
             logger.warning("WSP native search failed")
@@ -232,7 +228,6 @@ class WSPNativeBackend(WebSearchProvider):
                 url_list,
                 provider=self.extract_provider,
                 output_format=output_format,
-                inprocess_only=True,
             )
         except Exception:  # noqa: BLE001
             logger.warning("WSP native extract failed")

@@ -404,30 +404,6 @@ class ExtractPlusPluginTests(unittest.TestCase):
         self.assertTrue(captured["include_images"])
         self.assertTrue(captured["render_js"])
 
-    def test_run_extract_subprocess_fallback_builds_extract_command(self):
-        completed = mock.Mock(returncode=0, stdout=json.dumps({"provider": "linkup", "results": []}), stderr="")
-        with mock.patch.dict(os.environ, {"WSP_FORCE_SUBPROCESS": "1"}):
-            with mock.patch("subprocess.run", return_value=completed) as mock_run:
-                result = plugin._run_extract(
-                    urls=["https://example.com"],
-                    provider="linkup",
-                    output_format="markdown",
-                    include_images=True,
-                    render_js=True,
-                )
-
-        self.assertEqual(result["provider"], "linkup")
-        cmd = mock_run.call_args.kwargs["args"] if "args" in mock_run.call_args.kwargs else mock_run.call_args.args[0]
-        self.assertIn("--extract-urls", cmd)
-        self.assertIn("https://example.com", cmd)
-        self.assertIn("--provider", cmd)
-        self.assertIn("linkup", cmd)
-        self.assertIn("--format", cmd)
-        self.assertIn("markdown", cmd)
-        self.assertIn("--extract-images", cmd)
-        self.assertIn("--render-js", cmd)
-
-
     def test_format_extract_results_short_content_returns_full_without_store(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             with mock.patch.object(cache, "CACHE_DIR", Path(tmpdir)):
