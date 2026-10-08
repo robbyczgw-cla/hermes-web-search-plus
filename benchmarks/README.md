@@ -29,6 +29,9 @@ The queries are written for this benchmark and contain no user data.
   `tests/test_behaviour_lock.py` fails when a change alters either. Changes
   that alter behaviour on purpose regenerate the lock and show the diff.
 - `overhead.py` measures WSP's own per-call cost with zero-latency providers.
+- `judge.py` pools every URL the recorded providers returned per query, has a
+  judge model grade each once (0-3), and scores any worker run against those
+  grades (nDCG@5, authority hit@5). Results: [RESULTS.md](RESULTS.md).
 
 ## Metrics
 
