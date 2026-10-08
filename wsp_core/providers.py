@@ -425,6 +425,129 @@ def _brave_search_lang(language: Optional[str], country: str) -> Optional[str]:
     return code if code in _BRAVE_SEARCH_LANGS else None
 
 
+_BRAVE_RATE_HEADERS = (
+    "X-RateLimit-Policy",
+    "X-RateLimit-Remaining",
+    "X-RateLimit-Reset",
+    "Retry-After",
+)
+# Longest wait for a short (per-second) Brave window. Longer resets, such as a
+# spent monthly quota, fail fast so the hedged fallback can take over.
+BRAVE_MAX_RATE_WAIT_SECONDS = 2.0
+
+
+def _split_header_numbers(value: Optional[str]) -> List[Optional[float]]:
+    numbers: List[Optional[float]] = []
+    for part in (value or "").split(","):
+        try:
+            numbers.append(float(part.strip()))
+        except ValueError:
+            numbers.append(None)
+    return numbers
+
+
+def brave_min_interval(headers: Dict[str, str]) -> Optional[float]:
+    """Seconds between calls implied by the tightest X-RateLimit-Policy window.
+
+    Brave sends e.g. ``1;w=1, 2000;w=2678400`` (1 call per second, 2000 per
+    month). Only windows up to one minute are used for pacing.
+    """
+    best: Optional[float] = None
+    for part in (headers.get("X-RateLimit-Policy") or "").split(","):
+        fields = [field.strip() for field in part.split(";")]
+        try:
+            limit = float(fields[0])
+            window = next(
+                float(field[2:]) for field in fields[1:] if field.startswith("w=")
+            )
+        except (ValueError, StopIteration, IndexError):
+            continue
+        if limit <= 0 or window <= 0 or window > 60:
+            continue
+        interval = window / limit
+        best = interval if best is None else max(best, interval)
+    return best
+
+
+def brave_retry_wait(headers: Dict[str, str]) -> Optional[float]:
+    """Seconds until the exhausted Brave window resets, or None if unknown."""
+    retry_after = _split_header_numbers(headers.get("Retry-After"))
+    if retry_after and retry_after[0] is not None:
+        return max(0.0, retry_after[0])
+    remaining = _split_header_numbers(headers.get("X-RateLimit-Remaining"))
+    reset = _split_header_numbers(headers.get("X-RateLimit-Reset"))
+    waits = [
+        r for rem, r in zip(remaining, reset)
+        if rem is not None and rem <= 0 and r is not None
+    ]
+    return max(waits) if waits else None
+
+
+class _CallPacer:
+    """Process-wide spacing between calls to one rate-limited provider.
+
+    The interval is learned from the provider's rate-limit headers, so plans
+    without a per-second limit are never slowed down.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._last_start = None
+        self._next_slot = 0.0
+        self.interval = 0.0
+
+    def wait_turn(self, max_wait: float) -> None:
+        with self._lock:
+            now = time.monotonic()
+            start = max(now, self._next_slot)
+            if start - now > max_wait:
+                start = now
+            self._last_start = start
+            self._next_slot = start + self.interval
+        if start > now:
+            time.sleep(start - now)
+
+    def learn(self, interval: Optional[float]) -> None:
+        if interval is None:
+            return
+        with self._lock:
+            self.interval = min(interval, BRAVE_MAX_RATE_WAIT_SECONDS)
+            if self._last_start is not None:
+                self._next_slot = max(self._next_slot, self._last_start + self.interval)
+
+
+_BRAVE_PACER = _CallPacer()
+
+
+def _brave_get(url: str, headers: Dict[str, str]) -> dict:
+    """GET a Brave endpoint, paced to its per-second limit, one retry on 429."""
+    for attempt in range(2):
+        _BRAVE_PACER.wait_turn(BRAVE_MAX_RATE_WAIT_SECONDS)
+        seen: Dict[str, str] = {}
+        try:
+            data = make_get_request(
+                url,
+                dict(headers),
+                capture_headers=_BRAVE_RATE_HEADERS,
+                response_headers=seen,
+            )
+        except ProviderRequestError as exc:
+            _BRAVE_PACER.learn(brave_min_interval(seen))
+            wait = brave_retry_wait(seen)
+            if (
+                attempt == 0
+                and getattr(exc, "status_code", None) == 429
+                and wait is not None
+                and wait <= BRAVE_MAX_RATE_WAIT_SECONDS
+            ):
+                time.sleep(wait)
+                continue
+            raise
+        _BRAVE_PACER.learn(brave_min_interval(seen))
+        return data
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
 def search_brave(
     query: str,
     api_key: str,
@@ -463,7 +586,7 @@ def search_brave(
         "Accept-Encoding": "gzip",
     }
 
-    data = make_get_request(url, headers)
+    data = _brave_get(url, headers)
 
     web_results = (data.get("web") or {}).get("results", [])[:max_results]
     results = []

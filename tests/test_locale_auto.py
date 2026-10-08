@@ -40,7 +40,7 @@ def sent(monkeypatch):
         record["url"], record["body"] = url, body
         raise _Sent
 
-    def fake_get(url, headers, timeout=30):
+    def fake_get(url, headers, timeout=30, **_kwargs):
         record["url"] = url
         raise _Sent
 
