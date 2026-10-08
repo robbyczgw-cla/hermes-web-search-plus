@@ -1,8 +1,8 @@
+from wsp_core import extract
 from unittest import mock
 
 import pytest
 
-from wsp_core import extract
 
 
 @pytest.mark.parametrize(
@@ -72,7 +72,7 @@ def test_extract_private_url_escape_hatch_is_explicit():
 
 
 def test_extract_plus_rejects_private_url_before_provider_dispatch():
-    with mock.patch("wsp_core.extract.extract_firecrawl") as mock_extract:
+    with mock.patch("wsp_core.providers.extract_firecrawl") as mock_extract:
         result = extract.extract_plus(
             ["http://169.254.169.254/latest/meta-data/"],
             provider="firecrawl",
@@ -89,7 +89,7 @@ def test_local_provider_endpoint_remains_allowed_for_public_target():
          mock.patch("wsp_core.extract.get_api_key", return_value="fc-test-key"), \
          mock.patch("wsp_core.extract.provider_in_cooldown", return_value=(False, 0)), \
          mock.patch("wsp_core.extract.reset_provider_health"), \
-         mock.patch("wsp_core.extract.extract_firecrawl", return_value={"provider": "firecrawl", "results": []}) as mock_extract:
+         mock.patch("wsp_core.providers.extract_firecrawl", return_value={"provider": "firecrawl", "results": []}) as mock_extract:
         result = extract.extract_plus(
             ["https://example.com/page"],
             provider="firecrawl",

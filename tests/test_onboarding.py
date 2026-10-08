@@ -1,4 +1,5 @@
 from __future__ import annotations
+from wsp_core import providers
 
 import json
 import os
@@ -749,8 +750,8 @@ def test_fixed_provider_mode_does_not_add_fallback_providers(monkeypatch, tmp_pa
     def should_not_fallback(**_kwargs):
         raise AssertionError("fixed-provider mode must not call fallback providers")
 
-    monkeypatch.setattr(search, "search_brave", fail_brave)
-    monkeypatch.setattr(search, "search_tavily", should_not_fallback)
+    monkeypatch.setattr(providers, "search_brave", fail_brave)
+    monkeypatch.setattr(providers, "search_tavily", should_not_fallback)
     monkeypatch.setattr(search, "mark_provider_failure", lambda provider, error, retry_after=None: {"cooldown_seconds": 60})
 
     try:

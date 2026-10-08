@@ -1,3 +1,5 @@
+from wsp_core import providers
+from wsp_core import config as config_module
 import os
 from unittest import mock
 
@@ -25,8 +27,8 @@ def test_search_parallel_normalizes_excerpts_and_request_shape():
             },
         ],
     }
-    with mock.patch.object(search, "make_request", return_value=fake_response) as mock_request:
-        result = search.search_parallel(
+    with mock.patch.object(providers, "make_request", return_value=fake_response) as mock_request:
+        result = providers.search_parallel(
             "Parallel AI Search API",
             "parallel-test-key",
             max_results=1,
@@ -66,8 +68,8 @@ def test_extract_parallel_requests_full_content_and_normalizes_results():
             }
         ],
     }
-    with mock.patch.object(search, "make_request", return_value=fake_response) as mock_request:
-        result = search.extract_parallel(
+    with mock.patch.object(providers, "make_request", return_value=fake_response) as mock_request:
+        result = providers.extract_parallel(
             ["https://docs.parallel.ai/getting-started/overview"],
             "parallel-test-key",
             max_chars_total=1234,
@@ -91,8 +93,8 @@ def test_extract_parallel_requests_full_content_and_normalizes_results():
 
 
 def test_extract_parallel_defaults_use_peer_level_full_content_budget():
-    with mock.patch.object(search, "make_request", return_value={"results": []}) as mock_request:
-        search.extract_parallel(["https://docs.parallel.ai/getting-started/overview"], "parallel-test-key")
+    with mock.patch.object(providers, "make_request", return_value={"results": []}) as mock_request:
+        providers.extract_parallel(["https://docs.parallel.ai/getting-started/overview"], "parallel-test-key")
 
     body = mock_request.call_args.args[2]
     assert body["max_chars_total"] == 120000
@@ -100,7 +102,7 @@ def test_extract_parallel_defaults_use_peer_level_full_content_budget():
 
 
 def test_parallel_is_auto_allowed_when_configured():
-    config = search._deepcopy_default_config()
+    config = config_module._deepcopy_default_config()
     assert "parallel" in config["auto_routing"]["provider_priority"]
     assert config["auto_routing"]["auto_allow"].get("parallel", True) is True
 
@@ -109,7 +111,7 @@ def test_parallel_is_auto_allowed_when_configured():
 
 
 def test_validate_api_key_parallel_missing_key_raises_provider_config_error():
-    config = search._deepcopy_default_config()
+    config = config_module._deepcopy_default_config()
     config["parallel"].pop("api_key", None)
     with mock.patch.dict(os.environ, {}, clear=True):
         try:
@@ -122,10 +124,10 @@ def test_validate_api_key_parallel_missing_key_raises_provider_config_error():
 
 
 def test_existing_priority_config_appends_parallel_for_migration():
-    config = search._deepcopy_default_config()
+    config = config_module._deepcopy_default_config()
     config["auto_routing"]["provider_priority"] = ["tavily", "linkup", "serper"]
 
-    migrated = search._validate_runtime_config(config)
+    migrated = config_module._validate_runtime_config(config)
 
     priority = migrated["auto_routing"]["provider_priority"]
     assert priority[:3] == ["tavily", "linkup", "serper"]
@@ -134,8 +136,8 @@ def test_existing_priority_config_appends_parallel_for_migration():
 
 def test_search_parallel_sends_configured_mode():
     fake_response = {"search_id": "search_mode", "results": []}
-    with mock.patch.object(search, "make_request", return_value=fake_response) as mock_request:
-        result = search.search_parallel(
+    with mock.patch.object(providers, "make_request", return_value=fake_response) as mock_request:
+        result = providers.search_parallel(
             "NVIDIA stock price",
             "parallel-test-key",
             mode="turbo",
@@ -148,7 +150,7 @@ def test_search_parallel_sends_configured_mode():
 
 def test_search_parallel_rejects_unknown_mode():
     try:
-        search.search_parallel("query", "parallel-test-key", mode="ultra")
+        providers.search_parallel("query", "parallel-test-key", mode="ultra")
     except ValueError as exc:
         assert "parallel.mode" in str(exc)
         assert "turbo" in str(exc)
@@ -157,23 +159,23 @@ def test_search_parallel_rejects_unknown_mode():
 
 
 def test_parallel_mode_config_default_is_fast_and_stays_auto_allowed():
-    config = search._deepcopy_default_config()
+    config = config_module._deepcopy_default_config()
     assert config["parallel"].get("mode") == "fast"
     assert config["auto_routing"]["auto_allow"].get("parallel", True) is True
 
-    validated = search._validate_runtime_config(config)
+    validated = config_module._validate_runtime_config(config)
     assert validated["parallel"].get("mode") == "fast"
     assert validated["auto_routing"]["auto_allow"].get("parallel", True) is True
 
 
 def test_validate_runtime_config_normalizes_and_rejects_parallel_mode():
-    config = search._deepcopy_default_config()
+    config = config_module._deepcopy_default_config()
     config["parallel"]["mode"] = " Advanced "
-    assert search._validate_runtime_config(config)["parallel"]["mode"] == "advanced"
+    assert config_module._validate_runtime_config(config)["parallel"]["mode"] == "advanced"
 
     config["parallel"]["mode"] = "ultra"
     try:
-        search._validate_runtime_config(config)
+        config_module._validate_runtime_config(config)
     except ValueError as exc:
         assert "parallel.mode" in str(exc)
     else:
@@ -187,9 +189,9 @@ def test_dispatch_passes_parallel_mode_from_config():
         captured.update(kwargs)
         return {"provider": "parallel", "query": kwargs["query"], "results": [], "images": [], "metadata": {}}
 
-    config = search._deepcopy_default_config()
+    config = config_module._deepcopy_default_config()
     config["parallel"]["mode"] = "basic"
-    with mock.patch.object(search, "search_parallel", fake_search_parallel):
+    with mock.patch.object(providers, "search_parallel", fake_search_parallel):
         with mock.patch.object(search, "validate_api_key", return_value="parallel-test-key"):
             search.run_search_request(query="parallel mode dispatch", provider="parallel", count=3, config=config)
 

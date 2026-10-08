@@ -1,6 +1,7 @@
 """The plugin calls the engine directly: no argv, no argparse, no subprocess."""
 
 from __future__ import annotations
+from wsp_core import providers
 
 import copy
 import subprocess
@@ -54,8 +55,8 @@ def _fake_serper(monkeypatch):
             {"url": url, "title": "A", "content": "alpha", "raw_content": "alpha"} for url in urls
         ]}
 
-    monkeypatch.setattr(search, "search_serper", fake_search_serper)
-    monkeypatch.setattr(search, "extract_serper", fake_extract_serper)
+    monkeypatch.setattr(providers, "search_serper", fake_search_serper)
+    monkeypatch.setattr(providers, "extract_serper", fake_extract_serper)
     monkeypatch.setenv("SERPER_API_KEY", "test-key-0123456789")
 
 
@@ -111,7 +112,7 @@ def test_option_like_text_reaches_the_provider_as_data(monkeypatch, text):
         seen.update(kwargs)
         return {"provider": "serper", "query": kwargs.get("query"), "results": []}
 
-    monkeypatch.setattr(search, "search_serper", fake_search_serper)
+    monkeypatch.setattr(providers, "search_serper", fake_search_serper)
     monkeypatch.setenv("SERPER_API_KEY", "test-key-0123456789")
 
     plugin._run_search(text, provider="serper", no_cache=True, include_domains=[text])

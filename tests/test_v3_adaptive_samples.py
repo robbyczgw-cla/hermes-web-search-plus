@@ -8,6 +8,7 @@ view goes stale.
 """
 
 from __future__ import annotations
+from wsp_core import providers
 
 import json
 
@@ -211,10 +212,10 @@ def test_bench_still_never_records(tmp_path, monkeypatch):
     from wsp_core import bench
 
     monkeypatch.setattr(
-        search, "search_serper", lambda *_a, **_k: _payload("serper", 3)
+        providers, "search_serper", lambda *_a, **_k: _payload("serper", 3)
     )
     try:
-        bench._call_provider_search(search, "serper", "q", 3, _config(tmp_path, ["serper"]))
+        bench._call_provider_search(providers, "serper", "q", 3, _config(tmp_path, ["serper"]))
     except Exception as exc:  # pragma: no cover - adapter surface drift
         pytest.skip(f"bench direct call surface changed: {exc}")
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from wsp_core import providers
 
 from concurrent.futures import ThreadPoolExecutor
 import json
@@ -95,8 +96,8 @@ def test_native_research_entrypoint_queries_multiple_providers_with_truthful_att
         return execute
 
     monkeypatch.setattr(search, "auto_route_provider", lambda _query, _config: _routing())
-    monkeypatch.setattr(search, "search_tavily", fake_provider("tavily"))
-    monkeypatch.setattr(search, "search_linkup", fake_provider("linkup"))
+    monkeypatch.setattr(providers, "search_tavily", fake_provider("tavily"))
+    monkeypatch.setattr(providers, "search_linkup", fake_provider("linkup"))
     monkeypatch.setattr(
         search,
         "extract_plus",
@@ -162,8 +163,8 @@ def test_public_research_is_json_clean_complete_and_never_uses_lossy_cache(
         return execute
 
     monkeypatch.setattr(search, "auto_route_provider", lambda _query, _config: _routing())
-    monkeypatch.setattr(search, "search_tavily", fake_provider("tavily"))
-    monkeypatch.setattr(search, "search_linkup", fake_provider("linkup"))
+    monkeypatch.setattr(providers, "search_tavily", fake_provider("tavily"))
+    monkeypatch.setattr(providers, "search_linkup", fake_provider("linkup"))
     monkeypatch.setattr(
         search,
         "extract_plus",
@@ -260,8 +261,8 @@ def test_research_fanout_is_not_coupled_to_fallback_and_quality_runs_after_merge
         return lambda **_kwargs: payloads[provider]
 
     monkeypatch.setattr(search, "auto_route_provider", lambda _query, _config: _routing())
-    monkeypatch.setattr(search, "search_tavily", fake_provider("tavily"))
-    monkeypatch.setattr(search, "search_linkup", fake_provider("linkup"))
+    monkeypatch.setattr(providers, "search_tavily", fake_provider("tavily"))
+    monkeypatch.setattr(providers, "search_linkup", fake_provider("linkup"))
     monkeypatch.setattr(
         search,
         "extract_plus",
@@ -309,8 +310,8 @@ def test_explicit_research_provider_stays_strict_without_fallback(
 
         return execute
 
-    monkeypatch.setattr(search, "search_tavily", fake_provider("tavily"))
-    monkeypatch.setattr(search, "search_linkup", fake_provider("linkup"))
+    monkeypatch.setattr(providers, "search_tavily", fake_provider("tavily"))
+    monkeypatch.setattr(providers, "search_linkup", fake_provider("linkup"))
     monkeypatch.setattr(
         search,
         "extract_plus",
@@ -340,8 +341,8 @@ def test_fixed_default_research_provider_stays_strict(tmp_path, monkeypatch):
         return execute
 
     monkeypatch.setattr(search, "auto_route_provider", lambda _query, _config: _routing())
-    monkeypatch.setattr(search, "search_tavily", fake_provider("tavily"))
-    monkeypatch.setattr(search, "search_linkup", fake_provider("linkup"))
+    monkeypatch.setattr(providers, "search_tavily", fake_provider("tavily"))
+    monkeypatch.setattr(providers, "search_linkup", fake_provider("linkup"))
     monkeypatch.setattr(
         search,
         "extract_plus",
@@ -374,8 +375,8 @@ def test_research_total_failure_is_failed_and_not_cached(tmp_path, monkeypatch):
         return execute
 
     monkeypatch.setattr(search, "auto_route_provider", lambda _query, _config: _routing())
-    monkeypatch.setattr(search, "search_tavily", failing_provider("tavily"))
-    monkeypatch.setattr(search, "search_linkup", failing_provider("linkup"))
+    monkeypatch.setattr(providers, "search_tavily", failing_provider("tavily"))
+    monkeypatch.setattr(providers, "search_linkup", failing_provider("linkup"))
     config = _runtime_config(tmp_path)
     legacy_request = legacy_request_to_v3(
         Capability.SEARCH,
@@ -424,8 +425,8 @@ def test_started_research_timeout_is_attempted_cancelled_and_snapshot_stable(
         raise ProviderRequestError("late transient failure", transient=True)
 
     monkeypatch.setattr(search, "auto_route_provider", lambda _query, _config: _routing())
-    monkeypatch.setattr(search, "search_tavily", lambda **_kwargs: _provider_payload("tavily"))
-    monkeypatch.setattr(search, "search_linkup", slow_provider)
+    monkeypatch.setattr(providers, "search_tavily", lambda **_kwargs: _provider_payload("tavily"))
+    monkeypatch.setattr(providers, "search_linkup", slow_provider)
     monkeypatch.setattr(
         search,
         "extract_plus",
@@ -483,10 +484,10 @@ def test_research_extraction_timeout_is_budget_limited(tmp_path, monkeypatch):
 
     monkeypatch.setattr(search, "auto_route_provider", lambda _query, _config: _routing())
     monkeypatch.setattr(
-        search, "search_tavily", lambda **_kwargs: _provider_payload("tavily")
+        providers, "search_tavily", lambda **_kwargs: _provider_payload("tavily")
     )
     monkeypatch.setattr(
-        search, "search_linkup", lambda **_kwargs: _provider_payload("linkup")
+        providers, "search_linkup", lambda **_kwargs: _provider_payload("linkup")
     )
     monkeypatch.setattr(search, "extract_plus", slow_extract)
     request = legacy_request_to_v3(

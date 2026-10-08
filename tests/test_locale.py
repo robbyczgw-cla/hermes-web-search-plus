@@ -8,20 +8,21 @@ implies a country, resolved values reach the provider requests, and result
 metadata reports where each value came from. All provider calls are mocked;
 no network access.
 """
+from wsp_core import providers
+from wsp_core import config as config_module
 
 import contextlib
 import unittest
 from unittest import mock
 
-from wsp_core import routing
+from wsp_core import routing, search_locale
 from wsp_core import search
-from wsp_core import search_locale
 from wsp_core.search_locale import detect_location_country, provider_supports_locale, resolve_locale
 
 
 def _config(locale=None, **provider_overrides):
     """Build a merged runtime config like load_config would produce."""
-    config = search._deepcopy_default_config()
+    config = config_module._deepcopy_default_config()
     if locale is not None:
         config["defaults"]["locale"] = locale
     for provider, section in provider_overrides.items():
@@ -172,7 +173,7 @@ class ResolveLocaleTests(unittest.TestCase):
         # DEFAULT_CONFIG must not ship provider country/language keys, or the
         # resolver could no longer distinguish "explicitly set in config.json"
         # from a built-in default.
-        config = search._deepcopy_default_config()
+        config = config_module._deepcopy_default_config()
         for provider, (country_key, language_key) in search_locale.PROVIDER_LOCALE_CONFIG_KEYS.items():
             section = config.get(provider, {})
             if country_key:
@@ -201,7 +202,7 @@ class LocaleRequestPassThroughTests(unittest.TestCase):
                 captured["body"] = body
                 return {"organic": [{"title": "T", "link": "https://example.test/a", "snippet": "s"}]}
 
-            stack.enter_context(mock.patch("wsp_core.search.make_request", side_effect=fake_post))
+            stack.enter_context(mock.patch("wsp_core.providers.make_request", side_effect=fake_post))
             result = search.run_search_request(query=query, provider="serper", config=config, **kwargs)
         return captured, result
 
@@ -265,7 +266,7 @@ class LocaleRequestPassThroughTests(unittest.TestCase):
                 captured["url"] = url
                 return {"web": {"results": [{"title": "T", "url": "https://example.test/a", "description": "s"}]}}
 
-            stack.enter_context(mock.patch("wsp_core.search.make_get_request", side_effect=fake_get))
+            stack.enter_context(mock.patch("wsp_core.providers.make_get_request", side_effect=fake_get))
             result = search.run_search_request(query=query, provider="brave", config=config, **kwargs)
         return captured, result
 
@@ -290,7 +291,7 @@ class LocaleRequestPassThroughTests(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             self._isolate(stack)
             stack.enter_context(mock.patch.dict("os.environ", {"TAVILY_API_KEY": "tavily-test-key"}))
-            stack.enter_context(mock.patch.object(search, "search_tavily", lambda **kw: {
+            stack.enter_context(mock.patch.object(providers, "search_tavily", lambda **kw: {
                 "provider": "tavily",
                 "query": "q",
                 "results": [{"url": "https://example.test/a", "title": "A", "snippet": "s"}],

@@ -1,12 +1,12 @@
 """Release-blocking source-only Charter gates for the live v2 execution surface."""
 
 from __future__ import annotations
+from wsp_core import providers
 
 from pathlib import Path
 
 import pytest
 
-from wsp_core import providers
 from wsp_core.provider_registry import PROVIDER_SPECS
 from wsp_core.request_gate_v3 import validate_outbound_body, validate_provider_mode
 

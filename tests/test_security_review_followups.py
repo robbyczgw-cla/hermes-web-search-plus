@@ -1,7 +1,7 @@
 """Regression tests for reviewer follow-ups: IPv6 forms, urllib handlers, empty encoded body."""
+from wsp_core import extract
 import pytest
 
-from wsp_core import extract
 from wsp_core import http_client
 
 

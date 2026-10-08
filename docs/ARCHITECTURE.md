@@ -33,10 +33,6 @@ The plugin does not run a separate hosted backend. It does not add an analytics 
 
 Default file locations are relative to the plugin directory and did not change when the engine moved into `wsp_core/`: cache and runtime state in `../.cache`, behaviour config in `../config.json`, keys in the plugin `.env`, the parent `.env` and the Hermes profile `.env`.
 
-## Compatibility shims
-
-Compatibility shims in `wsp_core/search.py` intentionally preserve legacy imports and monkeypatch seams while the modular split settles. The public shim policy is available via `get_compatibility_shim_policy()` and must keep wrappers in place until the ProviderSpec registry has stabilized for a documented minor release window.
-
 ## Tool surface
 
 The plugin exposes two tools:
@@ -242,8 +238,8 @@ one surface.
 A provider addition should include:
 
 - a `ProviderSpec` entry in `wsp_core/provider_registry.py` (id, env var, capabilities, `auto_allow` default)
-- provider function(s) in `wsp_core/providers.py` (`search_<provider>`, optionally `extract_<provider>`) plus the `wsp_core/search.py` seam wrapper
-- a dispatch adapter per capability in `wsp_core/provider_dispatch.py`, registered in `SEARCH_DISPATCH`/`EXTRACT_DISPATCH`
+- provider function(s) in `wsp_core/providers.py` (`search_<provider>`, optionally `extract_<provider>`)
+- a dispatch adapter per capability in `wsp_core/provider_dispatch.py`, registered in `SEARCH_DISPATCH`/`EXTRACT_DISPATCH`; dispatch resolves functions from `wsp_core/providers.py`
 - routing score/match behavior in `wsp_core/routing.py` if it participates in auto-routing
 - docs in README, User Guide, FAQ, and Architecture when behavior is user-visible (`docs/PROVIDERS.md` regenerates from the registry)
 - tests for response normalization and missing-key behavior (dispatch/enum/onboarding completeness is enforced by existing registry-driven tests)

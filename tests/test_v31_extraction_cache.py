@@ -1,13 +1,13 @@
 """WSP 3.1 extraction-cache identity and losslessness contract tests."""
 
 from __future__ import annotations
+from wsp_core import extract
 
 from copy import deepcopy
 import json
 
 import pytest
 
-from wsp_core import extract
 from wsp_core.cache_v3 import ResponseCacheV3, response_payload_from_cache_material
 from wsp_core.compat_v3 import legacy_request_to_v3
 from wsp_core.contract_v3 import Capability

@@ -1,5 +1,8 @@
 """First-run contracts: offline, no credentials, no live installation writes."""
 from __future__ import annotations
+from wsp_core import config
+from wsp_core import config as config_module
+from wsp_core import extract
 
 import json
 from pathlib import Path
@@ -7,8 +10,6 @@ import sys
 
 import pytest
 
-from wsp_core import config
-from wsp_core import extract
 from wsp_core import search
 
 from plugin_loader import load_plugin
@@ -78,8 +79,8 @@ def test_missing_key_guidance_uses_setup_and_env_not_inline_config():
 
 
 def test_no_key_search_has_top_level_actionable_error():
-    args = search.build_parser(config._deepcopy_default_config()).parse_args(['--query', 'offline first run', '--no-cache'])
-    payload, code = search.execute_search_request(args, config._deepcopy_default_config())
+    args = search.build_parser(config_module._deepcopy_default_config()).parse_args(['--query', 'offline first run', '--no-cache'])
+    payload, code = search.execute_search_request(args, config_module._deepcopy_default_config())
     assert code != 0
     assert payload['error_type'] == 'provider_setup_required'
     assert 'setup.py setup --preset starter' in '\n'.join(payload['how_to_fix'])
@@ -88,7 +89,7 @@ def test_no_key_search_has_top_level_actionable_error():
 
 
 def test_native_search_no_key_has_actionable_error():
-    payload = search.run_search_request(query='offline first run', no_cache=True, config=config._deepcopy_default_config())
+    payload = search.run_search_request(query='offline first run', no_cache=True, config=config_module._deepcopy_default_config())
     assert payload['error_type'] == 'provider_setup_required'
     assert 'setup.py setup --preset starter' in '\n'.join(payload['how_to_fix'])
     assert not payload['provider_errors'][0]['error'].startswith('{')
@@ -113,7 +114,7 @@ def test_setup_guidance_respects_keyless_opt_in():
 
 
 def test_no_key_extract_has_actionable_error():
-    payload = extract.extract_plus(['https://example.com'], config=config._deepcopy_default_config())
+    payload = extract.extract_plus(['https://example.com'], config=config_module._deepcopy_default_config())
     assert payload['error_type'] == 'provider_setup_required'
     assert 'setup.py setup --preset extract' in '\n'.join(payload['how_to_fix'])
     assert payload['env_vars']
@@ -130,7 +131,7 @@ def _preset_env_vars(preset):
 ])
 def test_auto_guidance_env_vars_match_recommended_preset(capability, preset, profile):
     payload = {'error': 'All providers failed'}
-    cfg = {**config._deepcopy_default_config(), 'profile': profile}
+    cfg = {**config_module._deepcopy_default_config(), 'profile': profile}
     candidates = ['searxng'] if profile == 'self_hosted' else ['tavily']
     config.add_provider_setup_guidance(payload, capability, candidates, cfg)
     assert f'--preset {preset}' in payload['error']
@@ -138,13 +139,13 @@ def test_auto_guidance_env_vars_match_recommended_preset(capability, preset, pro
 
 
 def test_cli_no_key_extract_env_vars_match_extract_preset():
-    payload = extract.extract_plus(['https://example.com'], config=config._deepcopy_default_config())
+    payload = extract.extract_plus(['https://example.com'], config=config_module._deepcopy_default_config())
     assert sorted(payload['env_vars']) == _preset_env_vars('extract')
 
 
 def test_cli_no_key_search_env_vars_match_starter_preset():
-    args = search.build_parser(config._deepcopy_default_config()).parse_args(['--query', 'offline first run', '--no-cache'])
-    payload, _ = search.execute_search_request(args, config._deepcopy_default_config())
+    args = search.build_parser(config_module._deepcopy_default_config()).parse_args(['--query', 'offline first run', '--no-cache'])
+    payload, _ = search.execute_search_request(args, config_module._deepcopy_default_config())
     assert sorted(payload['env_vars']) == _preset_env_vars('starter')
 
 
@@ -156,7 +157,7 @@ def test_cli_no_key_search_env_vars_match_starter_preset():
 ])
 def test_extract_cli_exit_matches_result(monkeypatch, capsys, payload, expected_code):
     monkeypatch.setattr(sys, 'argv', ['search.py', '--extract-urls', 'https://example.com'])
-    monkeypatch.setattr(search, 'load_config', config._deepcopy_default_config)
+    monkeypatch.setattr(search, 'load_config', config_module._deepcopy_default_config)
     monkeypatch.setattr(search, 'extract_plus', lambda **kw: payload)
     if expected_code:
         with pytest.raises(SystemExit) as exc:
@@ -171,7 +172,7 @@ def test_extract_cli_exit_matches_result(monkeypatch, capsys, payload, expected_
 @pytest.mark.parametrize('entrypoint', ['cli-core', 'native'])
 def test_explicit_missing_key_targets_requested_provider(monkeypatch, entrypoint):
     monkeypatch.setenv('YOU_API_KEY', 'fake-local-test-key')
-    cfg = config._deepcopy_default_config()
+    cfg = config_module._deepcopy_default_config()
     if entrypoint == 'cli-core':
         args = search.build_parser(cfg).parse_args(['--query', 'offline explicit', '--provider', 'serpbase', '--no-cache'])
         payload, code = search.execute_search_request(args, cfg)
@@ -186,7 +187,7 @@ def test_explicit_missing_key_targets_requested_provider(monkeypatch, entrypoint
 
 
 def test_explicit_extract_missing_key_targets_requested_provider():
-    payload = extract.extract_plus(['https://example.com'], provider='firecrawl', config=config._deepcopy_default_config())
+    payload = extract.extract_plus(['https://example.com'], provider='firecrawl', config=config_module._deepcopy_default_config())
     assert payload['error_type'] == 'requested_provider_not_configured'
     assert 'setup.py setup firecrawl' in '\n'.join(payload['how_to_fix'])
     assert payload['env_vars'] == ['FIRECRAWL_API_KEY']
