@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import time
 import json
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -735,3 +736,29 @@ def test_shadow_interface_stub_receipt_survives_privacy_and_journals(tmp_path) -
     assert journal.append(record) is True
     loaded = journal.load(limit=10)
     assert loaded and loaded[0]["routing_receipt"]["shadow_observation"]["policy_id"] == "shadow-interface"
+
+
+def test_append_is_constant_time_below_the_limits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    journal = journal_module.OperatorReceiptJournal(tmp_path, max_records=50)
+    record = fixture("receipts.json")["receipts"][0]
+    assert journal.append(dict(record, timestamp=time.time())) is True
+
+    def no_rewrite(*_args: Any) -> None:
+        raise AssertionError("append below the limits must not rewrite the journal")
+
+    monkeypatch.setattr(journal, "_rewrite", no_rewrite)
+    for _ in range(20):
+        assert journal.append(dict(record, timestamp=time.time())) is True
+    assert len(journal.path.read_text().splitlines()) == 21
+
+
+def test_full_journal_compacts_with_headroom(tmp_path: Path) -> None:
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    journal = journal_module.OperatorReceiptJournal(tmp_path, max_records=20)
+    record = fixture("receipts.json")["receipts"][0]
+    for _ in range(21):
+        assert journal.append(dict(record, timestamp=time.time())) is True
+    lines = journal.path.read_text().splitlines()
+    assert len(lines) == 18  # trimmed to 90 % so the next appends stay O(1)
+    assert len(journal.load(limit=100)) == 18
