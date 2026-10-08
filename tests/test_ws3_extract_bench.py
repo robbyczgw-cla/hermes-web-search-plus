@@ -300,7 +300,7 @@ def test_cli_extract_bench_persists_history_and_no_history_opts_out(
         }
 
     monkeypatch.setattr(search, "load_config", runtime_config)
-    monkeypatch.setattr(search._extract_bench, "run_extract_bench", fake_report)
+    monkeypatch.setattr(bench, "run_extract_bench", fake_report)
     monkeypatch.setattr(search, "CACHE_DIR", tmp_path)
     monkeypatch.setattr(
         search.sys,

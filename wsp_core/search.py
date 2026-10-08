@@ -33,6 +33,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import List, Dict, Any, Optional, Tuple
 from .http_client import (  # noqa: F401 - re-exported for backward-compatible tests/imports
     ProviderRequestError,
@@ -121,9 +122,6 @@ from .state_store_v3 import SQLiteStateStore
 from . import providers as _providers
 from . import routing as _routing
 from . import extract as _extract
-from . import bench as _bench
-from . import extract_bench_v3 as _extract_bench
-from . import state_migration_v3 as _state_migration
 # Backward-compatible cache helper aliases for older imports/tests.
 get_cached_result = cache_get
 cache_search_result = cache_put
@@ -530,10 +528,15 @@ def run_provider_bench(config: Dict[str, Any], **kwargs) -> Dict[str, Any]:
     monkeypatch surface as the rest of the pipeline (``search.search_you``
     etc.), and never records provider health cooldowns or provider stats.
     """
-    return _bench.run_bench(config, search_module=sys.modules[__name__], **kwargs)
+    from . import bench
+
+    return bench.run_bench(config, search_module=sys.modules[__name__], **kwargs)
 
 
-format_bench_text = _bench.format_bench_text
+def format_bench_text(report: Dict[str, Any]) -> str:
+    from . import bench
+
+    return bench.format_bench_text(report)
 
 
 def _format_doctor_text(report: Dict[str, Any]) -> str:
@@ -590,6 +593,8 @@ def build_parser(config: Dict[str, Any]) -> argparse.ArgumentParser:
     helper so the Hermes plugin can route argv through the exact same parsing and
     defaults without spawning a subprocess.
     """
+    from . import extract_bench_v3 as _extract_bench  # CLI-only; not loaded by searches
+
     parser = argparse.ArgumentParser(
         description="Web Search Plus — Intelligent multi-provider search with smart auto-routing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -967,7 +972,78 @@ Full docs: See README.md and SKILL.md
     return parser
 
 
+def default_search_args(config: Dict[str, Any]) -> SimpleNamespace:
+    """Search options with the CLI defaults, built without argparse.
+
+    The plugin calls the pipeline directly and never parses argv. These are
+    exactly the defaults of ``build_parser(config).parse_args([])`` minus the
+    maintenance-only CLI options (pinned by tests/test_direct_call_path.py).
+    """
+    defaults = config.get("defaults", {})
+    tavily = config.get("tavily", {})
+    querit = config.get("querit", {})
+    linkup = config.get("linkup", {})
+    exa = config.get("exa", {})
+    firecrawl = config.get("firecrawl", {})
+    you = config.get("you", {})
+    searxng = config.get("searxng", {})
+    return SimpleNamespace(
+        provider=None,
+        query=None,
+        output_format="markdown",
+        extract_images=False,
+        include_raw_html=False,
+        render_js=False,
+        spans=False,
+        spans_query=None,
+        max_results=defaults.get("max_results", 5),
+        images=False,
+        allow_fallback=False,
+        country=None,
+        language=None,
+        search_type=config.get("serper", {}).get("type", "search"),
+        time_range=None,
+        freshness=None,
+        depth=tavily.get("depth", "basic"),
+        topic=tavily.get("topic", "general"),
+        raw_content=False,
+        querit_base_url=querit.get("base_url", "https://api.querit.ai"),
+        querit_base_path=querit.get("base_path", "/v1/search"),
+        linkup_depth=linkup.get("depth", "standard"),
+        linkup_output_type=linkup.get("output_type", "searchResults"),
+        exa_type=exa.get("type", "neural"),
+        exa_depth=exa.get("depth", "normal"),
+        exa_verbosity=exa.get("verbosity", "standard"),
+        category=None,
+        start_date=None,
+        end_date=None,
+        similar_url=None,
+        firecrawl_scrape=False,
+        firecrawl_sources=list(firecrawl.get("sources", ["web"])),
+        you_safesearch=you.get("safesearch", "moderate"),
+        livecrawl=None,
+        no_news=False,
+        searxng_url=searxng.get("base_url") or searxng.get("instance_url"),
+        searxng_safesearch=searxng.get("safesearch", 0),
+        engines=searxng.get("engines"),
+        categories=None,
+        include_domains=None,
+        exclude_domains=None,
+        quality_report=False,
+        mode="normal",
+        research_providers=None,
+        research_extract_count=3,
+        research_time_budget=55.0,
+        cache_ttl=DEFAULT_CACHE_TTL,
+        no_cache=False,
+    )
+
+
 def main():
+    # Maintenance commands live in modules a search never needs; load them here.
+    from . import extract_bench_v3 as _extract_bench
+    from . import state_migration_v3 as _state_migration
+
     config = load_config()
     parser = build_parser(config)
     args = parser.parse_args()
@@ -1812,8 +1888,8 @@ def _plan_search_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
 
 
 def _search_args_from_v3(request: RequestV3, config: Dict[str, Any]):
-    # Keep CLI defaults, but never parse request data as command-line syntax.
-    args = build_parser(config).parse_args([])
+    # CLI defaults without argparse; request data is never parsed as argv.
+    args = default_search_args(config)
     options = request.options
     routing_request = request.routing
     args.query = request.input["query"]

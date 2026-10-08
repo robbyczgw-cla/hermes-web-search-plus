@@ -15,7 +15,6 @@ import logging
 import os
 import re
 import shutil
-import subprocess
 import tempfile
 import sys
 import threading
@@ -52,7 +51,6 @@ from .wsp_core.daemon_tasks import DaemonTask
 
 _PLUGIN_DIR = Path(__file__).resolve().parent
 
-_SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 _TOOLSET_NAME = "web-search-plus"
 _PROVIDER_ENV_KEYS = list(PROVIDER_ENV_KEYS)
 _EXTRACT_PROVIDER_ENV_KEYS = list(EXTRACT_PROVIDER_ENV_KEYS)
@@ -1443,6 +1441,7 @@ def _on_session_start(**kwargs: Any) -> Optional[Dict[str, str]]:
     return hint
 
 
+_ENGINE_UNAVAILABLE = "Web Search Plus engine failed to load; see the Hermes log"
 _search_module: Any = None
 _search_import_failed = False
 _search_import_lock = threading.Lock()
@@ -1452,7 +1451,7 @@ def _load_search_module() -> Any:
     """Return the in-process search engine (``wsp_core.search``), or None.
 
     Loaded lazily on first use so plugin registration stays cheap. ``None``
-    (import failure, logged once) makes callers use the subprocess path.
+    means the import failed (logged once); tool calls then report an error.
     """
     global _search_module, _search_import_failed
     if _search_module is not None:
@@ -1466,16 +1465,11 @@ def _load_search_module() -> Any:
             return None
         try:
             _search_module = importlib.import_module(".wsp_core.search", __package__ or __name__)
-        except Exception:  # pragma: no cover - defensive: fall back to subprocess
-            logger.exception("web-search-plus: in-process search import failed; using subprocess fallback")
+        except Exception:  # pragma: no cover - defensive
+            logger.exception("web-search-plus: search engine import failed")
             _search_import_failed = True
             return None
         return _search_module
-
-
-def _force_subprocess() -> bool:
-    """Allow operators to opt back into the legacy subprocess path via env."""
-    return _clean_env_value(os.environ.get("WSP_FORCE_SUBPROCESS", "")) is not None
 
 
 def _search_timeout(mode: str, research_time_budget: float, base: int = 75) -> int:
@@ -1488,7 +1482,7 @@ def _search_timeout(mode: str, research_time_budget: float, base: int = 75) -> i
 def _call_with_timeout(fn: Callable[[], dict], timeout: int) -> dict:
     """Run ``fn`` on a daemon thread bounded by a wall-clock timeout.
 
-    Mirrors the hard timeout the subprocess used to give us. On timeout we stop
+    Gives every tool call a hard wall-clock bound. On timeout we stop
     waiting (the orphaned worker is bounded by per-provider HTTP timeouts) and
     raise ``FuturesTimeout`` for the caller to translate into a structured error.
     A daemon thread — unlike a ThreadPoolExecutor worker — is not joined at
@@ -1512,31 +1506,16 @@ def _run_search(
     research_time_budget: float = 55.0,
     language: Optional[str] = None,
     country: Optional[str] = None,
-    subprocess_timeout: int = 75,
+    timeout: int = 75,
     *,
-    inprocess_only: bool = False,
     no_cache: bool = False,
     cache_ttl: Optional[int] = None,
 ) -> dict:
-    """Run a search in-process (fast path), falling back to the subprocess engine.
-
-    The in-process path avoids per-call interpreter startup, module re-import, and
-    a JSON round-trip. A thread watchdog preserves the wall-clock timeout the
-    subprocess previously enforced.
-    """
-    timeout = _search_timeout(mode, research_time_budget, subprocess_timeout)
-    search = None if _force_subprocess() else _load_search_module()
+    """Run a search in-process, bounded by a wall-clock timeout."""
+    timeout = _search_timeout(mode, research_time_budget, timeout)
+    search = _load_search_module()
     if search is None:
-        if inprocess_only:
-            return {"error": "WSP in-process engine unavailable; no sidecar fallback", "results": []}
-        return _run_search_subprocess(
-            query=query, provider=provider, count=count, exa_depth=exa_depth,
-            time_range=time_range, freshness=freshness, search_type=search_type,
-            include_domains=include_domains,
-            exclude_domains=exclude_domains, mode=mode, quality_report=quality_report,
-            research_time_budget=research_time_budget, language=language, country=country,
-            subprocess_timeout=timeout, no_cache=no_cache, cache_ttl=cache_ttl,
-        )
+        return {"error": _ENGINE_UNAVAILABLE, "provider": provider, "query": query, "results": []}
 
     def call() -> dict:
         return search.run_search_request(
@@ -1556,108 +1535,6 @@ def _run_search(
         return {"error": str(e), "provider": provider, "query": query, "results": []}
 
 
-def _validate_variadic_cli_values(label: str, values: Any) -> Optional[str]:
-    """Return an error text if values are unsafe behind a variadic argparse option.
-
-    argparse would read a value such as ``--clear-cache`` as a real option of
-    the child process, so these are refused before any process is started.
-    """
-    if not isinstance(values, (list, tuple)):
-        return f"Invalid {label}: expected a list of strings"
-    for value in values:
-        if not isinstance(value, str) or not value.strip():
-            return f"Invalid {label}: entries must be non-empty strings"
-        if value.startswith("-"):
-            return f"Invalid {label}: entries must not start with '-'"
-    return None
-
-
-def _run_search_subprocess(
-    query: str,
-    provider: str = "auto",
-    count: int = 5,
-    exa_depth: str = "normal",
-    time_range: Optional[str] = None,
-    freshness: Optional[str] = None,
-    search_type: Optional[str] = None,
-    include_domains: Optional[List[str]] = None,
-    exclude_domains: Optional[List[str]] = None,
-    mode: str = "normal",
-    quality_report: bool = False,
-    research_time_budget: float = 55.0,
-    language: Optional[str] = None,
-    country: Optional[str] = None,
-    subprocess_timeout: int = 75,
-    no_cache: bool = False,
-    cache_ttl: Optional[int] = None,
-) -> dict:
-    """Legacy fallback: call search.py as a subprocess and return parsed JSON."""
-    for label, values in (("include_domains", include_domains), ("exclude_domains", exclude_domains)):
-        if values is None or (isinstance(values, (list, tuple)) and not values):
-            continue
-        problem = _validate_variadic_cli_values(label, values)
-        if problem:
-            return {"error": problem, "provider": provider, "query": query, "results": []}
-    cmd = [
-        sys.executable,
-        str(_SEARCH_SCRIPT),
-        f"--query={query}",
-        "--provider", provider,
-        "--max-results", str(count),
-        "--compact",
-    ]
-    if exa_depth != "normal":
-        cmd += ["--exa-depth", exa_depth]
-    if time_range and time_range != "none":
-        cmd += ["--time-range", time_range]
-    if freshness:
-        cmd += ["--freshness", str(freshness)]
-    if search_type:
-        cmd += ["--search-type", str(search_type)]
-    if include_domains:
-        cmd += ["--include-domains"] + include_domains
-    if exclude_domains:
-        cmd += ["--exclude-domains"] + exclude_domains
-    if mode != "normal":
-        cmd += ["--mode", mode, "--research-time-budget", str(research_time_budget)]
-        if mode == "research":
-            subprocess_timeout = max(subprocess_timeout, int(research_time_budget) + 15)
-    if quality_report:
-        cmd.append("--quality-report")
-    if language and language != "auto":
-        cmd += ["--language", language]
-    if country and country != "auto":
-        cmd += ["--country", country]
-    if no_cache:
-        cmd.append("--no-cache")
-    if cache_ttl is not None:
-        cmd += ["--cache-ttl", str(int(cache_ttl))]
-
-    env = os.environ.copy()
-
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=subprocess_timeout,
-            env=env,
-        )
-        if result.returncode != 0:
-            stderr = result.stderr.strip()
-            try:
-                return json.loads(stderr)
-            except json.JSONDecodeError:
-                return {"error": stderr or "Search failed", "provider": provider, "query": query, "results": []}
-
-        return json.loads(result.stdout)
-
-    except subprocess.TimeoutExpired:
-        return {"error": f"Search timed out after {subprocess_timeout}s", "provider": provider, "query": query, "results": []}
-    except Exception as e:
-        return {"error": str(e), "provider": provider, "query": query, "results": []}
-
-
 def _run_extract(
     urls: List[str],
     provider: str = "auto",
@@ -1667,21 +1544,12 @@ def _run_extract(
     render_js: bool = False,
     spans: bool = False,
     spans_query: Optional[str] = None,
-    subprocess_timeout: int = 90,
-    *,
-    inprocess_only: bool = False,
+    timeout: int = 90,
 ) -> dict:
-    """Run URL extraction in-process (fast path), falling back to the subprocess."""
-    search = None if _force_subprocess() else _load_search_module()
+    """Run URL extraction in-process, bounded by a wall-clock timeout."""
+    search = _load_search_module()
     if search is None:
-        if inprocess_only:
-            return {"error": "WSP in-process engine unavailable; no sidecar fallback", "results": []}
-        return _run_extract_subprocess(
-            urls, provider=provider, output_format=output_format,
-            include_images=include_images, include_raw_html=include_raw_html,
-            render_js=render_js, spans=spans, spans_query=spans_query,
-            subprocess_timeout=subprocess_timeout,
-        )
+        return {"error": _ENGINE_UNAVAILABLE, "provider": provider, "results": []}
 
     def call() -> dict:
         return search.run_extract_request(
@@ -1691,62 +1559,9 @@ def _run_extract(
         )
 
     try:
-        return _call_with_timeout(call, subprocess_timeout)
+        return _call_with_timeout(call, timeout)
     except FuturesTimeout:
-        return {"error": f"Extract timed out after {subprocess_timeout}s", "provider": provider, "results": []}
-    except Exception as e:
-        return {"error": str(e), "provider": provider, "results": []}
-
-
-def _run_extract_subprocess(
-    urls: List[str],
-    provider: str = "auto",
-    output_format: str = "markdown",
-    include_images: bool = False,
-    include_raw_html: bool = False,
-    render_js: bool = False,
-    spans: bool = False,
-    spans_query: Optional[str] = None,
-    subprocess_timeout: int = 90,
-) -> dict:
-    """Legacy fallback: call search.py extract mode and return parsed JSON result."""
-    problem = _validate_variadic_cli_values("urls", urls)
-    if problem or not urls:
-        return {"error": problem or "Invalid urls: at least one URL is required", "provider": provider, "results": []}
-    cmd = [
-        sys.executable,
-        str(_SEARCH_SCRIPT),
-        "--extract-urls",
-        *urls,
-        "--provider",
-        provider,
-        "--format",
-        output_format,
-        "--compact",
-    ]
-    if include_images:
-        cmd.append("--extract-images")
-    if include_raw_html:
-        cmd.append("--include-raw-html")
-    if render_js:
-        cmd.append("--render-js")
-    if spans:
-        cmd.append("--spans")
-    if spans_query is not None:
-        cmd.append(f"--spans-query={spans_query}")
-
-    env = os.environ.copy()
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=subprocess_timeout, env=env)
-        if result.returncode != 0:
-            stderr = result.stderr.strip()
-            try:
-                return json.loads(stderr)
-            except json.JSONDecodeError:
-                return {"error": stderr or "Extract failed", "provider": provider, "results": []}
-        return json.loads(result.stdout)
-    except subprocess.TimeoutExpired:
-        return {"error": f"Extract timed out after {subprocess_timeout}s", "provider": provider, "results": []}
+        return {"error": f"Extract timed out after {timeout}s", "provider": provider, "results": []}
     except Exception as e:
         return {"error": str(e), "provider": provider, "results": []}
 

@@ -4,6 +4,7 @@
 
 ### Changed
 
+- The plugin calls the engine directly. Search options come from `default_search_args(config)` instead of building and running the 66-option CLI parser on every call (twice per normal search, up to five times in research mode). The subprocess fallback is gone: `WSP_FORCE_SUBPROCESS` no longer has an effect, and if the engine cannot be imported the tools return an error instead of starting `search.py`. The `bench`, `extract-bench` and `state-migrate` modules load only when those commands run. WSP's own cost per search with zero-latency providers: p50 16.5-17.8 ms -> 15.3-15.4 ms; engine import 62-72 ms -> 42-45 ms.
 - **Breaking for code that imports engine internals.** The engine moved into the package `wsp_core/` and its modules import each other relatively, so Hermes loads it as `hermes_plugins.<slug>.wsp_core`. The plugin no longer edits `sys.path` or swaps 15 top-level module names in and out of `sys.modules` while it imports; after loading, none of the engine modules exist as top-level names (4.3.5 left 26 behind, such as `contract_v3` and `cache_v3`). Code that did `import search` or `import routing` imports from `wsp_core` instead. Unchanged: the `web_search_plus` and `web_extract_plus` tools, the `wsp` backend, `wsp_sdk` and `providers.d`, the `setup.py` commands, config.json and `.env`, and `python search.py`. Default file locations (cache, state, config.json, `.env`) did not move.
 
 ### Removed
