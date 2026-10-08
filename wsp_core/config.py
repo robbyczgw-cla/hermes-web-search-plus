@@ -57,11 +57,6 @@ SELF_HOSTED_SEARCH_PROVIDER_IDS = ("searxng", *KEYLESS_PROVIDER_IDS)
 SELF_HOSTED_EXTRACT_PROVIDER_IDS = tuple(KEYLESS_EXTRACT_PROVIDER_IDS)
 
 
-def _is_placeholder_env_value(value: str) -> bool:
-    """Return True for template placeholders that should not count as credentials."""
-    return _shared_clean_env_value(value) is None
-
-
 def _clean_env_value(value: str) -> Optional[str]:
     return _shared_clean_env_value(value)
 
@@ -1099,12 +1094,6 @@ def get_searxng_instance_url(config: Dict[str, Any] = None) -> Optional[str]:
     if env_url:
         return _validate_searxng_url(env_url)
     return None
-
-
-# Backward compatibility alias
-def get_env_key(provider: str) -> Optional[str]:
-    """Get API key for provider from environment (legacy function)."""
-    return get_api_key(provider)
 
 
 def validate_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
