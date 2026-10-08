@@ -6,7 +6,6 @@ from contract_v3 import ErrorClass, ErrorV3
 from http_client import ProviderRequestError
 from wsp_sdk.errors import ProviderConfigError, ProviderContractFailure
 import json
-import re
 
 
 _MESSAGES = {
@@ -32,34 +31,68 @@ _CODES = {
 }
 
 
-_SETUP_MESSAGE = re.compile(r"^Missing (API key for [a-z0-9_-]{1,32}|SearXNG instance URL)$")
-_ENV_VAR = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
+class MissingProviderKeyError(ProviderConfigError):
+    """WSP's own error for a provider without a key or SearXNG URL.
+
+    The message stays the JSON guidance older readers parse. Code that shows
+    guidance rebuilds it with ``missing_key_guidance`` from the registry and
+    never copies exception text.
+    """
+
+    def __init__(self, provider: str) -> None:
+        self.provider = provider
+        super().__init__(json.dumps(missing_key_guidance(provider)))
+
+
+def missing_key_guidance(provider: str) -> dict:
+    """Setup guidance for a provider without credentials, from the registry."""
+    if provider == "searxng":
+        return {
+            "error": "Missing SearXNG instance URL",
+            "env_var": "SEARXNG_INSTANCE_URL",
+            "how_to_fix": [
+                "1. Set up your own SearXNG instance: https://docs.searxng.org/admin/installation.html",
+                "2. Add to config.json: \"searxng\": {\"instance_url\": \"https://your-instance.example.com\"}",
+                "3. Or set environment variable: export SEARXNG_INSTANCE_URL=\"https://your-instance.example.com\"",
+                "Note: SearXNG requires a self-hosted instance with JSON format enabled.",
+            ],
+            "provider": provider,
+        }
+    from provider_registry import PROVIDER_SPECS  # lazy: the registry imports the SDK
+
+    spec = PROVIDER_SPECS[provider]
+    env_var = spec.env_var
+    return {
+        "error": f"Missing API key for {provider}",
+        "env_var": env_var,
+        "how_to_fix": [
+            f"1. Get your API key from {spec.signup_url}",
+            f"2. Run: python3 ~/.hermes/plugins/web-search-plus/setup.py setup {provider}",
+            f"3. Or add {env_var} to your Hermes profile .env",
+            f"4. Or set environment variable: export {env_var}=\"your-key\"",
+        ],
+        "provider": provider,
+    }
 
 
 def _setup_guidance(error: BaseException) -> tuple[str, dict] | None:
-    """Return WSP's own missing-key guidance, never upstream text.
+    """Return WSP's own missing-key guidance, rebuilt from the registry.
 
-    ``config.validate_api_key`` raises ``ProviderConfigError`` with a JSON body
-    that WSP itself generated. Only that exact shape is surfaced: a fixed
-    message pattern, an env-var name and the how-to-fix steps. Anything else
-    (including the SearXNG ``provided`` URL) stays redacted.
+    Only ``MissingProviderKeyError`` (raised by ``config.validate_api_key``)
+    qualifies. Any other configuration error, including one whose text looks
+    like WSP guidance, stays redacted.
     """
+    if not isinstance(error, MissingProviderKeyError):
+        return None
     try:
-        body = json.loads(str(error))
-    except (TypeError, ValueError):
+        guidance = missing_key_guidance(error.provider)
+    except KeyError:
         return None
-    if not isinstance(body, dict):
-        return None
-    message = body.get("error")
-    env_var = body.get("env_var")
-    steps = body.get("how_to_fix")
-    if not (isinstance(message, str) and _SETUP_MESSAGE.match(message)):
-        return None
-    if not (isinstance(env_var, str) and _ENV_VAR.match(env_var)):
-        return None
-    if not (isinstance(steps, list) and steps and all(isinstance(x, str) and len(x) <= 300 for x in steps)):
-        return None
-    return message, {"env_var": env_var, "how_to_fix": list(steps[:6]), "setup_required": True}
+    return guidance["error"], {
+        "env_var": guidance["env_var"],
+        "how_to_fix": list(guidance["how_to_fix"]),
+        "setup_required": True,
+    }
 
 
 def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
