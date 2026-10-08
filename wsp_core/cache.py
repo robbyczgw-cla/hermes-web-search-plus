@@ -445,10 +445,9 @@ def routing_class_of(routing: Optional[Dict[str, Any]]) -> Optional[str]:
 def _query_routing_class(query: str) -> Optional[str]:
     """Router class computed from the query alone (no plan, e.g. an explicit provider)."""
     try:
-        from .routing import QueryAnalyzer
+        from .routing import QueryAnalyzer, detect_query_language
 
-        analyzer = QueryAnalyzer({})
-        return analyzer._detect_routing_class(query, analyzer._detect_language_hint(query))
+        return QueryAnalyzer({})._detect_routing_class(query, detect_query_language(query).hint)
     except Exception:
         return None
 

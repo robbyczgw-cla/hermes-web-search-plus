@@ -85,9 +85,10 @@ DEFAULT_CONFIG = {
         # parameters (serper, brave, you, serpbase, querit, firecrawl,
         # searxng). country: ISO 3166-1 alpha-2 (e.g. "at"); language:
         # ISO 639-1 code, or "auto" for conservative query language
-        # inference. Unset values fall back to us/en. Explicit provider
-        # sections in config.json (e.g. serper.country) still win — see
-        # search_locale.resolve_locale for the full precedence.
+        # detection (no language is sent when it is unsure). Unset values
+        # fall back to us/en. Explicit provider sections in config.json
+        # (e.g. serper.country) still win — see search_locale.resolve_locale
+        # for the full precedence.
         "locale": {
             "country": None,
             "language": None,

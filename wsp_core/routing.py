@@ -1,7 +1,7 @@
 """Routing v2 query analysis for Web Search Plus."""
 
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 from .config import (
     DEFAULT_CONFIG,
@@ -128,21 +128,22 @@ LANGUAGE_HINT_PROVIDER_BOOSTS: Dict[str, List[Tuple[str, float]]] = {
 }
 
 # ---------------------------------------------------------------------------
-# Conservative query-language inference for locale resolution
+# Query-language detection (one detector for routing and locale resolution)
 # ---------------------------------------------------------------------------
-# Extends the routing language_hint mechanic (QueryAnalyzer._detect_language_hint)
-# for search_locale.resolve_locale. The routing hint is deliberately trigger-happy
-# (a single stopword is enough to bias provider boosts); locale resolution instead
-# counts distinct stopword/character signals per language and only reports a
-# language when the evidence is unambiguous. Short keyword or technical queries
-# (for example "PostgreSQL 17 release notes") produce no inference on purpose.
+# detect_query_language serves two callers from the same evidence. The routing
+# hint is deliberately trigger-happy (one script character or trigger word is
+# enough to bias provider boosts, "en" when nothing matches). The inference used
+# by search_locale.resolve_locale counts distinct stopword/character signals per
+# language and only reports a language when the evidence is unambiguous. Short
+# keyword or technical queries (for example "PostgreSQL 17 release notes")
+# produce no inference on purpose.
 
 # Minimum number of distinct signals before a language inference is trusted.
 LANGUAGE_INFERENCE_MIN_MATCHES = 2
 
 # Common function/search words per supported language. Words shared between
 # languages (e.g. "que" in es/fr/pt) may appear in several sets; the strict
-# single-winner rule in infer_query_language keeps those from mis-firing.
+# single-winner rule in detect_query_language keeps those from mis-firing.
 LANGUAGE_INFERENCE_STOPWORDS: Dict[str, frozenset] = {
     "en": frozenset({
         "the", "and", "what", "how", "where", "when", "which", "who",
@@ -195,19 +196,40 @@ LANGUAGE_INFERENCE_CHAR_HINTS: Dict[str, str] = {
 }
 
 
-def infer_query_language(query: str) -> Optional[str]:
-    """Infer the query language conservatively for locale defaults.
+# Scripts behind the routing hint, checked in this order before any Latin words.
+_ARABIC_SCRIPT = re.compile(r'[\u0600-\u06ff]')
+_CYRILLIC_SCRIPT = re.compile(r'[\u0400-\u04ff]')
+_KANA_SCRIPT = re.compile(r'[\u3040-\u30ff]')
+_JAPANESE_WORDS = re.compile(r'(東京|ニュース|今日|企業|発表)')
+_HAN_SCRIPT = re.compile(r'[\u4e00-\u9fff]')
+# Letters outside the base Russian / Arabic alphabets (Ukrainian, Persian,
+# Urdu, ...): the script alone then no longer identifies "ru" or "ar".
+_NON_RUSSIAN_CYRILLIC = re.compile(r'[\u0400\u0402-\u040f\u0450\u0452-\u04ff]')
+_NON_BASE_ARABIC = re.compile(r'[\u0671-\u06d3\u06f0-\u06f9]')
 
-    Returns an ISO 639-1 code from LANGUAGE_INFERENCE_STOPWORDS when at least
-    LANGUAGE_INFERENCE_MIN_MATCHES distinct signals point to a single language
-    that strictly beats every other candidate. Returns None when the evidence
-    is missing or ambiguous so callers fall back to their configured default
-    (for example "Wiener Kaffeehaus Öffnungszeiten" infers "de", while a terse
-    technical query such as "DAC R2R NOS" infers nothing).
+# Single trigger words for the routing hint, first match wins (not used for
+# inference: "france" or "die" appear in English queries too).
+_ROUTING_HINT_TRIGGERS: Tuple[Tuple[str, Any], ...] = (
+    ("es", re.compile(r'\b(noticias|españa|hoy|regulación|inteligencia artificial)\b')),
+    ("fr", re.compile(r'\b(actualités|france|aujourd|ouverts?|dimanche|récents?|avis)\b')),
+    ("de", re.compile(r'\b(der|die|das|und|oder|nicht|ist|sind|aktuelle?n?|preis|kaufen|öffnungszeiten|österreich)\b')),
+)
+
+
+class QueryLanguage(NamedTuple):
+    """Result of detect_query_language.
+
+    ``hint`` always carries a code ("en" when nothing matches) and feeds
+    routing. ``inferred`` is None unless the evidence is unambiguous and feeds
+    locale resolution.
     """
-    if not query:
-        return None
-    lowered = query.lower()
+
+    hint: str
+    inferred: Optional[str]
+
+
+def _stopword_language(lowered: str) -> Optional[str]:
+    """Latin-script inference: stopword and character signals, single winner."""
     words = set(re.findall(r"\w+", lowered))
     counts: Dict[str, int] = {}
     for language, stopwords in LANGUAGE_INFERENCE_STOPWORDS.items():
@@ -224,6 +246,57 @@ def infer_query_language(query: str) -> Optional[str]:
     if len(ranked) > 1 and ranked[1][1] == best_count:
         return None
     return best_language
+
+
+def _script_language(text: str) -> Tuple[Optional[str], bool]:
+    """(routing hint, confident) for non-Latin scripts; (None, False) otherwise.
+
+    Kana only occurs in Japanese. Han-only text (zh or ja) and the Japanese
+    word list stay hint-only, as do Cyrillic/Arabic text with letters outside
+    the Russian/Arabic alphabets.
+    """
+    if _ARABIC_SCRIPT.search(text):
+        return "ar", not _NON_BASE_ARABIC.search(text)
+    if _CYRILLIC_SCRIPT.search(text):
+        return "ru", not _NON_RUSSIAN_CYRILLIC.search(text)
+    if _KANA_SCRIPT.search(text):
+        return "ja", True
+    if _JAPANESE_WORDS.search(text):
+        return "ja", False
+    if _HAN_SCRIPT.search(text):
+        return "zh", False
+    return None, False
+
+
+def detect_query_language(query: Optional[str]) -> QueryLanguage:
+    """Detect the query language for routing (``hint``) and locale (``inferred``).
+
+    ``inferred`` is an ISO 639-1 code only when the evidence is unambiguous:
+    either a script that identifies the language, or at least
+    LANGUAGE_INFERENCE_MIN_MATCHES distinct stopword/character signals for one
+    language that strictly beats every other candidate. Conflicting evidence
+    (for example kana inside an English sentence) infers nothing. For example
+    "Wiener Kaffeehaus Öffnungszeiten" infers "de", while a terse technical
+    query such as "DAC R2R NOS" infers nothing and callers fall back to their
+    configured default.
+    """
+    text = query or ""
+    lowered = text.lower()
+    script_hint, script_confident = _script_language(text)
+    candidates = {_stopword_language(lowered)}
+    if script_confident:
+        candidates.add(script_hint)
+    candidates.discard(None)
+    inferred = candidates.pop() if len(candidates) == 1 else None
+    if script_hint:
+        return QueryLanguage(script_hint, inferred)
+    hint = next((lang for lang, pattern in _ROUTING_HINT_TRIGGERS if pattern.search(lowered)), "en")
+    return QueryLanguage(hint, inferred)
+
+
+def infer_query_language(query: Optional[str]) -> Optional[str]:
+    """The unambiguous language of ``detect_query_language``, else None."""
+    return detect_query_language(query).inferred
 
 
 # Conservative class-aware provider boosts (positive) and penalties (negative)
@@ -837,25 +910,6 @@ class QueryAnalyzer:
 
         return total > 2.0, total
 
-    def _detect_language_hint(self, query: str) -> str:
-        """Best-effort language/script hint for routing; not user-facing translation."""
-        q = query.lower()
-        if re.search(r'[\u0600-\u06ff]', query):
-            return "ar"
-        if re.search(r'[\u0400-\u04ff]', query):
-            return "ru"
-        if re.search(r'[\u3040-\u30ff]', query) or re.search(r'(東京|ニュース|今日|企業|発表)', query):
-            return "ja"
-        if re.search(r'[\u4e00-\u9fff]', query):
-            return "zh"
-        if re.search(r'\b(noticias|españa|hoy|regulación|inteligencia artificial)\b', q):
-            return "es"
-        if re.search(r'\b(actualités|france|aujourd|ouverts?|dimanche|récents?|avis)\b', q):
-            return "fr"
-        if re.search(r'\b(der|die|das|und|oder|nicht|ist|sind|aktuelle?n?|preis|kaufen|öffnungszeiten|österreich)\b', q):
-            return "de"
-        return "en"
-
     def _detect_routing_class(self, query: str, language_hint: str) -> str:
         """Coarse class labels from the qualitative 25-query benchmark."""
         q = query.lower()
@@ -963,7 +1017,7 @@ class QueryAnalyzer:
 
         # Check recency intent and benchmark-derived language/class hints
         is_recency, recency_score = self._detect_recency_intent(query)
-        language_hint = self._detect_language_hint(query)
+        language_hint = detect_query_language(query).hint
         routing_class = self._detect_routing_class(query, language_hint)
 
         # Map intents to providers with final scores
