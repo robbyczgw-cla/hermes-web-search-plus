@@ -174,10 +174,10 @@ def test_reddit_site_query_routes_away_from_exa():
     assert routing["analysis_summary"]["routing_class"] == "community"
 
 
-def test_cve_security_routes_to_the_default_provider():
+def test_cve_security_routes_to_serper():
     routing = _route("latest OpenSSH CVE 2026 mitigation advisory official")
 
-    assert routing["provider"] == "brave"
+    assert routing["provider"] == "serper"
     assert routing["analysis_summary"]["routing_class"] == "security"
 
 

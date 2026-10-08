@@ -54,7 +54,7 @@ FIRST_WITH_CORE = {
     "general": "brave",
     "local": "brave",
     "news": "brave",
-    "security": "brave",
+    "security": "serper",
     "shopping": "serper",
 }
 
@@ -83,7 +83,12 @@ def _plan(query, config):
 
 
 def test_the_table_is_what_the_benchmarks_measured():
-    assert routing.INTENT_FIRST_PROVIDER == {"academic": "exa", "docs": "exa", "shopping": "serper"}
+    assert routing.INTENT_FIRST_PROVIDER == {
+        "academic": "exa",
+        "docs": "exa",
+        "security": "serper",
+        "shopping": "serper",
+    }
     assert routing.MEASURED_PROVIDER_ORDER == ("brave", "serper", "exa", "tavily")
     assert routing.ROUTING_POLICY == quality.ROUTING_POLICY == search.ROUTING_POLICY == "routing-v3"
 
@@ -379,19 +384,19 @@ def test_the_migrated_default_drives_the_first_provider_like_a_fresh_install(tmp
 
 @pytest.mark.parametrize("providers", [CORE, EVERY_KEYED], ids=["core4", "every-key"])
 @pytest.mark.parametrize(
-    "query, expected_intent",
+    "query, expected_intent, expected_provider",
     [
-        ("what are the CVEs in openssl 3.2", "security"),
-        ("nvidia driver install linux", "general"),
-        ("apple pie recipe", "general"),
-        ("hotels in salzburg", "general"),
-        ("vegan cake recipe", "general"),
+        ("what are the CVEs in openssl 3.2", "security", "serper"),
+        ("nvidia driver install linux", "general", "brave"),
+        ("apple pie recipe", "general", "brave"),
+        ("hotels in salzburg", "general", "brave"),
+        ("vegan cake recipe", "general", "brave"),
     ],
 )
-def test_the_4x_misroutes_go_to_brave(query, expected_intent, providers):
+def test_the_4x_misroutes_are_fixed(query, expected_intent, expected_provider, providers):
     decision = search.auto_route_provider(query, _config(providers))
 
-    assert decision["provider"] == "brave"
+    assert decision["provider"] == expected_provider
     assert decision["analysis_summary"]["routing_class"] == expected_intent
     assert decision["analysis_summary"]["routing_class"] in INTENTS
 
@@ -556,7 +561,12 @@ def test_explain_routing_output_shape():
     assert explanation["intent"]["intent"] == "docs"
     assert explanation["intent"]["confidence"] == decision["confidence"]
     assert explanation["intent"]["signals"]
-    assert explanation["first_provider_rules"] == {"academic": "exa", "docs": "exa", "shopping": "serper"}
+    assert explanation["first_provider_rules"] == {
+        "academic": "exa",
+        "docs": "exa",
+        "security": "serper",
+        "shopping": "serper",
+    }
     assert explanation["measured_order"] == ["brave", "serper", "exa", "tavily"]
     assert explanation["query_analysis"]["routing_class"] == "docs"
     assert "parallel" not in explanation["available_providers"]
