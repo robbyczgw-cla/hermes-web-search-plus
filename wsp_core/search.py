@@ -1438,7 +1438,15 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         if cooldown_skips:
             routing_info["cooldown_skips"] = cooldown_skips
 
-        routing_class = routing_info.get("analysis_summary", {}).get("routing_class", "general")
+        # A v3 attempt is a fixed-provider search; rank and report with the
+        # routing the engine planned for the request.
+        planned_routing = getattr(args, "_v3_planned_routing", None)
+        ranking_routing = (
+            {**planned_routing, "provider": routing_info.get("provider")}
+            if planned_routing
+            else routing_info
+        )
+        routing_class = ranking_routing.get("analysis_summary", {}).get("routing_class", "general")
         if not cache_hit and isinstance(result.get("results"), list):
             reranked, rerank_metadata = rerank_results_for_intent(args.query or "", routing_class, result.get("results", []))
             result["results"] = reranked
@@ -1501,7 +1509,7 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             result["quality_report"] = build_quality_report(
                 query=args.query,
                 result=result,
-                routing_info=routing_info,
+                routing_info=ranking_routing,
                 providers_considered=providers_considered,
                 eligible_providers=eligible_providers,
                 cooldown_skips=cooldown_skips,
@@ -1918,6 +1926,10 @@ def _execute_search_v3(
             args.allow_fallback = False
             args.no_cache = True
             args._v3_engine_owned_attempt = True
+            if str(request.routing.get("provider") or "auto") == "auto":
+                # Rank and report with the auto-routing decision, not the
+                # fixed-provider routing of this attempt.
+                args._v3_planned_routing = plan.routing_metadata
             with request_timeout_cap(attempt_timeout):
                 provider_payload, exit_code = _execute_search_request_core(args, config)
             if exit_code:
