@@ -500,7 +500,8 @@ The default is diagnostic-only. To let Research Mode stably move URL/content dup
 
 The plugin is designed to fail visibly rather than invent confidence.
 
-- Search result cache TTL is 1 hour by default. Recency queries and `freshness`/`time_range` cap that automatically: live/hour 60s, latest/day 300s, week 1800s.
+- Search result cache TTL is 1 hour by default. Recency queries and `freshness`/`time_range` cap that automatically: live/hour 60s, latest/day 300s, week 1800s. Queries the router files under live sports, security advisories or company earnings are capped at 300s as well.
+- Searches that differ only in letter case, spacing or Unicode form ("Best  NAS 2026" and "best nas 2026") share one cache entry.
 - Cache files and provider health state live under `WSP_CACHE_DIR`, or the plugin cache directory if unset.
 - Use `no_cache=true` on `web_search_plus`, or `--no-cache` in CLI tests, when you need a fresh provider call. Cached hits include age; recency queries are labeled.
 - Transient provider errors are retried with short backoff.
