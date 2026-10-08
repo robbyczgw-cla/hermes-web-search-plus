@@ -382,6 +382,8 @@ class ReplayTransport(Transport):
         if fault == "empty":
             payload = json.dumps({"results": [], "organic": [], "web": {"results": []},
                                   "data": {"web": []}}).encode("utf-8")
+        elif fault == "http503":
+            status, payload = 503, b'{"error":"unavailable"}'
         return status, {"Content-Type": "application/json"}, payload
 
 

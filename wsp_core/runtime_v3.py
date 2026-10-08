@@ -594,8 +594,11 @@ def response_from_legacy(
         )
 
     fallback_used = bool(routing.get("fallback_used") or _error_items(payload))
+    reported_reason = routing.get("fallback_reason")
     fallback_reason = (
-        FallbackReason.SELECTED_FAILED.value
+        reported_reason
+        if fallback_used and reported_reason in {reason.value for reason in FallbackReason}
+        else FallbackReason.SELECTED_FAILED.value
         if fallback_used
         else FallbackReason.NONE.value
     )

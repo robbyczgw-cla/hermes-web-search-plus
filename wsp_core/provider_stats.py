@@ -156,6 +156,23 @@ def get_provider_performance(provider: str, now: Optional[float] = None) -> Opti
     }
 
 
+def latency_quantile(provider: str, quantile: float = 0.75, now: Optional[float] = None) -> Optional[float]:
+    """Latency (seconds) below which this share of recent successful calls finished.
+
+    None until MIN_SAMPLES_FOR_ADJUSTMENT fresh successful samples exist.
+    """
+    now_ts = now if now is not None else time.time()
+    latencies = sorted(
+        float(sample.get("lat", 0.0) or 0.0)
+        for sample in _fresh_samples(_load_stats().get(provider), now_ts)
+        if not sample.get("err")
+    )
+    if len(latencies) < MIN_SAMPLES_FOR_ADJUSTMENT:
+        return None
+    index = min(len(latencies) - 1, max(0, int(round(quantile * (len(latencies) - 1)))))
+    return latencies[index]
+
+
 def performance_adjustment(provider: str, now: Optional[float] = None) -> float:
     """Bounded routing-score adjustment from recent real-world performance.
 

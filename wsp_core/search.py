@@ -30,12 +30,15 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import queue
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import List, Dict, Any, Optional, Tuple
-from .http_client import ProviderRequestError
+from .daemon_tasks import DaemonTask
+from .http_client import ProviderRequestError, request_timeout_cap
 from .cache import (
     CACHE_DIR,
     DEFAULT_CACHE_TTL,
@@ -65,7 +68,7 @@ from .provider_health import (
     provider_in_cooldown,
     reset_provider_health,
 )
-from .provider_stats import record_provider_outcome
+from .provider_stats import latency_quantile, record_provider_outcome
 from .quality import (
     build_quality_report,
     deduplicate_results_across_providers,
@@ -1862,13 +1865,19 @@ def _execute_search_v3(
             v3_config.get("default_max_provider_attempts", 3),
         )
     )
+    candidates = list(plan.candidate_order)
+    has_fallback = len(candidates) > 1
+    # With a fallback waiting, one quick try beats two slow ones: a provider
+    # gets a single attempt and a shorter socket timeout. Without one (an
+    # explicit provider), the retry and the provider's own timeout stay.
     engine = AttemptEngine(
         store,
-        max_attempts=int(v3_config.get("max_attempts_per_provider", 2)),
+        max_attempts=1 if has_fallback else int(v3_config.get("max_attempts_per_provider", 2)),
     )
-    receipts = []
-    payload = None
-    successful_provider = None
+    attempt_timeout = (
+        _positive_float(v3_config.get("attempt_timeout_seconds"), 10.0) if has_fallback else None
+    )
+    hedge_floor = _positive_float(v3_config.get("hedge_min_delay_seconds"), 2.5)
     scope = request.request_id or plan.execution_id
     daily_budget = _daily_preflight_budget(config)
     max_wall_time_ms = request.budget.get("max_wall_time_ms")
@@ -1880,7 +1889,8 @@ def _execute_search_v3(
         else None
     )
 
-    for provider in plan.candidate_order:
+    contexts = {}
+    for provider in candidates:
         provider_config = config.get(provider) or {}
         endpoint = str(
             provider_config.get("endpoint")
@@ -1889,7 +1899,7 @@ def _execute_search_v3(
             or f"provider://{provider}/search"
         )
         credential = get_api_key(provider, config) or f"keyless:{provider}"
-        context = AttemptContext(
+        contexts[provider] = AttemptContext(
             provider=provider,
             capability=Capability.SEARCH,
             endpoint=endpoint,
@@ -1900,37 +1910,33 @@ def _execute_search_v3(
             deadline_monotonic=deadline,
             **daily_budget,
         )
-        if payload is not None:
-            receipts.append(
-                engine.skip(context, SkipReason.POLICY_EXCLUDED).receipt
-            )
-            continue
-        if deadline is not None and time.monotonic() >= deadline:
-            receipts.append(
-                engine.skip(context, SkipReason.DEADLINE_EXCEEDED).receipt
-            )
-            continue
 
-        def operation(current_provider=provider):
+    def operation_for(current_provider: str):
+        def operation():
             args = _search_args_from_v3(request, config)
             args.provider = current_provider
             args.allow_fallback = False
             args.no_cache = True
             args._v3_engine_owned_attempt = True
-            provider_payload, exit_code = _execute_search_request_core(args, config)
+            with request_timeout_cap(attempt_timeout):
+                provider_payload, exit_code = _execute_search_request_core(args, config)
             if exit_code:
                 raise ProviderRequestError(
                     str(provider_payload.get("error") or "provider failed"),
                     transient=False,
                 )
             return provider_payload
+        return operation
 
-        attempted = engine.execute(context, operation)
-        receipts.append(attempted.receipt)
-        if attempted.payload is not None:
-            payload = attempted.payload
-            successful_provider = provider
-            continue
+    def hedge_delay(provider: str) -> float:
+        usual = latency_quantile(provider, 0.75) or 0.0
+        delay = max(hedge_floor, usual)
+        return min(delay, attempt_timeout) if attempt_timeout else delay
+
+    race = _race_providers(engine, candidates, contexts, operation_for, hedge_delay, deadline)
+    receipts = race.receipts
+    payload = race.payload
+    successful_provider = race.provider
 
     if payload is None:
         payload = {
@@ -1970,6 +1976,11 @@ def _execute_search_v3(
             routing["fallback_used"] = True
             routing["original_provider"] = plan.selected_provider
             routing["provider"] = successful_provider
+            routing["fallback_reason"] = (
+                "insufficient_results"
+                if plan.selected_provider in race.empty_providers
+                else "selected_failed"
+            )
 
     stages = ["admission", "provider_attempt"]
     if any(receipt.error is not None for receipt in receipts):
@@ -1983,6 +1994,115 @@ def _execute_search_v3(
         provider_attempts=tuple(receipts),
         stages=tuple(stages),
     )
+
+
+_MAX_IN_FLIGHT = 2
+
+
+@dataclass
+class _Race:
+    provider: Optional[str]
+    payload: Optional[Dict[str, Any]]
+    receipts: List[Any]
+    empty_providers: List[str]
+
+
+def _positive_float(value: Any, default: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return number if number > 0 else default
+
+
+def _race_providers(engine, candidates, contexts, operation_for, hedge_delay, deadline) -> _Race:
+    """Run candidates in order, hedged: the first non-empty answer wins.
+
+    The next candidate starts as soon as the running one fails or answers
+    empty, or when it is slower than its hedge delay (its usual p75 latency,
+    at least the configured floor). At most two run at once. A provider that
+    is still running when another wins is reported as cancelled; it finishes
+    in the background without affecting the answer.
+    """
+    done: "queue.Queue[str]" = queue.Queue()
+    tasks: Dict[str, Tuple[DaemonTask, float, float]] = {}
+    finished: Dict[str, Any] = {}
+    pending = list(candidates)
+    winner = None
+    hedge_at = None
+    deadline_hit = False
+
+    def launch() -> None:
+        nonlocal hedge_at
+        provider = pending.pop(0)
+        if deadline is not None and time.monotonic() >= deadline:
+            finished[provider] = engine.skip(contexts[provider], SkipReason.DEADLINE_EXCEEDED)
+            return
+        task = DaemonTask(engine.execute, contexts[provider], operation_for(provider))
+        tasks[provider] = (task, time.time(), time.monotonic())
+        task.add_done_callback(lambda _task, name=provider: done.put(name))
+        hedge_at = time.monotonic() + hedge_delay(provider)
+
+    def in_flight() -> List[str]:
+        return [provider for provider in tasks if provider not in finished]
+
+    launch()
+    while True:
+        running = in_flight()
+        if not running:
+            if winner is not None or not pending:
+                break
+            launch()
+            continue
+        can_hedge = bool(pending) and len(running) < _MAX_IN_FLIGHT
+        wait = max(0.0, hedge_at - time.monotonic()) if can_hedge and hedge_at is not None else None
+        if deadline is not None:
+            remaining = max(0.0, deadline - time.monotonic())
+            wait = remaining if wait is None else min(wait, remaining)
+        try:
+            provider = done.get(timeout=wait)
+        except queue.Empty:
+            if deadline is not None and time.monotonic() >= deadline:
+                deadline_hit = True
+                break
+            launch()  # hedge: the running provider is slower than usual
+            continue
+        try:
+            execution = tasks[provider][0].result(timeout=0)
+        except Exception:  # pragma: no cover - engine.execute converts provider errors
+            execution = None
+        finished[provider] = execution
+        payload = execution.payload if execution is not None else None
+        if payload is not None and (payload.get("results") or []):
+            winner = provider
+            break
+        if pending and len(in_flight()) < _MAX_IN_FLIGHT:
+            launch()
+
+    empty_providers = [
+        provider for provider in candidates
+        if finished.get(provider) is not None and finished[provider].payload is not None
+        and not (finished[provider].payload.get("results") or [])
+    ]
+    if winner is None and empty_providers:
+        winner = empty_providers[0]  # every answer was empty: report the truthful empty result
+    receipts = []
+    for provider in candidates:
+        execution = finished.get(provider)
+        if execution is not None:
+            receipts.append(execution.receipt)
+        elif provider in tasks:
+            _task, started_wall, started_monotonic = tasks[provider]
+            receipts.append(engine.cancel_started(
+                contexts[provider],
+                started_at=started_wall,
+                duration_ms=int(max(0.0, time.monotonic() - started_monotonic) * 1000),
+            ).receipt)
+        else:
+            reason = SkipReason.DEADLINE_EXCEEDED if deadline_hit else SkipReason.POLICY_EXCLUDED
+            receipts.append(engine.skip(contexts[provider], reason).receipt)
+    payload = finished[winner].payload if winner is not None else None
+    return _Race(winner, payload, receipts, empty_providers)
 
 
 def _search_adapter() -> CapabilityAdapter:

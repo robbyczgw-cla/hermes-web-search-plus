@@ -146,10 +146,9 @@ The gate exists for providers where silent automatic use could surprise users be
 
 The plugin favors partial truth over fake certainty.
 
-- Provider calls use shared transient-error retry behavior.
-- Transient HTTP codes include `429` and `503`.
-- Retry backoff is short and bounded.
-- Repeated provider failures update provider health state and cooldown.
+- Automatic search tries the routed provider first and keeps the other eligible providers as fallbacks. The next one starts as soon as the current one fails or answers with no results, or when it is slower than its usual latency (the 75th percentile of its recent calls, at least `v3.hedge_min_delay_seconds`, default 2.5 s). At most two run at once; the first non-empty answer wins. If every provider answers empty, the empty answer of the routed provider is returned.
+- While a fallback exists, each provider gets one try with a socket timeout of `v3.attempt_timeout_seconds` (default 10 s). An explicitly requested provider without fallback keeps one retry for transient errors (`429`, `503`, timeouts) and its own timeout.
+- Repeated provider failures open a circuit for that provider and update provider health state and cooldown.
 - Cooldowns step through 1 minute, 5 minutes, 25 minutes, and 1 hour.
 - Cooldown state is local and stored in `provider_health.json` under the cache directory.
 - Research mode keeps partial provider results when later extraction or provider calls fail.
