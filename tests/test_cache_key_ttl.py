@@ -14,11 +14,7 @@ from wsp_core.cache_v3 import derive_cache_key
 from wsp_core.compat_v3 import legacy_request_to_v3
 from wsp_core.contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
 from wsp_core.orchestrator_v3 import CapabilityAdapter, ProviderPlan, execute_v3_request
-from wsp_core.routing import (
-    DEFAULT_ROUTING_CLASS,
-    MULTILINGUAL_ROUTING_CLASS,
-    ROUTING_CLASS_RULES,
-)
+from wsp_core.intents import INTENTS
 
 SPELLINGS = [
     "best nas 2026",
@@ -27,15 +23,8 @@ SPELLINGS = [
     "\tBEST NAS　2026\n",
 ]
 UNICODE_FORMS = ["Café test", "Café TEST", "CAFÉ  test"]
-SHORT_LIVED = {
-    "sports_current",
-    "finance_earnings_official",
-    "security_advisory",
-}
-ALL_CLASSES = (
-    {name for name, _patterns in ROUTING_CLASS_RULES}
-    | {MULTILINGUAL_ROUTING_CLASS, DEFAULT_ROUTING_CLASS}
-)
+SHORT_LIVED = {"news", "security"}
+ALL_CLASSES = set(INTENTS)
 
 
 def _search_request(query: str, **payload) -> RequestV3:
@@ -227,7 +216,7 @@ def test_typed_extraction_key_keeps_url_case(tmp_path):
 # --- TTL by query class -----------------------------------------------------------
 
 
-def test_class_cache_ttl_table_names_real_classes_with_a_five_minute_cap():
+def test_class_cache_ttl_table_names_real_intents_with_a_five_minute_cap():
     assert set(cache.CLASS_CACHE_TTL) == SHORT_LIVED
     assert SHORT_LIVED <= ALL_CLASSES
     assert set(cache.CLASS_CACHE_TTL.values()) == {300}
@@ -247,18 +236,17 @@ def test_class_cap_only_lowers_the_ttl():
     ttl = cache.effective_search_cache_ttl
 
     # A shorter request, recency or freshness cap still wins over the class cap.
-    assert ttl("bookshelf speakers", requested_ttl=120, routing_class="sports_current") == 120
-    assert ttl("breaking news tonight", routing_class="sports_current") == 60
-    assert ttl("bookshelf speakers", freshness="hour", routing_class="security_advisory") == 60
+    assert ttl("bookshelf speakers", requested_ttl=120, routing_class="news") == 120
+    assert ttl("breaking news tonight", routing_class="news") == 60
+    assert ttl("bookshelf speakers", freshness="hour", routing_class="security") == 60
     # A longer request is never raised, class or not.
     assert ttl("bookshelf speakers", requested_ttl=86400, routing_class="general") == 3600
-    assert ttl("bookshelf speakers", requested_ttl=86400, routing_class="sports_current") == 300
+    assert ttl("bookshelf speakers", requested_ttl=86400, routing_class="news") == 300
 
 
 def test_ttl_without_a_plan_uses_the_class_of_the_query():
     ttl = cache.effective_search_cache_ttl
 
-    assert ttl("Bundesliga Tabelle") == 300
     assert ttl("CVE-2026-1234 mitigation") == 300
     assert ttl("NVIDIA earnings guidance") == 300
     # Evergreen comparisons and queries in other languages are not capped.
@@ -270,7 +258,7 @@ def test_ttl_without_a_plan_uses_the_class_of_the_query():
 def test_v3_ttl_uses_the_class_of_the_plan():
     request = _search_request("bookshelf speakers")
 
-    assert orchestrator_v3._request_cache_ttl(request, _plan("security_advisory")) == 300
+    assert orchestrator_v3._request_cache_ttl(request, _plan("security")) == 300
     assert orchestrator_v3._request_cache_ttl(request, _plan("general")) == 3600
     assert orchestrator_v3._request_cache_ttl(request, _plan(None)) == 3600
     assert orchestrator_v3._request_cache_ttl(request) == 3600
@@ -286,7 +274,7 @@ def test_planner_class_reaches_the_v3_ttl():
         },
     }
     for query, expected_class, expected_ttl in (
-        ("Bundesliga Tabelle", "sports_current", 300),
+        ("NVIDIA earnings guidance", "news", 300),
         ("bookshelf speakers", "general", 3600),
     ):
         request = _search_request(query, provider="auto")
@@ -298,7 +286,7 @@ def test_planner_class_reaches_the_v3_ttl():
 
 def test_search_core_ttl_uses_the_planned_class_of_a_v3_attempt():
     args = search._search_args_from_v3(_search_request("bookshelf speakers"), {})
-    args._v3_planned_routing = {"analysis_summary": {"routing_class": "security_advisory"}}
+    args._v3_planned_routing = {"analysis_summary": {"routing_class": "security"}}
 
     with mock.patch.object(search, "cache_get", side_effect=RuntimeError("probe")) as get:
         with pytest.raises(RuntimeError, match="probe"):
@@ -335,7 +323,7 @@ def _age_stored_entries(root, seconds: int) -> None:
 
 @pytest.mark.parametrize(
     "routing_class,refetched_after_ten_minutes",
-    [("sports_current", True), ("general", False)],
+    [("news", True), ("general", False)],
 )
 def test_orchestrator_expires_short_lived_classes_after_five_minutes(
     tmp_path, routing_class, refetched_after_ten_minutes

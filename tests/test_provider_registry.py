@@ -40,7 +40,16 @@ def test_provider_registry_is_the_complete_capability_source():
     assert registry.PROVIDER_SPECS["serper"].env_var == "SERPER_API_KEY"
     assert registry.PROVIDER_SPECS["tavily"].supports_extract is True
     assert registry.PROVIDER_SPECS["brave"].auto_allowed_by_default is True
-    assert registry.DEFAULT_PROVIDER_PRIORITY[6] == "brave"
+    # The first four follow the measured result quality (benchmarks/RESULTS.md).
+    assert registry.DEFAULT_PROVIDER_PRIORITY[:4] == ("brave", "serper", "exa", "tavily")
+    assert registry.DEFAULT_PROVIDER_PRIORITY == (
+        "brave", "serper", "exa", "tavily", "you", "firecrawl", "linkup", "parallel",
+        "serpbase", "querit", "searxng", "keenable",
+    )
+    assert registry.PRE_5_DEFAULT_PROVIDER_PRIORITY == (
+        "you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "parallel",
+        "serpbase", "querit", "searxng", "keenable",
+    )
     assert registry.DEFAULT_AUTO_ALLOW == {
         "serpbase": False,
         "querit": False,

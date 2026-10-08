@@ -285,14 +285,14 @@ Search and extract results contain titles, snippets, URLs and page text written 
 When a query does not use the provider you expected, ask for routing diagnostics instead of guessing:
 
 ```bash
-python3 search.py --query "best bookshelf speakers under 1000 EUR" --provider auto --quality-report --compact --no-cache
+python3 search.py --query 'best wireless earbuds under $100' --provider auto --quality-report --compact --no-cache
 ```
 
 In the JSON output, check these fields first:
 
 - `routing.provider`: the selected provider.
-- `routing.reason`: why the router considered the match strong or weak.
-- `scores`: provider scores before final selection.
+- `routing.reason`: `intent_<name>` when the query matched an intent (`academic`, `community`, `docs`, `local`, `news`, `security`, `shopping`), `no_signals_matched` when it is a general query.
+- `routing.analysis_summary.routing_class`: the intent the query was classified as; `routing.analysis_summary.intent_signals` lists the cues that decided it.
 - `quality_report.skipped_providers`: providers skipped because of cooldown or errors.
 - `routing.auto_allow_excluded`: configured providers that were blocked from automatic routing by `auto_allow=false`.
 - `quality_report.extraction_recommended`: whether snippets look thin enough that `web_extract_plus` may help.
@@ -303,9 +303,9 @@ Example pattern:
 {
   "routing": {
     "provider": "serper",
-    "reason": "moderate_confidence_match",
-    "routing_policy": "routing-v2",
-    "routing_class": "shopping_specs",
+    "reason": "intent_shopping",
+    "routing_policy": "routing-v3",
+    "routing_class": "shopping",
     "auto_allow_excluded": ["serpbase"]
   },
   "quality_report": {
@@ -316,7 +316,7 @@ Example pattern:
 }
 ```
 
-Read that as: guarded providers can have keys but remain explicit-only for `provider="auto"`, and the router selected the best eligible provider. If you want SerpBase or Querit to participate in automatic routing, opt in with `set-auto-allow <provider> on`; if a provider is cooled down, wait or inspect local provider health state.
+Read that as: guarded providers can have keys but remain explicit-only for `provider="auto"`, and the router selected the first eligible provider for the query's intent. If you want SerpBase or Querit to participate in automatic routing, opt in with `set-auto-allow <provider> on`; if a provider is cooled down, wait or inspect local provider health state.
 
 ## Search locale defaults
 
@@ -474,7 +474,7 @@ The stored full text is local plaintext cache data. It may contain the complete 
 
 Search results pass through a quality layer before they reach the agent:
 
-- **Adaptive routing:** every real provider call records latency, error, and empty-result outcomes (rolling window, last 50 calls / 7 days). Routing blends a bounded adjustment (±1.0) into the scores, so providers that are currently fast and productive win close calls — strong query-class signals are never overridden. Disable with `auto_routing.adaptive_routing: false` in `config.json`; adjustments are visible in `quality_report.adaptive_adjustments`.
+- **Latency memory:** every real provider call records latency, error, and empty-result outcomes (rolling window, last 50 calls / 7 days). The hedged fallback uses them to decide how long to wait for a slow provider before racing the next one, and the Operator Console shows them as provider health. They do not steer routing: the first provider comes from the query intent alone. The 4.x setting `auto_routing.adaptive_routing` is still accepted in `config.json` and has no effect.
 - **Spam/mirror filter:** results from known Stack Overflow/GitHub content mirrors and SEO scrapers are removed (reported in `metadata.spam_filtered`). Extend via `quality.blocked_domains`, rescue a domain via `quality.allowed_domains`, or disable with `quality.filter_spam: false`.
 - **Domain diversity:** at most 2 results per domain keep their position; overflow is moved behind the diverse head (`quality.max_results_per_domain`, `0` disables).
 

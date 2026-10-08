@@ -156,12 +156,12 @@ class DetectQueryLanguageTests(unittest.TestCase):
         config = _config(locale={"language": "auto"})
         with mock.patch.object(routing, "detect_query_language", spy), \
                 mock.patch.object(search_locale, "detect_query_language", spy):
-            routing.QueryAnalyzer(config).analyze("wie funktioniert eine Wärmepumpe")
+            routing.route_query("wie funktioniert eine Wärmepumpe", config)
             resolve_locale("serper", config, "wie funktioniert eine Wärmepumpe")
         self.assertEqual(calls, ["wie funktioniert eine Wärmepumpe"] * 2)
 
     def test_routing_hint_matches_the_pre_merge_routing_detector(self):
-        # Routing decisions must not move: compare against the previous
+        # The language hint must not move: compare against the previous
         # QueryAnalyzer._detect_language_hint on the evaluation queries and
         # on script / trigger-word edge cases.
         queries = [
@@ -176,14 +176,18 @@ class DetectQueryLanguageTests(unittest.TestCase):
             "最新ニュース", "東京 天気", "最新 新闻", "서울 뉴스", "ラーメン best near me",
             "inteligencia artificial hoy", "Wiener Linien Störung heute",
         ]
-        analyzer = routing.QueryAnalyzer(_config())
+        config = _config()
         for query in queries:
             self.assertEqual(
                 routing.detect_query_language(query).hint,
                 _legacy_language_hint(query),
                 query,
             )
-            self.assertEqual(analyzer.analyze(query)["language_hint"], _legacy_language_hint(query), query)
+            self.assertEqual(
+                routing.route_query(query, config)["analysis_summary"]["language_hint"],
+                _legacy_language_hint(query),
+                query,
+            )
 
 
 class LocationHintTests(unittest.TestCase):

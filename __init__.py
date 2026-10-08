@@ -46,7 +46,12 @@ from .wsp_core.provider_registry import (
 )
 from .wsp_core.env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, is_truthy, load_env_files
 from .wsp_core.cache import MAX_STORED_TEXT_CHARS, store_web_text
-from .wsp_core.config import REMOVED_PROVIDER_IDS, apply_profile_effects, load_config
+from .wsp_core.config import (
+    REMOVED_PROVIDER_IDS,
+    _replace_pre_5_default_priority,
+    apply_profile_effects,
+    load_config,
+)
 from .wsp_core.dates import published_date
 from .wsp_core import jev_setup
 from .wsp_core.daemon_tasks import DaemonTask
@@ -557,6 +562,7 @@ def _merge_behavior_config(user_config: Mapping[str, Any]) -> Dict[str, Any]:
             priority = _normalize_provider_csv(auto_user["provider_priority"], routing=True)
         else:
             priority = _normalize_provider_csv(",".join(str(p) for p in auto_user["provider_priority"]), routing=True)
+        priority = _replace_pre_5_default_priority(priority)
         auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
     if auto_user.get("extract_provider_priority"):
         if isinstance(auto_user["extract_provider_priority"], str):
@@ -1643,9 +1649,9 @@ def _format_results(data: dict, *, now: Optional[datetime] = None) -> str:
         else:
             header_bits.append("cached")
         try:
-            from .wsp_core.routing import QueryAnalyzer
+            from .wsp_core.routing import detect_recency
 
-            if query and QueryAnalyzer({})._detect_recency_intent(query)[0]:
+            if query and detect_recency(query)[0]:
                 header_bits.append("recency query")
         except Exception:
             pass

@@ -24,7 +24,6 @@ KEYS = {"SERPER_API_KEY": "serper-test-key-123456", "BRAVE_API_KEY": "brave-test
 def _config(**v3):
     config = _deepcopy_default_config()
     config["auto_routing"]["provider_priority"] = ["serper", "brave", "exa"]
-    config["auto_routing"]["adaptive_routing"] = False
     config["v3"] = {"hedge_min_delay_seconds": 0.2, "attempt_timeout_seconds": 5, **v3}
     return config
 
@@ -32,7 +31,7 @@ def _config(**v3):
 def _route_to(monkeypatch, provider):
     monkeypatch.setattr(search, "auto_route_provider", lambda query, config: {
         "provider": provider, "confidence": 0.9, "confidence_level": "high", "reason": "test",
-        "routing_policy": "routing-v2", "scores": {provider: 9.0}, "top_signals": [],
+        "routing_policy": "routing-v3", "scores": {provider: 9.0}, "top_signals": [],
         "analysis_summary": {"routing_class": "general"},
     })
 

@@ -15,6 +15,7 @@ from .errors_v3 import MissingProviderKeyError, ProviderConfigError
 from .provider_registry import (
     DEFAULT_AUTO_ALLOW,
     DEFAULT_PROVIDER_PRIORITY,
+    PRE_5_DEFAULT_PROVIDER_PRIORITY,
     EXTRACT_PROVIDER_IDS,
     KEYLESS_EXTRACT_PROVIDER_IDS,
     KEYLESS_PROVIDER_IDS,
@@ -285,6 +286,15 @@ def _normalize_routing_provider_list_config(value: Any) -> List[str]:
     return providers
 
 
+def _replace_pre_5_default_priority(providers: List[str]) -> List[str]:
+    """The current default order for a provider_priority written by a 4.x setup."""
+    legacy = list(PRE_5_DEFAULT_PROVIDER_PRIORITY)
+    if providers[: len(legacy)] != legacy:
+        return providers
+    current = list(DEFAULT_CONFIG["auto_routing"].get("provider_priority", []))
+    return current + [provider for provider in providers[len(legacy):] if provider not in current]
+
+
 def _append_missing_default_providers(providers: List[str]) -> List[str]:
     """Preserve user ordering while adding newly introduced default providers.
 
@@ -412,7 +422,9 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
         else:
             auto["fallback_provider"] = _normalize_routing_provider_config(str(auto["fallback_provider"]))
     if auto.get("provider_priority"):
-        priority = _normalize_routing_provider_list_config(auto["provider_priority"])
+        priority = _replace_pre_5_default_priority(
+            _normalize_routing_provider_list_config(auto["provider_priority"])
+        )
         if not priority:
             priority = list(DEFAULT_CONFIG["auto_routing"]["provider_priority"])
         auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority

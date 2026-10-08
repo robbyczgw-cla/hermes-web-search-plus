@@ -12,7 +12,7 @@ from wsp_core import search, routing as routing_module
 
 SEARCH_PATH = Path(__file__).resolve().parents[1] / "search.py"
 
-QueryAnalyzer = search.QueryAnalyzer
+auto_route_provider = search.auto_route_provider
 get_api_key = search.get_api_key
 validate_api_key = search.validate_api_key
 
@@ -77,18 +77,16 @@ class SerpBaseProviderTests(unittest.TestCase):
         config = config_module._deepcopy_default_config()
         config["auto_routing"]["provider_priority"] = ["serpbase", "querit", "serper"]
         config["auto_routing"]["auto_allow"] = {"serpbase": False, "querit": False}
-        analyzer = QueryAnalyzer(config)
         env = {
             "SERPBASE_API_KEY": "serpbase-test-key-12345",
             "QUERIT_API_KEY": "querit-test-key-12345",
             "SERPER_API_KEY": "serper-test-key-12345",
         }
         with mock.patch.dict(os.environ, env, clear=False):
-            routing = analyzer.route("latest iphone price today")
+            routing = auto_route_provider("latest iphone price today", config)
 
         self.assertEqual(routing["provider"], "serper")
-        self.assertNotIn("serpbase", routing["scores"])
-        self.assertNotIn("querit", routing["scores"])
+        self.assertEqual(routing["candidate_order"], ["serper"])
         self.assertIn("serpbase", routing["auto_allow_excluded"])
         self.assertIn("querit", routing["auto_allow_excluded"])
 
@@ -113,7 +111,9 @@ class SerpBaseProviderTests(unittest.TestCase):
         excluded = explanation["routing_decision"]["auto_allow_excluded"]
         self.assertIn("serpbase", excluded)
         self.assertIn("querit", excluded)
-        self.assertIn("serpbase_signals", explanation["intent_breakdown"])
+        self.assertNotIn("serpbase", explanation["available_providers"])
+        self.assertNotIn("querit", explanation["available_providers"])
+        self.assertEqual(explanation["intent"]["intent"], "shopping")
 
     def test_explicit_serpbase_missing_key_hard_fails_without_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:

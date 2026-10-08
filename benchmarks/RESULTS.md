@@ -122,3 +122,66 @@ Output tokens on the recorded queries (core-4 replay):
 |---|---:|---:|
 | normal (60 queries) | 1056 / 3328 / 4108 | 800 / 1487 / 1680 |
 | research (26 queries) | 2441 / 3126 / 3475 | 1405 / 1830 / 1980 |
+
+## Routing 5.0 (intent table)
+
+The 60 recorded normal-mode queries were scored for each provider on its own,
+from the provider's raw recorded answer. The "Routing headroom" table above
+ran each provider through WSP (dedup and quality pipeline), so its values
+differ by up to 0.012; the order is the same.
+
+| first provider | nDCG@5 | latency p50 (recorded) |
+|---|---:|---:|
+| always Brave | 0.696 | 958 ms |
+| always Serper | 0.642 | 1401 ms |
+| always Exa | 0.638 | 665 ms |
+| always Tavily | 0.552 | 2214 ms |
+| v4.3.5 router | 0.672 | |
+| best provider per query (oracle) | 0.830 | |
+
+A table "best provider per intent" looks better in-sample (0.738 with the
+gold intents) but does not survive leave-one-out: choosing each query's
+provider from the other queries of its intent gives 0.679, below always
+Brave. Only three choices were the same in every fold: Exa for academic and
+docs queries, Serper for shopping. 5.0 routes by exactly these exceptions and
+Brave otherwise:
+
+| table | nDCG@5 |
+|---|---:|
+| Brave + Exa (academic, docs) + Serper (shopping), gold intents | 0.716 |
+| the same, intents from `wsp_core/intents.py` | 0.703 |
+
+Against always Brave the difference is +0.007 (95% bootstrap interval -0.010
+to +0.028); the gain is over the v4.3.5 router, not over Brave.
+
+The intent detector was built on the 53 tuning queries only and evaluated on
+the 241 evaluation queries afterwards. A wrong academic, docs or shopping
+label moves a query away from Brave, so those labels need clear cues:
+
+| intent | precision | recall | v4.3.5 router classes: precision / recall |
+|---|---:|---:|---:|
+| academic | 17/17 | 17/30 | 12/12 / 12/30 |
+| docs | 15/15 | 15/31 | 5/9 / 5/31 |
+| shopping | 10/10 | 10/30 | 2/2 / 2/30 |
+| all eight intents (accuracy) | 153/241 | | 89/241 |
+
+The first held-out run had one wrong docs label ("what are the differences
+between Python and Node.js": "Node.js" counted as a file name); the cue was
+fixed and the table shows the second run.
+
+End to end (core-4 replay of the recorded answers; both columns run the 5.0
+code and differ only in the router):
+
+| | v4.3.5 router | 5.0 routing |
+|---|---:|---:|
+| nDCG@5, normal (60) | 0.672 | 0.703 |
+| authority hit@5, normal (26 with authority domains) | 0.923 | 0.846 |
+| latency p50 / p95, normal | 1519 / 3313 ms | 1186 / 1870 ms |
+| output tokens, normal | 800 | 1020 |
+| nDCG@5, research (26) | 0.680 | 0.681 |
+
+Authority hit@5 changes on four queries, two each way; two of the losses
+are docs queries the detector did not label (they stay on Brave). Tokens
+rise because Brave returns longer snippets than Serper (description plus up
+to two extra snippets, about 780 vs 145 characters). The 5.0 columns
+include the snippet cap from the section above.

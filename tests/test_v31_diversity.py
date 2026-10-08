@@ -291,7 +291,7 @@ def test_v3_research_config_keeps_default_merge_and_opt_in_reranks(
         "confidence": 0.9,
         "confidence_level": "high",
         "reason": "diversity fixture",
-        "routing_policy": "routing-v2",
+        "routing_policy": "routing-v3",
         "top_signals": [],
         "scores": {"tavily": 1.0, "linkup": 0.9},
         "auto_allow_excluded": [],

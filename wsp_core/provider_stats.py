@@ -1,11 +1,11 @@
-"""Rolling provider performance memory for adaptive routing.
+"""Rolling provider latency memory.
 
-Routing v2 scores are benchmarked but static: a provider that has been slow
-or returning empty results for days keeps its full score. This module records
-the real outcome of every provider call (latency, result count, errors) in a
-small rolling window and turns it into a bounded score adjustment, so routing
-gently prefers providers that are currently fast and productive — without
-ever overriding strong query-class signals.
+Every real provider call records its latency, result count and error flag in a
+small rolling window (``provider_stats.json``). The hedged fallback reads the
+latency quantile of the planned provider (``latency_quantile``) to decide when
+a slow first provider is worth racing against the next one;
+``get_provider_performance`` summarises the window. Routing does not read these
+samples: the first provider comes from the query intent alone (routing.py).
 """
 
 from __future__ import annotations
@@ -30,18 +30,12 @@ from .cache import CACHE_DIR
 PROVIDER_STATS_FILE = CACHE_DIR / "provider_stats.json"
 # Rolling window: keep this many most-recent samples per provider.
 MAX_SAMPLES_PER_PROVIDER = 50
-# Ignore samples older than this; stale history should not steer routing.
+# Ignore samples older than this; stale history should not set the hedge delay.
 SAMPLE_MAX_AGE_SECONDS = 7 * 24 * 3600
-# Providers need this many fresh samples before stats influence routing.
+# latency_quantile needs this many fresh successful samples before it answers.
 MIN_SAMPLES_FOR_ADJUSTMENT = 5
-# Hard bound on routing-score influence. Query-class signals weigh 1.0-4.0
-# per match, so performance can break ties and nudge close calls but never
-# overrule a clear content-based winner.
-MAX_SCORE_ADJUSTMENT = 1.0
-# Median latency at or above this counts as fully slow (speed factor 0).
+# Latency at or above this earns no speed credit in the bench score (bench.py).
 LATENCY_CEILING_SECONDS = 8.0
-# Neutral point: providers performing at this combined level get adjustment 0.
-PERFORMANCE_BASELINE = 0.75
 
 _STATS_LOCK = threading.Lock()
 
@@ -171,35 +165,3 @@ def latency_quantile(provider: str, quantile: float = 0.75, now: Optional[float]
         return None
     index = min(len(latencies) - 1, max(0, int(round(quantile * (len(latencies) - 1)))))
     return latencies[index]
-
-
-def performance_adjustment(provider: str, now: Optional[float] = None) -> float:
-    """Bounded routing-score adjustment from recent real-world performance.
-
-    Combines reliability (success rate, discounted by empty-result rate) and
-    speed (median latency vs. LATENCY_CEILING_SECONDS) into
-    [-MAX_SCORE_ADJUSTMENT, +MAX_SCORE_ADJUSTMENT]. Returns 0.0 until
-    MIN_SAMPLES_FOR_ADJUSTMENT fresh samples exist.
-    """
-    perf = get_provider_performance(provider, now=now)
-    if not perf or perf["samples"] < MIN_SAMPLES_FOR_ADJUSTMENT:
-        return 0.0
-    reliability = perf["success_rate"] * (1.0 - 0.5 * perf["empty_rate"])
-    median_latency = perf["median_latency_seconds"]
-    if median_latency is None:
-        speed = 0.0
-    else:
-        speed = max(0.0, min(1.0, 1.0 - median_latency / LATENCY_CEILING_SECONDS))
-    combined = 0.6 * reliability + 0.4 * speed
-    adjustment = (combined - PERFORMANCE_BASELINE) * 2 * MAX_SCORE_ADJUSTMENT
-    return round(max(-MAX_SCORE_ADJUSTMENT, min(MAX_SCORE_ADJUSTMENT, adjustment)), 3)
-
-
-def performance_adjustments(providers: List[str], now: Optional[float] = None) -> Dict[str, float]:
-    """Adjustments for several providers; providers without impact are omitted."""
-    adjustments = {}
-    for provider in providers:
-        value = performance_adjustment(provider, now=now)
-        if value != 0.0:
-            adjustments[provider] = value
-    return adjustments

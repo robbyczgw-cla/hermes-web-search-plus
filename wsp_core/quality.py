@@ -1,15 +1,14 @@
 """Result normalization, deduplication, reranking, and quality-report helpers."""
 
-import hashlib
 import re
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from .diversity_v3 import DEFAULT_NEAR_DUPLICATE_THRESHOLD, score_diversity
+from .routing import ROUTING_POLICY
 from .urls import host_and_path, url_key
 
 
-ROUTING_POLICY = "routing-v2"
 
 
 def _title_from_url(url: str) -> str:
@@ -54,22 +53,6 @@ def deduplicate_results_across_providers(results_by_provider: List[Tuple[str, Di
                 return deduped, dedup_count
     return deduped, dedup_count
 
-def _choose_tie_winner(query: str, winners: List[str], priority: List[str]) -> str:
-    """Break score ties deterministically per query.
-
-    Uses a stable hash of the query to distribute ties across providers while
-    keeping the same query reproducible across runs.
-    """
-    ordered_winners = [p for p in priority if p in winners]
-    if not ordered_winners:
-        ordered_winners = sorted(winners)
-    if len(ordered_winners) == 1:
-        return ordered_winners[0]
-    digest = hashlib.sha256(f"{query}|{'|'.join(ordered_winners)}".encode("utf-8")).hexdigest()
-    idx = int(digest[:8], 16) % len(ordered_winners)
-    return ordered_winners[idx]
-
-
 def _result_domain(url: str) -> str:
     try:
         netloc = urlparse(url or "").netloc.lower()
@@ -78,28 +61,14 @@ def _result_domain(url: str) -> str:
         return ""
 
 
+# Authority rules per query intent (wsp_core/intents.py): results from these
+# domains move up or down in the intent reranker and the quality report.
 CANONICAL_DOMAIN_RULES: Dict[str, Dict[str, List[str]]] = {
-    "official_vendor_release": {
-        "boost": [
-            "mistral.ai", "anthropic.com", "openai.com", "googleblog.com",
-            "blog.google", "ai.google.dev", "meta.com", "ai.meta.com",
-            "nvidia.com", "developer.nvidia.com", "apple.com", "microsoft.com",
-        ],
-        "demote": ["youtube.com", "youtu.be", "medium.com", "aizolo.com", "reddit.com"],
-    },
-    "official_docs": {
+    "docs": {
         "boost": ["docs.", "developer.", "github.com", "readthedocs.io", "modelcontextprotocol.io"],
         "demote": ["medium.com", "dev.to", "reddit.com", "stackoverflow.com", "youtube.com"],
     },
-    "policy_pdf": {
-        "boost": ["europa.eu", "ec.europa.eu", "nist.gov", "nvlpubs.nist.gov", "oecd.org", "who.int", "gov.uk", "federalregister.gov"],
-        "demote": ["scribd.com", "researchgate.net", "universityofcalifornia.edu", "slideshare.net"],
-    },
-    "finance_earnings_official": {
-        "boost": ["investor.", "ir.", "nvidia.com", "sec.gov", "nasdaq.com"],
-        "demote": ["reddit.com", "fool.com", "seekingalpha.com", "youtube.com"],
-    },
-    "security_advisory": {
+    "security": {
         "boost": ["nvd.nist.gov", "cve.org", "github.com", "github.com/advisories", "security.", "cert.europa.eu", "kb.cert.org"],
         "demote": ["youtube.com", "medium.com", "reddit.com"],
     },
@@ -253,7 +222,6 @@ def rerank_results_for_intent(
     scored: List[Tuple[float, int, Dict[str, Any]]] = []
     for idx, item in enumerate(results):
         url = item.get("url", "")
-        domain = _result_domain(url)
         title = (item.get("title") or "").lower()
         snippet = (item.get("snippet") or item.get("description") or "").lower()
         score = float(len(results) - idx) * 0.01
@@ -261,10 +229,6 @@ def rerank_results_for_intent(
             score += 10.0
         if any(_url_matches_rule(url, rule) for rule in rules.get("demote", [])):
             score -= 6.0
-        if routing_class == "official_vendor_release" and any(term in domain for term in ("mistral", "anthropic", "openai", "nvidia", "google", "meta")):
-            score += 3.0
-        if routing_class == "policy_pdf" and (item.get("url", "").lower().endswith(".pdf") or "pdf" in title):
-            score += 2.0
         if "official" in q and ("official" in title or "official" in snippet):
             score += 1.0
         scored.append((score, idx, item))
@@ -390,7 +354,6 @@ def build_quality_report(
         "extract_recommended": bool(extract_reasons),
         "extract_reasons": extract_reasons,
         "scores": routing_info.get("scores", {}),
-        "adaptive_adjustments": routing_info.get("adaptive_adjustments", {}),
         "authority_signals": authority_signals,
         "diversity": score_diversity(
             results, near_duplicate_threshold=near_duplicate_threshold

@@ -27,7 +27,7 @@ def _routing(provider: str = "tavily") -> dict:
         "confidence": 0.9,
         "confidence_level": "high",
         "reason": "entrypoint regression fixture",
-        "routing_policy": "routing-v2",
+        "routing_policy": "routing-v3",
         "top_signals": [],
         "scores": {provider: 1.0},
         "auto_allow_excluded": [],

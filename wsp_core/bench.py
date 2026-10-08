@@ -12,7 +12,7 @@ Two deliberate properties:
 - Bench traffic must not poison operational state: provider search functions
   are called directly, bypassing ``execute_provider_with_retry`` /
   ``mark_provider_failure`` (provider_health cooldowns) and
-  ``record_provider_outcome`` (provider_stats adaptive-routing memory).
+  ``record_provider_outcome`` (provider_stats latency memory).
 
 The bench never writes configuration. Applying the recommended priority is an
 explicit operator step (``setup.py config set-priority ...``).
@@ -141,8 +141,8 @@ def _call_provider_search(
     """Call one provider's search function directly.
 
     Deliberately bypasses ``execute_provider_with_retry`` so a bench run never
-    marks provider health failures, triggers cooldowns, or records adaptive
-    routing stats.
+    marks provider health failures, triggers cooldowns, or records latency
+    samples.
     """
     key = validate_api_key(provider, config)
     spec = PROVIDER_SPECS.get(provider)
@@ -351,7 +351,7 @@ def run_bench(
     Returns a structured report with per-provider metrics (best score first)
     plus an ``auto_routing.provider_priority`` recommendation. Provider errors
     are captured per query; a failing provider ranks last but never aborts the
-    run. Health cooldowns and adaptive routing stats are untouched.
+    run. Health cooldowns and latency samples are untouched.
     """
     search = _resolve_search_module(search_module)
     config = config if isinstance(config, dict) else {}
