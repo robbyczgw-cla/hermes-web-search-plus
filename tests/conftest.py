@@ -60,3 +60,29 @@ def _no_operator_donsetch(monkeypatch):
         return real_which(cmd, *args, **kwargs)
 
     monkeypatch.setattr(shutil, "which", which)
+
+
+@pytest.fixture(autouse=True)
+def _no_external_network(monkeypatch):
+    """Fail any test that opens a real connection beyond loopback.
+
+    Provider HTTP must be mocked. A test whose mock silently stops applying
+    would otherwise reach the real provider with a fake key and still "pass"
+    on the resulting error, so violations are recorded and failed at teardown
+    even when the engine swallowed the exception.
+    """
+    real_connect = socket.socket.connect
+    violations = []
+
+    def guarded_connect(self, address, *args, **kwargs):
+        host = address[0] if isinstance(address, tuple) else address
+        if self.family == socket.AF_UNIX or (
+            isinstance(host, str) and (host.startswith("127.") or host in {"::1", "localhost"})
+        ):
+            return real_connect(self, address, *args, **kwargs)
+        violations.append(address)
+        raise ConnectionRefusedError(f"test tried to open a real network connection to {address!r}")
+
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    yield
+    assert not violations, f"test opened real network connections: {violations}"
