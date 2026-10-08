@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+import os
 import sqlite3
+
+import wsp_core.state_store_v3 as state_store_module
 
 from wsp_core.contract_v3 import Capability, CircuitState, ErrorClass, SkipReason
 from wsp_core.errors_v3 import classify_provider_error
@@ -214,11 +217,10 @@ def test_admission_degrades_if_store_fails_during_circuit_scan(
 ):
     store = SQLiteStateStore(tmp_path / "state.sqlite3")
 
-    def fail_during_scan(*_args, **_kwargs):
-        store._available = False
-        return None
+    def fail_during_scan():
+        raise sqlite3.OperationalError("database unavailable")
 
-    monkeypatch.setattr(store, "get_circuit", fail_during_scan)
+    monkeypatch.setattr(store, "_connect", fail_during_scan)
     decision = store.admit(_key(), now=100)
 
     assert decision.allowed is True
@@ -272,6 +274,69 @@ def test_schema_initialization_is_idempotent_and_uses_wal(tmp_path):
             assert owned_connection.getconfig(no_checkpoint_on_close) is True
         finally:
             owned_connection.close()
+
+
+def test_schema_initializes_once_per_path_and_reinitializes_after_deletion(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "state.sqlite3"
+    original = state_store_module.initialize_state_schema
+    calls = 0
+
+    def count_initialization(connection):
+        nonlocal calls
+        calls += 1
+        original(connection)
+
+    monkeypatch.setattr(state_store_module, "initialize_state_schema", count_initialization)
+    SQLiteStateStore(path)
+    SQLiteStateStore(path)
+    assert calls == 1
+
+    path.unlink()
+    SQLiteStateStore(path)
+    assert calls == 2
+    with sqlite3.connect(path) as connection:
+        assert connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='circuit_state'"
+        ).fetchone() is not None
+
+
+def test_a_replaced_database_file_is_initialized_again(tmp_path):
+    # e.g. a restored backup or a migration in another process moved in place
+    path = tmp_path / "state.sqlite3"
+    SQLiteStateStore(path)
+    replacement = tmp_path / "restored.sqlite3"
+    sqlite3.connect(replacement).close()
+    os.replace(replacement, path)
+
+    store = SQLiteStateStore(path)
+
+    assert store.available
+    store.configure_budget("daily_provider_calls", "2026-10-08", limit_units=1)
+    assert store.reserve_budget("daily_provider_calls", "2026-10-08", units=1)
+
+
+def test_request_budget_is_in_memory_and_daily_budget_persists(tmp_path):
+    path = tmp_path / "state.sqlite3"
+    store = SQLiteStateStore(path)
+    store.configure_budget("request-1", "request", limit_units=2)
+    assert store.reserve_budget("request-1", "request", units=1)
+    assert store.reserve_budget("request-1", "request", units=1)
+    assert not store.reserve_budget("request-1", "request", units=1)
+    store.commit_budget("request-1", "request", units=1)
+    assert store.get_budget("request-1", "request").used_units == 1
+    assert store.read_budget_snapshot("request-1", "request") is not None
+    with sqlite3.connect(path) as connection:
+        assert connection.execute(
+            "SELECT count(*) FROM budget_ledger WHERE scope='request-1'"
+        ).fetchone()[0] == 0
+
+    store.configure_budget("daily_provider_calls", "2026-10-08", limit_units=3)
+    assert store.reserve_budget("daily_provider_calls", "2026-10-08", units=1)
+    store.commit_budget("daily_provider_calls", "2026-10-08", units=1)
+    reopened = SQLiteStateStore(path)
+    assert reopened.get_budget("daily_provider_calls", "2026-10-08").used_units == 1
 
 
 def test_schema_v3_upgrades_v2_in_place_without_losing_existing_data(tmp_path):
