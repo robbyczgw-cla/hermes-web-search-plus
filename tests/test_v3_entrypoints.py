@@ -4,6 +4,7 @@ from unittest import mock
 
 import jsonschema
 import pytest
+from wsp_core import providers
 from wsp_core import search
 from wsp_core.compat_v3 import legacy_request_to_v3
 from wsp_core.contract_v3 import Capability, ResponseV3
@@ -74,7 +75,7 @@ def test_v3_execution_can_read_but_never_writes_legacy_cache(monkeypatch):
         search, "execute_provider_with_retry", lambda _provider, fn: fn()
     )
     monkeypatch.setattr(
-        search,
+        providers,
         "search_you",
         lambda **_kwargs: _search_payload("you"),
     )
@@ -119,7 +120,7 @@ def test_engine_owned_provider_call_bypasses_all_legacy_retry_and_health(monkeyp
         lambda provider, **kwargs: outcomes.append((provider, kwargs["error"])),
     )
     monkeypatch.setattr(
-        search,
+        providers,
         "search_you",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             ProviderRequestError("upstream", status_code=503, transient=True)
@@ -146,7 +147,7 @@ def test_engine_owned_extract_call_bypasses_legacy_retry_and_health(monkeypatch)
     monkeypatch.setattr(search._extract, "mark_provider_failure", forbidden)
     monkeypatch.setattr(search._extract, "reset_provider_health", forbidden)
     monkeypatch.setattr(
-        search._extract,
+        providers,
         "extract_linkup",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             ProviderRequestError("upstream", status_code=503, transient=True)
@@ -321,7 +322,7 @@ def test_search_preserves_policy_filtered_provider_result_as_observation(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr(
-        search,
+        providers,
         "search_serper",
         lambda **_kwargs: {
             "provider": "serper",

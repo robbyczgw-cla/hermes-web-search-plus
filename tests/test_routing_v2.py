@@ -1,16 +1,18 @@
+from wsp_core import config as config_module
+from wsp_core import quality
 from unittest import mock
 
-from wsp_core import search
+from wsp_core import search, routing as routing_module
 
 
 def _route(query):
-    config = search._deepcopy_default_config()
-    with mock.patch.object(search, "get_api_key", return_value="test-key"):
+    config = config_module._deepcopy_default_config()
+    with mock.patch.object(routing_module, "get_api_key", return_value="test-key"):
         return search.QueryAnalyzer(config).route(query)
 
 
 def test_default_auto_allow_blocks_explicit_only_providers():
-    config = search._deepcopy_default_config()
+    config = config_module._deepcopy_default_config()
 
     auto_allow = config["auto_routing"]["auto_allow"]
 
@@ -26,10 +28,10 @@ def test_default_auto_allow_blocks_explicit_only_providers():
 
 
 def test_legacy_auto_allow_config_inherits_new_guarded_provider_defaults():
-    config = search._deepcopy_default_config()
+    config = config_module._deepcopy_default_config()
     config["auto_routing"]["auto_allow"] = {"serpbase": False, "querit": False}
 
-    validated = search._validate_runtime_config(config)
+    validated = config_module._validate_runtime_config(config)
 
     assert validated["auto_routing"]["auto_allow"].get("brave", True) is True
     assert validated["auto_routing"]["auto_allow"].get("parallel", True) is True
@@ -62,9 +64,9 @@ def test_official_docs_routes_to_exa():
 
 
 def test_finance_earnings_official_prefers_linkup_when_auto_allowed():
-    config = search._deepcopy_default_config()
+    config = config_module._deepcopy_default_config()
     config["auto_routing"]["auto_allow"]["linkup"] = True
-    with mock.patch.object(search, "get_api_key", return_value="test-key"):
+    with mock.patch.object(routing_module, "get_api_key", return_value="test-key"):
         routing = search.QueryAnalyzer(config).route("NVIDIA Q1 FY2027 earnings official investor relations guidance")
 
     assert routing["analysis_summary"]["routing_class"] == "finance_earnings_official"
@@ -166,7 +168,7 @@ def test_security_advisory_authority_signals_match_github_advisory_paths():
         "https://github.com/advisories/GHSA-test",
         "https://github.com/owner/repo/security/advisories/GHSA-test",
     ):
-        signals = search.build_authority_signals(
+        signals = quality.build_authority_signals(
             "security_advisory",
             [{"url": url}],
         )
@@ -188,17 +190,17 @@ def test_security_advisory_reranker_promotes_github_advisories_over_mirrors():
 
 
 def test_domain_rule_does_not_substring_match_middle_of_domain():
-    assert search._domain_matches_rule("docs.python.org", "docs.") is True
-    assert search._domain_matches_rule("notdocs.com", "docs.") is False
-    assert search._domain_matches_rule("mirror.com", "ir.") is False
+    assert quality._domain_matches_rule("docs.python.org", "docs.") is True
+    assert quality._domain_matches_rule("notdocs.com", "docs.") is False
+    assert quality._domain_matches_rule("mirror.com", "ir.") is False
 
 
 def test_domain_rule_rejects_lookalike_registrations():
     # A look-alike domain must not inherit the boost of the real one.
-    assert search._domain_matches_rule("openai.com.evil.example", "openai.com") is False
-    assert search._domain_matches_rule("github.community-fake.xyz", "github.com") is False
-    assert search._domain_matches_rule("openai.com", "openai.com") is True
-    assert search._domain_matches_rule("platform.openai.com", "openai.com") is True
+    assert quality._domain_matches_rule("openai.com.evil.example", "openai.com") is False
+    assert quality._domain_matches_rule("github.community-fake.xyz", "github.com") is False
+    assert quality._domain_matches_rule("openai.com", "openai.com") is True
+    assert quality._domain_matches_rule("platform.openai.com", "openai.com") is True
 
 
 def test_reddit_company_finance_query_is_not_community_query():

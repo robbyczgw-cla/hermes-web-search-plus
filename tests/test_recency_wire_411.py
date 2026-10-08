@@ -1,4 +1,5 @@
 """Wire-to-v3 regressions: never derive receipt evidence from a second clock."""
+from wsp_core import providers
 
 import json
 from datetime import datetime, timedelta, timezone
@@ -7,7 +8,6 @@ from unittest import mock
 import pytest
 
 from wsp_core import provider_dispatch
-from wsp_core import providers
 from wsp_core import search
 
 
@@ -69,7 +69,7 @@ def test_exa_wire_survives_run_search_request_and_v3_serialization(
         }
 
     monkeypatch.setattr(providers, "make_request", http)
-    monkeypatch.setattr(search, "make_request", http)
+    monkeypatch.setattr(providers, "make_request", http)
     executions = []
     execute = search.execute_v3_request
 
@@ -135,7 +135,7 @@ def test_tavily_metadata_matches_http(monkeypatch, time_range, freshness, expect
         }
 
     monkeypatch.setattr(providers, "make_request", http)
-    monkeypatch.setattr(search, "make_request", http)
+    monkeypatch.setattr(providers, "make_request", http)
     result = search.run_search_request(
         query="tavily wire recency",
         provider="tavily",
@@ -175,7 +175,7 @@ def test_pipeline_accepts_legacy_namespace_without_time_range(monkeypatch):
         }
     )
     monkeypatch.setattr(providers, "make_request", http)
-    monkeypatch.setattr(search, "make_request", http)
+    monkeypatch.setattr(providers, "make_request", http)
     result, code = search._execute_search_request_core(args, config)
     assert code == 0, result
     assert http.call_args.args[2]["time_range"] == "week"
@@ -205,7 +205,7 @@ def test_research_exa_receipt_uses_wire_dates(monkeypatch):
         }
 
     monkeypatch.setattr(providers, "make_request", http)
-    monkeypatch.setattr(search, "make_request", http)
+    monkeypatch.setattr(providers, "make_request", http)
     monkeypatch.setattr(search, "extract_plus", lambda **kwargs: {"results": []})
     with mock.patch.object(
         providers,

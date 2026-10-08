@@ -1,9 +1,9 @@
+from wsp_core import providers
 import json
 from unittest import mock
 
 import pytest
 
-from wsp_core import search
 
 QUERY = "contract test query"
 API_KEY = "test-api-key"
@@ -115,27 +115,27 @@ def fake_urlopen(req, timeout=30):
 
 
 SEARCH_CASES = [
-    ("serper", search.search_serper, (QUERY, API_KEY), {}),
-    ("serpbase", search.search_serpbase, (QUERY, API_KEY), {}),
-    ("brave", search.search_brave, (QUERY, API_KEY), {}),
-    ("tavily", search.search_tavily, (QUERY, API_KEY), {}),
-    ("querit", search.search_querit, (QUERY, API_KEY), {}),
-    ("linkup", search.search_linkup, (QUERY, API_KEY), {}),
-    ("firecrawl", search.search_firecrawl, (QUERY, API_KEY), {}),
-    ("exa", search.search_exa, (QUERY, API_KEY), {}),
-    ("parallel", search.search_parallel, (QUERY, API_KEY), {}),
+    ("serper", providers.search_serper, (QUERY, API_KEY), {}),
+    ("serpbase", providers.search_serpbase, (QUERY, API_KEY), {}),
+    ("brave", providers.search_brave, (QUERY, API_KEY), {}),
+    ("tavily", providers.search_tavily, (QUERY, API_KEY), {}),
+    ("querit", providers.search_querit, (QUERY, API_KEY), {}),
+    ("linkup", providers.search_linkup, (QUERY, API_KEY), {}),
+    ("firecrawl", providers.search_firecrawl, (QUERY, API_KEY), {}),
+    ("exa", providers.search_exa, (QUERY, API_KEY), {}),
+    ("parallel", providers.search_parallel, (QUERY, API_KEY), {}),
 
-    ("you", search.search_you, (QUERY, API_KEY), {}),
-    ("searxng", search.search_searxng, (QUERY, "https://searxng.example"), {}),
-    ("keenable", search.search_keenable, (QUERY, API_KEY), {}),
+    ("you", providers.search_you, (QUERY, API_KEY), {}),
+    ("searxng", providers.search_searxng, (QUERY, "https://searxng.example"), {}),
+    ("keenable", providers.search_keenable, (QUERY, API_KEY), {}),
 ]
 
 
 @pytest.mark.parametrize("provider,func,args,kwargs", SEARCH_CASES)
 def test_search_providers_return_common_contract(provider, func, args, kwargs):
-    with mock.patch.object(search, "make_request", side_effect=fake_make_request), \
-        mock.patch.object(search, "make_get_request", side_effect=fake_make_get_request), \
-        mock.patch.object(search._providers, "urlopen", side_effect=fake_urlopen), \
+    with mock.patch.object(providers, "make_request", side_effect=fake_make_request), \
+        mock.patch.object(providers, "make_get_request", side_effect=fake_make_get_request), \
+        mock.patch.object(providers, "urlopen", side_effect=fake_urlopen), \
         mock.patch("urllib.request.urlopen", side_effect=fake_urlopen):
         result = func(*args, max_results=1, **kwargs)
 
@@ -154,18 +154,18 @@ def test_search_providers_return_common_contract(provider, func, args, kwargs):
 
 
 EXTRACT_CASES = [
-    ("firecrawl", search.extract_firecrawl),
-    ("linkup", search.extract_linkup),
-    ("tavily", search.extract_tavily),
-    ("exa", search.extract_exa),
-    ("you", search.extract_you),
-    ("parallel", search.extract_parallel),
+    ("firecrawl", providers.extract_firecrawl),
+    ("linkup", providers.extract_linkup),
+    ("tavily", providers.extract_tavily),
+    ("exa", providers.extract_exa),
+    ("you", providers.extract_you),
+    ("parallel", providers.extract_parallel),
 ]
 
 
 @pytest.mark.parametrize("provider,func", EXTRACT_CASES)
 def test_extract_providers_return_common_contract(provider, func):
-    with mock.patch.object(search, "make_request", side_effect=fake_make_request):
+    with mock.patch.object(providers, "make_request", side_effect=fake_make_request):
         result = func([RESULT_URL], API_KEY)
 
     assert result["provider"] == provider

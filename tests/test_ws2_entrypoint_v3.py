@@ -1,4 +1,5 @@
 from __future__ import annotations
+from wsp_core import extract
 
 import json
 from pathlib import Path
@@ -6,7 +7,6 @@ from types import SimpleNamespace
 
 import jsonschema
 
-from wsp_core import extract
 from wsp_core.bounded_context_v3 import apply_bounded_context, prepare_extract_request
 from wsp_core.cache_v3 import cache_material_from_response, response_payload_from_cache_material
 from wsp_core.contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3

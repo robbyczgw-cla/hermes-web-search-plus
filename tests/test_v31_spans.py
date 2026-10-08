@@ -1,6 +1,7 @@
 """WSP 3.1 semantic span extraction contract tests."""
 
 from __future__ import annotations
+from wsp_core import extract
 
 from copy import deepcopy
 import hashlib
@@ -9,7 +10,6 @@ import unicodedata
 
 import pytest
 
-from wsp_core import extract
 from wsp_core.bounded_context_v3 import apply_bounded_context, prepare_extract_request
 from wsp_core.compat_v3 import legacy_request_to_v3
 from wsp_core.contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3

@@ -42,19 +42,8 @@ from .provider_health import (
     provider_in_cooldown,
     reset_provider_health,
 )
-# These imports stay module-level attributes on purpose: search.py's
-# _sync_extract_dependencies() overwrites them for monkeypatch compatibility,
-# and provider_dispatch adapters resolve them late through this module.
-from .providers import (  # noqa: F401 - resolved late via EXTRACT_DISPATCH/monkeypatch seams
-    extract_exa,
-    extract_firecrawl,
-    extract_keenable,
-    extract_linkup,
-    extract_parallel,
-    extract_serper,
-    extract_tavily,
-    extract_you,
-)
+# Provider dispatch resolves implementations late through this module.
+from . import providers as _providers
 from .provider_adapter_protocol import validate_adapter_result
 from .provider_dispatch import EXTRACT_DISPATCH
 from .provider_registry import (
@@ -439,9 +428,8 @@ def _extract_plus_core(
         try:
             def execute_extract() -> Dict[str, Any]:
                 # Provider-specific kwargs-building lives in
-                # provider_dispatch.EXTRACT_DISPATCH; the caller namespace
-                # (globals()) is passed so adapters resolve extract_<provider>
-                # late and honour monkeypatches synced onto this module.
+                # provider_dispatch.EXTRACT_DISPATCH; this module is passed so
+                # adapters resolve extract_<provider> late.
                 adapter = EXTRACT_DISPATCH.get(prov)
                 if adapter is None:
                     raise ValueError(f"Unknown extract provider: {prov}")
@@ -449,7 +437,7 @@ def _extract_plus_core(
                     prov,
                     "extract",
                     adapter(
-                        globals(),
+                        _providers,
                         prov,
                         urls,
                         key,

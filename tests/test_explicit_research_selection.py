@@ -1,4 +1,5 @@
 from __future__ import annotations
+from wsp_core import config as config_module
 
 import time
 
@@ -21,7 +22,7 @@ def _routing() -> dict:
 
 
 def _config(tmp_path) -> dict:
-    config = search._deepcopy_default_config()
+    config = config_module._deepcopy_default_config()
     config["auto_routing"]["provider_priority"] = ["you"]
     config["auto_routing"]["disabled_providers"] = []
     config["auto_routing"]["auto_allow"].update(

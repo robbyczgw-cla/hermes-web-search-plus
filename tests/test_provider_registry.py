@@ -1,8 +1,8 @@
+from wsp_core import extract
 from pathlib import Path
 
 from wsp_core import provider_registry as registry
 from wsp_core import config
-from wsp_core import extract
 from wsp_core import search
 from plugin_loader import load_plugin
 

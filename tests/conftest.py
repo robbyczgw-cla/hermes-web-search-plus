@@ -1,3 +1,4 @@
+from wsp_core import extract
 import os
 import shutil
 import socket
@@ -5,7 +6,6 @@ import socket
 import pytest
 
 from wsp_core import cache
-from wsp_core import extract
 from wsp_core import provider_stats
 from wsp_core import search
 

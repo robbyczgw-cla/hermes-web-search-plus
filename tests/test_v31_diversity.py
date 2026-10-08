@@ -1,4 +1,5 @@
 from __future__ import annotations
+from wsp_core import providers
 
 import json
 from copy import deepcopy
@@ -215,7 +216,7 @@ def test_quality_report_contains_diversity_and_operator_receipt_stays_safe(
             _result("two", "https://two.example/b", "orchid maple quartz lantern river summit", "tavily"),
         ],
     )
-    monkeypatch.setattr(search, "search_tavily", lambda **_kwargs: payload)
+    monkeypatch.setattr(providers, "search_tavily", lambda **_kwargs: payload)
     request = search.legacy_request_to_v3(
         Capability.SEARCH,
         {
@@ -307,8 +308,8 @@ def test_v3_research_config_keeps_default_merge_and_opt_in_reranks(
         "results": [{**item, "provider": "linkup"} for item in sources["beta"]["results"]],
     }
     monkeypatch.setattr(search, "auto_route_provider", lambda *_args: routing)
-    monkeypatch.setattr(search, "search_tavily", lambda **_kwargs: tavily_payload)
-    monkeypatch.setattr(search, "search_linkup", lambda **_kwargs: linkup_payload)
+    monkeypatch.setattr(providers, "search_tavily", lambda **_kwargs: tavily_payload)
+    monkeypatch.setattr(providers, "search_linkup", lambda **_kwargs: linkup_payload)
     monkeypatch.setattr(
         search, "extract_plus", lambda **_kwargs: {"provider": None, "results": []}
     )

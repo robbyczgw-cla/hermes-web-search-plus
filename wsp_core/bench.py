@@ -101,16 +101,10 @@ RECOMMENDATION_NOTE = (
 
 
 def _resolve_search_module(search_module: Optional[Any] = None) -> Any:
-    """Return the module exposing the ``search_<provider>`` seams.
-
-    ``search.py`` passes itself so bench honours the same monkeypatch seams as
-    the rest of the pipeline (tests patch ``search.search_you`` etc.). When
-    called without one (e.g. ``bench.run_bench(config)`` from a REPL), the flat
-    sibling ``search`` module is imported lazily to avoid an import cycle.
-    """
+    """Return the providers module exposing ``search_<provider>`` functions."""
     if search_module is not None:
         return search_module
-    return importlib.import_module(".search", __package__)
+    return importlib.import_module(".providers", __package__)
 
 
 def _bench_auto_allowed(provider: str, auto_config: Dict[str, Any]) -> bool:
@@ -193,7 +187,7 @@ def _call_provider_search(
         return validate_adapter_result(
             provider,
             "search",
-            SEARCH_DISPATCH[provider](search, provider, args, key, config, {}),
+            SEARCH_DISPATCH[provider](_resolve_search_module(search), provider, args, key, config, {}),
         )
     if provider == "searxng":
         return search.search_searxng(

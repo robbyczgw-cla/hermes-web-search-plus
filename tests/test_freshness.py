@@ -5,13 +5,13 @@ table matches what each provider function actually sends, invalid values fail
 with the standard error dict, the value is passed down into provider requests,
 and unsupported providers still run while reporting applied=false in metadata.
 """
+from wsp_core import providers
 
 import contextlib
 import unittest
 from datetime import datetime, timezone
 from unittest import mock
 
-from wsp_core import providers
 from wsp_core import search
 
 
@@ -171,8 +171,8 @@ class FreshnessRequestTests(unittest.TestCase):
             captured["url"] = url
             return {"web": {"results": []}}
 
-        with mock.patch("wsp_core.search.make_get_request", side_effect=fake_get):
-            search.search_brave(query="q", api_key="brave-key", time_range="week")
+        with mock.patch("wsp_core.providers.make_get_request", side_effect=fake_get):
+            providers.search_brave(query="q", api_key="brave-key", time_range="week")
 
         self.assertIn("freshness=pw", captured["url"])
 
@@ -183,8 +183,8 @@ class FreshnessRequestTests(unittest.TestCase):
             captured["body"] = body
             return {"organic": []}
 
-        with mock.patch("wsp_core.search.make_request", side_effect=fake_post):
-            search.search_serper(query="q", api_key="serper-key", time_range="month")
+        with mock.patch("wsp_core.providers.make_request", side_effect=fake_post):
+            providers.search_serper(query="q", api_key="serper-key", time_range="month")
 
         self.assertEqual(captured["body"]["tbs"], "qdr:m")
 
@@ -209,7 +209,7 @@ class FreshnessRequestTests(unittest.TestCase):
                 providers, "_read_json_response",
                 return_value={"results": {"web": [], "news": []}, "metadata": {}},
             ))
-            search.search_you(query="q", api_key="you-key", freshness="day")
+            providers.search_you(query="q", api_key="you-key", freshness="day")
 
         self.assertIn("freshness=day", captured["url"])
 
@@ -279,7 +279,7 @@ class FreshnessPipelineTests(unittest.TestCase):
                 seen.update(kwargs)
                 return _canned("serper")
 
-            stack.enter_context(mock.patch.object(search, "search_serper", fake_serper))
+            stack.enter_context(mock.patch.object(providers, "search_serper", fake_serper))
             result = search.run_search_request(query="latest news", provider="serper", freshness="WEEK")
 
         self.assertEqual(seen["time_range"], "week")
@@ -294,7 +294,7 @@ class FreshnessPipelineTests(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             self._isolate(stack)
             stack.enter_context(mock.patch.dict("os.environ", {"LINKUP_API_KEY": "linkup-test-key"}))
-            stack.enter_context(mock.patch.object(search, "search_linkup", lambda **kw: _canned("linkup")))
+            stack.enter_context(mock.patch.object(providers, "search_linkup", lambda **kw: _canned("linkup")))
             result = search.run_search_request(query="how does https work", provider="linkup", freshness="week")
 
         self.assertEqual(result["results"][0]["url"], "https://example.test/a")
@@ -318,8 +318,8 @@ class FreshnessPipelineTests(unittest.TestCase):
                 seen.update(kwargs)
                 return _canned("serper")
 
-            stack.enter_context(mock.patch.object(search, "search_serper", fake_serper))
-            stack.enter_context(mock.patch.object(search, "search_tavily", lambda **kw: _canned("tavily")))
+            stack.enter_context(mock.patch.object(providers, "search_serper", fake_serper))
+            stack.enter_context(mock.patch.object(providers, "search_tavily", lambda **kw: _canned("tavily")))
             stack.enter_context(mock.patch.object(
                 search, "extract_plus", lambda **kw: {"provider": None, "results": []},
             ))

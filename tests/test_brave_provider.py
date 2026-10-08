@@ -1,8 +1,9 @@
+from wsp_core import config as config_module
 import os
 import unittest
 from unittest import mock
 
-from wsp_core import search
+from wsp_core import providers
 from wsp_core.search import QueryAnalyzer, get_api_key, validate_api_key
 
 
@@ -28,8 +29,8 @@ class BraveProviderTests(unittest.TestCase):
                 ]
             }
         }
-        with mock.patch("wsp_core.search.make_get_request", return_value=fake_response):
-            result = search.search_brave(
+        with mock.patch("wsp_core.providers.make_get_request", return_value=fake_response):
+            result = providers.search_brave(
                 query="example query",
                 api_key="brave-test-key-12345",
                 max_results=5,
@@ -44,8 +45,8 @@ class BraveProviderTests(unittest.TestCase):
         self.assertEqual(result["results"][0]["snippet"], "Example snippet")
 
     def test_query_analyzer_can_route_to_brave(self):
-        config = search.DEFAULT_CONFIG.copy()
-        config["auto_routing"] = dict(search.DEFAULT_CONFIG["auto_routing"])
+        config = config_module.DEFAULT_CONFIG.copy()
+        config["auto_routing"] = dict(config_module.DEFAULT_CONFIG["auto_routing"])
         config["auto_routing"]["provider_priority"] = ["brave", "serper", "tavily", "querit", "exa", "you", "searxng"]
         analyzer = QueryAnalyzer(config)
 

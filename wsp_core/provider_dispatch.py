@@ -6,13 +6,10 @@ per-provider adapters registered in ``SEARCH_DISPATCH`` / ``EXTRACT_DISPATCH``.
 Each adapter encapsulates exactly the provider-specific kwargs-building the
 old chain branch did, so behaviour is unchanged.
 
-Monkeypatch seam contract (do not early-bind provider functions here):
-tests patch provider functions on the *calling module* (for example
-``mock.patch.object(search, "search_you", ...)`` or
-``mock.patch("search.extract_firecrawl", ...)``). Adapters therefore receive
-the caller's namespace (a module object or its ``globals()`` dict) and resolve
-``search_<provider>`` / ``extract_<provider>`` late on every call — the same
-late-resolution pattern ``bench.py`` uses via its ``search_module`` seam.
+Provider functions are resolved late from the ``wsp_core.providers`` module
+passed by the search, extract, and bench callers. Adapters retain the public
+Provider SDK signature and resolve ``search_<provider>`` / ``extract_<provider>``
+on every call.
 
 ``provider_registry.py`` stays data-only by design; the callable wiring lives
 here. tests/test_provider_dispatch.py enforces that these tables and the
@@ -36,9 +33,8 @@ from .search_locale import resolve_locale
 def _resolve(namespace: Any, name: str) -> Callable[..., Dict[str, Any]]:
     """Late-resolve a provider function from the caller's namespace.
 
-    Accepts either a module object (``getattr`` lookup, like bench.py's
-    ``search_module`` seam) or a ``globals()`` dict, so callers loaded under
-    non-standard module names (spec_from_file_location in tests) work too.
+    Accepts either a module object or a namespace dict, including modules
+    loaded under non-standard names in tests.
     """
     if isinstance(namespace, dict):
         return namespace[name]
