@@ -14,6 +14,7 @@
 
 ### Removed
 
+- A v3 search no longer reads the pre-v3 JSON search cache. Repeated `web_search_plus` calls are answered from the v3 response cache only, so entries written by 2.x or by `python search.py` are not served to the tools; `python search.py` still reads and writes its own entries. The files stay on disk until `--clear-cache`. `CapabilityAdapter.legacy_cache_lookup` and `peek_legacy_search` are gone, and responses no longer report `cache_status.source_contract_version: "2.x"` (the schema still allows the value).
 - The compatibility shims in `wsp_core/search.py` (about 310 lines): the 22 provider wrappers, the `_sync_*` functions that copied monkeypatched names into the providers, routing and extract modules before every call, the re-exported helpers and `get_compatibility_shim_policy()`. Provider dispatch now resolves `search_<provider>`/`extract_<provider>` on `wsp_core.providers`. Code or tests that patched `search.search_serper` or `search.make_request` patch `wsp_core.providers`; extract orchestration lives in `wsp_core.extract`, routing key lookups in `wsp_core.routing`. The Provider SDK adapter signature is unchanged.
 - Routing: the unused direct-answer signal table (17 patterns evaluated on every query, never scored), the no-op URL override branch, the `shopping_at` boost no rule could emit, and the `below_threshold` flag in routing metadata, which nothing read. Routing decisions are unchanged (behaviour lock). `auto_routing.confidence_threshold` is still accepted in config.json and by `setup.py`, but has no effect.
 - The unused source-independence estimator module is gone. The wire warning `wsp.independence.method_degraded` stays in the published contract.
@@ -22,6 +23,7 @@
 
 ### Fixed
 
+- `python search.py --clear-cache` and `--cache-stats` now include the v3 response cache (`v3_response_cleared`, `v3_response`), which is the cache the tools answer repeats from. Before, both only covered the legacy cache, so the tools' cache could not be cleared from the CLI.
 - Automatic search runs the intent reranker (authority rules for official docs, security advisories, vendor releases, policy PDFs and earnings) with the routing class it planned. The v3 engine runs each provider attempt as a fixed-provider search, so the reranker always saw the class `general`, which has no rules, and changed nothing. On the 60 recorded normal-mode queries it now reorders 2 result lists; nDCG@5 stays 0.672 (one list better, one slightly worse).
 - The quality report (`quality_report: true`) of an automatic search shows the routing decision. It showed `unknown confidence`, no routing class and no authority signals for every auto-routed search, while the provider line above it said `low confidence`.
 - Missing-key guidance in v3 errors is rebuilt from the provider registry for WSP's own missing-key error only. Before, any configuration error whose text had the same JSON shape could place its own setup steps in the response, and a message ending in a newline passed the shape check.

@@ -482,61 +482,6 @@ class ResponseCacheV3:
         return cleared
 
 
-def peek_legacy_search(
-    root: str | Path,
-    *,
-    query: str,
-    provider: str,
-    max_results: int,
-    params: Optional[Dict[str, Any]],
-    ttl_seconds: int,
-    now: int,
-) -> CacheLookupV3:
-    """Read a v2 search entry without modifying, deleting, or refreshing it."""
-    material: Dict[str, Any] = {
-        "query": query,
-        "provider": provider,
-        "max_results": max_results,
-    }
-    if params:
-        material.update(params)
-    encoded = json.dumps(
-        material, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
-    entry_id = hashlib.sha256(encoded).hexdigest()[:32]
-    path = Path(root) / f"{entry_id}.json"
-    try:
-        cached = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return CacheLookupV3("miss")
-    marker_fields = {
-        "_cache_timestamp",
-        "_cache_key",
-        "_cache_query",
-        "_cache_provider",
-    }
-    if not isinstance(cached, dict) or not marker_fields.issubset(cached):
-        return CacheLookupV3("miss")
-    timestamp = cached.get("_cache_timestamp")
-    if not isinstance(timestamp, (int, float)):
-        return CacheLookupV3("miss")
-    age = max(0, int(now - timestamp))
-    if age > max(0, int(ttl_seconds)):
-        return CacheLookupV3("miss")
-    legacy_payload = {
-        key: value for key, value in cached.items() if not key.startswith("_cache_")
-    }
-    legacy_payload["cached"] = True
-    legacy_payload["cache_age_seconds"] = age
-    return CacheLookupV3(
-        "fresh_hit",
-        entry_id=entry_id,
-        age_seconds=age,
-        source_contract_version="2.x",
-        legacy_payload=legacy_payload,
-    )
-
-
 def _legacy_canonical_url(value: str) -> str:
     parsed = urlsplit(value)
     return urlunsplit(

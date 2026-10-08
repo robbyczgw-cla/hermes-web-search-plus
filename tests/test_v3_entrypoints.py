@@ -64,10 +64,11 @@ def _extract_payload():
     }
 
 
-def test_v3_execution_can_read_but_never_writes_legacy_cache(monkeypatch):
+def test_v3_execution_neither_reads_nor_writes_legacy_cache(monkeypatch):
     dummy_key = "test-key-123456789012345678901234"
     monkeypatch.setenv("YOU_API_KEY", dummy_key)
-    monkeypatch.setattr(search, "cache_get", lambda **_kwargs: None)
+    cache_get = mock.Mock(return_value=None)
+    monkeypatch.setattr(search, "cache_get", cache_get)
     cache_put = mock.Mock()
     monkeypatch.setattr(search, "cache_put", cache_put)
     monkeypatch.setattr(search, "provider_in_cooldown", lambda _provider: (False, 0))
@@ -89,6 +90,7 @@ def test_v3_execution_can_read_but_never_writes_legacy_cache(monkeypatch):
     )
 
     assert result["results"]
+    cache_get.assert_not_called()
     cache_put.assert_not_called()
 
 
