@@ -21,6 +21,7 @@ import threading
 import time
 import webbrowser
 from concurrent.futures import TimeoutError as FuturesTimeout
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
 from urllib.parse import urlparse
@@ -46,6 +47,7 @@ from .wsp_core.provider_registry import (
 from .wsp_core.env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, is_truthy, load_env_files
 from .wsp_core.cache import MAX_STORED_TEXT_CHARS, store_web_text
 from .wsp_core.config import REMOVED_PROVIDER_IDS, apply_profile_effects, load_config
+from .wsp_core.dates import published_date
 from .wsp_core import jev_setup
 from .wsp_core.daemon_tasks import DaemonTask
 
@@ -1594,8 +1596,11 @@ _UNTRUSTED_WEB_DATA_NOTICE = (
 )
 
 
-def _format_results(data: dict) -> str:
-    """Format search results for LLM consumption."""
+def _format_results(data: dict, *, now: Optional[datetime] = None) -> str:
+    """Format search results for LLM consumption.
+
+    ``now`` is the clock for relative dates ("3 days ago"); tests pass a fixed one.
+    """
     if "error" in data and not data.get("results"):
         return f"Search error: {data['error']}"
 
@@ -1692,11 +1697,13 @@ def _format_results(data: dict) -> str:
                 lines.append(f"   {_source_summary_excerpt(content, query)}")
         lines.append("")
 
+    now = now or datetime.now(timezone.utc)
     for i, r in enumerate(results, 1):
         title = r.get("title", "No title")
         url = r.get("url", "")
         snippet = r.get("snippet", "")
-        lines.append(f"{i}. {title}")
+        published = published_date(r, now=now)
+        lines.append(f"{i}. {title}" + (f" [published {published}]" if published else ""))
         if url:
             lines.append(f"   {url}")
         if snippet:

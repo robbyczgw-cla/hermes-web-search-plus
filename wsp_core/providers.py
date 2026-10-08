@@ -445,13 +445,17 @@ def search_brave(
         extra_snippets = item.get("extra_snippets") or []
         if extra_snippets:
             snippet_parts.extend(extra_snippets[:2])
-        results.append({
+        result = {
             "title": item.get("title", ""),
             "url": item.get("url", ""),
             "snippet": " ... ".join(part for part in snippet_parts if part),
             "score": round(1.0 - i * 0.1, 2),
             "age": item.get("age"),
-        })
+        }
+        # ISO datetime next to the free-text "age"; absent keys stay absent.
+        if item.get("page_age"):
+            result["page_age"] = item["page_age"]
+        results.append(result)
 
     return {
         "provider": "brave",
@@ -510,6 +514,8 @@ def search_tavily(
         }
         if include_raw_content and item.get("raw_content"):
             result["raw_content"] = item["raw_content"]
+        if item.get("published_date"):  # sent for topic="news"
+            result["published_date"] = item["published_date"]
         results.append(result)
 
     return {
