@@ -229,7 +229,6 @@ def infer_query_language(query: str) -> Optional[str]:
 # Conservative class-aware provider boosts (positive) and penalties (negative)
 # from the qualitative routing benchmark, applied on top of the signal scores.
 ROUTING_CLASS_PROVIDER_BOOSTS: Dict[str, List[Tuple[str, float]]] = {
-    "shopping_at": [("serper", 8.0), ("firecrawl", 6.0), ("linkup", 4.0), ("you", 2.0), ("exa", -2.0)],
     "local_at": [("firecrawl", 8.0), ("serper", 6.0), ("linkup", 4.0), ("you", 2.0)],
     "official_vendor_release": [("you", 14.0), ("linkup", 10.0), ("exa", 7.0), ("serper", 4.0), ("firecrawl", 3.0)],
     "official_docs": [("exa", 12.0), ("you", 7.0), ("firecrawl", 5.0), ("serper", 3.0), ("tavily", 2.0)],
@@ -561,28 +560,6 @@ class QueryAnalyzer:
         r'\bupdates?\s+on\b': 3.5,
         r'\bstatus of\b': 3.0,
         r'\bsituation (in|with|around)\b': 3.5,
-    }
-
-    # Direct answer / synthesis signals → Perplexity via Kilo Gateway
-    DIRECT_ANSWER_SIGNALS = {
-        r'\bwhat is\b': 3.0,
-        r'\bwhat are\b': 2.5,
-        r'\bcurrent status\b': 4.0,
-        r'\bstatus of\b': 3.5,
-        r'\bstatus\b': 2.5,
-        r'\bwhat happened with\b': 4.0,
-        r"\bwhat'?s happening with\b": 4.0,
-        r'\bas of (today|now)\b': 4.0,
-        r'\bthis weekend\b': 3.5,
-        r'\bevents? in\b': 3.5,
-        r'\bthings to do in\b': 4.0,
-        r'\bnear me\b': 3.0,
-        r'\bcan you (tell me|summarize|explain)\b': 3.5,
-        # German
-        r'\bwann\b': 3.0,
-        r'\bwer\b': 3.0,
-        r'\bwo\b': 2.5,
-        r'\bwie viele\b': 3.0,
     }
 
     # Privacy/Multi-source signals → SearXNG (self-hosted meta-search)
@@ -947,9 +924,6 @@ class QueryAnalyzer:
         linkup_source_score, linkup_source_matches = self._calculate_signal_score(
             query, self.LINKUP_SOURCE_SIGNALS
         )
-        direct_answer_score, direct_answer_matches = self._calculate_signal_score(
-            query, self.DIRECT_ANSWER_SIGNALS
-        )
         exa_deep_score, exa_deep_matches = self._calculate_signal_score(
             query, self.EXA_DEEP_SIGNALS
         )
@@ -1143,19 +1117,10 @@ class QueryAnalyzer:
         matches = analysis["provider_matches"].get(winner, [])
         top_signals = sorted(matches, key=lambda x: x["weight"], reverse=True)[:5]
 
-        # Special case: URL detected and Exa available → strong recommendation
-        if analysis["detected_url"] and "exa" in available:
-            if winner != "exa":
-                # Override if URL is present but didn't win
-                # (user might want similar search)
-                pass  # Keep current winner but note it
-
         # Exa is permanently constrained to source-result mode in WSP 3.0.
         exa_depth = "normal"
 
         # Build detailed routing result
-        threshold = self.auto_config.get("confidence_threshold", 0.3)
-
         return {
             "provider": winner,
             "confidence": confidence,
@@ -1170,7 +1135,6 @@ class QueryAnalyzer:
                 {"matched": s["matched"], "weight": s["weight"]}
                 for s in top_signals
             ],
-            "below_threshold": confidence < threshold,
             "auto_allow_excluded": auto_excluded,
             "analysis_summary": {
                 "query_length": len(query.split()),

@@ -41,8 +41,8 @@ margin over the runner-up (40%):
 - **medium** — confidence >= 0.4: a plausible winner without a large margin.
 - **low** — confidence < 0.4: weak or ambiguous signals.
 
-Decisions below `confidence_threshold` (default: 0.3) are additionally
-flagged as `below_threshold`.
+`auto_routing.confidence_threshold` is still accepted in config.json but has
+no effect since 5.0: the `below_threshold` flag it controlled was never read.
 
 ### Debugging routing decisions
 
@@ -250,11 +250,3 @@ Default class when no rule matches; the base intent-signal scores decide on thei
 
 - **Example signals:** assigned when no class rule matches an `en`/`de` query.
 - **Preferred providers:** none (base intent-signal scores decide).
-
-### `shopping_at`
-
-Legacy shopping class kept for boost compatibility; no detection rule currently emits this label.
-
-- **Example signals:** none (no detection rule; class-boost table entry only).
-- **Preferred providers:** `serper` (+8), `firecrawl` (+6), `linkup` (+4), `you` (+2)
-- **Demoted providers:** `exa` (-2)

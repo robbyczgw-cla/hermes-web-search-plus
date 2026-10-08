@@ -1274,7 +1274,6 @@ def search_parallel(
             "excerpts": excerpts,
         })
 
-    " ".join(r.get("snippet", "") for r in results[:3])[:1200]
     return {
         "provider": "parallel",
         "query": query,
