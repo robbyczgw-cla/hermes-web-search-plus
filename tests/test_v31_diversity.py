@@ -18,7 +18,7 @@ from wsp_core.diversity_v3 import (
     snippet_similarity,
 )
 from wsp_core.operator_receipts_v3 import receipt_record_from_response
-from wsp_core.quality import deduplicate_results_across_providers
+from wsp_core import research
 from wsp_core.research import run_research_mode
 
 
@@ -239,9 +239,9 @@ def test_quality_report_contains_diversity_and_operator_receipt_stays_safe(
     assert "diversity" not in json.dumps(operator_payload, sort_keys=True)
 
 
-def test_default_research_merge_matches_existing_deduplication_behavior() -> None:
+def test_default_research_merge_is_reciprocal_rank_fusion() -> None:
     sources = _fixture_research_sources()
-    expected, expected_dedup_count = deduplicate_results_across_providers(
+    expected, expected_dedup_count = research.fuse_results(
         [("alpha", sources["alpha"]), ("beta", sources["beta"])], 4
     )
 

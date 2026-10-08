@@ -69,3 +69,31 @@ replay, so compare rows, not absolute p50 values.
 | serper answers 503 | hedged | 3206 ms | 4323 ms | 0 | 1.10 | 0.688 |
 | brave hangs | v4.3.5 | 32551 ms | 34257 ms | 0 | 1.23 | 0.662 |
 | brave hangs | hedged | 3701 ms | 4674 ms | 0 | 1.17 | 0.658 |
+
+## Research mode (rank fusion and passages)
+
+The 26 research queries of the recorded set, replayed (scale 0.2) in the
+core-4 configuration. Before, research mode listed the first provider's
+results and appended the others, so the top 5 came from one provider. Now
+the provider lists are fused with reciprocal rank fusion (k = 60, pages
+found by several providers rank higher).
+
+| version | nDCG@5 | authority hit@5 | providers in top 5 | p50 | p95 | approx. tokens |
+|---|---:|---:|---:|---:|---:|---:|
+| before | 0.678 | 1.000 | 1.00 | 3480 ms | 9097 ms | 1907 |
+| fused + passages | 0.694 | 1.000 | 2.00 | 3577 ms | 9167 ms | 2406 |
+
+Tokens: the source summaries grow by about 200 characters per answer
+(two 300-character passages instead of one 500-character excerpt). The
+remaining growth comes from Exa results reaching the top 5 more often
+(1.73 -> 2.23 per answer); their snippets are long multi-passage highlights.
+
+Passage size was chosen with a judge (Grok 4.7, 0-3 "does this text help
+answer the query") that saw the three variants unlabelled, in a fixed order
+with the old excerpt first, for 53 extracted sources:
+
+| summary shape | mean grade | useful (grade >= 2) |
+|---|---:|---:|
+| 1 x 500 characters (before) | 1.72 | 60% |
+| 2 x 300 characters | 2.02 | 75% |
+| 3 x 250 characters | 1.98 | 77% |
