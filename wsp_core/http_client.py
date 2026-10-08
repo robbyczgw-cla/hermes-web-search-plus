@@ -543,8 +543,28 @@ def make_request(url: str, headers: dict, body: dict, timeout: int = 30) -> dict
         raise ProviderRequestError(f"Request timed out after {timeout}s. Try again or reduce max_results.", transient=True)
 
 
-def make_get_request(url: str, headers: dict, timeout: int = 30) -> dict:
-    """Make HTTP GET request and return JSON response."""
+def _capture_headers(source, names, sink: dict | None) -> None:
+    if sink is None:
+        return
+    for name in names:
+        value = _response_header(source, name)
+        if value:
+            sink[name] = value
+
+
+def make_get_request(
+    url: str,
+    headers: dict,
+    timeout: int = 30,
+    *,
+    capture_headers: tuple = (),
+    response_headers: dict | None = None,
+) -> dict:
+    """Make HTTP GET request and return JSON response.
+
+    ``capture_headers`` names response headers to copy into
+    ``response_headers``, on success and on HTTP errors.
+    """
     timeout = _capped_timeout(timeout)
     if "User-Agent" not in headers:
         headers["User-Agent"] = DEFAULT_USER_AGENT
@@ -552,8 +572,10 @@ def make_get_request(url: str, headers: dict, timeout: int = 30) -> dict:
 
     try:
         with urlopen(req, timeout=timeout) as response:
+            _capture_headers(response, capture_headers, response_headers)
             return _read_json_response(response)
     except HTTPError as e:
+        _capture_headers(e, capture_headers, response_headers)
         _raise_provider_http_error(e)
         raise
     except URLError as e:

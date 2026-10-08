@@ -167,7 +167,7 @@ class FreshnessRequestTests(unittest.TestCase):
     def test_brave_request_includes_native_freshness(self):
         captured = {}
 
-        def fake_get(url, headers, timeout=30):
+        def fake_get(url, headers, timeout=30, **_kwargs):
             captured["url"] = url
             return {"web": {"results": []}}
 
