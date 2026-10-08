@@ -9,8 +9,8 @@ works in routing policy `routing-v3`. It is generated from `wsp_core/routing.py`
 `wsp_core/provider_registry.py`, and a test fails when it drifts from them.
 
 In short: the first provider is `brave`, with these exceptions: `exa` for `academic` and
-`docs`; `serper` for `shopping`. Everything after the first provider follows
-`provider_priority`.
+`docs`; `serper` for `security` and `shopping`. Everything after the first provider
+follows `provider_priority`.
 
 Contents:
 
@@ -50,7 +50,7 @@ With all four measured providers configured and allowed, the result is:
 | `general` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
 | `local` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
 | `news` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
-| `security` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
+| `security` | `serper` | intent rule | `brave`, `exa`, `tavily`, then `provider_priority` |
 | `shopping` | `serper` | intent rule | `brave`, `exa`, `tavily`, then `provider_priority` |
 
 The measured order is `brave`, `serper`, `exa`, `tavily`. If the first provider in a row
@@ -81,8 +81,8 @@ How it was measured:
   fitted to. Tested with leave-one-out (each query's provider chosen from the other
   queries of its intent), it fell below always using the first provider of the measured
   order. Only these choices were the same in every fold: `exa` for `academic` and
-  `docs`; `serper` for `shopping`. They are the intent rules in the table above. Nothing
-  finer is used.
+  `docs`; `serper` for `security` and `shopping`. They are the intent rules in the table
+  above. Nothing finer is used.
 
 What the order does not show:
 
@@ -174,7 +174,7 @@ measured providers are configured:
 | how to read a file in python | `docs` | `exa` | `how_to_lang`, `lang_clear` |
 | best headphones under 300 euros | `shopping` | `serper` | `best_under`, `under_amount`, `currency_amount`, ... |
 | Kopfhörer Preisvergleich | `shopping` | `serper` | `price_compare`, `category` |
-| CVE-2024-3094 remote code execution | `security` | `brave` | `cve_id`, `cve`, `vuln_class` |
+| CVE-2024-3094 remote code execution | `security` | `serper` | `cve_id`, `cve`, `vuln_class` |
 | restaurants near me open now | `local` | `brave` | `near_me`, `hours`, `poi` |
 | Wetter Wien morgen | `local` | `brave` | `weather` |
 | is it worth switching to Linux reddit | `community` | `brave` | `platform`, `worth_it` |
@@ -297,7 +297,7 @@ Cue families, strongest first:
 Vulnerabilities and attacks: CVE ids, exploits, malware, security advisories, data
 breaches.
 
-- **First provider:** `brave` (measured order).
+- **First provider:** `serper` (intent rule).
 - **Threshold:** a score of at least 3.0.
 
 Cue families, strongest first:

@@ -219,11 +219,13 @@ def infer_query_language(query: Optional[str]) -> Optional[str]:
 # Measured on the recorded evaluation set: Brave gave
 # the best results overall (nDCG@5 0.696; Serper 0.642, Exa 0.638, Tavily
 # 0.552), Exa led on academic and documentation queries and Serper on shopping,
-# in every leave-one-out fold. Finer intent-to-provider tables did not survive
-# leave-one-out, so these three are the only exceptions to the measured order.
+# in every leave-one-out fold. Security goes to Serper after a live A/B of the
+# 26 security queries with authority domains: authority hit@5 22/26 on v4.3.5,
+# 16/26 with Brave first, 23/26 with Serper first, at fewer output tokens.
 INTENT_FIRST_PROVIDER: Dict[str, str] = {
     "academic": "exa",
     "docs": "exa",
+    "security": "serper",
     "shopping": "serper",
 }
 MEASURED_PROVIDER_ORDER: Tuple[str, ...] = ("brave", "serper", "exa", "tavily")
