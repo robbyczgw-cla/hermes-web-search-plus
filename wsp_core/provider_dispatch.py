@@ -18,6 +18,8 @@ registry capability flags can never drift apart.
 
 from __future__ import annotations
 
+import re
+
 from typing import Any, Callable, Dict
 
 from .config import _validate_searxng_url, keyless_public_allowed
@@ -66,10 +68,43 @@ def _locale(prov: str, args: Any, config: Dict[str, Any]):
 # =============================================================================
 
 
+_SITE_DOMAIN = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
+
+
+def _site_domains(values: Any) -> list:
+    """Bare hostnames only, so a domain list cannot inject search operators."""
+    out = []
+    for value in values or []:
+        host = str(value or "").strip().lower()
+        host = host.split("://", 1)[-1].split("/", 1)[0]
+        if host.startswith("www."):
+            host = host[4:]
+        if _SITE_DOMAIN.match(host) and host not in out:
+            out.append(host)
+    return out
+
+
+def _with_site_operators(query: str, args: Any) -> str:
+    """Add ``site:`` operators for providers without a native domain filter.
+
+    Brave, Serper, SerpBase and You.com have no include/exclude-domain field, so
+    ``include_domains`` used to be dropped silently for them. All four honour
+    ``site:`` / ``-site:`` in the query text.
+    """
+    include = _site_domains(getattr(args, "include_domains", None))
+    exclude = _site_domains(getattr(args, "exclude_domains", None))
+    lowered = (query or "").lower()
+    parts = [query or ""]
+    if include and "site:" not in lowered:
+        parts.append(" OR ".join(f"site:{d}" for d in include[:10]))
+    parts.extend(f"-site:{d}" for d in exclude[:10] if f"-site:{d}".lower() not in lowered)
+    return " ".join(p for p in parts if p).strip()
+
+
 def _call_serper_search(search_module, prov, args, key, config, routing_info):
     country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_serper")(
-        query=args.query,
+        query=_with_site_operators(args.query, args),
         api_key=key,
         max_results=args.max_results,
         country=country,
@@ -84,7 +119,7 @@ def _call_serpbase_search(search_module, prov, args, key, config, routing_info):
     serpbase_config = config.get("serpbase", {})
     country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_serpbase")(
-        query=args.query,
+        query=_with_site_operators(args.query, args),
         api_key=key,
         max_results=args.max_results,
         country=country,
@@ -99,7 +134,7 @@ def _call_brave_search(search_module, prov, args, key, config, routing_info):
     brave_config = config.get("brave", {})
     country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_brave")(
-        query=args.query,
+        query=_with_site_operators(args.query, args),
         api_key=key,
         max_results=args.max_results,
         country=country,
@@ -213,7 +248,7 @@ def _call_parallel_search(search_module, prov, args, key, config, routing_info):
 def _call_you_search(search_module, prov, args, key, config, routing_info):
     country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_you")(
-        query=args.query,
+        query=_with_site_operators(args.query, args),
         api_key=key,
         max_results=args.max_results,
         country=country,
