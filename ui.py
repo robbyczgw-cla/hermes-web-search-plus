@@ -357,12 +357,6 @@ def _handler_class() -> type[BaseHTTPRequestHandler]:
                     stats_path=Path(self._operator_server.cache_root)
                     / "provider_stats.json",
                 )
-            elif parsed.path == "/api/v3/shadow-evaluation":
-                if parsed.query:
-                    raise ValueError("shadow evaluation does not accept query parameters")
-                payload = backend.build_shadow_evaluation(
-                    SQLiteStateStore.open_readonly(self._operator_server.state_path)
-                )
             else:
                 raise FileNotFoundError
             return backend.serialize_endpoint_payload(

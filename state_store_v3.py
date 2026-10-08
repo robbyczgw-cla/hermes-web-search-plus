@@ -8,17 +8,14 @@ import os
 import secrets
 import sqlite3
 import stat
-import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from contract_v3 import Capability, CircuitState, ErrorClass, SkipReason
 
 
 SCHEMA_VERSION = 3
-SHADOW_EVALUATION_RETENTION_SECONDS = 30 * 24 * 60 * 60
-SHADOW_EVALUATION_MAX_ROWS = 10_000
 DEFAULT_OPEN_SECONDS = {
     ErrorClass.AUTH: 300,
     ErrorClass.QUOTA: 3600,
@@ -137,18 +134,6 @@ def initialize_state_schema(connection: sqlite3.Connection) -> None:
             adaptive_providers INTEGER NOT NULL,
             adaptive_samples INTEGER NOT NULL
         );
-        CREATE TABLE IF NOT EXISTS shadow_evaluations_v3 (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            created_at REAL NOT NULL,
-            routing_class TEXT NOT NULL,
-            classic_provider TEXT NOT NULL,
-            shadow_provider TEXT,
-            agreement INTEGER NOT NULL,
-            policy_id TEXT NOT NULL,
-            policy_revision TEXT NOT NULL
-        );
-        CREATE INDEX IF NOT EXISTS idx_shadow_eval_created
-            ON shadow_evaluations_v3(created_at);
         PRAGMA user_version={SCHEMA_VERSION};
         """
     )
@@ -654,79 +639,6 @@ class SQLiteStateStore:
             int(row["reserved_units"]),
         )
 
-    def record_shadow_evaluation(
-        self,
-        *,
-        routing_class: str,
-        classic_provider: str,
-        shadow_provider: str | None,
-        agreement: bool,
-        policy_id: str,
-        policy_revision: str,
-        now: float | None = None,
-    ) -> bool:
-        """Best-effort bounded persistence for a completed shadow observation."""
-        if (
-            not self._available
-            or self._read_only
-            or not all(
-                isinstance(value, str) and value
-                for value in (
-                    routing_class,
-                    classic_provider,
-                    policy_id,
-                    policy_revision,
-                )
-            )
-            or (shadow_provider is not None and not isinstance(shadow_provider, str))
-            or not isinstance(agreement, bool)
-        ):
-            return False
-        try:
-            created_at = time.time() if now is None else float(now)
-            connection = self._connect()
-            try:
-                connection.execute("BEGIN IMMEDIATE")
-                connection.execute(
-                    """
-                    INSERT INTO shadow_evaluations_v3 (
-                        created_at, routing_class, classic_provider,
-                        shadow_provider, agreement, policy_id, policy_revision
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        created_at,
-                        routing_class,
-                        classic_provider,
-                        shadow_provider,
-                        int(agreement),
-                        policy_id,
-                        policy_revision,
-                    ),
-                )
-                connection.execute(
-                    "DELETE FROM shadow_evaluations_v3 WHERE created_at < ?",
-                    (created_at - SHADOW_EVALUATION_RETENTION_SECONDS,),
-                )
-                connection.execute(
-                    """
-                    DELETE FROM shadow_evaluations_v3
-                    WHERE id NOT IN (
-                        SELECT id FROM shadow_evaluations_v3
-                        ORDER BY created_at DESC, id DESC
-                        LIMIT ?
-                    )
-                    """,
-                    (SHADOW_EVALUATION_MAX_ROWS,),
-                )
-                connection.commit()
-            finally:
-                connection.close()
-        except (OSError, sqlite3.Error, ValueError):
-            self._available = False
-            return False
-        return True
-
     def adaptive_sample_rows(self) -> list[tuple[str, int, int, int, int]]:
         """Return (provider, sample_time, latency_ms, result_count, error) rows."""
         if not self._available:
@@ -756,63 +668,3 @@ class SQLiteStateStore:
         except sqlite3.Error:
             self._available = False
             return []
-
-    def shadow_evaluation_summary(self, window_seconds: int) -> dict[str, Any]:
-        """Return a bounded aggregate with no query text or request identifiers."""
-        empty = {
-            "total": 0,
-            "agreement_count": 0,
-            "agreement_rate": 0.0,
-            "divergences": [],
-        }
-        if not self._available:
-            return empty
-        try:
-            seconds = max(
-                0,
-                min(int(window_seconds), SHADOW_EVALUATION_RETENTION_SECONDS),
-            )
-            cutoff = time.time() - seconds
-            connection = self._connect()
-            try:
-                totals = connection.execute(
-                    """
-                    SELECT COUNT(*) AS total, COALESCE(SUM(agreement), 0) AS agreement_count
-                    FROM shadow_evaluations_v3 WHERE created_at >= ?
-                    """,
-                    (cutoff,),
-                ).fetchone()
-                rows = connection.execute(
-                    """
-                    SELECT classic_provider, shadow_provider, COUNT(*) AS count
-                    FROM shadow_evaluations_v3
-                    WHERE created_at >= ? AND agreement=0
-                    GROUP BY classic_provider, shadow_provider
-                    ORDER BY count DESC, classic_provider ASC, shadow_provider ASC
-                    """,
-                    (cutoff,),
-                ).fetchall()
-            finally:
-                connection.close()
-        except (OSError, sqlite3.Error, TypeError, ValueError):
-            self._available = False
-            return empty
-        total = int(totals["total"])
-        agreement_count = int(totals["agreement_count"])
-        return {
-            "total": total,
-            "agreement_count": agreement_count,
-            "agreement_rate": agreement_count / total if total else 0.0,
-            "divergences": [
-                {
-                    "classic_provider": str(row["classic_provider"]),
-                    "shadow_provider": (
-                        None
-                        if row["shadow_provider"] is None
-                        else str(row["shadow_provider"])
-                    ),
-                    "count": int(row["count"]),
-                }
-                for row in rows
-            ],
-        }

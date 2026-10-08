@@ -17,15 +17,13 @@ Native Perplexity and Kilo Perplexity are retained only as rejected registry rec
 
 ## Routing
 
-Classic Routing v2 remains authoritative in 3.0.
+Classic Routing v2 remains authoritative.
 
 - Config default: `routing.policy_mode = "classic"`
-- Emergency override: `WSP_ROUTING_CLASSIC_ONLY=1`
-- The environment override wins over config.
-- Unknown policy values fail closed to Classic.
-- Shadow metadata, when present, is observational and must report `affected_execution=false`.
-
-A full persisted shadow observer is deferred to 3.1.
+- `routing.policy_mode: "shadow"` is still accepted and is treated as `"classic"`. It does not quarantine the config file.
+- `WSP_ROUTING_CLASSIC_ONLY` is still accepted and is a no-op. Routing is always Classic.
+- Unknown policy values are rejected.
+- Shadow routing was removed in 5.0. `routing_receipt.shadow_observation` stays on every response and is always `null`. Readers still accept an older shadow object in cached responses.
 
 ## Cache
 

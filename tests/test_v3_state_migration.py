@@ -70,7 +70,7 @@ def _logical_dump(path) -> str:
         return "\n".join(connection.iterdump())
 
 
-def test_schema_v3_contains_legacy_health_adaptive_and_shadow_tables(tmp_path):
+def test_schema_v3_contains_legacy_health_and_adaptive_tables(tmp_path):
     path = tmp_path / "state.sqlite3"
     SQLiteStateStore(path)
 
@@ -91,8 +91,8 @@ def test_schema_v3_contains_legacy_health_adaptive_and_shadow_tables(tmp_path):
         "legacy_provider_health",
         "adaptive_samples_v3",
         "legacy_state_migrations",
-        "shadow_evaluations_v3",
     }.issubset(tables)
+    assert "shadow_evaluations_v3" not in tables
 
 
 def test_dry_run_is_default_and_changes_no_bytes(tmp_path):
