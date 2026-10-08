@@ -11,19 +11,17 @@ no network.
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import shutil
 import sys
 import types
-from pathlib import Path
 
-import bench
-import provider_health
-import provider_stats
-import search
+from wsp_core import bench
+from wsp_core import provider_health
+from wsp_core import provider_stats
+from wsp_core import search
 
-
+from plugin_loader import load_plugin
 PROVIDER_ENV_VARS = [
     "SERPER_API_KEY",
     "SERPBASE_API_KEY",
@@ -267,11 +265,7 @@ def test_cli_bench_command_prints_human_readable_table(monkeypatch, tmp_path, ca
 
 
 def test_setup_cli_bench_dispatches_through_in_process_engine(monkeypatch, capsys):
-    plugin_path = Path(__file__).resolve().parents[1] / "__init__.py"
-    spec = importlib.util.spec_from_file_location("wsp_plugin_bench_under_test", plugin_path)
-    wsp = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(wsp)
+    wsp = load_plugin("wsp_plugin_bench_under_test")
 
     stub_engine = types.SimpleNamespace(
         load_config=lambda: {"auto_routing": {}},

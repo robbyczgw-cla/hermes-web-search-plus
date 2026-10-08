@@ -4,7 +4,7 @@
      Regenerate with: python scripts/gen_routing_docs.py -->
 
 This reference is generated from the `routing-v2` data structures in
-`routing.py` and `quality.py`. It documents how automatic provider selection
+`wsp_core/routing.py` and `wsp_core/quality.py`. It documents how automatic provider selection
 (`provider="auto"`) decides, class by class.
 
 ## How Routing v2 decides
@@ -60,7 +60,7 @@ adds post-retrieval diagnostics. See the
 Classes are listed in detection order (first match wins), followed by the
 fallback and boost-only classes. Provider boosts are additive score
 adjustments; negative values demote a provider for that class. Boost/demote
-domains come from `CANONICAL_DOMAIN_RULES` in `quality.py` and rerank results
+domains come from `CANONICAL_DOMAIN_RULES` in `wsp_core/quality.py` and rerank results
 after retrieval for classes where source authority matters.
 
 ### `briefing_synthesis`

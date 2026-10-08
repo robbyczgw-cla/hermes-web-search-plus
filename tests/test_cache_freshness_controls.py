@@ -1,13 +1,13 @@
 """Public cache controls, recency TTL caps, and query-ranked summaries."""
 from unittest import mock
 
-import cache
-import compat_v3
-from contract_v3 import Capability
+from wsp_core import cache
+from wsp_core import compat_v3
+from wsp_core.contract_v3 import Capability
 
-import __init__ as plugin
+from plugin_loader import load_plugin
 
-
+plugin = load_plugin("wsp_plugin_test_cache_freshness_controls")
 def test_search_schema_exposes_no_cache_and_cache_ttl():
     registered = {}
 
@@ -70,8 +70,8 @@ def test_recency_ttl_caps_latest_below_default_hour():
 def test_cache_ttl_uses_wire_time_range_precedence():
     from types import SimpleNamespace
 
-    import orchestrator_v3
-    import search
+    from wsp_core import orchestrator_v3
+    from wsp_core import search
 
     for time_range, freshness, expected in (
         ("day", "year", 300),

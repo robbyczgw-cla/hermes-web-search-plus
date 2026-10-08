@@ -1,7 +1,7 @@
 import json
 
-import cache
-import provider_health
+from wsp_core import cache
+from wsp_core import provider_health
 
 
 def test_cache_put_writes_json_via_atomic_replace(tmp_path, monkeypatch):

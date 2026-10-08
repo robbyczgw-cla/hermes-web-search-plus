@@ -12,11 +12,14 @@ import contextlib
 import unittest
 from unittest import mock
 
-import __init__ as plugin
-import provider_dispatch
-import provider_registry
-import search
-from provider_adapter_protocol import validate_adapter_result
+from plugin_loader import load_plugin
+
+from wsp_core import provider_dispatch
+from wsp_core import provider_registry
+from wsp_core import search
+from wsp_core.provider_adapter_protocol import validate_adapter_result
+
+plugin = load_plugin("wsp_plugin_test_provider_dispatch")
 
 
 class SearchDispatchCompletenessTests(unittest.TestCase):

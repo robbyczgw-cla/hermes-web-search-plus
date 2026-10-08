@@ -3,10 +3,10 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 import sqlite3
 
-from contract_v3 import Capability, CircuitState, ErrorClass, SkipReason
-from errors_v3 import classify_provider_error
-from http_client import ProviderRequestError
-from state_store_v3 import SCHEMA_VERSION, CircuitKey, SQLiteStateStore, credential_fingerprint
+from wsp_core.contract_v3 import Capability, CircuitState, ErrorClass, SkipReason
+from wsp_core.errors_v3 import classify_provider_error
+from wsp_core.http_client import ProviderRequestError
+from wsp_core.state_store_v3 import SCHEMA_VERSION, CircuitKey, SQLiteStateStore, credential_fingerprint
 
 
 def _key(secret: str = "credential-a") -> CircuitKey:

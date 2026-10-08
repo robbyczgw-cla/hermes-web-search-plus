@@ -7,11 +7,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import search
-import cache
-import __init__ as plugin
+from wsp_core import search
+from wsp_core import cache
+from plugin_loader import load_plugin
 
-
+plugin = load_plugin("wsp_plugin_test_extract_plus")
 class ExtractPlusCoreTests(unittest.TestCase):
     def test_extract_firecrawl_parses_markdown(self):
         fake_response = {
@@ -22,7 +22,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
                 "metadata": {"title": "Example Page", "sourceURL": "https://example.com"},
             },
         }
-        with mock.patch("search.make_request", return_value=fake_response) as mock_request:
+        with mock.patch("wsp_core.search.make_request", return_value=fake_response) as mock_request:
             result = search.extract_firecrawl(
                 urls=["https://example.com"],
                 api_key="fc-test",
@@ -46,7 +46,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
             "rawHtml": "<h1>Linkup page</h1>",
             "images": [{"alt": "Logo", "url": "https://example.com/logo.png"}],
         }
-        with mock.patch("search.make_request", return_value=fake_response) as mock_request:
+        with mock.patch("wsp_core.search.make_request", return_value=fake_response) as mock_request:
             result = search.extract_linkup(
                 urls=["https://example.com"],
                 api_key="linkup-test",
@@ -79,7 +79,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
                 }
             ]
         }
-        with mock.patch("search.make_request", return_value=fake_response) as mock_request:
+        with mock.patch("wsp_core.search.make_request", return_value=fake_response) as mock_request:
             result = search.extract_tavily(
                 urls=["https://example.com"],
                 api_key="tvly-test",
@@ -107,7 +107,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
             ],
             "costDollars": {"total": 0.003},
         }
-        with mock.patch("search.make_request", return_value=fake_response) as mock_request:
+        with mock.patch("wsp_core.search.make_request", return_value=fake_response) as mock_request:
             result = search.extract_exa(
                 urls=["https://example.com"],
                 api_key="exa-test",
@@ -136,7 +136,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
                 "metadata": {"siteName": "Example"},
             }
         ]
-        with mock.patch("search.make_request", return_value=fake_response) as mock_request:
+        with mock.patch("wsp_core.search.make_request", return_value=fake_response) as mock_request:
             result = search.extract_you(
                 urls=["https://example.com"],
                 api_key="you-test",
@@ -158,7 +158,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
 
     def test_extract_plus_auto_prefers_tavily_when_available(self):
         with mock.patch.dict(os.environ, {"TAVILY_API_KEY": "tvly-test", "FIRECRAWL_API_KEY": "fc-test", "LINKUP_API_KEY": "linkup-test"}, clear=False):
-            with mock.patch("search.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
+            with mock.patch("wsp_core.search.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
                 result = search.extract_plus(["https://example.com"], provider="auto")
 
         self.assertEqual(result["provider"], "tavily")
@@ -166,7 +166,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
 
     def test_extract_plus_auto_uses_exa_when_only_exa_is_available(self):
         with mock.patch.dict(os.environ, {"EXA_API_KEY": "exa-test"}, clear=True):
-            with mock.patch("search.extract_exa", return_value={"provider": "exa", "results": []}) as mock_exa:
+            with mock.patch("wsp_core.search.extract_exa", return_value={"provider": "exa", "results": []}) as mock_exa:
                 result = search.extract_plus(["https://example.com"], provider="auto")
 
         self.assertEqual(result["provider"], "exa")
@@ -180,8 +180,8 @@ class ExtractPlusCoreTests(unittest.TestCase):
             }
         }
         with mock.patch.dict(os.environ, {"TAVILY_API_KEY": "tvly-test", "FIRECRAWL_API_KEY": "fc-test"}, clear=True):
-            with mock.patch("search.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
-                with mock.patch("search.extract_firecrawl") as mock_firecrawl:
+            with mock.patch("wsp_core.search.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
+                with mock.patch("wsp_core.search.extract_firecrawl") as mock_firecrawl:
                     result = search.extract_plus(["https://example.com"], provider="auto", config=config)
 
         self.assertEqual(result["provider"], "tavily")
@@ -196,8 +196,8 @@ class ExtractPlusCoreTests(unittest.TestCase):
             }
         }
         with mock.patch.dict(os.environ, {"FIRECRAWL_API_KEY": "fc-test", "LINKUP_API_KEY": "linkup-test"}, clear=True):
-            with mock.patch("search.extract_firecrawl", return_value={"provider": "firecrawl", "results": [{"url": "https://example.com", "error": "fetch failed"}]}) as mock_firecrawl:
-                with mock.patch("search.extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback"}]}) as mock_linkup:
+            with mock.patch("wsp_core.search.extract_firecrawl", return_value={"provider": "firecrawl", "results": [{"url": "https://example.com", "error": "fetch failed"}]}) as mock_firecrawl:
+                with mock.patch("wsp_core.search.extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback"}]}) as mock_linkup:
                     result = search.extract_plus(["https://example.com"], provider="firecrawl", config=config)
 
         self.assertEqual(result["provider"], "linkup")
@@ -215,8 +215,8 @@ class ExtractPlusCoreTests(unittest.TestCase):
             }
         }
         with mock.patch.dict(os.environ, {"SERPER_API_KEY": "serper-test", "PARALLEL_API_KEY": "parallel-test"}, clear=True):
-            with mock.patch("search.extract_serper", return_value={"provider": "serper", "results": []}) as mock_serper:
-                with mock.patch("search.extract_parallel") as mock_parallel:
+            with mock.patch("wsp_core.search.extract_serper", return_value={"provider": "serper", "results": []}) as mock_serper:
+                with mock.patch("wsp_core.search.extract_parallel") as mock_parallel:
                     result = search.extract_plus(["https://example.com"], provider="auto", config=config)
 
         self.assertEqual(result["provider"], "serper")
@@ -261,8 +261,8 @@ class ExtractPlusCoreTests(unittest.TestCase):
 
     def test_extract_plus_auto_prefers_tavily_over_exa(self):
         with mock.patch.dict(os.environ, {"EXA_API_KEY": "exa-test", "TAVILY_API_KEY": "tvly-test"}, clear=True):
-            with mock.patch("search.extract_exa", return_value={"provider": "exa", "results": []}) as mock_exa:
-                with mock.patch("search.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
+            with mock.patch("wsp_core.search.extract_exa", return_value={"provider": "exa", "results": []}) as mock_exa:
+                with mock.patch("wsp_core.search.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
                     result = search.extract_plus(["https://example.com"], provider="auto")
 
         self.assertEqual(result["provider"], "tavily")
@@ -277,7 +277,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
                 "metadata": {"title": "Example Page", "sourceURL": "https://example.com", "ogImage": "https://example.com/og.png"},
             },
         }
-        with mock.patch("search.make_request", return_value=fake_response):
+        with mock.patch("wsp_core.search.make_request", return_value=fake_response):
             result = search.extract_firecrawl(
                 urls=["https://example.com"],
                 api_key="fc-test",
@@ -290,8 +290,8 @@ class ExtractPlusCoreTests(unittest.TestCase):
 
     def test_extract_plus_falls_back_when_primary_returns_only_errors(self):
         with mock.patch.dict(os.environ, {"FIRECRAWL_API_KEY": "fc-test", "LINKUP_API_KEY": "linkup-test"}, clear=True):
-            with mock.patch("search.extract_firecrawl", return_value={"provider": "firecrawl", "results": [{"url": "https://example.com", "error": "fetch failed"}]}) as mock_firecrawl:
-                with mock.patch("search.extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback content"}]}) as mock_linkup:
+            with mock.patch("wsp_core.search.extract_firecrawl", return_value={"provider": "firecrawl", "results": [{"url": "https://example.com", "error": "fetch failed"}]}) as mock_firecrawl:
+                with mock.patch("wsp_core.search.extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback content"}]}) as mock_linkup:
                     result = search.extract_plus(["https://example.com"], provider="firecrawl")
 
         self.assertEqual(result["provider"], "linkup")
@@ -302,7 +302,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
 
     def test_extract_plus_empty_urls_returns_clean_error_without_provider_calls(self):
         with mock.patch.dict(os.environ, {"FIRECRAWL_API_KEY": "fc-test"}, clear=True):
-            with mock.patch("search.extract_firecrawl") as mock_firecrawl:
+            with mock.patch("wsp_core.search.extract_firecrawl") as mock_firecrawl:
                 result = search.extract_plus([], provider="firecrawl")
 
         self.assertEqual(result["results"], [])
@@ -311,7 +311,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
 
     def test_extract_plus_invalid_urls_return_clean_error_without_fallback(self):
         with mock.patch.dict(os.environ, {"FIRECRAWL_API_KEY": "fc-test", "LINKUP_API_KEY": "linkup-test"}, clear=True):
-            with mock.patch("search.extract_firecrawl") as mock_firecrawl, mock.patch("search.extract_linkup") as mock_linkup:
+            with mock.patch("wsp_core.search.extract_firecrawl") as mock_firecrawl, mock.patch("wsp_core.search.extract_linkup") as mock_linkup:
                 result = search.extract_plus(["foo-bar"], provider="firecrawl")
 
         self.assertEqual(result["results"], [])
@@ -322,7 +322,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
     def test_cli_empty_extract_urls_returns_json_error(self):
         completed = subprocess.run(
             [sys.executable, "search.py", "--extract-urls", "--provider", "firecrawl", "--compact"],
-            cwd=os.path.dirname(search.__file__),
+            cwd=os.path.dirname(os.path.dirname(search.__file__)),
             capture_output=True,
             text=True,
             timeout=30,
@@ -338,7 +338,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
         transient = search.ProviderRequestError("temporary outage", status_code=503, transient=True)
         with mock.patch.dict(os.environ, {"FIRECRAWL_API_KEY": "fc-test"}, clear=True):
             with mock.patch(
-                "search.extract_firecrawl",
+                "wsp_core.search.extract_firecrawl",
                 side_effect=[transient, {"provider": "firecrawl", "results": [{"url": "https://example.com", "content": "ok"}]}],
             ) as mock_firecrawl:
                 result = search.extract_plus(["https://example.com"], provider="firecrawl")
@@ -349,11 +349,11 @@ class ExtractPlusCoreTests(unittest.TestCase):
     def test_extract_plus_does_not_write_legacy_health_on_fallback(self):
         transient = search.ProviderRequestError("temporary outage", status_code=503, transient=True)
         with mock.patch.dict(os.environ, {"FIRECRAWL_API_KEY": "fc-test", "LINKUP_API_KEY": "linkup-test"}, clear=True):
-            with mock.patch("search.extract_firecrawl", side_effect=[transient, transient, transient]):
-                with mock.patch("search.extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback"}]}):
-                    with mock.patch("search.time.sleep"):
-                        with mock.patch("search.mark_provider_failure", return_value={"cooldown_seconds": 60}) as mock_mark:
-                            with mock.patch("search.reset_provider_health") as mock_reset:
+            with mock.patch("wsp_core.search.extract_firecrawl", side_effect=[transient, transient, transient]):
+                with mock.patch("wsp_core.search.extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback"}]}):
+                    with mock.patch("wsp_core.search.time.sleep"):
+                        with mock.patch("wsp_core.search.mark_provider_failure", return_value={"cooldown_seconds": 60}) as mock_mark:
+                            with mock.patch("wsp_core.search.reset_provider_health") as mock_reset:
                                 result = search.extract_plus(["https://example.com"], provider="firecrawl")
 
         self.assertEqual(result["provider"], "linkup")
@@ -363,9 +363,9 @@ class ExtractPlusCoreTests(unittest.TestCase):
 
     def test_extract_plus_ignores_legacy_cooldown_state(self):
         with mock.patch.dict(os.environ, {"TAVILY_API_KEY": "tvly-test", "LINKUP_API_KEY": "linkup-test"}, clear=True):
-            with mock.patch("search.provider_in_cooldown") as legacy_cooldown:
-                with mock.patch("search.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
-                    with mock.patch("search.extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback"}]}):
+            with mock.patch("wsp_core.search.provider_in_cooldown") as legacy_cooldown:
+                with mock.patch("wsp_core.search.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
+                    with mock.patch("wsp_core.search.extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback"}]}):
                         result = search.extract_plus(["https://example.com"], provider="auto")
 
         self.assertEqual(result["provider"], "tavily")

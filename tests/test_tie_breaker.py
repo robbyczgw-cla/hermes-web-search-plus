@@ -1,6 +1,6 @@
 import unittest
 
-from search import _choose_tie_winner
+from wsp_core.search import _choose_tie_winner
 
 
 class TieBreakerTests(unittest.TestCase):

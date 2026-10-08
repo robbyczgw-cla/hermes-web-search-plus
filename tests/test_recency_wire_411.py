@@ -6,9 +6,9 @@ from unittest import mock
 
 import pytest
 
-import provider_dispatch
-import providers
-import search
+from wsp_core import provider_dispatch
+from wsp_core import providers
+from wsp_core import search
 
 
 @pytest.mark.parametrize(

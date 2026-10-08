@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from attempt_engine_v3 import AttemptContext, AttemptEngine
-from budget_preflight_v3 import run_budget_preflight
-from config import _deepcopy_default_config, _validate_runtime_config
-from contract_v3 import (
+from wsp_core.attempt_engine_v3 import AttemptContext, AttemptEngine
+from wsp_core.budget_preflight_v3 import run_budget_preflight
+from wsp_core.config import _deepcopy_default_config, _validate_runtime_config
+from wsp_core.contract_v3 import (
     Capability,
     ErrorClass,
     RequestV3,
@@ -18,15 +18,15 @@ from contract_v3 import (
     SkipReason,
     validate_routing_receipt_v3,
 )
-from operator_privacy_v3 import assert_operator_payload_safe
-from operator_receipts_v3 import receipt_record_from_response
-from orchestrator_v3 import (
+from wsp_core.operator_privacy_v3 import assert_operator_payload_safe
+from wsp_core.operator_receipts_v3 import receipt_record_from_response
+from wsp_core.orchestrator_v3 import (
     _DAILY_PROVIDER_CALL_SCOPE,
     CapabilityAdapter,
     ProviderPlan,
     execute_v3_request,
 )
-from state_store_v3 import SQLiteStateStore
+from wsp_core.state_store_v3 import SQLiteStateStore
 
 
 def _request(*, capability: Capability = Capability.SEARCH, **kwargs) -> RequestV3:

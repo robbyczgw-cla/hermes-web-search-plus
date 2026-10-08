@@ -10,7 +10,7 @@ caller is not killed.
 import unittest
 from unittest import mock
 
-import search
+from wsp_core import search
 
 
 def _canned(provider):

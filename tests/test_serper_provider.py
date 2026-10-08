@@ -12,9 +12,9 @@ import os
 import unittest
 from unittest import mock
 
-import provider_registry
-import providers
-import search
+from wsp_core import provider_registry
+from wsp_core import providers
+from wsp_core import search
 
 
 def _canned(provider):
@@ -61,7 +61,7 @@ class SerperNewsParsingTests(unittest.TestCase):
             captured["body"] = body
             return _FAKE_NEWS_RESPONSE
 
-        with mock.patch("search.make_request", side_effect=fake_post):
+        with mock.patch("wsp_core.search.make_request", side_effect=fake_post):
             result = search.search_serper(query="audio news", api_key="serper-key", search_type="news")
 
         self.assertEqual(captured["url"], "https://google.serper.dev/news")
@@ -90,7 +90,7 @@ class SerperNewsParsingTests(unittest.TestCase):
             captured["body"] = body
             return _FAKE_NEWS_RESPONSE
 
-        with mock.patch("search.make_request", side_effect=fake_post):
+        with mock.patch("wsp_core.search.make_request", side_effect=fake_post):
             search.search_serper(query="q", api_key="k", search_type="news", time_range="week")
 
         self.assertEqual(captured["url"], "https://google.serper.dev/news")
@@ -98,7 +98,7 @@ class SerperNewsParsingTests(unittest.TestCase):
 
     def test_regular_search_still_parses_organic(self):
         fake = {"organic": [{"title": "T", "link": "https://example.test", "snippet": "s"}]}
-        with mock.patch("search.make_request", return_value=fake):
+        with mock.patch("wsp_core.search.make_request", return_value=fake):
             result = search.search_serper(query="q", api_key="k")
         self.assertEqual(result["results"][0]["url"], "https://example.test")
         self.assertNotIn("source", result["results"][0])
@@ -106,7 +106,7 @@ class SerperNewsParsingTests(unittest.TestCase):
     def test_news_search_with_organic_only_payload_returns_empty_not_crash(self):
         # Defensive: a payload without "news" yields no results instead of
         # silently reading the wrong field.
-        with mock.patch("search.make_request", return_value={"organic": [{"title": "T", "link": "u"}]}):
+        with mock.patch("wsp_core.search.make_request", return_value={"organic": [{"title": "T", "link": "u"}]}):
             result = search.search_serper(query="q", api_key="k", search_type="news")
         self.assertEqual(result["results"], [])
 
@@ -226,7 +226,7 @@ class SearchTypePipelineTests(unittest.TestCase):
         with contextlib.ExitStack() as stack:
             self._isolate(stack)
             stack.enter_context(mock.patch.dict("os.environ", {"SERPER_API_KEY": "serper-test-key"}))
-            stack.enter_context(mock.patch("search.make_request", side_effect=fake_post))
+            stack.enter_context(mock.patch("wsp_core.search.make_request", side_effect=fake_post))
             result = search.run_search_request(query="audio", provider="serper", search_type="news", freshness="day")
 
         self.assertEqual(captured["url"], "https://google.serper.dev/news")
@@ -253,7 +253,7 @@ class SerperExtractTests(unittest.TestCase):
         search.reset_provider_health("serper")
 
     def test_extract_success_prefers_markdown(self):
-        with mock.patch("search.make_request", return_value=_FAKE_SCRAPE_RESPONSE) as mock_request:
+        with mock.patch("wsp_core.search.make_request", return_value=_FAKE_SCRAPE_RESPONSE) as mock_request:
             result = search.extract_serper(["https://example.com/article"], "serper-key")
 
         self.assertEqual(result["provider"], "serper")
@@ -272,7 +272,7 @@ class SerperExtractTests(unittest.TestCase):
         self.assertEqual(body, {"url": "https://example.com/article", "includeMarkdown": True})
 
     def test_extract_falls_back_to_text_without_markdown(self):
-        with mock.patch("search.make_request", return_value={"text": "only text", "credits": 1}):
+        with mock.patch("wsp_core.search.make_request", return_value={"text": "only text", "credits": 1}):
             result = search.extract_serper(["https://example.com"], "k")
         self.assertEqual(result["results"][0]["content"], "only text")
 
@@ -285,7 +285,7 @@ class SerperExtractTests(unittest.TestCase):
                 raise value
             return value
 
-        with mock.patch("search.make_request", side_effect=fake_post):
+        with mock.patch("wsp_core.search.make_request", side_effect=fake_post):
             result = search.extract_serper(["https://bad.example.com", "https://good.example.com"], "k")
 
         self.assertEqual(len(result["results"]), 2)
@@ -294,7 +294,7 @@ class SerperExtractTests(unittest.TestCase):
         self.assertNotIn("error", result["results"][1])
 
     def test_extract_error_field_in_payload_becomes_error_item(self):
-        with mock.patch("search.make_request", return_value={"error": "Not enough credits"}):
+        with mock.patch("wsp_core.search.make_request", return_value={"error": "Not enough credits"}):
             result = search.extract_serper(["https://example.com"], "k")
         self.assertEqual(result["results"][0]["error"], "Serper scrape failed")
 
@@ -308,7 +308,7 @@ class SerperExtractTests(unittest.TestCase):
 
         config = {"serper": {"scrape_url": "http://localhost:9200/scrape", "extract_timeout": 7}}
         with mock.patch.dict(os.environ, {"SERPER_API_KEY": "serper-test-key"}, clear=True):
-            with mock.patch("search.make_request", side_effect=fake_post):
+            with mock.patch("wsp_core.search.make_request", side_effect=fake_post):
                 result = search.extract_plus(["https://example.com"], provider="serper", config=config)
 
         self.assertEqual(result["provider"], "serper")
@@ -325,7 +325,7 @@ class SerperExtractTests(unittest.TestCase):
 
     def test_extract_plus_auto_falls_back_to_serper_when_only_serper_keyed(self):
         with mock.patch.dict(os.environ, {"SERPER_API_KEY": "serper-test-key"}, clear=True):
-            with mock.patch("search.make_request", return_value=_FAKE_SCRAPE_RESPONSE):
+            with mock.patch("wsp_core.search.make_request", return_value=_FAKE_SCRAPE_RESPONSE):
                 result = search.extract_plus(["https://example.com"], provider="auto", config={})
 
         self.assertEqual(result["provider"], "serper")

@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-import importlib.util
 import sys
 import types
 from pathlib import Path
 
-
+from plugin_loader import load_plugin
 PLUGIN_PATH = Path(__file__).resolve().parents[1] / "__init__.py"
-spec = importlib.util.spec_from_file_location("wsp_plugin_no_answer_under_test", PLUGIN_PATH)
-assert spec is not None
-wsp = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-spec.loader.exec_module(wsp)
+wsp = load_plugin("wsp_plugin_no_answer_under_test")
 
 
 class FakeCtx:
@@ -110,6 +105,6 @@ def test_load_search_module_ignores_unrelated_global_search_module(monkeypatch):
 
     assert loaded is not None
     assert loaded is not fake_search
-    assert Path(loaded.__file__).resolve() == PLUGIN_PATH.with_name("search.py").resolve()
+    assert Path(loaded.__file__).resolve() == (PLUGIN_PATH.parent / "wsp_core" / "search.py").resolve()
     assert hasattr(loaded, "run_search_request")
     assert sys.modules["search"] is fake_search

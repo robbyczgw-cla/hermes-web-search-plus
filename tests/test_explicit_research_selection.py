@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import time
 
-import search
-from research import run_research_mode
+from wsp_core import search
+from wsp_core.research import run_research_mode
 
 
 def _routing() -> dict:

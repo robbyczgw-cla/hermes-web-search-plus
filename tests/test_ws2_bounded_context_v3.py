@@ -7,15 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from bounded_context_v3 import (
+from wsp_core.bounded_context_v3 import (
     DEFAULT_MAX_CONTEXT_CHARS,
     FullTextStore,
     apply_bounded_context,
     prepare_extract_request,
 )
-from config import DEFAULT_CONFIG, _validate_runtime_config
-from contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
-from runtime_v3 import observations_from_legacy, project_results_from_observations
+from wsp_core.config import DEFAULT_CONFIG, _validate_runtime_config
+from wsp_core.contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
+from wsp_core.runtime_v3 import observations_from_legacy, project_results_from_observations
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "v3" / "ws2"

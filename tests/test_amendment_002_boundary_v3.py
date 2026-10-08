@@ -250,13 +250,13 @@ def test_fixture_no_bare_cross_provider_score(fixture):
 # ===========================================================================
 
 def _contract_response(fixture_name="01_search_success"):
-    from contract_v3 import ResponseV3
+    from wsp_core.contract_v3 import ResponseV3
 
     return ResponseV3.from_dict(_load(fixture_name))
 
 
 def test_contract_roundtrips_amendment_fields():
-    from contract_v3 import ResponseV3
+    from wsp_core.contract_v3 import ResponseV3
 
     payload = _load("01_search_success")
     response = ResponseV3.from_dict(payload)
@@ -269,7 +269,7 @@ def test_contract_roundtrips_amendment_fields():
 
 
 def test_contract_rejects_source_independence_estimate():
-    from contract_v3 import ResponseV3
+    from wsp_core.contract_v3 import ResponseV3
 
     payload = _load("01_search_success")
     payload["source_independence_estimate"] = {"score": 0.7}
@@ -278,7 +278,7 @@ def test_contract_rejects_source_independence_estimate():
 
 
 def test_contract_rejects_diversity_scalar():
-    from contract_v3 import ResponseV3
+    from wsp_core.contract_v3 import ResponseV3
 
     payload = _load("01_search_success")
     payload["source_diversity"]["scalar"] = 0.8
@@ -287,7 +287,7 @@ def test_contract_rejects_diversity_scalar():
 
 
 def test_contract_rejects_partial_engine_object():
-    from contract_v3 import ResponseV3
+    from wsp_core.contract_v3 import ResponseV3
 
     payload = _load("01_search_success")
     payload["engine"] = {"name": "wsp", "version": "3.0"}  # build_commit missing
@@ -296,7 +296,7 @@ def test_contract_rejects_partial_engine_object():
 
 
 def test_contract_rejects_dangling_observation_fk():
-    from contract_v3 import ResponseV3
+    from wsp_core.contract_v3 import ResponseV3
 
     payload = _load("01_search_success")
     payload["results"][0]["representative_observation_id"] = "obs_missing"
@@ -305,7 +305,7 @@ def test_contract_rejects_dangling_observation_fk():
 
 
 def test_contract_requires_execution_id():
-    from contract_v3 import ResponseV3
+    from wsp_core.contract_v3 import ResponseV3
 
     payload = _load("01_search_success")
     del payload["execution_id"]

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import subprocess
@@ -9,18 +8,11 @@ from pathlib import Path
 
 import pytest
 
+from plugin_loader import load_plugin
 
-PLUGIN_PATH = Path(__file__).resolve().parents[1] / "__init__.py"
-spec = importlib.util.spec_from_file_location("wsp_plugin_onboarding_under_test", PLUGIN_PATH)
-wsp = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-spec.loader.exec_module(wsp)
+from wsp_core import search
 
-SEARCH_PATH = Path(__file__).resolve().parents[1] / "search.py"
-search_spec = importlib.util.spec_from_file_location("wsp_search_onboarding_under_test", SEARCH_PATH)
-search = importlib.util.module_from_spec(search_spec)
-assert search_spec.loader is not None
-search_spec.loader.exec_module(search)
+wsp = load_plugin("wsp_plugin_onboarding_under_test")
 
 
 class FakeCtx:
@@ -332,7 +324,6 @@ def test_removed_provider_keys_do_not_configure_search_tool_or_setup_status(monk
     assert status["configured_search_count"] == 0
 
 
-
 def test_config_show_json_uses_config_path_without_secrets(tmp_path, capsys):
     config_path = tmp_path / "config.json"
     config_path.write_text('{"version": 1, "default_provider": "brave", "auto_routing": {"enabled": false}}\n')
@@ -425,7 +416,6 @@ def test_default_behavior_config_blocks_low_trust_auto_providers():
     assert config["auto_routing"]["auto_allow"]["querit"] is False
     assert config["auto_routing"]["auto_allow"].get("brave", True) is True
     assert config["auto_routing"]["auto_allow"].get("parallel", True) is True
-
 
 
 def test_setup_dry_run_can_auto_deny_provider(tmp_path, capsys):
@@ -522,7 +512,6 @@ def test_search_auto_route_errors_cleanly_when_auto_disabled_without_default():
     assert routing["provider"] is None
     assert routing["reason"] == "auto_routing_disabled_no_default_provider"
     assert routing["confidence_level"] == "low"
-
 
 
 def test_config_set_threshold_rejects_out_of_range_without_writing(tmp_path):
@@ -644,8 +633,6 @@ def test_no_secret_leaks_across_status_and_config_commands(tmp_path, capsys):
     assert secret not in captured.err
 
 
-
-
 def test_removed_provider_config_migrates_without_quarantine(tmp_path, monkeypatch):
     config_path = tmp_path / "config.json"
     config_path.write_text(json.dumps({
@@ -716,7 +703,6 @@ def test_config_priority_rejects_unknown_provider(tmp_path):
         args.func(args)
 
 
-
 def test_invalid_semantic_config_is_moved_aside_and_defaults_are_used(tmp_path, capsys):
     config_path = tmp_path / "config.json"
     config_path.write_text('{"version": 1, "default_provider": "google"}\n')
@@ -780,7 +766,6 @@ def test_fixed_provider_mode_does_not_add_fallback_providers(monkeypatch, tmp_pa
     assert [item["provider"] for item in data["provider_errors"]] == ["brave"]
 
 
-
 def test_search_load_config_quarantines_invalid_default_provider(tmp_path, monkeypatch):
     config_path = tmp_path / "config.json"
     config_path.write_text('{"version": 1, "default_provider": "google", "auto_routing": {"enabled": false}}\n')
@@ -817,7 +802,6 @@ def test_search_load_config_keeps_multiple_quarantines_in_same_second(tmp_path, 
     broken_files = sorted(p.name for p in tmp_path.glob("config.json.broken-*"))
     assert len(broken_files) == 2
     assert broken_files[0] != broken_files[1]
-
 
 
 def _isolate_keyless_env(monkeypatch, config_path):

@@ -4,9 +4,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import search
-import config
-import env_loader
+from wsp_core import search
+from wsp_core import config
+from wsp_core import env_loader
 
 
 class EnvLoadingTests(unittest.TestCase):

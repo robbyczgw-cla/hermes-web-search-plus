@@ -2,7 +2,7 @@
 
 <!-- Generated file. Do not edit by hand. -->
 
-This reference is generated from `provider_registry.py`, discovered `providers.d` modules,
+This reference is generated from `wsp_core/provider_registry.py`, discovered `providers.d` modules,
 and the plugin provider catalog; regenerate it with `python scripts/gen_provider_docs.py` after changing provider metadata.
 
 ## Provider matrix

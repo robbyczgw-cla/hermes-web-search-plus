@@ -1,16 +1,12 @@
-import importlib.util
-from pathlib import Path
-import search
+from wsp_core import search
 
 import json
 from types import SimpleNamespace
 
 import pytest
 
-spec = importlib.util.spec_from_file_location("query_boundary_plugin", Path(__file__).resolve().parents[1] / "__init__.py")
-assert spec is not None and spec.loader is not None
-boundary = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(boundary)
+from plugin_loader import load_plugin
+boundary = load_plugin("query_boundary_plugin")
 
 
 @pytest.mark.parametrize("text", ["--help", "-site:reddit.com", "--", "", "normal query"])

@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import cache
+from wsp_core import cache
 
 
 class CacheLifecycleTests(unittest.TestCase):

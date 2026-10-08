@@ -4,10 +4,10 @@ import socket
 
 import pytest
 
-import cache
-import extract
-import provider_stats
-import search
+from wsp_core import cache
+from wsp_core import extract
+from wsp_core import provider_stats
+from wsp_core import search
 
 
 @pytest.fixture(autouse=True)

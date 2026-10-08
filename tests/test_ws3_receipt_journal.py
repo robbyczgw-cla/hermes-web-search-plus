@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from contract_v3 import (
+from wsp_core.contract_v3 import (
     AttemptOutcome,
     Capability,
     ErrorClass,
@@ -20,8 +20,8 @@ from contract_v3 import (
     ResponseV3,
     SkipReason,
 )
-from compat_v3 import legacy_request_to_v3
-from orchestrator_v3 import CapabilityAdapter, ProviderPlan, execute_v3_request
+from wsp_core.compat_v3 import legacy_request_to_v3
+from wsp_core.orchestrator_v3 import CapabilityAdapter, ProviderPlan, execute_v3_request
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,7 +48,7 @@ def fixture(name: str) -> dict[str, Any]:
 def append_journal_in_process(args: tuple[str, int, dict[str, Any]]) -> bool:
     root, index, source = args
     fixture_now = float(source["timestamp"]) + 1.0
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     journal = journal_module.OperatorReceiptJournal(
         root,
         max_records=100,
@@ -116,7 +116,7 @@ def base_receipt(order: list[str], selected: str | None, fallback: str = "none")
 
 
 def test_complete_direct_receipt_selects_first_candidate() -> None:
-    contract = importlib.import_module("contract_v3")
+    contract = importlib.import_module("wsp_core.contract_v3")
     receipt = contract.complete_routing_receipt_v3(
         base_receipt(["serper", "linkup"], "serper"),
         [attempt("attempt_serper", "serper", AttemptOutcome.SUCCESS)],
@@ -144,7 +144,7 @@ def test_complete_direct_receipt_selects_first_candidate() -> None:
 
 
 def test_complete_fallback_receipt_preserves_attempt_order() -> None:
-    contract = importlib.import_module("contract_v3")
+    contract = importlib.import_module("wsp_core.contract_v3")
     receipt = contract.complete_routing_receipt_v3(
         base_receipt(["tavily", "serper"], "serper", "selected_failed"),
         [
@@ -177,7 +177,7 @@ def test_complete_fallback_receipt_preserves_attempt_order() -> None:
 def test_complete_receipt_maps_typed_skip_reasons(
     skip_reason: SkipReason, reason_code: str
 ) -> None:
-    contract = importlib.import_module("contract_v3")
+    contract = importlib.import_module("wsp_core.contract_v3")
     receipt = contract.complete_routing_receipt_v3(
         base_receipt(["tavily", "serper"], "serper", "selected_skipped"),
         [
@@ -212,7 +212,7 @@ def test_generated_schema_keeps_legacy_receipt_and_rejects_partial_completion() 
         **schema["$defs"]["RoutingReceipt"],
     }
     legacy = base_receipt(["serper"], "serper")
-    completed = importlib.import_module("contract_v3").complete_routing_receipt_v3(
+    completed = importlib.import_module("wsp_core.contract_v3").complete_routing_receipt_v3(
         legacy,
         [attempt("attempt_serper", "serper", AttemptOutcome.SUCCESS)],
     )
@@ -227,8 +227,8 @@ def test_generated_schema_keeps_legacy_receipt_and_rejects_partial_completion() 
 
 
 def test_cache_hit_receipt_keeps_origin_separate_from_current_attempts() -> None:
-    cache = importlib.import_module("cache_v3")
-    origin = importlib.import_module("contract_v3").complete_routing_receipt_v3(
+    cache = importlib.import_module("wsp_core.cache_v3")
+    origin = importlib.import_module("wsp_core.contract_v3").complete_routing_receipt_v3(
         base_receipt(["serper"], "serper"),
         [attempt("attempt_origin", "serper", AttemptOutcome.SUCCESS)],
     )
@@ -262,7 +262,7 @@ def test_cache_hit_receipt_keeps_origin_separate_from_current_attempts() -> None
 def test_shadow_observation_is_typed_journaled_and_never_affects_execution(
     tmp_path: Path,
 ) -> None:
-    contract = importlib.import_module("contract_v3")
+    contract = importlib.import_module("wsp_core.contract_v3")
     receipt = contract.complete_routing_receipt_v3(
         base_receipt(["serper"], "serper"),
         [attempt("attempt_aaaaaaaaaaaaaaaa", "serper", AttemptOutcome.SUCCESS)],
@@ -295,9 +295,9 @@ def test_shadow_observation_is_typed_journaled_and_never_affects_execution(
         "warning_codes": [],
         "error_code": None,
     }
-    privacy = importlib.import_module("operator_privacy_v3")
+    privacy = importlib.import_module("wsp_core.operator_privacy_v3")
     assert privacy.assert_operator_payload_safe(record) is None
-    journal = importlib.import_module("operator_receipts_v3").OperatorReceiptJournal(
+    journal = importlib.import_module("wsp_core.operator_receipts_v3").OperatorReceiptJournal(
         tmp_path,
         now=lambda: 1_783_890_301.0,
     )
@@ -313,7 +313,7 @@ def test_shadow_observation_is_typed_journaled_and_never_affects_execution(
 
 
 def test_privacy_choke_accepts_fixtures_but_rejects_allowed_key_freetext() -> None:
-    privacy = importlib.import_module("operator_privacy_v3")
+    privacy = importlib.import_module("wsp_core.operator_privacy_v3")
     for name in (
         "overview.json",
         "receipts.json",
@@ -350,8 +350,8 @@ def test_privacy_choke_accepts_fixtures_but_rejects_allowed_key_freetext() -> No
 def test_privacy_choke_tracks_providers_registered_after_import(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    privacy = importlib.import_module("operator_privacy_v3")
-    registry = importlib.import_module("provider_registry")
+    privacy = importlib.import_module("wsp_core.operator_privacy_v3")
+    registry = importlib.import_module("wsp_core.provider_registry")
 
     monkeypatch.setitem(
         registry.PROVIDER_SPECS,
@@ -373,7 +373,7 @@ def test_privacy_choke_tracks_providers_registered_after_import(
 
 
 def test_completed_receipt_rejects_missing_candidate_and_outcome_drift() -> None:
-    contract = importlib.import_module("contract_v3")
+    contract = importlib.import_module("wsp_core.contract_v3")
     good = contract.complete_routing_receipt_v3(
         base_receipt(["serper", "linkup"], "serper"),
         [attempt("attempt_serper", "serper", AttemptOutcome.SUCCESS)],
@@ -433,7 +433,7 @@ def test_completed_receipt_rejects_missing_candidate_and_outcome_drift() -> None
 
 
 def test_journal_roundtrip_is_owned_bounded_and_newest_first(tmp_path: Path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     journal = journal_module.OperatorReceiptJournal(
         tmp_path,
         max_records=2,
@@ -462,7 +462,7 @@ def test_journal_roundtrip_is_owned_bounded_and_newest_first(tmp_path: Path) -> 
 
 
 def test_journal_rejects_freetext_before_creating_file(tmp_path: Path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     journal = journal_module.OperatorReceiptJournal(tmp_path)
     unsafe = dict(fixture("receipts.json")["receipts"][0])
     unsafe["status"] = "provider returned private prose"
@@ -472,7 +472,7 @@ def test_journal_rejects_freetext_before_creating_file(tmp_path: Path) -> None:
 
 
 def test_journal_preserves_unowned_collision_byte_identical(tmp_path: Path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     journal = journal_module.OperatorReceiptJournal(tmp_path)
     journal.path.parent.mkdir(parents=True, exist_ok=True)
     original = b'{"foreign":true}\n'
@@ -483,7 +483,7 @@ def test_journal_preserves_unowned_collision_byte_identical(tmp_path: Path) -> N
 
 
 def test_journal_refuses_symlinked_data_and_lock_files(tmp_path: Path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     record = fixture("receipts.json")["receipts"][0]
 
     data_journal = journal_module.OperatorReceiptJournal(tmp_path / "data")
@@ -504,7 +504,7 @@ def test_journal_refuses_symlinked_data_and_lock_files(tmp_path: Path) -> None:
 
 
 def test_journal_refuses_symlinked_ancestors(tmp_path: Path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     record = fixture("receipts.json")["receipts"][0]
 
     real_root = tmp_path / "real-root"
@@ -526,7 +526,7 @@ def test_journal_refuses_symlinked_ancestors(tmp_path: Path) -> None:
 def test_failed_retention_rewrite_leaves_previous_journal_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     journal = journal_module.OperatorReceiptJournal(tmp_path)
     first = fixture("receipts.json")["receipts"][0]
     second = dict(first, execution_id="exec_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
@@ -542,7 +542,7 @@ def test_failed_retention_rewrite_leaves_previous_journal_unchanged(
 
 
 def test_journal_ttl_prunes_only_owned_records(tmp_path: Path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     journal = journal_module.OperatorReceiptJournal(
         tmp_path,
         ttl_seconds=100,
@@ -560,7 +560,7 @@ def test_journal_ttl_prunes_only_owned_records(tmp_path: Path) -> None:
 
 
 def test_concurrent_journal_appends_do_not_lose_owned_records(tmp_path: Path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     source = fixture("receipts.json")["receipts"][0]
     fixture_now = float(source["timestamp"]) + 1.0
 
@@ -591,7 +591,7 @@ def test_concurrent_journal_appends_do_not_lose_owned_records(tmp_path: Path) ->
 def test_cross_process_journal_appends_do_not_lose_owned_records(
     tmp_path: Path,
 ) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     source = fixture("receipts.json")["receipts"][0]
     fixture_now = float(source["timestamp"]) + 1.0
     work = [(str(tmp_path), index, source) for index in range(12)]
@@ -613,7 +613,7 @@ def test_cross_process_journal_appends_do_not_lose_owned_records(
 
 
 def test_reason_enum_exactly_matches_task1_contract() -> None:
-    contract = importlib.import_module("contract_v3")
+    contract = importlib.import_module("wsp_core.contract_v3")
     assert {item.value for item in contract.CandidateReasonCode} == REASON_CODES
 
 
@@ -668,7 +668,7 @@ def test_orchestrator_journals_direct_origin_and_cache_hit_separately(
     )
     assert third.response.status is ResponseStatus.OK
 
-    receipts_module = importlib.import_module("operator_receipts_v3")
+    receipts_module = importlib.import_module("wsp_core.operator_receipts_v3")
 
     def explode_append(_journal: Any, _record: dict[str, Any]) -> bool:
         raise RuntimeError("injected unexpected journal failure")
@@ -706,8 +706,8 @@ def test_orchestrator_journals_direct_origin_and_cache_hit_separately(
 
 
 def test_shadow_interface_stub_receipt_survives_privacy_and_journals(tmp_path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
-    privacy = importlib.import_module("operator_privacy_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    privacy = importlib.import_module("wsp_core.operator_privacy_v3")
     source = fixture("receipts.json")["receipts"][0]
     record = {
         "schema_version": source["schema_version"],

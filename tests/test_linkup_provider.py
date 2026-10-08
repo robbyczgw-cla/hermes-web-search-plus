@@ -3,9 +3,9 @@ import time
 import unittest
 from unittest import mock
 
-import providers
-import search
-from search import get_api_key, validate_api_key
+from wsp_core import providers
+from wsp_core import search
+from wsp_core.search import get_api_key, validate_api_key
 
 
 class LinkupProviderTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class LinkupProviderTests(unittest.TestCase):
                 }
             ]
         }
-        with mock.patch("search.make_request", return_value=fake_response) as mock_request:
+        with mock.patch("wsp_core.search.make_request", return_value=fake_response) as mock_request:
             result = search.search_linkup(
                 query="find credible sources for AI tutoring outcomes",
                 api_key="linkup-test-key-12345",
@@ -55,7 +55,7 @@ class LinkupProviderTests(unittest.TestCase):
         self.assertEqual(body["excludeDomains"], ["wikipedia.org"])
 
     def test_search_linkup_rejects_sourced_answer_before_network(self):
-        with mock.patch("search.make_request") as request:
+        with mock.patch("wsp_core.search.make_request") as request:
             with self.assertRaisesRegex(ValueError, "outputType=searchResults"):
                 search.search_linkup(
                     query="fact check AI tutoring outcomes with citations",

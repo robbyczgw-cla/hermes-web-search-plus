@@ -1,10 +1,10 @@
 """Public search requests must remain data, never command-line options."""
 import pytest
 
-import extract
-import search
-from config import _deepcopy_default_config
-from contract_v3 import RequestV3
+from wsp_core import extract
+from wsp_core import search
+from wsp_core.config import _deepcopy_default_config
+from wsp_core.contract_v3 import RequestV3
 
 
 @pytest.fixture

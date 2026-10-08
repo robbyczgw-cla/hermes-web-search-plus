@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 
-from cache_v3 import ResponseCacheV3, derive_cache_key
-from compat_v3 import legacy_request_to_v3
-from contract_v3 import Capability, RequestV3
+from wsp_core.cache_v3 import ResponseCacheV3, derive_cache_key
+from wsp_core.compat_v3 import legacy_request_to_v3
+from wsp_core.contract_v3 import Capability, RequestV3
 
 
 def _request(*, request_id: str, reordered: bool = False) -> RequestV3:

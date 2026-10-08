@@ -6,14 +6,15 @@ of the importing test process.
 """
 from __future__ import annotations
 
-import __init__ as plugin
-import bench
-import provider_registry
-import routing
-import search
+from plugin_loader import load_plugin
+from wsp_core import bench
+from wsp_core import provider_registry
+from wsp_core import routing
+from wsp_core import search
 
 
 def main() -> None:
+    plugin = load_plugin("wsp_fixture_probe_plugin")
     config = {
         "example_fixture": {"allow_public": True},
         "auto_routing": {"provider_priority": ["example-fixture"]},

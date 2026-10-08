@@ -12,10 +12,10 @@ Surfaces updated:
 
 - ``plugin.yaml``                        version: "X.Y.Z"
 - ``__init__.py``                        __version__ and the header docstring
-- ``search.py``                          header docstring "Version: X.Y.Z"
-- ``http_client.py``                     DEFAULT_USER_AGENT suffix
-- ``operator_console_v3.py``             default Console plugin version
-- ``ui.py``                              default server plugin version
+- ``wsp_core/search.py``                 header docstring "Version: X.Y.Z"
+- ``wsp_core/http_client.py``            DEFAULT_USER_AGENT suffix
+- ``wsp_core/operator_console_v3.py``    default Console plugin version
+- ``wsp_core/ui.py``                     default server plugin version
 - ``tests/test_release_metadata.py``     EXPECTED_VERSION gate
 - ``CHANGELOG.md``                       moves [Unreleased] content under a new
                                          "## [vX.Y.Z] — YYYY-MM-DD" section
@@ -52,10 +52,10 @@ SURFACES: List[Tuple[str, str, str]] = [
     ("plugin.yaml", 'version: "{v}"', 'version: "{v}"'),
     ("__init__.py", '__version__ = "{v}"', '__version__ = "{v}"'),
     ("__init__.py", "Hermes Plugin v{v}", "Hermes Plugin v{v}"),
-    ("search.py", "Version: {v}", "Version: {v}"),
-    ("http_client.py", 'DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/{v}"', 'DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/{v}"'),
-    ("operator_console_v3.py", 'plugin_version: str = "{v}"', 'plugin_version: str = "{v}"'),
-    ("ui.py", 'plugin_version: str = "{v}"', 'plugin_version: str = "{v}"'),
+    ("wsp_core/search.py", "Version: {v}", "Version: {v}"),
+    ("wsp_core/http_client.py", 'DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/{v}"', 'DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/{v}"'),
+    ("wsp_core/operator_console_v3.py", 'plugin_version: str = "{v}"', 'plugin_version: str = "{v}"'),
+    ("wsp_core/ui.py", 'plugin_version: str = "{v}"', 'plugin_version: str = "{v}"'),
     ("tests/test_release_metadata.py", 'EXPECTED_VERSION = "{v}"', 'EXPECTED_VERSION = "{v}"'),
 ]
 

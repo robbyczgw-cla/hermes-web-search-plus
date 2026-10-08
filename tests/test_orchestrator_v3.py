@@ -2,12 +2,12 @@ import json
 
 import pytest
 
-from compat_v3 import (
+from wsp_core.compat_v3 import (
     legacy_request_to_v3,
     v3_response_to_legacy_extract,
     v3_response_to_legacy_search,
 )
-from contract_v3 import (
+from wsp_core.contract_v3 import (
     AttemptOutcome,
     Capability,
     CircuitState,
@@ -16,7 +16,7 @@ from contract_v3 import (
     ResponseStatus,
     ResponseV3,
 )
-from orchestrator_v3 import (
+from wsp_core.orchestrator_v3 import (
     CapabilityExecution,
     CapabilityAdapter,
     ExecutedV3,

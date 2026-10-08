@@ -9,7 +9,7 @@ This document explains the runtime shape of `web-search-plus`: what runs locally
 ```text
 Hermes Agent
   → plugin tool schema and handler in __init__.py
-  → provider/routing engine in search.py
+  → engine package wsp_core/ (routing, providers, cache, extraction)
   → configured external provider APIs
   → normalized result returned to Hermes
 ```
@@ -20,15 +20,22 @@ The plugin does not run a separate hosted backend. It does not add an analytics 
 
 - `plugin.yaml`: plugin manifest, optional environment variables, onboarding commands, and tool declarations.
 - `__init__.py`: Hermes plugin entrypoint, tool schemas, setup/onboarding helpers, and wrapper functions exposed to Hermes.
-- `search.py`: provider adapters, routing, caching, cooldowns, extraction, and CLI.
-- `provider_registry.py`: data-only provider metadata registry (single source of truth).
-- `provider_dispatch.py`: registry-driven `SEARCH_DISPATCH`/`EXTRACT_DISPATCH` adapter tables used by `search.py` and `extract.py`.
-- `setup.py`: thin standalone CLI entrypoint that loads setup helpers from `__init__.py`.
+- `wsp_core/`: the engine, host-neutral and imported relatively, so it works as `hermes_plugins.<slug>.wsp_core` and can be shared with other hosts unchanged.
+  - `wsp_core/search.py`: search pipeline entry points and the CLI.
+  - `wsp_core/providers.py`: provider adapters; `wsp_core/routing.py`: auto-routing.
+  - `wsp_core/provider_registry.py`: data-only provider metadata registry (single source of truth).
+  - `wsp_core/provider_dispatch.py`: registry-driven `SEARCH_DISPATCH`/`EXTRACT_DISPATCH` adapter tables.
+  - `wsp_core/sdk/`: the Provider SDK implementation behind the public `wsp_sdk` name.
+- `search.py`: the documented command line (`python search.py --query ...`); it only calls `wsp_core.search.main`.
+- `wsp_sdk/`: public Provider SDK import name. `providers.d` modules import `wsp_sdk`; the engine binds that name to its own `wsp_core.sdk` during discovery.
+- `setup.py`: thin standalone CLI entrypoint that loads the plugin package and its setup helpers.
 - `tests/`: unit and regression coverage for providers, onboarding, routing, extraction, and docs-sensitive configuration.
+
+Default file locations are relative to the plugin directory and did not change when the engine moved into `wsp_core/`: cache and runtime state in `../.cache`, behaviour config in `../config.json`, keys in the plugin `.env`, the parent `.env` and the Hermes profile `.env`.
 
 ## Compatibility shims
 
-Compatibility shims in `search.py` intentionally preserve legacy imports and monkeypatch seams while the modular split settles. The public shim policy is available via `get_compatibility_shim_policy()` and must keep wrappers in place until the ProviderSpec registry has stabilized for a documented minor release window.
+Compatibility shims in `wsp_core/search.py` intentionally preserve legacy imports and monkeypatch seams while the modular split settles. The public shim policy is available via `get_compatibility_shim_policy()` and must keep wrappers in place until the ProviderSpec registry has stabilized for a documented minor release window.
 
 ## Tool surface
 
@@ -222,9 +229,9 @@ The plugin does not promise “no data leaves your machine.” A more accurate s
 
 ## Extending with a new provider
 
-Provider wiring is registry-driven. `provider_registry.py` is the data-only
+Provider wiring is registry-driven. `wsp_core/provider_registry.py` is the data-only
 single source of truth (id, env var, capabilities, onboarding metadata,
-`auto_allow` default), and `provider_dispatch.py` maps each provider id to a
+`auto_allow` default), and `wsp_core/provider_dispatch.py` maps each provider id to a
 search/extract adapter in `SEARCH_DISPATCH` / `EXTRACT_DISPATCH`. CLI choices,
 tool-schema enums, doctor output, onboarding, and extraction priority all
 derive from the registry, and completeness tests
@@ -234,10 +241,10 @@ one surface.
 
 A provider addition should include:
 
-- a `ProviderSpec` entry in `provider_registry.py` (id, env var, capabilities, `auto_allow` default)
-- provider function(s) in `providers.py` (`search_<provider>`, optionally `extract_<provider>`) plus the `search.py` seam wrapper
-- a dispatch adapter per capability in `provider_dispatch.py`, registered in `SEARCH_DISPATCH`/`EXTRACT_DISPATCH`
-- routing score/match behavior in `routing.py` if it participates in auto-routing
+- a `ProviderSpec` entry in `wsp_core/provider_registry.py` (id, env var, capabilities, `auto_allow` default)
+- provider function(s) in `wsp_core/providers.py` (`search_<provider>`, optionally `extract_<provider>`) plus the `wsp_core/search.py` seam wrapper
+- a dispatch adapter per capability in `wsp_core/provider_dispatch.py`, registered in `SEARCH_DISPATCH`/`EXTRACT_DISPATCH`
+- routing score/match behavior in `wsp_core/routing.py` if it participates in auto-routing
 - docs in README, User Guide, FAQ, and Architecture when behavior is user-visible (`docs/PROVIDERS.md` regenerates from the registry)
 - tests for response normalization and missing-key behavior (dispatch/enum/onboarding completeness is enforced by existing registry-driven tests)
 

@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-import provider_registry
+from wsp_core import provider_registry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROBE = Path(__file__).with_name("_fixture_probe.py")
@@ -21,7 +21,7 @@ def test_fixture_provider_is_absent_without_the_explicit_opt_in() -> None:
 def test_fixture_provider_zero_core_edit_path_with_opt_in(tmp_path: Path) -> None:
     env = dict(os.environ)
     env[provider_registry.NON_PRODUCTION_DISCOVERY_ENV] = "1"
-    env["PYTHONPATH"] = str(REPO_ROOT)
+    env["PYTHONPATH"] = os.pathsep.join([str(REPO_ROOT), str(REPO_ROOT / "tests")])
     isolated_cache = tmp_path / "cache"
     env["WSP_CACHE_DIR"] = str(isolated_cache)
     proc = subprocess.run(

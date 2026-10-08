@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-import importlib.util
 import json
 import threading
 import time
@@ -9,15 +8,15 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-import bounded_context_v3 as bounded_context
-import search
-from bounded_context_v3 import FullTextStore
-from cache_v3 import derive_cache_key
-from compat_v3 import legacy_request_to_v3
-from contract_v3 import Capability
-from http_client import ProviderRequestError
+from wsp_core import bounded_context_v3 as bounded_context
+from wsp_core import search
+from wsp_core.bounded_context_v3 import FullTextStore
+from wsp_core.cache_v3 import derive_cache_key
+from wsp_core.compat_v3 import legacy_request_to_v3
+from wsp_core.contract_v3 import Capability
+from wsp_core.http_client import ProviderRequestError
 
-
+from plugin_loader import load_plugin
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -1099,12 +1098,7 @@ def test_bounded_extract_is_cached_and_receipted_after_limits(tmp_path, monkeypa
 def test_public_metadata_omits_removed_provider_ids():
     plugin_yaml = (ROOT / "plugin.yaml").read_text()
 
-    spec = importlib.util.spec_from_file_location(
-        "wsp_v302_metadata_under_test", ROOT / "__init__.py"
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = load_plugin("wsp_v302_metadata_under_test")
 
     class Context:
         def __init__(self):

@@ -5,15 +5,15 @@ import json
 import sqlite3
 import stat
 
-import state_migration_v3
-from state_migration_v3 import (
+from wsp_core import state_migration_v3
+from wsp_core.state_migration_v3 import (
     BACKUP_OWNER,
     migrate_legacy_state,
     main as migration_main,
     render_migration_report,
     rollback_legacy_state,
 )
-from state_store_v3 import SCHEMA_VERSION, SQLiteStateStore
+from wsp_core.state_store_v3 import SCHEMA_VERSION, SQLiteStateStore
 
 
 def _sha256(path) -> str:
@@ -459,7 +459,7 @@ def test_cli_defaults_to_path_free_dry_run_json(tmp_path, capsys):
 
 
 def test_search_cli_exposes_state_migrate_as_dry_run_default(tmp_path, monkeypatch, capsys):
-    import search
+    from wsp_core import search
 
     cache_root = tmp_path / "cache"
     _write_sources(cache_root)

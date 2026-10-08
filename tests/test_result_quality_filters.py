@@ -1,7 +1,7 @@
 """Spam/mirror-domain filtering and domain-diversity reranking."""
 
-import quality
-import search
+from wsp_core import quality
+from wsp_core import search
 
 
 def _result(url, title="t"):

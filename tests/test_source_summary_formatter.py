@@ -1,6 +1,6 @@
-import __init__ as plugin
+from plugin_loader import load_plugin
 
-
+plugin = load_plugin("wsp_plugin_test_source_summary_formatter")
 def test_research_source_summary_marks_truncation_and_original_length():
     content = "\n".join(
         f"Apple product {index:03d}: official specification entry"

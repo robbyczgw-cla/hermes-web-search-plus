@@ -4,8 +4,8 @@ import hashlib
 import os
 from pathlib import Path
 
-import bounded_context_v3
-from bounded_context_v3 import FullTextStore
+from wsp_core import bounded_context_v3
+from wsp_core.bounded_context_v3 import FullTextStore
 
 
 def test_full_text_ttl_evicts_only_expired_owned_entries(tmp_path: Path) -> None:

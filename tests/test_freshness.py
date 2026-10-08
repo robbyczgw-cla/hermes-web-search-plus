@@ -11,8 +11,8 @@ import unittest
 from datetime import datetime, timezone
 from unittest import mock
 
-import providers
-import search
+from wsp_core import providers
+from wsp_core import search
 
 
 def _canned(provider):
@@ -171,7 +171,7 @@ class FreshnessRequestTests(unittest.TestCase):
             captured["url"] = url
             return {"web": {"results": []}}
 
-        with mock.patch("search.make_get_request", side_effect=fake_get):
+        with mock.patch("wsp_core.search.make_get_request", side_effect=fake_get):
             search.search_brave(query="q", api_key="brave-key", time_range="week")
 
         self.assertIn("freshness=pw", captured["url"])
@@ -183,7 +183,7 @@ class FreshnessRequestTests(unittest.TestCase):
             captured["body"] = body
             return {"organic": []}
 
-        with mock.patch("search.make_request", side_effect=fake_post):
+        with mock.patch("wsp_core.search.make_request", side_effect=fake_post):
             search.search_serper(query="q", api_key="serper-key", time_range="month")
 
         self.assertEqual(captured["body"]["tbs"], "qdr:m")
@@ -223,7 +223,7 @@ class FreshnessRequestTests(unittest.TestCase):
             captured["body"] = body
             return {"results": []}
 
-        with mock.patch("providers.make_request", side_effect=fake_post):
+        with mock.patch("wsp_core.providers.make_request", side_effect=fake_post):
             with mock.patch.object(
                 providers,
                 "exa_date_bounds",
@@ -242,7 +242,7 @@ class FreshnessRequestTests(unittest.TestCase):
             captured["body"] = body
             return {"results": []}
 
-        with mock.patch("providers.make_request", side_effect=fake_post):
+        with mock.patch("wsp_core.providers.make_request", side_effect=fake_post):
             providers.search_exa(
                 query="q",
                 api_key="exa-key",
