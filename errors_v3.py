@@ -5,6 +5,8 @@ from __future__ import annotations
 from contract_v3 import ErrorClass, ErrorV3
 from http_client import ProviderRequestError
 from wsp_sdk.errors import ProviderConfigError, ProviderContractFailure
+import json
+import re
 
 
 _MESSAGES = {
@@ -28,6 +30,36 @@ _CODES = {
     ErrorClass.PROVIDER_CONTRACT: "wsp.provider.contract",
     ErrorClass.INTERNAL: "wsp.provider.internal",
 }
+
+
+_SETUP_MESSAGE = re.compile(r"^Missing (API key for [a-z0-9_-]{1,32}|SearXNG instance URL)$")
+_ENV_VAR = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
+
+
+def _setup_guidance(error: BaseException) -> tuple[str, dict] | None:
+    """Return WSP's own missing-key guidance, never upstream text.
+
+    ``config.validate_api_key`` raises ``ProviderConfigError`` with a JSON body
+    that WSP itself generated. Only that exact shape is surfaced: a fixed
+    message pattern, an env-var name and the how-to-fix steps. Anything else
+    (including the SearXNG ``provided`` URL) stays redacted.
+    """
+    try:
+        body = json.loads(str(error))
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    message = body.get("error")
+    env_var = body.get("env_var")
+    steps = body.get("how_to_fix")
+    if not (isinstance(message, str) and _SETUP_MESSAGE.match(message)):
+        return None
+    if not (isinstance(env_var, str) and _ENV_VAR.match(env_var)):
+        return None
+    if not (isinstance(steps, list) and steps and all(isinstance(x, str) and len(x) <= 300 for x in steps)):
+        return None
+    return message, {"env_var": env_var, "how_to_fix": list(steps[:6]), "setup_required": True}
 
 
 def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
@@ -63,6 +95,13 @@ def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
     else:
         error_class = ErrorClass.INTERNAL
 
+    message = _MESSAGES[error_class]
+    details: dict = {}
+    if error_class is ErrorClass.CONFIG:
+        guidance = _setup_guidance(error)
+        if guidance is not None:
+            message, details = guidance
+
     retryable = error_class in {
         ErrorClass.RATE_LIMIT,
         ErrorClass.TRANSIENT,
@@ -71,11 +110,12 @@ def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
     return ErrorV3(
         error_class=error_class,
         code=_CODES[error_class],
-        message=_MESSAGES[error_class],
+        message=message,
         retryable=retryable,
         provider=provider,
         http_status=status if isinstance(status, int) else None,
         retry_after_seconds=(
             float(retry_after) if isinstance(retry_after, (int, float)) else None
         ),
+        details=details,
     )
