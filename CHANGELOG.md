@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Tests
+
+- Behaviour lock: routing decisions for 294 queries and tool output for 90 search, research and extract cases are frozen from v4.3.5 (`tests/test_behaviour_lock.py`). Refactors must reproduce them; deliberate behaviour changes regenerate the lock so the diff is reviewed.
+- `benchmarks/` holds the 241-query evaluation set (eight intents, 54 non-English) and the separate Routing v2 tuning set; `scripts/wsp_eval/` drives any checkout through the real tool handlers with synthetic, recorded or live provider answers and measures per-call overhead.
+
 ## [v4.3.5] — 2026-10-08
 
 ### Fixed
