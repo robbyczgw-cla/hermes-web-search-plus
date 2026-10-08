@@ -14,7 +14,7 @@ import unicodedata
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Tuple, Union
 
 from . import cache as legacy_cache
 from .budget_preflight_v3 import PreflightDecision, run_budget_preflight
@@ -109,9 +109,6 @@ NormalizeFn = Callable[[RequestV3, ProviderPlan, Dict[str, Any]], ResponseV3]
 FinalizeResponseFn = Callable[
     [RequestV3, ProviderPlan, ResponseV3, Dict[str, Any]], ResponseV3
 ]
-LegacyCacheLookupFn = Callable[
-    [RequestV3, ProviderPlan, Dict[str, Any]], Optional[CapabilityExecution]
-]
 CacheEligibilityFn = Callable[
     [RequestV3, ProviderPlan, Dict[str, Any]], bool
 ]
@@ -132,7 +129,6 @@ class CapabilityAdapter:
     plan: PlanFn
     execute: ExecuteFn
     normalize: NormalizeFn
-    legacy_cache_lookup: LegacyCacheLookupFn | None = None
     finalize_response: FinalizeResponseFn | None = None
     cache_eligible: CacheEligibilityFn | None = None
     cache_identity: CacheIdentityFn | None = None
@@ -501,12 +497,7 @@ def execute_v3_request(
                         stage for stage in PIPELINE_STAGES if stage in stage_set
                     ),
                 )
-    legacy_execution = (
-        adapter.legacy_cache_lookup(request, plan, runtime_config)
-        if cache_enabled and adapter.legacy_cache_lookup is not None
-        else None
-    )
-    if cache_mode == "only" and legacy_execution is None:
+    if cache_mode == "only":
         response = ResponseV3(
             request_id=request.request_id or plan.execution_id,
             capability=request.capability,
@@ -558,7 +549,7 @@ def execute_v3_request(
                 stage for stage in PIPELINE_STAGES if stage in stage_set
             ),
         )
-    raw_execution = legacy_execution or adapter.execute(request, plan, runtime_config)
+    raw_execution = adapter.execute(request, plan, runtime_config)
     if isinstance(raw_execution, CapabilityExecution):
         legacy_payload = raw_execution.payload
         execution_stages = raw_execution.stages

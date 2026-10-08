@@ -93,7 +93,7 @@ from .search_locale import provider_supports_locale, resolve_locale
 from .env_loader import load_env_files
 from .research import run_research_mode
 from .attempt_engine_v3 import AttemptContext, AttemptEngine
-from .cache_v3 import peek_legacy_search
+from .cache_v3 import ResponseCacheV3
 from .compat_v3 import legacy_request_to_v3, v3_response_to_legacy_search
 from .contract_v3 import Capability, RequestV3, ResponseV3, SkipReason
 from .orchestrator_v3 import (
@@ -808,15 +808,19 @@ def main():
             print("History written: {}".format(report["history_written"]))
         return
 
-    # Handle cache management commands first (before query validation)
+    # Handle cache management commands first (before query validation). The
+    # tools answer repeats from the v3 response cache, so both commands cover it.
+    response_cache = ResponseCacheV3((config.get("v3") or {}).get("cache_dir") or CACHE_DIR)
     if args.clear_cache:
         result = cache_clear()
+        result["v3_response_cleared"] = response_cache.clear()
         indent = None if args.compact else 2
         print(json.dumps(result, indent=indent, ensure_ascii=False))
         return
-    
+
     if args.cache_stats:
         result = cache_stats()
+        result["v3_response"] = response_cache.stats()
         indent = None if args.compact else 2
         print(json.dumps(result, indent=indent, ensure_ascii=False))
         return
@@ -1488,7 +1492,6 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             not cache_hit
             and not args.no_cache
             and args.query
-            and not getattr(args, "_v3_no_legacy_cache_write", False)
         ):
             cache_put(
                 query=args.query,
@@ -1614,40 +1617,7 @@ def _search_args_from_v3(request: RequestV3, config: Dict[str, Any]):
         args.no_cache = True
     if "ttl_seconds" in request.cache:
         args.cache_ttl = request.cache["ttl_seconds"]
-    args._v3_no_legacy_cache_write = True
     return args
-
-
-def _lookup_legacy_search_v3(
-    request: RequestV3, plan: ProviderPlan, config: Dict[str, Any]
-) -> CapabilityExecution | None:
-    legacy_args = _search_args_from_v3(request, config)
-    legacy_args.provider = plan.selected_provider
-    if legacy_args.mode == "research":
-        return None
-    legacy_lookup = peek_legacy_search(
-        CACHE_DIR,
-        query=legacy_args.query,
-        provider=plan.selected_provider,
-        max_results=legacy_args.max_results,
-        params=_legacy_search_cache_context(
-            legacy_args, plan.selected_provider, config
-        ),
-        ttl_seconds=effective_search_cache_ttl(
-            legacy_args.query or "",
-            freshness=getattr(legacy_args, "time_range", None)
-            or getattr(legacy_args, "freshness", None),
-            requested_ttl=int(request.cache.get("ttl_seconds", 3600)),
-        ),
-        now=int(time.time()),
-    )
-    if legacy_lookup.legacy_payload is None:
-        return None
-    return CapabilityExecution(
-        payload=legacy_lookup.legacy_payload,
-        provider_attempts=(),
-        stages=("dedup_fingerprint",),
-    )
 
 
 def _execute_research_v3(
@@ -2123,7 +2093,6 @@ def _search_adapter() -> CapabilityAdapter:
         plan=_plan_search_v3,
         execute=_execute_search_v3,
         normalize=response_from_legacy,
-        legacy_cache_lookup=_lookup_legacy_search_v3,
     )
 
 

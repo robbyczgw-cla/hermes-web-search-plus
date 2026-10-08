@@ -596,15 +596,8 @@ def response_from_legacy(
         if fallback_used
         else FallbackReason.NONE.value
     )
-    cached = bool(payload.get("cached"))
     if request.cache.get("mode") == "bypass":
         cache_status = {"disposition": "bypassed"}
-    elif cached:
-        cache_status = {
-            "disposition": "fresh_hit",
-            "age_seconds": max(0, int(payload.get("cache_age_seconds", 0))),
-            "source_contract_version": "2.x",
-        }
     else:
         cache_status = {"disposition": "miss"}
 

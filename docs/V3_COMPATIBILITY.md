@@ -28,8 +28,7 @@ Classic Routing v2 remains authoritative.
 ## Cache
 
 - v3 response entries are marker-owned and use the frozen 3.0 contract.
-- Valid legacy cache entries can be read as `source_contract_version="2.x"`.
-- Legacy answer/synthesis fields are discarded rather than promoted into v3 results.
+- Since 5.0 a v3 search does not read the pre-v3 JSON search cache (`<cache dir>/<key>.json`, written by 2.x and by `python search.py`), so 5.0 never reports `source_contract_version="2.x"`; the schema still allows the value. Those files are not deleted: `python search.py` still reads and writes them, and `--cache-stats` and `--clear-cache` still count and remove them.
 - Cache clear and retention operations target only marker-owned entries; foreign or shared state files are preserved.
 - Long extracted text remains page-on-demand under marker-owned `web/v3` storage.
 
