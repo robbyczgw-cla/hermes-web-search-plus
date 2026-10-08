@@ -47,6 +47,7 @@ from .cache import (
     cache_put,
     cache_stats,
     effective_search_cache_ttl,
+    routing_class_of,
 )
 from .budget_preflight_v3 import daily_preflight_budget as _daily_preflight_budget
 
@@ -1340,6 +1341,9 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         args.query or "",
         freshness=getattr(args, "time_range", None) or getattr(args, "freshness", None),
         requested_ttl=args.cache_ttl,
+        routing_class=routing_class_of(
+            getattr(args, "_v3_planned_routing", None) or routing_info
+        ),
     )
     if not args.no_cache and args.query:
         cached_result = cache_get(
@@ -1352,6 +1356,9 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         if cached_result:
             cache_hit = True
             result = {k: v for k, v in cached_result.items() if not k.startswith("_cache_")}
+            if "query" in result:
+                # The key ignores case and spacing; show this caller's own query.
+                result["query"] = args.query
             result["cached"] = True
             result["cache_age_seconds"] = int(time.time() - cached_result.get("_cache_timestamp", 0))
 

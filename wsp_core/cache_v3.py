@@ -11,11 +11,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from urllib.parse import urlsplit, urlunsplit
 
+from .cache import normalize_query_for_cache
 from .cache_identity_v3 import (
     EXTRACTION_CACHE_IDENTITY_VERSION,
     ExtractionCacheIdentityV3,
 )
-from .contract_v3 import RequestV3, cache_hit_routing_receipt_v3
+from .contract_v3 import Capability, RequestV3, cache_hit_routing_receipt_v3
 
 
 CACHE_SCHEMA_VERSION = 3
@@ -206,10 +207,17 @@ def derive_cache_key(
         # The typed form already contains every extraction input that affects
         # evidence. Unlike legacy v3 keys, this is the complete SHA-256.
         return f"extract_{extraction_identity.key}"
+    request_input = request.input
+    if request.capability is Capability.SEARCH and "query" in request_input:
+        # Case and spacing do not change the question. Extraction URLs stay exact.
+        request_input = {
+            **request_input,
+            "query": normalize_query_for_cache(request_input["query"]),
+        }
     material = {
         "contract_version": request.contract_version,
         "capability": request.capability.value,
-        "input": request.input,
+        "input": request_input,
         "options": request.options,
         "routing": request.routing,
         "budget": request.budget,

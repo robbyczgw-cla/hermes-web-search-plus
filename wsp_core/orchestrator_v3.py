@@ -14,7 +14,7 @@ import unicodedata
 import uuid
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 from . import cache as legacy_cache
 from .budget_preflight_v3 import PreflightDecision, run_budget_preflight
@@ -50,7 +50,7 @@ PIPELINE_STAGES: Tuple[str, ...] = (
 )
 
 
-def _request_cache_ttl(request: RequestV3) -> int:
+def _request_cache_ttl(request: RequestV3, plan: Optional[ProviderPlan] = None) -> int:
     requested = int(request.cache.get("ttl_seconds", 3600))
     if request.capability is not Capability.SEARCH:
         return requested
@@ -60,7 +60,12 @@ def _request_cache_ttl(request: RequestV3) -> int:
     options = request.options if isinstance(request.options, dict) else {}
     freshness = options.get("time_range") or options.get("freshness")
     return legacy_cache.effective_search_cache_ttl(
-        query, freshness=freshness, requested_ttl=requested
+        query,
+        freshness=freshness,
+        requested_ttl=requested,
+        routing_class=legacy_cache.routing_class_of(
+            getattr(plan, "routing_metadata", None)
+        ),
     )
 
 
@@ -416,7 +421,7 @@ def execute_v3_request(
     if cache_enabled:
         lookup = response_cache.get(
             cache_request,
-            ttl_seconds=_request_cache_ttl(request),
+            ttl_seconds=_request_cache_ttl(request, plan),
             allow_stale_seconds=int(request.cache.get("allow_stale_seconds", 0)),
             now=int(time.time()),
             vary=cache_vary,
@@ -431,7 +436,7 @@ def execute_v3_request(
                     "disposition": lookup.disposition,
                     "entry_id": lookup.entry_id,
                     "age_seconds": lookup.age_seconds,
-                    "ttl_seconds": _request_cache_ttl(request),
+                    "ttl_seconds": _request_cache_ttl(request, plan),
                     "served_stale": lookup.disposition == "stale_hit",
                     "source_contract_version": "3.0",
                     "origin_execution_id": lookup.payload.get("origin_execution_id"),
@@ -443,7 +448,7 @@ def execute_v3_request(
                     disposition=lookup.disposition,
                     entry_id=str(lookup.entry_id or ""),
                     age_seconds=int(lookup.age_seconds or 0),
-                    ttl_seconds=_request_cache_ttl(request),
+                    ttl_seconds=_request_cache_ttl(request, plan),
                 )
                 cached_response = ResponseV3.from_dict(cached_payload)
                 cached_routing = {
