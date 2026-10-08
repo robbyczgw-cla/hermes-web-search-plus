@@ -13,7 +13,14 @@ import math
 import re
 from collections import Counter
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, TypedDict
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from .urls import (  # noqa: F401 - canonical_url/TRACKING_PARAMETER_NAMES re-exported for callers
+    TRACKING_PARAMETER_NAMES,
+    canonical_url,
+    normalized_host,
+    url_key,
+    url_parts,
+)
 
 
 # This is intentionally an approximation, not a bundled public-suffix list.
@@ -79,24 +86,6 @@ MULTI_LABEL_SUFFIXES = frozenset(
     }
 )
 
-TRACKING_PARAMETER_NAMES = frozenset(
-    {
-        "dclid",
-        "fbclid",
-        "gclid",
-        "igshid",
-        "mc_cid",
-        "mc_eid",
-        "mkt_tok",
-        "msclkid",
-        "oly_anon_id",
-        "oly_enc_id",
-        "ref",
-        "vero_id",
-        "yclid",
-        "_ga",
-    }
-)
 
 # The weights intentionally favour source diversity and exact URL uniqueness.
 # Content and provider coverage still matter, but should not hide a result set
@@ -134,44 +123,6 @@ class DiversityReport(TypedDict):
     dominant_domain: Optional[DominantDomain]
 
 
-def _url_parts(value: object):
-    """Parse a URL or host-like value without allowing parser errors to leak."""
-    if not isinstance(value, str) or not value.strip():
-        return None
-    candidate = value.strip()
-    if any(character.isspace() for character in candidate):
-        return None
-    try:
-        parsed = urlsplit(candidate)
-    except (TypeError, ValueError):
-        return None
-    if not parsed.netloc and not parsed.scheme:
-        try:
-            parsed = urlsplit("//" + candidate)
-        except (TypeError, ValueError):
-            return None
-    return parsed
-
-
-def _normalized_host(parsed: Any) -> str:
-    try:
-        host = parsed.hostname or ""
-    except ValueError:
-        return ""
-    host = host.rstrip(".").casefold()
-    if not host:
-        return ""
-    try:
-        ipaddress.ip_address(host)
-        return host
-    except ValueError:
-        pass
-    try:
-        return host.encode("idna").decode("ascii").lower()
-    except UnicodeError:
-        return host
-
-
 def registrable_domain(url: str) -> str:
     """Return a conservative eTLD+1 approximation for a URL's host.
 
@@ -179,10 +130,10 @@ def registrable_domain(url: str) -> str:
     are normalised to their stdlib IDNA form so equivalent URL spellings group
     together deterministically.
     """
-    parsed = _url_parts(url)
+    parsed = url_parts(url)
     if parsed is None:
         return ""
-    host = _normalized_host(parsed)
+    host = normalized_host(parsed)
     if not host:
         return ""
     try:
@@ -197,49 +148,6 @@ def registrable_domain(url: str) -> str:
     if suffix in MULTI_LABEL_SUFFIXES and len(labels) >= 3:
         return ".".join(labels[-3:])
     return suffix
-
-
-def _is_tracking_parameter(name: str) -> bool:
-    normalized = name.casefold()
-    return normalized.startswith("utm_") or normalized in TRACKING_PARAMETER_NAMES
-
-
-def canonical_url(url: str) -> str:
-    """Canonicalise a URL for exact-duplicate comparison.
-
-    Canonicalisation lowers and IDNA-normalises hosts, removes default ports,
-    fragments and common tracking parameters, sorts retained query pairs, and
-    treats a root trailing slash as equivalent to no path.  It deliberately
-    avoids network access and does not attempt redirect or content canonicality.
-    """
-    parsed = _url_parts(url)
-    if parsed is None:
-        return ""
-    host = _normalized_host(parsed)
-    if not host:
-        return ""
-    try:
-        port = parsed.port
-    except ValueError:
-        return ""
-    scheme = parsed.scheme.casefold()
-    if port is not None and not (
-        (scheme == "http" and port == 80) or (scheme == "https" and port == 443)
-    ):
-        host_display = f"[{host}]" if ":" in host else host
-        netloc = f"{host_display}:{port}"
-    else:
-        netloc = f"[{host}]" if ":" in host else host
-    path = parsed.path.rstrip("/")
-    try:
-        query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
-    except ValueError:
-        return ""
-    kept_pairs = sorted(
-        (name, value) for name, value in query_pairs if not _is_tracking_parameter(name)
-    )
-    query = urlencode(kept_pairs, doseq=True)
-    return urlunsplit((scheme, netloc, path, query, ""))
 
 
 _WORD_RE = re.compile(r"[^\W_]+", re.UNICODE)
@@ -293,7 +201,7 @@ def _duplicate_analysis(
     url_kept_for_index: Dict[int, int] = {}
     url_duplicate_count = 0
     for index, item in enumerate(results):
-        canonical = canonical_url(str(item.get("url") or ""))
+        canonical = url_key(str(item.get("url") or ""))
         if not canonical:
             continue
         if canonical in canonical_seen:
