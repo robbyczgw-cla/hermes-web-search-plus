@@ -1,0 +1,241 @@
+{"id": "news-latest-news-on-eu-ai-act-enforcement", "intent": "news", "lang": "en", "query": "latest news on EU AI Act enforcement", "recency": "week", "tags": ["policy"]}
+{"id": "news-openai-news-this-week", "intent": "news", "lang": "en", "query": "OpenAI news this week", "recency": "week"}
+{"id": "news-what-did-apple-announce-today", "intent": "news", "lang": "en", "query": "what did Apple announce today", "recency": "day"}
+{"id": "news-federal-reserve-interest-rate-decision-latest", "intent": "news", "lang": "en", "query": "Federal Reserve interest rate decision latest", "recency": "week", "authority_domains": ["federalreserve.gov"], "tags": ["finance"]}
+{"id": "news-nvidia-stock-news-today", "intent": "news", "lang": "en", "query": "Nvidia stock news today", "recency": "day", "tags": ["finance"]}
+{"id": "news-spacex-starship-latest-launch-result", "intent": "news", "lang": "en", "query": "SpaceX Starship latest launch result", "recency": "week"}
+{"id": "news-latest-rust-release-announcement", "intent": "news", "lang": "en", "query": "latest Rust release announcement", "recency": "month", "authority_domains": ["blog.rust-lang.org"], "tags": ["vendor_release"]}
+{"id": "news-python-3-15-release-schedule-news", "intent": "news", "lang": "en", "query": "Python 3.15 release schedule news", "recency": "month", "authority_domains": ["python.org", "peps.python.org"], "tags": ["vendor_release"]}
+{"id": "news-latest-chrome-stable-channel-update", "intent": "news", "lang": "en", "query": "latest Chrome stable channel update", "recency": "week", "authority_domains": ["chromereleases.googleblog.com"], "tags": ["vendor_release"]}
+{"id": "news-earthquake-today", "intent": "news", "lang": "en", "query": "earthquake today", "recency": "day"}
+{"id": "news-champions-league-results-last-night", "intent": "news", "lang": "en", "query": "Champions League results last night", "recency": "day", "tags": ["sports"]}
+{"id": "news-formula-1-race-results-this-weekend", "intent": "news", "lang": "en", "query": "Formula 1 race results this weekend", "recency": "week", "authority_domains": ["formula1.com"], "tags": ["sports"]}
+{"id": "news-aktuelle-nachrichten-osterreich-heute", "intent": "news", "lang": "de", "query": "aktuelle Nachrichten Österreich heute", "recency": "day"}
+{"id": "news-bundestag-abstimmung-heute-ergebnis", "intent": "news", "lang": "de", "query": "Bundestag Abstimmung heute Ergebnis", "recency": "day", "authority_domains": ["bundestag.de"]}
+{"id": "news-neueste-entwicklungen-strompreise-deutschland", "intent": "news", "lang": "de", "query": "neueste Entwicklungen Strompreise Deutschland", "recency": "week"}
+{"id": "news-dernieres-nouvelles-greve-sncf", "intent": "news", "lang": "fr", "query": "dernières nouvelles grève SNCF", "recency": "week"}
+{"id": "news-ultimas-noticias-elecciones-espana", "intent": "news", "lang": "es", "query": "últimas noticias elecciones España", "recency": "week"}
+{"id": "news-notizie-oggi-borsa-milano", "intent": "news", "lang": "it", "query": "notizie oggi borsa Milano", "recency": "day", "tags": ["finance"]}
+{"id": "news-q", "intent": "news", "lang": "ja", "query": "最新ニュース 日本 経済", "recency": "week"}
+{"id": "news-microsoft-layoffs-latest", "intent": "news", "lang": "en", "query": "Microsoft layoffs latest", "recency": "week"}
+{"id": "news-anthropic-announcement-this-week", "intent": "news", "lang": "en", "query": "Anthropic announcement this week", "recency": "week", "authority_domains": ["anthropic.com"], "tags": ["vendor_release"]}
+{"id": "news-github-outage-today", "intent": "news", "lang": "en", "query": "GitHub outage today", "recency": "day", "authority_domains": ["githubstatus.com"]}
+{"id": "news-bitcoin-price-news-today", "intent": "news", "lang": "en", "query": "Bitcoin price news today", "recency": "day", "tags": ["finance"]}
+{"id": "news-tesla-q3-2026-earnings-results", "intent": "news", "lang": "en", "query": "Tesla Q3 2026 earnings results", "recency": "week", "authority_domains": ["ir.tesla.com"], "tags": ["finance"]}
+{"id": "news-storm-warning-europe-this-week", "intent": "news", "lang": "en", "query": "storm warning Europe this week", "recency": "week"}
+{"id": "news-latest-linux-kernel-release-announcement", "intent": "news", "lang": "en", "query": "latest Linux kernel release announcement", "recency": "month", "authority_domains": ["kernel.org", "lkml.org"], "tags": ["vendor_release"]}
+{"id": "news-wiener-linien-storung-heute", "intent": "news", "lang": "de", "query": "Wiener Linien Störung heute", "recency": "day"}
+{"id": "news-hurrikan-aktuelle-lage-usa", "intent": "news", "lang": "de", "query": "Hurrikan aktuelle Lage USA", "recency": "week"}
+{"id": "news-noticias-tecnologia-hoje", "intent": "news", "lang": "pt", "query": "notícias tecnologia hoje", "recency": "day"}
+{"id": "news-latest-ai-regulation-news-united-states", "intent": "news", "lang": "en", "query": "latest AI regulation news United States", "recency": "week", "tags": ["policy"]}
+{"id": "docs-python-requests-timeout-parameter-docs", "intent": "docs", "lang": "en", "query": "python requests timeout parameter docs", "authority_domains": ["requests.readthedocs.io", "docs.python-requests.org"]}
+{"id": "docs-fastapi-dependency-injection-official-docs", "intent": "docs", "lang": "en", "query": "fastapi dependency injection official docs", "authority_domains": ["fastapi.tiangolo.com"]}
+{"id": "docs-react-useeffect-cleanup-function", "intent": "docs", "lang": "en", "query": "React useEffect cleanup function", "authority_domains": ["react.dev"]}
+{"id": "docs-postgresql-jsonb-gin-index-operator-class", "intent": "docs", "lang": "en", "query": "PostgreSQL jsonb GIN index operator class", "authority_domains": ["postgresql.org"]}
+{"id": "docs-kubectl-rollout-restart-deployment", "intent": "docs", "lang": "en", "query": "kubectl rollout restart deployment", "authority_domains": ["kubernetes.io"]}
+{"id": "docs-git-rebase-onto-example", "intent": "docs", "lang": "en", "query": "git rebase --onto example", "authority_domains": ["git-scm.com"]}
+{"id": "docs-typescript-satisfies-operator", "intent": "docs", "lang": "en", "query": "TypeScript satisfies operator", "authority_domains": ["typescriptlang.org"]}
+{"id": "docs-tokio-select-macro-example", "intent": "docs", "lang": "en", "query": "tokio select! macro example", "authority_domains": ["docs.rs", "tokio.rs"]}
+{"id": "docs-nginx-proxy-pass-websocket-configuration", "intent": "docs", "lang": "en", "query": "nginx proxy_pass websocket configuration", "authority_domains": ["nginx.org"]}
+{"id": "docs-docker-compose-healthcheck-depends-on-condition", "intent": "docs", "lang": "en", "query": "docker compose healthcheck depends_on condition", "authority_domains": ["docs.docker.com"]}
+{"id": "docs-stripe-api-idempotency-key-payment-intent", "intent": "docs", "lang": "en", "query": "Stripe API idempotency key payment intent", "authority_domains": ["docs.stripe.com", "stripe.com"]}
+{"id": "docs-boto3-generate-presigned-url-s3", "intent": "docs", "lang": "en", "query": "boto3 generate presigned url s3", "authority_domains": ["boto3.amazonaws.com", "docs.aws.amazon.com"]}
+{"id": "docs-openai-api-structured-outputs-json-schema", "intent": "docs", "lang": "en", "query": "OpenAI API structured outputs json schema", "authority_domains": ["platform.openai.com"]}
+{"id": "docs-anthropic-api-prompt-caching", "intent": "docs", "lang": "en", "query": "Anthropic API prompt caching", "authority_domains": ["docs.anthropic.com", "docs.claude.com", "anthropic.com"]}
+{"id": "docs-tailwind-css-dark-mode-class-strategy", "intent": "docs", "lang": "en", "query": "Tailwind CSS dark mode class strategy", "authority_domains": ["tailwindcss.com"]}
+{"id": "docs-sqlite-wal-mode-pragma-journal-mode", "intent": "docs", "lang": "en", "query": "SQLite WAL mode pragma journal_mode", "authority_domains": ["sqlite.org"]}
+{"id": "docs-go-context-withtimeout-example", "intent": "docs", "lang": "en", "query": "Go context.WithTimeout example", "authority_domains": ["pkg.go.dev", "go.dev"]}
+{"id": "docs-numpy-broadcasting-rules", "intent": "docs", "lang": "en", "query": "numpy broadcasting rules", "authority_domains": ["numpy.org"]}
+{"id": "docs-pandas-merge-vs-join-difference", "intent": "docs", "lang": "en", "query": "pandas merge vs join difference", "authority_domains": ["pandas.pydata.org"]}
+{"id": "docs-uv-pip-compile-lockfile", "intent": "docs", "lang": "en", "query": "uv pip compile lockfile", "authority_domains": ["docs.astral.sh"]}
+{"id": "docs-systemd-service-restart-on-failure", "intent": "docs", "lang": "en", "query": "systemd service Restart=on-failure", "authority_domains": ["freedesktop.org", "man7.org"]}
+{"id": "docs-github-actions-matrix-exclude", "intent": "docs", "lang": "en", "query": "github actions matrix exclude", "authority_domains": ["docs.github.com"]}
+{"id": "docs-next-js-app-router-server-actions", "intent": "docs", "lang": "en", "query": "Next.js app router server actions", "authority_domains": ["nextjs.org"]}
+{"id": "docs-swift-async-let-concurrency", "intent": "docs", "lang": "en", "query": "Swift async let concurrency", "authority_domains": ["docs.swift.org", "developer.apple.com", "swift.org"]}
+{"id": "docs-asyncio-taskgroup-exception-handling", "intent": "docs", "lang": "en", "query": "asyncio TaskGroup exception handling", "authority_domains": ["docs.python.org"]}
+{"id": "docs-django-select-related-vs-prefetch-related", "intent": "docs", "lang": "en", "query": "Django select_related vs prefetch_related", "authority_domains": ["docs.djangoproject.com"]}
+{"id": "docs-terraform-for-each-map-example", "intent": "docs", "lang": "en", "query": "Terraform for_each map example", "authority_domains": ["developer.hashicorp.com"]}
+{"id": "docs-vue-3-definemodel", "intent": "docs", "lang": "en", "query": "Vue 3 defineModel", "authority_domains": ["vuejs.org"]}
+{"id": "docs-python-dataclass-default-factory-dokumentation", "intent": "docs", "lang": "de", "query": "python dataclass default_factory Dokumentation", "authority_domains": ["docs.python.org"]}
+{"id": "docs-annuler-une-requete-fetch-avec-abortcontroller", "intent": "docs", "lang": "fr", "query": "annuler une requête fetch avec AbortController", "authority_domains": ["developer.mozilla.org"]}
+{"id": "docs-nvidia-driver-install-linux", "intent": "docs", "lang": "en", "query": "nvidia driver install linux", "authority_domains": ["nvidia.com", "wiki.archlinux.org", "help.ubuntu.com", "docs.nvidia.com"], "tags": ["known_misroute", "tech_howto"]}
+{"id": "academic-attention-is-all-you-need-paper", "intent": "academic", "lang": "en", "query": "attention is all you need paper", "authority_domains": ["arxiv.org", "papers.nips.cc", "proceedings.neurips.cc"]}
+{"id": "academic-retrieval-augmented-generation-survey-2025", "intent": "academic", "lang": "en", "query": "retrieval augmented generation survey 2025", "authority_domains": ["arxiv.org"]}
+{"id": "academic-reciprocal-rank-fusion-cormack-paper", "intent": "academic", "lang": "en", "query": "reciprocal rank fusion Cormack paper", "authority_domains": ["plg.uwaterloo.ca", "dl.acm.org"]}
+{"id": "academic-bm25-probabilistic-relevance-framework-robertson", "intent": "academic", "lang": "en", "query": "BM25 probabilistic relevance framework Robertson Zaragoza", "authority_domains": ["dl.acm.org", "staff.city.ac.uk", "nowpublishers.com"]}
+{"id": "academic-scaling-laws-for-neural-language-models-kaplan", "intent": "academic", "lang": "en", "query": "scaling laws for neural language models Kaplan", "authority_domains": ["arxiv.org"]}
+{"id": "academic-llm-as-a-judge-reliability-study", "intent": "academic", "lang": "en", "query": "LLM-as-a-judge reliability study", "authority_domains": ["arxiv.org"]}
+{"id": "academic-crispr-off-target-effects-review", "intent": "academic", "lang": "en", "query": "CRISPR off-target effects review", "authority_domains": ["ncbi.nlm.nih.gov", "nature.com", "pubmed.ncbi.nlm.nih.gov"]}
+{"id": "academic-meta-analysis-intermittent-fasting-weight-loss", "intent": "academic", "lang": "en", "query": "meta-analysis intermittent fasting weight loss", "authority_domains": ["pubmed.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov", "jamanetwork.com"]}
+{"id": "academic-graph-neural-networks-survey", "intent": "academic", "lang": "en", "query": "graph neural networks survey", "authority_domains": ["arxiv.org"]}
+{"id": "academic-mixture-of-experts-routing-paper", "intent": "academic", "lang": "en", "query": "mixture of experts routing paper", "authority_domains": ["arxiv.org"]}
+{"id": "academic-ndcg-jarvelin-kekalainen-cumulated-gain", "intent": "academic", "lang": "en", "query": "nDCG Järvelin Kekäläinen cumulated gain", "authority_domains": ["dl.acm.org"]}
+{"id": "academic-diffusion-models-image-generation-survey", "intent": "academic", "lang": "en", "query": "diffusion models image generation survey", "authority_domains": ["arxiv.org"]}
+{"id": "academic-microplastics-human-health-systematic-review", "intent": "academic", "lang": "en", "query": "microplastics human health systematic review", "authority_domains": ["pubmed.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov", "sciencedirect.com"]}
+{"id": "academic-surface-code-quantum-error-correction-paper", "intent": "academic", "lang": "en", "query": "surface code quantum error correction paper", "authority_domains": ["arxiv.org", "nature.com"]}
+{"id": "academic-speculative-decoding-paper", "intent": "academic", "lang": "en", "query": "speculative decoding paper", "authority_domains": ["arxiv.org"]}
+{"id": "academic-long-covid-cohort-study-prevalence", "intent": "academic", "lang": "en", "query": "long COVID cohort study prevalence", "authority_domains": ["pubmed.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov", "thelancet.com", "nature.com"]}
+{"id": "academic-dense-passage-retrieval-karpukhin", "intent": "academic", "lang": "en", "query": "dense passage retrieval Karpukhin", "authority_domains": ["arxiv.org", "aclanthology.org"]}
+{"id": "academic-instructgpt-rlhf-paper", "intent": "academic", "lang": "en", "query": "InstructGPT RLHF paper", "authority_domains": ["arxiv.org"]}
+{"id": "academic-equilibrium-climate-sensitivity-estimates-review", "intent": "academic", "lang": "en", "query": "equilibrium climate sensitivity estimates review", "authority_domains": ["agupubs.onlinelibrary.wiley.com", "ipcc.ch", "nature.com"]}
+{"id": "academic-swe-bench-benchmark-paper", "intent": "academic", "lang": "en", "query": "SWE-bench benchmark paper", "authority_domains": ["arxiv.org", "swebench.com"]}
+{"id": "academic-studie-homeoffice-produktivitat-ergebnisse", "intent": "academic", "lang": "de", "query": "Studie Homeoffice Produktivität Ergebnisse"}
+{"id": "academic-metaanalyse-kreatin-kognitive-leistung", "intent": "academic", "lang": "de", "query": "Metaanalyse Kreatin kognitive Leistung", "authority_domains": ["pubmed.ncbi.nlm.nih.gov", "ncbi.nlm.nih.gov"]}
+{"id": "academic-etude-scientifique-effets-du-sommeil-sur-la-memo", "intent": "academic", "lang": "fr", "query": "étude scientifique effets du sommeil sur la mémoire"}
+{"id": "academic-revision-sistematica-ejercicio-y-depresion", "intent": "academic", "lang": "es", "query": "revisión sistemática ejercicio y depresión"}
+{"id": "academic-sparse-autoencoders-interpretability-paper", "intent": "academic", "lang": "en", "query": "sparse autoencoders interpretability paper", "authority_domains": ["arxiv.org", "transformer-circuits.pub"]}
+{"id": "academic-alphafold-3-paper", "intent": "academic", "lang": "en", "query": "AlphaFold 3 paper", "authority_domains": ["nature.com"]}
+{"id": "academic-federated-learning-privacy-survey", "intent": "academic", "lang": "en", "query": "federated learning privacy survey", "authority_domains": ["arxiv.org"]}
+{"id": "academic-pseudo-relevance-feedback-query-expansion-paper", "intent": "academic", "lang": "en", "query": "pseudo relevance feedback query expansion paper"}
+{"id": "academic-byte-pair-encoding-sennrich-paper", "intent": "academic", "lang": "en", "query": "byte pair encoding Sennrich paper", "authority_domains": ["arxiv.org", "aclanthology.org"]}
+{"id": "academic-social-media-adolescent-mental-health-longitudin", "intent": "academic", "lang": "en", "query": "social media adolescent mental health longitudinal study"}
+{"id": "security-what-are-the-cves-in-openssl-3-2", "intent": "security", "lang": "en", "query": "what are the CVEs in openssl 3.2", "authority_domains": ["openssl-library.org", "openssl.org", "nvd.nist.gov", "cve.org"], "tags": ["known_misroute"]}
+{"id": "security-cve-2024-3094-xz-backdoor", "intent": "security", "lang": "en", "query": "CVE-2024-3094 xz backdoor", "authority_domains": ["nvd.nist.gov", "cve.org", "openwall.com"]}
+{"id": "security-log4shell-cve-2021-44228-mitigation", "intent": "security", "lang": "en", "query": "log4shell CVE-2021-44228 mitigation", "authority_domains": ["nvd.nist.gov", "cisa.gov", "logging.apache.org"]}
+{"id": "security-latest-chrome-zero-day-cve", "intent": "security", "lang": "en", "query": "latest Chrome zero-day CVE", "recency": "week"}
+{"id": "security-regresshion-cve-2024-6387-openssh", "intent": "security", "lang": "en", "query": "regreSSHion CVE-2024-6387 openssh", "authority_domains": ["nvd.nist.gov", "openssh.com", "qualys.com"]}
+{"id": "security-cisa-known-exploited-vulnerabilities-catalog", "intent": "security", "lang": "en", "query": "CISA known exploited vulnerabilities catalog", "authority_domains": ["cisa.gov"]}
+{"id": "security-microsoft-patch-tuesday-october-2026", "intent": "security", "lang": "en", "query": "Microsoft Patch Tuesday October 2026", "recency": "month", "authority_domains": ["msrc.microsoft.com"]}
+{"id": "security-nginx-security-advisories", "intent": "security", "lang": "en", "query": "nginx security advisories", "authority_domains": ["nginx.org"]}
+{"id": "security-npm-supply-chain-attack-latest", "intent": "security", "lang": "en", "query": "npm supply chain attack latest", "recency": "week"}
+{"id": "security-fortinet-fortios-critical-vulnerability-advisory", "intent": "security", "lang": "en", "query": "Fortinet FortiOS critical vulnerability advisory", "recency": "month", "authority_domains": ["fortiguard.com", "fortinet.com"]}
+{"id": "security-apache-struts-remote-code-execution-cve", "intent": "security", "lang": "en", "query": "Apache Struts remote code execution CVE", "authority_domains": ["nvd.nist.gov", "cwiki.apache.org"]}
+{"id": "security-linux-kernel-privilege-escalation-cve-2026", "intent": "security", "lang": "en", "query": "linux kernel privilege escalation CVE 2026", "authority_domains": ["nvd.nist.gov"]}
+{"id": "security-check-if-server-is-vulnerable-to-heartbleed", "intent": "security", "lang": "en", "query": "check if server is vulnerable to heartbleed"}
+{"id": "security-python-pickle-deserialization-security-risk", "intent": "security", "lang": "en", "query": "python pickle deserialization security risk", "authority_domains": ["docs.python.org"]}
+{"id": "security-owasp-top-10-2025", "intent": "security", "lang": "en", "query": "OWASP top 10 2025", "authority_domains": ["owasp.org"]}
+{"id": "security-cve-2023-4863-libwebp-heap-overflow", "intent": "security", "lang": "en", "query": "CVE-2023-4863 libwebp heap overflow", "authority_domains": ["nvd.nist.gov", "cve.org"]}
+{"id": "security-critical-wordpress-plugin-vulnerability-this-mon", "intent": "security", "lang": "en", "query": "critical WordPress plugin vulnerability this month", "recency": "month", "authority_domains": ["wordfence.com", "patchstack.com"]}
+{"id": "security-sicherheitslucke-exchange-server-aktuell", "intent": "security", "lang": "de", "query": "Sicherheitslücke Exchange Server aktuell", "recency": "week", "authority_domains": ["bsi.bund.de", "msrc.microsoft.com"]}
+{"id": "security-bsi-warnung-kritische-schwachstelle", "intent": "security", "lang": "de", "query": "BSI Warnung kritische Schwachstelle", "recency": "week", "authority_domains": ["bsi.bund.de"]}
+{"id": "security-vulnerabilite-critique-ivanti", "intent": "security", "lang": "fr", "query": "vulnérabilité critique Ivanti", "recency": "month", "authority_domains": ["cert.ssi.gouv.fr", "ivanti.com"]}
+{"id": "security-spring4shell-cve-2022-22965", "intent": "security", "lang": "en", "query": "Spring4Shell CVE-2022-22965", "authority_domains": ["nvd.nist.gov", "spring.io"]}
+{"id": "security-github-security-advisory-database", "intent": "security", "lang": "en", "query": "GitHub security advisory database", "authority_domains": ["github.com"]}
+{"id": "security-ingressnightmare-ingress-nginx-cve", "intent": "security", "lang": "en", "query": "IngressNightmare ingress-nginx CVE", "authority_domains": ["kubernetes.io", "nvd.nist.gov", "wiz.io"]}
+{"id": "security-runc-container-escape-vulnerability", "intent": "security", "lang": "en", "query": "runc container escape vulnerability", "authority_domains": ["nvd.nist.gov", "github.com"]}
+{"id": "security-ssrf-prevention-cheat-sheet", "intent": "security", "lang": "en", "query": "SSRF prevention cheat sheet", "authority_domains": ["cheatsheetseries.owasp.org", "owasp.org"]}
+{"id": "security-sql-injection-prevention-parameterized-queries", "intent": "security", "lang": "en", "query": "SQL injection prevention parameterized queries", "authority_domains": ["cheatsheetseries.owasp.org", "owasp.org"]}
+{"id": "security-cvss-4-0-calculator", "intent": "security", "lang": "en", "query": "CVSS 4.0 calculator", "authority_domains": ["first.org"]}
+{"id": "security-cisco-ios-xe-web-ui-vulnerability", "intent": "security", "lang": "en", "query": "Cisco IOS XE web UI vulnerability", "authority_domains": ["sec.cloudapps.cisco.com", "cisco.com"]}
+{"id": "security-citrix-bleed-cve-2023-4966", "intent": "security", "lang": "en", "query": "Citrix Bleed CVE-2023-4966", "authority_domains": ["nvd.nist.gov", "support.citrix.com", "cisa.gov"]}
+{"id": "security-ransomware-attack-hospital-latest", "intent": "security", "lang": "en", "query": "ransomware attack hospital latest", "recency": "week", "tags": ["news"]}
+{"id": "shopping-best-noise-cancelling-headphones-2026", "intent": "shopping", "lang": "en", "query": "best noise cancelling headphones 2026"}
+{"id": "shopping-sony-wh-1000xm6-price", "intent": "shopping", "lang": "en", "query": "Sony WH-1000XM6 price"}
+{"id": "shopping-macbook-air-m4-vs-m5-comparison", "intent": "shopping", "lang": "en", "query": "MacBook Air M4 vs M5 comparison"}
+{"id": "shopping-cheapest-rtx-5070-price", "intent": "shopping", "lang": "en", "query": "cheapest RTX 5070 price"}
+{"id": "shopping-best-robot-vacuum-under-500", "intent": "shopping", "lang": "en", "query": "best robot vacuum under 500"}
+{"id": "shopping-iphone-17-pro-review", "intent": "shopping", "lang": "en", "query": "iPhone 17 Pro review"}
+{"id": "shopping-kindle-paperwhite-vs-kobo-clara", "intent": "shopping", "lang": "en", "query": "Kindle Paperwhite vs Kobo Clara"}
+{"id": "shopping-best-bookshelf-speakers-under-1000", "intent": "shopping", "lang": "en", "query": "best bookshelf speakers under 1000"}
+{"id": "shopping-garmin-forerunner-970-specs", "intent": "shopping", "lang": "en", "query": "Garmin Forerunner 970 specs", "authority_domains": ["garmin.com"]}
+{"id": "shopping-standing-desk-recommendations", "intent": "shopping", "lang": "en", "query": "standing desk recommendations"}
+{"id": "shopping-beste-kopfhorer-unter-200-euro-test", "intent": "shopping", "lang": "de", "query": "beste Kopfhörer unter 200 Euro Test"}
+{"id": "shopping-geschirrspuler-testsieger-2026", "intent": "shopping", "lang": "de", "query": "Geschirrspüler Testsieger 2026"}
+{"id": "shopping-fernseher-65-zoll-oled-vergleich", "intent": "shopping", "lang": "de", "query": "Fernseher 65 Zoll OLED Vergleich"}
+{"id": "shopping-e-bike-test-stiftung-warentest", "intent": "shopping", "lang": "de", "query": "E-Bike Test Stiftung Warentest", "authority_domains": ["test.de"]}
+{"id": "shopping-meilleur-aspirateur-sans-fil-2026", "intent": "shopping", "lang": "fr", "query": "meilleur aspirateur sans fil 2026"}
+{"id": "shopping-mejor-movil-calidad-precio-2026", "intent": "shopping", "lang": "es", "query": "mejor móvil calidad precio 2026"}
+{"id": "shopping-migliore-macchina-caffe-espresso", "intent": "shopping", "lang": "it", "query": "migliore macchina caffè espresso"}
+{"id": "shopping-steam-deck-oled-price", "intent": "shopping", "lang": "en", "query": "Steam Deck OLED price", "authority_domains": ["steamdeck.com", "store.steampowered.com"]}
+{"id": "shopping-mechanical-keyboard-for-programming-recommendati", "intent": "shopping", "lang": "en", "query": "mechanical keyboard for programming recommendation"}
+{"id": "shopping-best-espresso-grinder-under-300", "intent": "shopping", "lang": "en", "query": "best espresso grinder under 300"}
+{"id": "shopping-samsung-s95f-review", "intent": "shopping", "lang": "en", "query": "Samsung S95F review"}
+{"id": "shopping-airpods-pro-3-vs-sony-wf-1000xm6", "intent": "shopping", "lang": "en", "query": "AirPods Pro 3 vs Sony WF-1000XM6"}
+{"id": "shopping-nintendo-switch-2-price", "intent": "shopping", "lang": "en", "query": "Nintendo Switch 2 price"}
+{"id": "shopping-dyson-v15-discount", "intent": "shopping", "lang": "en", "query": "Dyson V15 discount"}
+{"id": "shopping-best-4k-monitor-for-macbook", "intent": "shopping", "lang": "en", "query": "best 4K monitor for MacBook"}
+{"id": "shopping-turntable-under-500-euro-recommendation", "intent": "shopping", "lang": "en", "query": "turntable under 500 euro recommendation"}
+{"id": "shopping-running-shoes-for-flat-feet", "intent": "shopping", "lang": "en", "query": "running shoes for flat feet"}
+{"id": "shopping-pixel-10-pro-specs", "intent": "shopping", "lang": "en", "query": "Pixel 10 Pro specs", "authority_domains": ["store.google.com"]}
+{"id": "shopping-best-home-nas-2026", "intent": "shopping", "lang": "en", "query": "best home NAS 2026"}
+{"id": "shopping-wlan-mesh-router-empfehlung", "intent": "shopping", "lang": "de", "query": "WLAN Mesh Router Empfehlung"}
+{"id": "local-weather-graz-tomorrow", "intent": "local", "lang": "en", "query": "weather Graz tomorrow", "recency": "day"}
+{"id": "local-restaurants-near-stephansplatz-vienna", "intent": "local", "lang": "en", "query": "restaurants near Stephansplatz Vienna"}
+{"id": "local-hotels-in-salzburg", "intent": "local", "lang": "en", "query": "hotels in salzburg", "tags": ["known_misroute"]}
+{"id": "local-apotheke-notdienst-graz-heute", "intent": "local", "lang": "de", "query": "Apotheke Notdienst Graz heute", "recency": "day"}
+{"id": "local-offnungszeiten-ikea-graz", "intent": "local", "lang": "de", "query": "Öffnungszeiten IKEA Graz", "authority_domains": ["ikea.com"]}
+{"id": "local-wetter-wien-wochenende", "intent": "local", "lang": "de", "query": "Wetter Wien Wochenende", "recency": "week"}
+{"id": "local-things-to-do-in-lisbon-this-weekend", "intent": "local", "lang": "en", "query": "things to do in Lisbon this weekend", "recency": "week"}
+{"id": "local-best-pizza-in-naples", "intent": "local", "lang": "en", "query": "best pizza in Naples"}
+{"id": "local-louvre-opening-hours", "intent": "local", "lang": "en", "query": "Louvre opening hours", "authority_domains": ["louvre.fr"]}
+{"id": "local-train-from-vienna-to-venice", "intent": "local", "lang": "en", "query": "train from Vienna to Venice", "authority_domains": ["oebb.at", "trenitalia.com"]}
+{"id": "local-oktoberfest-munich-dates", "intent": "local", "lang": "en", "query": "Oktoberfest Munich dates", "authority_domains": ["oktoberfest.de"]}
+{"id": "local-coworking-space-berlin-kreuzberg", "intent": "local", "lang": "en", "query": "coworking space Berlin Kreuzberg"}
+{"id": "local-konzerte-linz-diesen-monat", "intent": "local", "lang": "de", "query": "Konzerte Linz diesen Monat", "recency": "month"}
+{"id": "local-flohmarkt-wien-samstag", "intent": "local", "lang": "de", "query": "Flohmarkt Wien Samstag", "recency": "week"}
+{"id": "local-meteo-paris-demain", "intent": "local", "lang": "fr", "query": "météo Paris demain", "recency": "day"}
+{"id": "local-restaurantes-en-madrid-centro", "intent": "local", "lang": "es", "query": "restaurantes en Madrid centro"}
+{"id": "local-farmacia-de-guardia-barcelona", "intent": "local", "lang": "es", "query": "farmacia de guardia Barcelona", "recency": "day"}
+{"id": "local-q", "intent": "local", "lang": "ja", "query": "東京 天気 明日", "recency": "day"}
+{"id": "local-zurich-airport-parking-price", "intent": "local", "lang": "en", "query": "Zurich airport parking price", "authority_domains": ["flughafen-zuerich.ch"]}
+{"id": "local-public-holidays-austria-2026", "intent": "local", "lang": "en", "query": "public holidays Austria 2026"}
+{"id": "local-ski-resorts-open-now-austria", "intent": "local", "lang": "en", "query": "ski resorts open now Austria", "recency": "week"}
+{"id": "local-backerei-graz-jakomini", "intent": "local", "lang": "de", "query": "Bäckerei Graz Jakomini"}
+{"id": "local-emergency-dentist-vienna-weekend", "intent": "local", "lang": "en", "query": "emergency dentist Vienna weekend"}
+{"id": "local-amsterdam-canal-cruise-tickets", "intent": "local", "lang": "en", "query": "Amsterdam canal cruise tickets"}
+{"id": "local-wetter-innsbruck-morgen", "intent": "local", "lang": "de", "query": "Wetter Innsbruck morgen", "recency": "day"}
+{"id": "local-events-in-london-this-week", "intent": "local", "lang": "en", "query": "events in London this week", "recency": "week"}
+{"id": "local-best-ramen-shinjuku-tokyo", "intent": "local", "lang": "en", "query": "best ramen Shinjuku Tokyo"}
+{"id": "local-tierarzt-notdienst-wien", "intent": "local", "lang": "de", "query": "Tierarzt Notdienst Wien"}
+{"id": "local-salzburg-christmas-market-dates", "intent": "local", "lang": "en", "query": "Salzburg Christmas market dates"}
+{"id": "local-beach-weather-crete-october", "intent": "local", "lang": "en", "query": "beach weather Crete October", "recency": "week"}
+{"id": "community-reddit-best-budget-mechanical-keyboard", "intent": "community", "lang": "en", "query": "reddit best budget mechanical keyboard", "authority_domains": ["reddit.com"]}
+{"id": "community-r-localllama-best-local-coding-model", "intent": "community", "lang": "en", "query": "r/LocalLLaMA best local coding model", "authority_domains": ["reddit.com"]}
+{"id": "community-hacker-news-sqlite-as-application-file-format", "intent": "community", "lang": "en", "query": "hacker news SQLite as application file format", "authority_domains": ["news.ycombinator.com"]}
+{"id": "community-what-do-people-think-of-arc-browser-reddit", "intent": "community", "lang": "en", "query": "what do people think of Arc browser reddit", "authority_domains": ["reddit.com"]}
+{"id": "community-obsidian-vs-notion-opinions", "intent": "community", "lang": "en", "query": "Obsidian vs Notion opinions"}
+{"id": "community-is-a-phd-worth-it-reddit", "intent": "community", "lang": "en", "query": "is a PhD worth it reddit", "authority_domains": ["reddit.com"]}
+{"id": "community-framework-laptop-reliability-experiences", "intent": "community", "lang": "en", "query": "Framework laptop reliability experiences"}
+{"id": "community-python-circular-import-fix-stack-overflow", "intent": "community", "lang": "en", "query": "python circular import fix stack overflow", "authority_domains": ["stackoverflow.com"]}
+{"id": "community-forum-discussion-best-dac-under-500", "intent": "community", "lang": "en", "query": "forum discussion best DAC under 500"}
+{"id": "community-erfahrungen-warmepumpe-altbau-forum", "intent": "community", "lang": "de", "query": "Erfahrungen Wärmepumpe Altbau Forum"}
+{"id": "community-meinungen-tesla-model-y-juniper-forum", "intent": "community", "lang": "de", "query": "Meinungen Tesla Model Y Juniper Forum"}
+{"id": "community-avis-utilisateurs-freebox-ultra-forum", "intent": "community", "lang": "fr", "query": "avis utilisateurs Freebox Ultra forum"}
+{"id": "community-opiniones-xiaomi-15-foro", "intent": "community", "lang": "es", "query": "opiniones Xiaomi 15 foro"}
+{"id": "community-hetzner-vs-ovh-user-experiences", "intent": "community", "lang": "en", "query": "Hetzner vs OVH user experiences"}
+{"id": "community-ask-hn-how-do-you-manage-dotfiles", "intent": "community", "lang": "en", "query": "Ask HN how do you manage dotfiles", "authority_domains": ["news.ycombinator.com"]}
+{"id": "community-reddit-personal-finance-how-big-emergency-fund", "intent": "community", "lang": "en", "query": "reddit personal finance how big emergency fund", "authority_domains": ["reddit.com"]}
+{"id": "community-steam-deck-long-term-review-reddit", "intent": "community", "lang": "en", "query": "Steam Deck long term review reddit", "authority_domains": ["reddit.com"]}
+{"id": "community-home-assistant-community-zigbee-coordinator-reco", "intent": "community", "lang": "en", "query": "Home Assistant community zigbee coordinator recommendation", "authority_domains": ["community.home-assistant.io"]}
+{"id": "community-lobsters-discussion-nix-flakes", "intent": "community", "lang": "en", "query": "lobsters discussion nix flakes", "authority_domains": ["lobste.rs"]}
+{"id": "community-experiences-using-rust-in-production", "intent": "community", "lang": "en", "query": "experiences using Rust in production"}
+{"id": "community-is-kagi-worth-it-opinions", "intent": "community", "lang": "en", "query": "is Kagi worth it opinions"}
+{"id": "community-head-fi-sennheiser-hd-600-impressions", "intent": "community", "lang": "en", "query": "Head-Fi Sennheiser HD 600 impressions", "authority_domains": ["head-fi.org"]}
+{"id": "community-audiosciencereview-topping-dac-measurements", "intent": "community", "lang": "en", "query": "audiosciencereview Topping DAC measurements", "authority_domains": ["audiosciencereview.com"]}
+{"id": "community-bun-vs-node-performance-github-discussion", "intent": "community", "lang": "en", "query": "bun vs node performance github discussion", "authority_domains": ["github.com"]}
+{"id": "community-erfahrungen-horgerate-forum", "intent": "community", "lang": "de", "query": "Erfahrungen Hörgeräte Forum"}
+{"id": "community-askeurope-living-in-vienna", "intent": "community", "lang": "en", "query": "AskEurope living in Vienna", "authority_domains": ["reddit.com"]}
+{"id": "community-tips-learning-japanese-with-anki-community", "intent": "community", "lang": "en", "query": "tips learning Japanese with anki community"}
+{"id": "community-opinioni-forum-fiat-panda-ibrida", "intent": "community", "lang": "it", "query": "opinioni forum Fiat Panda ibrida"}
+{"id": "community-discord-vs-matrix-community-opinions", "intent": "community", "lang": "en", "query": "Discord vs Matrix community opinions"}
+{"id": "community-fediverse-moderation-discussion-mastodon", "intent": "community", "lang": "en", "query": "Fediverse moderation discussion Mastodon"}
+{"id": "general-apple-pie-recipe", "intent": "general", "lang": "en", "query": "apple pie recipe", "tags": ["known_misroute", "recipe"]}
+{"id": "general-vegan-cake-recipe", "intent": "general", "lang": "en", "query": "vegan cake recipe", "tags": ["known_misroute", "recipe"]}
+{"id": "general-how-to-change-a-bike-tire", "intent": "general", "lang": "en", "query": "how to change a bike tire"}
+{"id": "general-capital-of-australia", "intent": "general", "lang": "en", "query": "capital of Australia"}
+{"id": "general-how-does-a-heat-pump-work", "intent": "general", "lang": "en", "query": "how does a heat pump work"}
+{"id": "general-affect-vs-effect", "intent": "general", "lang": "en", "query": "affect vs effect"}
+{"id": "general-how-to-remove-red-wine-stain", "intent": "general", "lang": "en", "query": "how to remove red wine stain"}
+{"id": "general-pythagorean-theorem-proof", "intent": "general", "lang": "en", "query": "Pythagorean theorem proof"}
+{"id": "general-calories-in-a-banana", "intent": "general", "lang": "en", "query": "calories in a banana"}
+{"id": "general-why-is-the-sky-blue", "intent": "general", "lang": "en", "query": "why is the sky blue"}
+{"id": "general-350-fahrenheit-to-celsius", "intent": "general", "lang": "en", "query": "350 fahrenheit to celsius"}
+{"id": "general-how-to-write-a-cover-letter", "intent": "general", "lang": "en", "query": "how to write a cover letter"}
+{"id": "general-vitamin-d-deficiency-symptoms", "intent": "general", "lang": "en", "query": "vitamin D deficiency symptoms"}
+{"id": "general-byzantine-empire-history-summary", "intent": "general", "lang": "en", "query": "Byzantine empire history summary"}
+{"id": "general-wie-funktioniert-eine-photovoltaikanlage", "intent": "general", "lang": "de", "query": "wie funktioniert eine Photovoltaikanlage"}
+{"id": "general-kaiserschmarrn-rezept", "intent": "general", "lang": "de", "query": "Kaiserschmarrn Rezept", "tags": ["recipe"]}
+{"id": "general-wie-lange-eier-weich-kochen", "intent": "general", "lang": "de", "query": "wie lange Eier weich kochen"}
+{"id": "general-comment-faire-une-pate-a-crepes", "intent": "general", "lang": "fr", "query": "comment faire une pâte à crêpes", "tags": ["recipe"]}
+{"id": "general-que-es-la-inflacion", "intent": "general", "lang": "es", "query": "qué es la inflación"}
+{"id": "general-come-fare-il-pane-in-casa", "intent": "general", "lang": "it", "query": "come fare il pane in casa", "tags": ["recipe"]}
+{"id": "general-hoe-werkt-een-warmtepomp", "intent": "general", "lang": "nl", "query": "hoe werkt een warmtepomp"}
+{"id": "general-como-fazer-bolo-de-cenoura", "intent": "general", "lang": "pt", "query": "como fazer bolo de cenoura", "tags": ["recipe"]}
+{"id": "general-how-to-tie-a-tie", "intent": "general", "lang": "en", "query": "how to tie a tie"}
+{"id": "general-what-is-a-roth-ira", "intent": "general", "lang": "en", "query": "what is a Roth IRA", "tags": ["finance"]}
+{"id": "general-how-do-vaccines-work", "intent": "general", "lang": "en", "query": "how do vaccines work"}
+{"id": "general-best-way-to-learn-touch-typing", "intent": "general", "lang": "en", "query": "best way to learn touch typing"}
+{"id": "general-quantum-entanglement-explained-simply", "intent": "general", "lang": "en", "query": "quantum entanglement explained simply"}
+{"id": "general-unclog-a-drain-without-chemicals", "intent": "general", "lang": "en", "query": "unclog a drain without chemicals"}
+{"id": "general-unterschied-gmbh-und-ag", "intent": "general", "lang": "de", "query": "Unterschied GmbH und AG"}
+{"id": "general-what-are-the-differences-between-python-and-node", "intent": "general", "lang": "en", "query": "what are the differences between Python and Node.js", "tags": ["explainer"]}
