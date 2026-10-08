@@ -92,7 +92,7 @@ def test_production_privacy_validator_has_no_fixture_id_allowlist() -> None:
 
 
 def test_all_console_endpoint_fixtures_are_recursively_secret_free() -> None:
-    for payload in [*fixture_values(), load_fixture("shadow-evaluation.json")]:
+    for payload in fixture_values():
         assert_fixture_payload_safe(payload)
 
 
@@ -139,9 +139,8 @@ def test_one_production_privacy_choke_point_guards_endpoints_and_journal() -> No
     validator = privacy.assert_operator_payload_safe
 
     overview, receipts, history = fixture_values()
-    shadow_evaluation = load_fixture("shadow-evaluation.json")
     journal_record = receipts["receipts"][0]
-    for payload in (overview, receipts, history, shadow_evaluation, journal_record):
+    for payload in (overview, receipts, history, journal_record):
         assert validator(payload) is None
 
     forbidden_key = "que" + "ry"
@@ -162,20 +161,17 @@ def test_all_endpoint_serializers_and_journal_share_the_same_choke_point(
 
     monkeypatch.setattr(privacy, "assert_operator_payload_safe", record_shared_validation)
     overview, receipts, history = fixture_values()
-    shadow_evaluation = load_fixture("shadow-evaluation.json")
     journal_record = receipts["receipts"][0]
 
     console.serialize_endpoint_payload(overview)
     console.serialize_endpoint_payload(receipts)
     console.serialize_endpoint_payload(history)
-    console.serialize_endpoint_payload(shadow_evaluation)
     journal.encode_journal_record(journal_record)
 
     assert calls == [
         id(overview),
         id(receipts),
         id(history),
-        id(shadow_evaluation),
         id(journal_record),
     ]
 

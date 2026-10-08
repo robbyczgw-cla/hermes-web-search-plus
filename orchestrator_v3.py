@@ -30,7 +30,6 @@ from contract_v3 import (
     complete_routing_receipt_v3,
 )
 from operator_receipts_v3 import OperatorReceiptJournal, receipt_record_from_response
-from shadow_policy_v3 import evaluate_shadow_policy
 from state_store_v3 import SQLiteStateStore
 
 
@@ -76,8 +75,8 @@ class ProviderPlan:
     )
 
     def __post_init__(self) -> None:
-        if self.mode not in {"classic", "shadow"}:
-            raise ValueError("provider plan mode must be classic or shadow")
+        if self.mode != "classic":
+            raise ValueError("provider plan mode must be classic")
         if not self.candidate_order:
             raise ValueError("provider plan requires candidates")
         if self.selected_provider not in self.candidate_order:
@@ -319,93 +318,10 @@ def _budget_preflight_failure(
     )
 
 
-def _effective_policy_mode(request: RequestV3, config: Dict[str, Any]) -> str:
-    """Resolve the two-level policy switch, failing closed to Classic."""
-    raw_override = os.environ.get("WSP_ROUTING_CLASSIC_ONLY")
-    if raw_override is not None:
-        normalized = raw_override.strip().strip('"').strip("'").lower()
-        if normalized not in _EXPLICIT_FALSE_VALUES:
-            return "classic"
-
-    routing_config = config.get("routing")
-    if not isinstance(routing_config, dict):
-        return "classic"
-    if routing_config.get("policy_mode") != "shadow":
-        return "classic"
-    return "shadow" if request.routing.get("policy_mode") == "shadow" else "classic"
-
-
-def _shadow_intent_observation(selected_provider: str | None) -> Dict[str, Any]:
-    """Describe Shadow intent without evaluating or changing the Classic plan."""
-    return {
-        "observed": True,
-        "policy_id": "shadow-interface",
-        "policy_revision": "3.0",
-        "selected_provider": selected_provider,
-        "affected_execution": False,
-    }
-
-
-def _is_auto_search_plan(request: RequestV3, plan: ProviderPlan) -> bool:
-    """Return whether Classic selected the provider at the search plan boundary."""
-    return (
-        request.capability is Capability.SEARCH
-        and str(request.routing.get("provider") or "auto") == "auto"
-        and plan.routing_metadata.get("auto_routed") is not False
-    )
-
-
-def _shadow_observation(
-    request: RequestV3,
-    plan: ProviderPlan,
-    config: Dict[str, Any],
-    *,
-    selected_provider: str | None,
-) -> Dict[str, Any]:
-    """Evaluate auto-routed searches, preserving the 3.0 stub on any failure."""
-    if not _is_auto_search_plan(request, plan):
-        return _shadow_intent_observation(selected_provider)
-    try:
-        return evaluate_shadow_policy(request, plan, config)
-    except Exception:
-        # Shadow observation is strictly observational and cannot break Classic.
-        return _shadow_intent_observation(selected_provider)
-
-
-def _record_shadow_observation(
-    observation: Dict[str, Any] | None,
-    plan: ProviderPlan,
-    v3_config: Dict[str, Any],
-) -> None:
-    """Persist an extended shadow observation without changing the response."""
-    extended_fields = {
-        "observed",
-        "policy_id",
-        "policy_revision",
-        "selected_provider",
-        "shadow_provider",
-        "agreement",
-        "affected_execution",
-    }
-    if not isinstance(observation, dict) or set(observation) != extended_fields:
-        return
-    try:
-        state_path = v3_config.get("state_path") or os.path.join(
-            str(legacy_cache.CACHE_DIR), "v3", "state.sqlite3"
-        )
-        routing_summary = plan.routing_metadata.get("analysis_summary") or {}
-        routing_class = str(routing_summary.get("routing_class") or "general")
-        SQLiteStateStore(state_path).record_shadow_evaluation(
-            routing_class=routing_class,
-            classic_provider=observation["selected_provider"],
-            shadow_provider=observation["shadow_provider"],
-            agreement=observation["agreement"],
-            policy_id=observation["policy_id"],
-            policy_revision=observation["policy_revision"],
-        )
-    except Exception:
-        # Operator evidence is strictly best-effort and must never alter execution.
-        return
+# Routing is always Classic since 5.0. The retired "shadow" policy mode is still
+# accepted in config.json and requests, and WSP_ROUTING_CLASSIC_ONLY may still be
+# set; neither changes anything.
+POLICY_MODE = "classic"
 
 
 def _append_operator_receipt(
@@ -452,7 +368,7 @@ def execute_v3_request(
                 request,
                 options={**request.options, "search_type": resolved},
             )
-    policy_mode = _effective_policy_mode(request, runtime_config)
+    policy_mode = POLICY_MODE
     if request.routing.get("policy_mode") != policy_mode:
         request = replace(
             request,
@@ -537,12 +453,8 @@ def execute_v3_request(
                 cached_routing = {
                     **cached_response.routing_receipt,
                     "mode": policy_mode,
+                    "shadow_observation": None,
                 }
-                if policy_mode == "classic":
-                    cached_routing["shadow_observation"] = None
-                else:
-                    # A cache hit has no current routing decision to observe.
-                    cached_routing["shadow_observation"] = None
                 warnings = list(cached_response.warnings)
                 status = cached_response.status
                 if lookup.disposition == "stale_hit":
@@ -622,22 +534,10 @@ def execute_v3_request(
             routing_receipt=complete_routing_receipt_v3(
                 response.routing_receipt,
                 [],
-                shadow_observation=(
-                    _shadow_observation(
-                        request,
-                        plan,
-                        runtime_config,
-                        selected_provider=None,
-                    )
-                    if policy_mode == "shadow"
-                    else None
-                ),
+                shadow_observation=None,
             ),
         )
         response = _with_budget_preflight(response, preflight)
-        _record_shadow_observation(
-            response.routing_receipt["shadow_observation"], plan, v3_config
-        )
         stage_set = {
             "normalize",
             "validate",
@@ -679,17 +579,8 @@ def execute_v3_request(
     if attempts_authoritative:
         response = replace(response, provider_attempts=list(provider_attempts))
     routing_receipt = {**response.routing_receipt, "mode": policy_mode}
-    if policy_mode == "shadow":
-        shadow_observation = _shadow_observation(
-            request,
-            plan,
-            runtime_config,
-            selected_provider=routing_receipt.get("selected_provider"),
-        )
-    else:
-        shadow_observation = None
-        if "shadow_observation" in routing_receipt:
-            routing_receipt["shadow_observation"] = None
+    if "shadow_observation" in routing_receipt:
+        routing_receipt["shadow_observation"] = None
     response = replace(response, routing_receipt=routing_receipt)
     response = _with_budget_preflight(response, preflight)
     response = replace(
@@ -697,10 +588,9 @@ def execute_v3_request(
         routing_receipt=complete_routing_receipt_v3(
             response.routing_receipt,
             list(response.provider_attempts),
-            shadow_observation=shadow_observation,
+            shadow_observation=None,
         ),
     )
-    _record_shadow_observation(shadow_observation, plan, v3_config)
     if cache_mode == "bypass" or (cache_mode == "prefer" and not cache_allowed):
         response = replace(response, cache_status={"disposition": "bypassed"})
     if adapter.finalize_response is not None:

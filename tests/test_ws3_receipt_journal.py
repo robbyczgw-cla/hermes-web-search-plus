@@ -318,7 +318,6 @@ def test_privacy_choke_accepts_fixtures_but_rejects_allowed_key_freetext() -> No
         "overview.json",
         "receipts.json",
         "benchmark-history.json",
-        "shadow-evaluation.json",
     ):
         assert privacy.assert_operator_payload_safe(fixture(name)) is None
 

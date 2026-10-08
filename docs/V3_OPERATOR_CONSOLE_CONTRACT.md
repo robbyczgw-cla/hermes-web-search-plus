@@ -2,7 +2,7 @@
 
 This contract is normative for the 3.0 read-only Operator Console.
 
-This contract defines the read-only Operator Console boundary. It is additive to Contract v3 and Amendments 002/003. Classic Routing-v2 remains authoritative; shadow policy remains observational and cannot alter execution.
+This contract defines the read-only Operator Console boundary. It is additive to Contract v3 and Amendments 002/003. Classic Routing-v2 remains authoritative. Shadow routing was removed in 5.0. `routing_receipt.shadow_observation` stays on every response and is always `null`.
 
 ## Hard boundary
 
@@ -23,9 +23,8 @@ Every response uses `Cache-Control: no-store`, `Content-Security-Policy`, `X-Con
 1. `/api/v3/overview` output;
 2. `/api/v3/receipts` output;
 3. `/api/v3/benchmark-history` output;
-4. `/api/v3/shadow-evaluation` output;
-5. `/api/v3/provider-health` output;
-6. every receipt record before journal persistence.
+4. `/api/v3/provider-health` output;
+5. every receipt record before journal persistence.
 
 No endpoint or writer may carry a private per-endpoint copy of this logic. The validator fails closed before serialization/write.
 
@@ -98,32 +97,7 @@ stored or exposed.
 }
 ```
 
-### `GET /api/v3/shadow-evaluation`
-
-Returns the last 30 days of persisted, aggregate-only Shadow policy observations. Query text, request IDs, scores, and provider attempts are never stored or exposed. The DTO is:
-
-```json
-{
-  "schema_version": 1,
-  "policy_id": "shadow-quality",
-  "policy_revision": "3.1",
-  "window": 2592000,
-  "total_evaluations": 0,
-  "agreement_rate": 0.0,
-  "divergences": [
-    {
-      "classic_provider": "serper",
-      "shadow_provider": "linkup",
-      "count": 1
-    }
-  ]
-}
-```
-
-`window` is seconds. `divergences` contains only disagreements and may contain a
-null `shadow_provider` when no ranked shadow candidate was available. This is a
-read-only aggregate endpoint: it MUST NOT evaluate policy, call a provider, or
-write state.
+`GET /api/v3/shadow-evaluation` was removed in 5.0. The path returns 404.
 
 ## Routing-v2 Receipt completion
 
@@ -187,29 +161,15 @@ A cache-served current response MUST have:
 
 ### Shadow observation
 
-When present:
+Shadow routing was removed in 5.0. New responses set `shadow_observation` to
+`null`. `routing.policy_mode: "shadow"` in config is accepted and treated as
+`"classic"`.
 
-```json
-{
-  "observed": true,
-  "policy_id": "shadow-quality",
-  "policy_revision": "3.1",
-  "selected_provider": "<classic-provider>",
-  "shadow_provider": "<shadow-provider-or-null>",
-  "agreement": true,
-  "affected_execution": false
-}
-```
-
-The legacy five-field interface form (`policy_id: "shadow-interface"`,
-`policy_revision: "3.0"`, no `shadow_provider`/`agreement`) remains valid and
-journal-safe; it is emitted when shadow mode is active but no evaluation ran
-(non-auto requests, evaluator fallback).
-
-The legacy five-field observation remains accepted for 3.0 compatibility. For
-the extended observation, `agreement` MUST be boolean and `shadow_provider` MUST
-be a provider ID or null. `affected_execution` MUST be false. Shadow selection
-cannot alter candidate order, attempts or selected provider, and is read-only.
+Readers still accept an older shadow object. When present, `affected_execution`
+MUST be false. For the extended observation, `agreement` MUST be boolean and
+`shadow_provider` MUST be a provider ID or null. The five-field interface form
+(`policy_id: "shadow-interface"`, `policy_revision: "3.0"`, no
+`shadow_provider`/`agreement`) remains valid for previously stored receipts.
 
 ## Journal contract
 
@@ -229,7 +189,6 @@ The shared privacy choke point runs immediately before append. Journal failure i
 - `tests/fixtures/v3/ws3/overview.json`
 - `tests/fixtures/v3/ws3/receipts.json`
 - `tests/fixtures/v3/ws3/benchmark-history.json`
-- `tests/fixtures/v3/ws3/shadow-evaluation.json`
 
 Release-blocking tests require:
 

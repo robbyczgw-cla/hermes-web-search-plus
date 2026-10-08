@@ -24,10 +24,7 @@ from bounded_context_v3 import (
 from config import DEFAULT_CONFIG, get_api_key, provider_configured
 from operator_receipts_v3 import JOURNAL_OWNER, JOURNAL_SCHEMA_VERSION
 from provider_registry import PROVIDER_SPECS
-from state_store_v3 import (
-    SHADOW_EVALUATION_RETENTION_SECONDS,
-    SQLiteStateStore,
-)
+from state_store_v3 import SQLiteStateStore
 
 
 SNAPSHOT_SCHEMA_VERSION = 1
@@ -35,7 +32,6 @@ BENCHMARK_OWNER = "web-search-plus:operator-benchmarks-v3"
 BENCHMARK_HISTORY_SCHEMA_VERSION = 1
 MAX_ENDPOINT_LIMIT = 100
 MAX_READ_BYTES = 8 * 1024 * 1024
-DEFAULT_SHADOW_EVALUATION_WINDOW_SECONDS = SHADOW_EVALUATION_RETENTION_SECONDS
 
 
 def _bounded_limit(value: int) -> int:
@@ -266,27 +262,6 @@ def build_benchmark_history(
             "search": "collected" if "search" in kinds else "not_collected",
             "extract": "collected" if "extract" in kinds else "not_collected",
         },
-    }
-    privacy.assert_operator_payload_safe(payload)
-    return payload
-
-
-def build_shadow_evaluation(
-    store: SQLiteStateStore,
-    *,
-    window_seconds: int = DEFAULT_SHADOW_EVALUATION_WINDOW_SECONDS,
-) -> dict[str, Any]:
-    """Build a privacy-safe aggregate for persisted shadow evaluations."""
-    window = max(0, min(int(window_seconds), SHADOW_EVALUATION_RETENTION_SECONDS))
-    summary = store.shadow_evaluation_summary(window)
-    payload = {
-        "schema_version": SNAPSHOT_SCHEMA_VERSION,
-        "policy_id": "shadow-quality",
-        "policy_revision": "3.1",
-        "window": window,
-        "total_evaluations": summary["total"],
-        "agreement_rate": summary["agreement_rate"],
-        "divergences": summary["divergences"],
     }
     privacy.assert_operator_payload_safe(payload)
     return payload

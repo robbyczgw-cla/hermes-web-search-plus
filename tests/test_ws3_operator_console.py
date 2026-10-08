@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib
 import json
 import sqlite3
-import time
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -81,35 +80,6 @@ def test_benchmark_history_reads_only_marker_owned_records(tmp_path: Path) -> No
         "availability": {"search": "not_collected", "extract": "not_collected"},
     }
     assert foreign.read_bytes() == before
-
-
-def test_shadow_evaluation_builder_matches_frozen_aggregate_fixture(
-    tmp_path: Path,
-) -> None:
-    console = importlib.import_module("operator_console_v3")
-    state = importlib.import_module("state_store_v3").SQLiteStateStore(
-        tmp_path / "state.sqlite3"
-    )
-    now = time.time()
-    for agreement, shadow_provider in (
-        (True, "serper"),
-        (False, "linkup"),
-        (False, "linkup"),
-    ):
-        assert state.record_shadow_evaluation(
-            routing_class="policy_pdf",
-            classic_provider="serper",
-            shadow_provider=shadow_provider,
-            agreement=agreement,
-            policy_id="shadow-quality",
-            policy_revision="3.1",
-            now=now,
-        )
-
-    assert console.build_shadow_evaluation(state) == fixture("shadow-evaluation.json")
-    assert console.serialize_endpoint_payload(
-        console.build_shadow_evaluation(state)
-    ).endswith(b"\n")
 
 
 def test_overview_is_truthful_when_owned_state_is_absent(

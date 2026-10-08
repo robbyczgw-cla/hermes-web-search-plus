@@ -100,8 +100,8 @@ DEFAULT_CONFIG = {
         "confidence_threshold": 0.3,  # Accepted for compatibility; no effect since 5.0
     },
     "routing": {
-        # Fail-closed operator policy boundary. Shadow intent is accepted only
-        # when this ceiling is explicitly changed to "shadow".
+        # Always Classic. "shadow" is still accepted in config.json and treated
+        # as "classic" so older files do not quarantine.
         "policy_mode": "classic",
     },
     "budget_preflight": {
@@ -430,7 +430,8 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     policy_mode = routing.get("policy_mode", "classic")
     if policy_mode not in {"classic", "shadow"}:
         raise ValueError("routing.policy_mode must be classic or shadow")
-    routing["policy_mode"] = policy_mode
+    # Retired in 5.0. Accept the old value and run Classic.
+    routing["policy_mode"] = "classic"
     parallel = config.get("parallel")
     if parallel is None:
         parallel = dict(DEFAULT_CONFIG["parallel"])

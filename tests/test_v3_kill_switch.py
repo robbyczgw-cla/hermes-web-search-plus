@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import json
+
 from attempt_engine_v3 import AttemptContext, AttemptEngine
 from compat_v3 import legacy_request_to_v3
-from config import DEFAULT_CONFIG, _deepcopy_default_config, _validate_runtime_config
+from config import DEFAULT_CONFIG, _deepcopy_default_config, _validate_runtime_config, load_config
 from contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
-import orchestrator_v3
 from orchestrator_v3 import (
     CapabilityAdapter,
     CapabilityExecution,
@@ -55,10 +56,7 @@ def _response(request: RequestV3, plan: ProviderPlan, _payload: dict) -> Respons
 def _adapter(seen: list[tuple[str, str]]) -> CapabilityAdapter:
     def plan(request: RequestV3, _config: dict) -> ProviderPlan:
         seen.append(("plan", str(request.routing["policy_mode"])))
-        # Deliberately return the opposite mode. The orchestrator owns the
-        # effective policy boundary and must correct adapters in both directions.
-        opposite = "classic" if request.routing["policy_mode"] == "shadow" else "shadow"
-        return ProviderPlan(("serper", "linkup"), "serper", mode=opposite)
+        return ProviderPlan(("serper", "linkup"), "serper", mode="classic")
 
     def execute(_request: RequestV3, plan: ProviderPlan, _config: dict) -> dict:
         seen.extend(("dispatch", provider) for provider in plan.candidate_order)
@@ -99,6 +97,13 @@ def test_runtime_config_rejects_unknown_policy_mode():
         raise AssertionError("invalid policy mode was accepted")
 
 
+def test_runtime_config_accepts_shadow_as_classic():
+    config = _deepcopy_default_config()
+    config["routing"]["policy_mode"] = "shadow"
+    validated = _validate_runtime_config(config)
+    assert validated["routing"]["policy_mode"] == "classic"
+
+
 def test_config_classic_forces_classic_before_planning(tmp_path, monkeypatch):
     monkeypatch.delenv("WSP_ROUTING_CLASSIC_ONLY", raising=False)
     seen: list[tuple[str, str]] = []
@@ -117,47 +122,35 @@ def test_config_classic_forces_classic_before_planning(tmp_path, monkeypatch):
     assert execution.response.routing_receipt["shadow_observation"] is None
 
 
-def test_env_classic_only_overrides_shadow_config(tmp_path, monkeypatch):
-    monkeypatch.setenv("WSP_ROUTING_CLASSIC_ONLY", "1")
-    seen: list[tuple[str, str]] = []
-    monkeypatch.setattr(
-        orchestrator_v3,
-        "evaluate_shadow_policy",
-        lambda *_args: (_ for _ in ()).throw(AssertionError("must not evaluate")),
-    )
-
-    execution = execute_v3_request(
-        _request("shadow", provider="auto"), _adapter(seen), _config(tmp_path, "shadow")
-    )
-
-    assert seen[0] == ("plan", "classic")
-    assert execution.plan.mode == "classic"
-    assert execution.response.routing_receipt["shadow_observation"] is None
-    assert not (tmp_path / "state.sqlite3").exists()
+def test_env_classic_only_is_a_noop(tmp_path, monkeypatch):
+    for value in ("1", "0", "unexpected"):
+        monkeypatch.setenv("WSP_ROUTING_CLASSIC_ONLY", value)
+        seen: list[tuple[str, str]] = []
+        execution = execute_v3_request(
+            _request("shadow", provider="auto"),
+            _adapter(seen),
+            _config(tmp_path / value, "shadow"),
+        )
+        assert seen[0] == ("plan", "classic")
+        assert execution.plan.mode == "classic"
+        assert execution.response.routing_receipt["mode"] == "classic"
+        assert execution.response.routing_receipt["shadow_observation"] is None
 
 
-def test_unknown_env_value_fails_closed_to_classic(tmp_path, monkeypatch):
-    monkeypatch.setenv("WSP_ROUTING_CLASSIC_ONLY", "unexpected")
-    seen: list[tuple[str, str]] = []
-
-    execution = execute_v3_request(
-        _request("shadow"), _adapter(seen), _config(tmp_path, "shadow")
-    )
-
-    assert seen[0] == ("plan", "classic")
-    assert execution.plan.mode == "classic"
-
-
-def test_explicit_shadow_mode_preserves_classic_dispatch_order(tmp_path, monkeypatch):
-    monkeypatch.setenv("WSP_ROUTING_CLASSIC_ONLY", "0")
+def test_retired_shadow_request_stays_classic(tmp_path, monkeypatch):
+    monkeypatch.delenv("WSP_ROUTING_CLASSIC_ONLY", raising=False)
     classic_seen: list[tuple[str, str]] = []
     shadow_seen: list[tuple[str, str]] = []
 
     classic = execute_v3_request(
-        _request("classic", provider="auto"), _adapter(classic_seen), _config(tmp_path / "classic", "shadow")
+        _request("classic", provider="auto"),
+        _adapter(classic_seen),
+        _config(tmp_path / "classic", "classic"),
     )
     shadow = execute_v3_request(
-        _request("shadow", provider="auto"), _adapter(shadow_seen), _config(tmp_path / "shadow", "shadow")
+        _request("shadow", provider="auto"),
+        _adapter(shadow_seen),
+        _config(tmp_path / "shadow", "shadow"),
     )
 
     assert classic_seen[1:] == shadow_seen[1:] == [
@@ -165,70 +158,14 @@ def test_explicit_shadow_mode_preserves_classic_dispatch_order(tmp_path, monkeyp
         ("dispatch", "linkup"),
     ]
     assert classic.plan.candidate_order == shadow.plan.candidate_order
-    assert classic.plan.mode == "classic"
-    assert shadow.plan.mode == "shadow"
+    assert classic.plan.mode == shadow.plan.mode == "classic"
     assert classic.response.routing_receipt["shadow_observation"] is None
-    assert shadow.response.routing_receipt["shadow_observation"] == {
-        "observed": True,
-        "policy_id": "shadow-quality",
-        "policy_revision": "3.1",
-        "selected_provider": "serper",
-        "shadow_provider": "linkup",
-        "agreement": False,
-        "affected_execution": False,
-    }
-    state = SQLiteStateStore(tmp_path / "shadow" / "state.sqlite3")
-    summary = state.shadow_evaluation_summary(60)
-    assert summary["total"] == 1
-    assert summary["divergences"] == [
-        {"classic_provider": "serper", "shadow_provider": "linkup", "count": 1}
-    ]
+    assert shadow.response.routing_receipt["mode"] == "classic"
+    assert shadow.response.routing_receipt["shadow_observation"] is None
 
 
-def test_shadow_evaluator_exception_falls_back_to_legacy_observation(tmp_path, monkeypatch):
-    monkeypatch.setenv("WSP_ROUTING_CLASSIC_ONLY", "0")
-    monkeypatch.setattr(
-        orchestrator_v3,
-        "evaluate_shadow_policy",
-        lambda *_args: (_ for _ in ()).throw(RuntimeError("observer unavailable")),
-    )
-    seen: list[tuple[str, str]] = []
-
-    execution = execute_v3_request(
-        _request("shadow", provider="auto"), _adapter(seen), _config(tmp_path, "shadow")
-    )
-
-    assert seen[1:] == [("dispatch", "serper"), ("dispatch", "linkup")]
-    assert execution.response.routing_receipt["shadow_observation"] == {
-        "observed": True,
-        "policy_id": "shadow-interface",
-        "policy_revision": "3.0",
-        "selected_provider": "serper",
-        "affected_execution": False,
-    }
-    assert not (tmp_path / "state.sqlite3").exists()
-
-
-def test_explicit_shadow_request_keeps_the_legacy_stub(tmp_path, monkeypatch):
-    monkeypatch.setenv("WSP_ROUTING_CLASSIC_ONLY", "0")
-    seen: list[tuple[str, str]] = []
-
-    execution = execute_v3_request(
-        _request("shadow"), _adapter(seen), _config(tmp_path, "shadow")
-    )
-
-    assert execution.response.routing_receipt["shadow_observation"] == {
-        "observed": True,
-        "policy_id": "shadow-interface",
-        "policy_revision": "3.0",
-        "selected_provider": "serper",
-        "affected_execution": False,
-    }
-    assert not (tmp_path / "state.sqlite3").exists()
-
-
-def test_shadow_cache_hit_has_no_observation_or_persistence(tmp_path, monkeypatch):
-    monkeypatch.setenv("WSP_ROUTING_CLASSIC_ONLY", "0")
+def test_shadow_cache_hit_observation_stays_null(tmp_path, monkeypatch):
+    monkeypatch.delenv("WSP_ROUTING_CLASSIC_ONLY", raising=False)
     first_seen: list[tuple[str, str]] = []
     second_seen: list[tuple[str, str]] = []
     request = _request("shadow", provider="auto", no_cache=False)
@@ -237,13 +174,11 @@ def test_shadow_cache_hit_has_no_observation_or_persistence(tmp_path, monkeypatc
     first = execute_v3_request(request, _adapter(first_seen), config)
     second = execute_v3_request(request, _adapter(second_seen), config)
 
-    assert first.response.routing_receipt["shadow_observation"]["policy_revision"] == "3.1"
+    assert first.response.routing_receipt["shadow_observation"] is None
     assert second.response.cache_status["disposition"] == "fresh_hit"
+    assert second.response.routing_receipt["mode"] == "classic"
     assert second.response.routing_receipt["shadow_observation"] is None
-    assert second_seen == [("plan", "shadow")]
-    assert SQLiteStateStore(tmp_path / "state.sqlite3").shadow_evaluation_summary(60)[
-        "total"
-    ] == 1
+    assert second_seen == [("plan", "classic")]
 
 
 def test_sqlite_down_still_executes_classic_when_switch_is_set(tmp_path, monkeypatch):
@@ -290,3 +225,35 @@ def test_sqlite_down_still_executes_classic_when_switch_is_set(tmp_path, monkeyp
     assert calls == ["classic"]
     assert execution.plan.mode == "classic"
     assert execution.response.provider_attempts[0].budget_decision == "store_unavailable"
+    assert execution.response.routing_receipt["shadow_observation"] is None
+
+
+def test_config_file_shadow_policy_mode_loads_and_search_stays_classic(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps({"routing": {"policy_mode": "shadow"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
+    monkeypatch.delenv("WSP_ROUTING_CLASSIC_ONLY", raising=False)
+
+    loaded = load_config()
+
+    assert config_path.is_file()
+    assert loaded["routing"]["policy_mode"] == "classic"
+    seen: list[tuple[str, str]] = []
+    execution = execute_v3_request(
+        _request("shadow", provider="auto"),
+        _adapter(seen),
+        {
+            "routing": loaded["routing"],
+            "v3": {
+                "cache_dir": str(tmp_path / "cache"),
+                "state_path": str(tmp_path / "state.sqlite3"),
+                "operator_receipt_journal": False,
+            },
+        },
+    )
+    assert seen[0] == ("plan", "classic")
+    assert execution.response.routing_receipt["mode"] == "classic"
+    assert execution.response.routing_receipt["shadow_observation"] is None
