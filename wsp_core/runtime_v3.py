@@ -309,7 +309,14 @@ def _observation(
     provider_score = None
     if isinstance(score, (int, float)) and not isinstance(score, bool):
         provider_score = {"value": float(score), "semantics": "unknown"}
-    raw_date = item.get("published_at") or item.get("published_date") or item.get("date")
+    raw_date = (
+        item.get("published_at")
+        or item.get("published_date")
+        or item.get("date")
+        or item.get("publish_date")
+        or item.get("publishedDate")
+        or item.get("page_age")
+    )
     published_at = None
     if isinstance(raw_date, str):
         published_at = {"raw": raw_date, "normalized": _valid_rfc3339(raw_date)}
