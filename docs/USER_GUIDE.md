@@ -305,7 +305,7 @@ Example pattern:
     "provider": "serper",
     "reason": "moderate_confidence_match",
     "routing_policy": "routing-v2",
-    "routing_class": "shopping_at",
+    "routing_class": "shopping_specs",
     "auto_allow_excluded": ["serpbase"]
   },
   "quality_report": {

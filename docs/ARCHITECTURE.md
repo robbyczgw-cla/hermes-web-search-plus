@@ -78,6 +78,8 @@ Default routing config includes:
 }
 ```
 
+`confidence_threshold` is accepted for compatibility but has no effect since 5.0.
+
 Secrets and routing are separate so users can configure a provider key without automatically letting that provider receive automatic traffic. Search `provider_priority` and `extract_provider_priority` are independent: search ranking does not silently reorder URL extraction. A partial extraction list is normalized and completed with missing extract-capable providers in registry order.
 
 ## Routing engine

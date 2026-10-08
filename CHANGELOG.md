@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Removed
+
+- Routing: the unused direct-answer signal table (17 patterns evaluated on every query, never scored), the no-op URL override branch, the `shopping_at` boost no rule could emit, and the `below_threshold` flag in routing metadata, which nothing read. Routing decisions are unchanged (behaviour lock). `auto_routing.confidence_threshold` is still accepted in config.json and by `setup.py`, but has no effect.
+
 ### Tests
 
 - Behaviour lock: routing decisions for 294 queries and tool output for 90 search, research and extract cases are frozen from v4.3.5 (`tests/test_behaviour_lock.py`). Refactors must reproduce them; deliberate behaviour changes regenerate the lock so the diff is reviewed.

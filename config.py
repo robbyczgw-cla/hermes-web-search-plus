@@ -97,7 +97,7 @@ DEFAULT_CONFIG = {
         "extract_provider_priority": list(EXTRACT_PROVIDER_IDS),
         "disabled_providers": [],
         "auto_allow": dict(DEFAULT_AUTO_ALLOW),
-        "confidence_threshold": 0.3,  # Below this, note low confidence
+        "confidence_threshold": 0.3,  # Accepted for compatibility; no effect since 5.0
     },
     "routing": {
         # Fail-closed operator policy boundary. Shadow intent is accepted only

@@ -56,7 +56,6 @@ ROUTING_CLASS_DESCRIPTIONS: Dict[str, str] = {
     "oss_discovery": "Discovery of alternatives, competitors, and open-source or self-hosted tools.",
     "multilingual_current": "Fallback for queries in languages other than English/German; provider boosts depend on the detected script.",
     "general": "Default class when no rule matches; the base intent-signal scores decide on their own.",
-    "shopping_at": "Legacy shopping class kept for boost compatibility; no detection rule currently emits this label.",
 }
 
 
@@ -247,7 +246,6 @@ def render_routing_docs() -> str:
 
     auto_routing = DEFAULT_CONFIG["auto_routing"]
     fallback_provider = auto_routing["fallback_provider"]
-    confidence_threshold = auto_routing["confidence_threshold"]
 
     lines = [
         "# Routing v2 Reference",
@@ -293,8 +291,8 @@ def render_routing_docs() -> str:
         "- **medium** — confidence >= 0.4: a plausible winner without a large margin.",
         "- **low** — confidence < 0.4: weak or ambiguous signals.",
         "",
-        f"Decisions below `confidence_threshold` (default: {confidence_threshold}) are additionally",
-        "flagged as `below_threshold`.",
+        "`auto_routing.confidence_threshold` is still accepted in config.json but has",
+        "no effect since 5.0: the `below_threshold` flag it controlled was never read.",
         "",
         "### Debugging routing decisions",
         "",
