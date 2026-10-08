@@ -21,6 +21,8 @@
 
 ### Fixed
 
+- Automatic search runs the intent reranker (authority rules for official docs, security advisories, vendor releases, policy PDFs and earnings) with the routing class it planned. The v3 engine runs each provider attempt as a fixed-provider search, so the reranker always saw the class `general`, which has no rules, and changed nothing. On the 60 recorded normal-mode queries it now reorders 2 result lists; nDCG@5 stays 0.672 (one list better, one slightly worse).
+- The quality report (`quality_report: true`) of an automatic search shows the routing decision. It showed `unknown confidence`, no routing class and no authority signals for every auto-routed search, while the provider line above it said `low confidence`.
 - Missing-key guidance in v3 errors is rebuilt from the provider registry for WSP's own missing-key error only. Before, any configuration error whose text had the same JSON shape could place its own setup steps in the response, and a message ending in a newline passed the shape check.
 - Perplexity and Kilo Code API keys no longer make search appear configured in tool availability checks or setup status.
 
