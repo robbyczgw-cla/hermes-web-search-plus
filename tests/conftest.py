@@ -1,3 +1,5 @@
+import os
+import shutil
 import socket
 
 import pytest
@@ -38,3 +40,23 @@ def _isolate_runtime_state(tmp_path, monkeypatch):
     monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
     monkeypatch.setattr(search, "CACHE_DIR", tmp_path)
     monkeypatch.setattr(extract, "CACHE_DIR", tmp_path)
+
+
+@pytest.fixture(autouse=True)
+def _no_operator_donsetch(monkeypatch):
+    """Never let a test find the developer's real DonSeTch binary.
+
+    DonSeTch is resolved from DONSETCH_BIN or PATH. The real binary can start a
+    local Chrome for browser-tier fetches, and setup/status tests probe it with
+    ``donsetch --version`` - on a machine with DonSeTch installed every test
+    run launched Chrome. Tests that need a binary pass an explicit path.
+    """
+    monkeypatch.delenv("DONSETCH_BIN", raising=False)
+    real_which = shutil.which
+
+    def which(cmd, *args, **kwargs):
+        if os.path.basename(str(cmd)).lower().startswith("donsetch"):
+            return None
+        return real_which(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "which", which)
