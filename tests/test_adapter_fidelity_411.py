@@ -3,8 +3,8 @@
 from datetime import datetime
 from unittest import mock
 
-import providers
-import search
+from wsp_core import providers
+from wsp_core import search
 
 
 def test_exa_snippet_prefers_highlights_over_leading_text():

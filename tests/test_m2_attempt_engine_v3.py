@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from contract_v3 import (
+from wsp_core.contract_v3 import (
     AttemptOutcome,
     Capability,
     CircuitState,
     ErrorClass,
     SkipReason,
 )
-from attempt_engine_v3 import AttemptContext, AttemptEngine
-from http_client import ProviderRequestError
-from state_store_v3 import SQLiteStateStore, credential_fingerprint
+from wsp_core.attempt_engine_v3 import AttemptContext, AttemptEngine
+from wsp_core.http_client import ProviderRequestError
+from wsp_core.state_store_v3 import SQLiteStateStore, credential_fingerprint
 
 
 def _context(*, budget_units: int = 1, budget_limit_units: int = 3) -> AttemptContext:

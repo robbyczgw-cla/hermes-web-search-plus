@@ -9,9 +9,9 @@ import sqlite3
 import threading
 from pathlib import Path
 
-import extract_bench_v3
-import operator_console_v3 as console
-import ui
+from wsp_core import extract_bench_v3
+from wsp_core import operator_console_v3 as console
+from wsp_core import ui
 
 
 TOKEN = "task-7-real-cache-token"

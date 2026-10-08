@@ -3,21 +3,19 @@
 from __future__ import annotations
 
 from copy import deepcopy
-import importlib
 import json
 
 import pytest
 
-from compat_v3 import legacy_request_to_v3
-import config
-import extract
-import search
-from contract_v3 import Capability
+from wsp_core.compat_v3 import legacy_request_to_v3
+from wsp_core import config
+from wsp_core import extract
+from wsp_core import search
+from wsp_core.contract_v3 import Capability
 
 
-wsp = importlib.import_module("__init__")
-
-
+from plugin_loader import load_plugin  # noqa: E402
+wsp = load_plugin("wsp_plugin_test_v31_selfhosted_profile")
 def _self_hosted_config() -> dict:
     value = deepcopy(config.DEFAULT_CONFIG)
     value["profile"] = "self_hosted"

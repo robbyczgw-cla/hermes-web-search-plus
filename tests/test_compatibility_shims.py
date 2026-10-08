@@ -1,4 +1,4 @@
-import search
+from wsp_core import search
 
 import pytest
 

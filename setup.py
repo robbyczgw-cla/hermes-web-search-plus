@@ -66,7 +66,7 @@ def _test_template(provider_id: str) -> str:
 
 
 def test_{test_name}_is_discovered():
-    import provider_registry
+    from wsp_core import provider_registry
 
     spec = provider_registry.PROVIDER_SPECS["{provider_id}"]
     assert spec.execute_search is not None
@@ -97,9 +97,12 @@ def _new_provider(argv: list[str]) -> None:
 
 
 def _load_plugin():
-    spec = importlib.util.spec_from_file_location("web_search_plus_plugin_setup", PLUGIN_PATH)
+    """Load the plugin directory as a package, the way Hermes does."""
+    name = "web_search_plus_setup"
+    spec = importlib.util.spec_from_file_location(name, PLUGIN_PATH, submodule_search_locations=[str(ROOT)])
     plugin = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
+    sys.modules[name] = plugin
     spec.loader.exec_module(plugin)
     return plugin
 

@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from config import DEFAULT_CONFIG
+from wsp_core.config import DEFAULT_CONFIG
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,7 +87,7 @@ def assert_fixture_payload_safe(value: Any, location: str = "$") -> None:
 
 
 def test_production_privacy_validator_has_no_fixture_id_allowlist() -> None:
-    privacy = importlib.import_module("operator_privacy_v3")
+    privacy = importlib.import_module("wsp_core.operator_privacy_v3")
     assert not hasattr(privacy, "_FROZEN_FIXTURE_IDS")
 
 
@@ -135,7 +135,7 @@ def test_shadow_observation_cannot_affect_execution() -> None:
 
 
 def test_one_production_privacy_choke_point_guards_endpoints_and_journal() -> None:
-    privacy = importlib.import_module("operator_privacy_v3")
+    privacy = importlib.import_module("wsp_core.operator_privacy_v3")
     validator = privacy.assert_operator_payload_safe
 
     overview, receipts, history = fixture_values()
@@ -151,9 +151,9 @@ def test_one_production_privacy_choke_point_guards_endpoints_and_journal() -> No
 def test_all_endpoint_serializers_and_journal_share_the_same_choke_point(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    privacy = importlib.import_module("operator_privacy_v3")
-    console = importlib.import_module("operator_console_v3")
-    journal = importlib.import_module("operator_receipts_v3")
+    privacy = importlib.import_module("wsp_core.operator_privacy_v3")
+    console = importlib.import_module("wsp_core.operator_console_v3")
+    journal = importlib.import_module("wsp_core.operator_receipts_v3")
     calls: list[int] = []
 
     def record_shared_validation(payload: Any) -> None:
@@ -177,7 +177,7 @@ def test_all_endpoint_serializers_and_journal_share_the_same_choke_point(
 
 
 def test_routing_receipt_contract_exports_closed_typed_reason_enum() -> None:
-    contract = importlib.import_module("contract_v3")
+    contract = importlib.import_module("wsp_core.contract_v3")
     reason_enum = contract.CandidateReasonCode
     assert {member.value for member in reason_enum} == CANDIDATE_REASON_CODES
     assert callable(contract.validate_routing_receipt_v3)
@@ -194,8 +194,8 @@ def _write_sized_owned_cache(path: Path, *, timestamp: float, size: int) -> None
 
 
 def test_operator_snapshot_builders_match_all_frozen_dtos(tmp_path: Path) -> None:
-    console = importlib.import_module("operator_console_v3")
-    journal = importlib.import_module("operator_receipts_v3")
+    console = importlib.import_module("wsp_core.operator_console_v3")
+    journal = importlib.import_module("wsp_core.operator_receipts_v3")
     expected_receipts = load_fixture("receipts.json")
     receipt_journal = journal.OperatorReceiptJournal(
         tmp_path, now=lambda: 1783890400.0
@@ -280,9 +280,9 @@ def test_operator_snapshot_builders_match_all_frozen_dtos(tmp_path: Path) -> Non
 
 @pytest.mark.parametrize("host", ["0.0.0.0", "::", "192.168.1.20", "100.100.100.100"])
 def test_ui_server_refuses_every_non_loopback_bind(host: str) -> None:
-    ui_path = ROOT / "ui.py"
+    ui_path = ROOT / "wsp_core" / "ui.py"
     assert ui_path.exists(), "WS-3 UI server is intentionally not implemented yet"
-    spec = importlib.util.spec_from_file_location("wsp_ws3_ui", ui_path)
+    spec = importlib.util.spec_from_file_location("wsp_core.ui", ui_path)
     assert spec is not None and spec.loader is not None
     ui = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(ui)

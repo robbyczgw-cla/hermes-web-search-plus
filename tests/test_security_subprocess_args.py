@@ -1,21 +1,15 @@
 """Legacy subprocess path: variadic values must not become CLI options."""
 from __future__ import annotations
 
-import importlib.util
 import json
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-import search
+from wsp_core import search
 
-spec = importlib.util.spec_from_file_location(
-    "subprocess_arg_plugin", Path(__file__).resolve().parents[1] / "__init__.py"
-)
-assert spec is not None and spec.loader is not None
-plugin = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(plugin)
+from plugin_loader import load_plugin
+plugin = load_plugin("subprocess_arg_plugin")
 
 
 @pytest.fixture

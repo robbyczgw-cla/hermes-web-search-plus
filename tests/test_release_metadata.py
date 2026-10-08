@@ -1,20 +1,15 @@
 from __future__ import annotations
 
-import importlib.util
 import re
 from pathlib import Path
 
-
+from plugin_loader import load_plugin
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_VERSION = "4.3.5"
 
 
 def _load_plugin_module():
-    spec = importlib.util.spec_from_file_location("wsp_release_metadata_under_test", ROOT / "__init__.py")
-    assert spec is not None
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
+    module = load_plugin("wsp_release_metadata_under_test")
     return module
 
 
@@ -24,10 +19,10 @@ def test_release_version_surfaces_are_in_sync():
     plugin = _load_plugin_module()
     plugin_yaml = (ROOT / "plugin.yaml").read_text()
     init_py = (ROOT / "__init__.py").read_text()
-    search_py = (ROOT / "search.py").read_text()
-    http_client_py = (ROOT / "http_client.py").read_text()
-    operator_console_py = (ROOT / "operator_console_v3.py").read_text()
-    ui_py = (ROOT / "ui.py").read_text()
+    search_py = (ROOT / "wsp_core" / "search.py").read_text()
+    http_client_py = (ROOT / "wsp_core" / "http_client.py").read_text()
+    operator_console_py = (ROOT / "wsp_core" / "operator_console_v3.py").read_text()
+    ui_py = (ROOT / "wsp_core" / "ui.py").read_text()
     changelog = (ROOT / "CHANGELOG.md").read_text()
 
     assert plugin.__version__ == EXPECTED_VERSION
@@ -75,7 +70,7 @@ def test_current_release_surfaces_and_attribution():
 
 def test_current_filter_help_mentions_all_new_native_support():
     init_py = (ROOT / "__init__.py").read_text().lower()
-    search_py = (ROOT / "search.py").read_text().lower()
+    search_py = (ROOT / "wsp_core" / "search.py").read_text().lower()
     user_guide = (ROOT / "docs/USER_GUIDE.md").read_text().lower()
 
     assert "google.serper.dev/news) and tinyfish" in init_py

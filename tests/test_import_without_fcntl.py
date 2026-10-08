@@ -17,7 +17,7 @@ import sys
 
 import pytest
 
-POSIX_ONLY_LOCK_MODULES = ("extract_bench_v3", "operator_receipts_v3")
+POSIX_ONLY_LOCK_MODULES = ("wsp_core.extract_bench_v3", "wsp_core.operator_receipts_v3")
 
 
 @pytest.fixture

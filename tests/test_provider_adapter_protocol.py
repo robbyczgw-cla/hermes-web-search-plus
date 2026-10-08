@@ -4,10 +4,10 @@ from typing import Any
 
 import pytest
 
-import provider_dispatch
-import provider_registry
-from errors_v3 import ProviderContractFailure
-from provider_adapter_protocol import (
+from wsp_core import provider_dispatch
+from wsp_core import provider_registry
+from wsp_core.errors_v3 import ProviderContractFailure
+from wsp_core.provider_adapter_protocol import (
     EXTRACT_ADAPTER_PARAMETERS,
     SEARCH_ADAPTER_PARAMETERS,
     ExtractAdapter,

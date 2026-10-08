@@ -2,8 +2,8 @@ import os
 import unittest
 from unittest import mock
 
-import search
-from search import QueryAnalyzer, get_api_key, validate_api_key
+from wsp_core import search
+from wsp_core.search import QueryAnalyzer, get_api_key, validate_api_key
 
 
 class BraveProviderTests(unittest.TestCase):
@@ -28,7 +28,7 @@ class BraveProviderTests(unittest.TestCase):
                 ]
             }
         }
-        with mock.patch("search.make_get_request", return_value=fake_response):
+        with mock.patch("wsp_core.search.make_get_request", return_value=fake_response):
             result = search.search_brave(
                 query="example query",
                 api_key="brave-test-key-12345",

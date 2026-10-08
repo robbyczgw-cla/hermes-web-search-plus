@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import json
 
-from attempt_engine_v3 import AttemptContext, AttemptEngine
-from compat_v3 import legacy_request_to_v3
-from config import DEFAULT_CONFIG, _deepcopy_default_config, _validate_runtime_config, load_config
-from contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
-from orchestrator_v3 import (
+from wsp_core.attempt_engine_v3 import AttemptContext, AttemptEngine
+from wsp_core.compat_v3 import legacy_request_to_v3
+from wsp_core.config import DEFAULT_CONFIG, _deepcopy_default_config, _validate_runtime_config, load_config
+from wsp_core.contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
+from wsp_core.orchestrator_v3 import (
     CapabilityAdapter,
     CapabilityExecution,
     ProviderPlan,
     execute_v3_request,
 )
-from state_store_v3 import SQLiteStateStore
+from wsp_core.state_store_v3 import SQLiteStateStore
 
 
 def _request(

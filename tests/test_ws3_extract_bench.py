@@ -8,8 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import extract_bench_v3 as bench
-import operator_console_v3 as console
+from wsp_core import extract_bench_v3 as bench
+from wsp_core import operator_console_v3 as console
 
 
 URLS = ["https://example.com/docs", "https://example.org/release"]
@@ -30,7 +30,7 @@ def runtime_config() -> dict:
 def test_extract_bench_eligible_providers_are_configured_enabled_and_extract_capable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from provider_registry import PROVIDER_SPECS
+    from wsp_core.provider_registry import PROVIDER_SPECS
 
     for spec in PROVIDER_SPECS.values():
         monkeypatch.delenv(spec.env_var, raising=False)
@@ -112,7 +112,7 @@ def test_extract_bench_treats_per_url_errors_and_empty_content_truthfully() -> N
 
 
 def test_safe_provider_error_codes_do_not_retain_exception_text() -> None:
-    from http_client import ProviderRequestError
+    from wsp_core.http_client import ProviderRequestError
 
     cases = [
         (ProviderRequestError("secret", status_code=401), "auth_error"),
@@ -243,7 +243,7 @@ def test_format_extract_bench_text_has_no_targets_or_content() -> None:
 
 
 def test_cli_exposes_explicit_extract_bench_without_running_on_plain_extract() -> None:
-    import search
+    from wsp_core import search
 
     parser = search.build_parser(runtime_config())
     args = parser.parse_args(
@@ -272,7 +272,7 @@ def test_cli_extract_bench_persists_history_and_no_history_opts_out(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    import search
+    from wsp_core import search
 
     def fake_report(*_args, **_kwargs):
         return {

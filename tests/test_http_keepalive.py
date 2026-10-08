@@ -20,8 +20,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import http_client  # noqa: E402
-from http_client import ProviderRequestError, make_get_request, make_request  # noqa: E402
+from wsp_core import http_client  # noqa: E402
+from wsp_core.http_client import ProviderRequestError, make_get_request, make_request  # noqa: E402
 
 
 class _Handler(BaseHTTPRequestHandler):

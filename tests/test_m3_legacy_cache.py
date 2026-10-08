@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import cache
-import search
-from compat_v3 import legacy_request_to_v3
-from contract_v3 import Capability
+from wsp_core import cache
+from wsp_core import search
+from wsp_core.compat_v3 import legacy_request_to_v3
+from wsp_core.contract_v3 import Capability
 
 
 def test_v2_search_cache_is_read_only_legacy_hit_and_promotes_to_v3(

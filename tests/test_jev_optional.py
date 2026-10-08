@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from config import DEFAULT_CONFIG, _deepcopy_default_config, _validate_runtime_config
-from jev_optional import (
+from wsp_core.config import DEFAULT_CONFIG, _deepcopy_default_config, _validate_runtime_config
+from wsp_core.jev_optional import (
     extract_item_action,
     filter_extract_results,
     keyword_vertical,

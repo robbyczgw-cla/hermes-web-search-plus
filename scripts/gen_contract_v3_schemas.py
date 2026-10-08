@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from contract_v3 import (  # noqa: E402
+from wsp_core.contract_v3 import (  # noqa: E402
     AttemptOutcome,
     CacheDisposition,
     CandidateDecision,

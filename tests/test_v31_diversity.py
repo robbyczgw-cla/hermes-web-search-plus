@@ -5,20 +5,20 @@ from copy import deepcopy
 
 import pytest
 
-import operator_privacy_v3 as privacy
-import search
-from config import DEFAULT_CONFIG, _validate_runtime_config
-from contract_v3 import Capability
-from diversity_v3 import (
+from wsp_core import operator_privacy_v3 as privacy
+from wsp_core import search
+from wsp_core.config import DEFAULT_CONFIG, _validate_runtime_config
+from wsp_core.contract_v3 import Capability
+from wsp_core.diversity_v3 import (
     canonical_url,
     registrable_domain,
     rerank_duplicate_candidates,
     score_diversity,
     snippet_similarity,
 )
-from operator_receipts_v3 import receipt_record_from_response
-from quality import deduplicate_results_across_providers
-from research import run_research_mode
+from wsp_core.operator_receipts_v3 import receipt_record_from_response
+from wsp_core.quality import deduplicate_results_across_providers
+from wsp_core.research import run_research_mode
 
 
 def _result(

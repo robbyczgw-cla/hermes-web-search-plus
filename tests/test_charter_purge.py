@@ -2,26 +2,21 @@
 
 from __future__ import annotations
 
-import importlib.util
 from pathlib import Path
 
 import pytest
 
-import providers
-from provider_registry import PROVIDER_SPECS
-from request_gate_v3 import validate_outbound_body, validate_provider_mode
+from wsp_core import providers
+from wsp_core.provider_registry import PROVIDER_SPECS
+from wsp_core.request_gate_v3 import validate_outbound_body, validate_provider_mode
 
-
+from plugin_loader import load_plugin
 ROOT = Path(__file__).resolve().parents[1]
 BANNED_LABELS = {"answer", "synthesis", "reasoning", "claim", "verification"}
 
 
 def _load_plugin_module():
-    spec = importlib.util.spec_from_file_location("wsp_charter_plugin", ROOT / "__init__.py")
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = load_plugin("wsp_charter_plugin")
     return module
 
 
@@ -45,7 +40,7 @@ def test_no_provider_advertises_answer_or_synthesis_capability():
 
 
 def test_cli_help_does_not_advertise_answer_providers():
-    import search
+    from wsp_core import search
 
     help_text = search.build_parser({}).format_help()
 
@@ -169,7 +164,7 @@ def test_central_gate_rejects_answer_shaped_or_prompt_bodies():
 
 
 def test_router_can_never_select_rejected_or_non_source_modes():
-    from routing import iter_all_selectable_provider_modes
+    from wsp_core.routing import iter_all_selectable_provider_modes
 
     banned = {
         provider

@@ -1,11 +1,12 @@
 from pathlib import Path
 
-import provider_registry as registry
-import config
-import extract
-import search
-import __init__ as plugin
+from wsp_core import provider_registry as registry
+from wsp_core import config
+from wsp_core import extract
+from wsp_core import search
+from plugin_loader import load_plugin
 
+plugin = load_plugin("wsp_plugin_test_provider_registry")
 ROOT = Path(__file__).resolve().parents[1]
 
 

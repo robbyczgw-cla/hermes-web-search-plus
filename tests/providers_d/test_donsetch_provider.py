@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import provider_registry
+from wsp_core import provider_registry
 
 # Any existing executable satisfies the binary check; the tests patch the call.
 TRUE_BIN = shutil.which("true") or "/bin/true"

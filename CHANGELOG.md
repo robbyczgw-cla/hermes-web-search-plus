@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking for code that imports engine internals.** The engine moved into the package `wsp_core/` and its modules import each other relatively, so Hermes loads it as `hermes_plugins.<slug>.wsp_core`. The plugin no longer edits `sys.path` or swaps 15 top-level module names in and out of `sys.modules` while it imports; after loading, none of the engine modules exist as top-level names (4.3.5 left 26 behind, such as `contract_v3` and `cache_v3`). Code that did `import search` or `import routing` imports from `wsp_core` instead. Unchanged: the `web_search_plus` and `web_extract_plus` tools, the `wsp` backend, `wsp_sdk` and `providers.d`, the `setup.py` commands, config.json and `.env`, and `python search.py`. Default file locations (cache, state, config.json, `.env`) did not move.
+
 ### Removed
 
 - Routing: the unused direct-answer signal table (17 patterns evaluated on every query, never scored), the no-op URL override branch, the `shopping_at` boost no rule could emit, and the `below_threshold` flag in routing metadata, which nothing read. Routing decisions are unchanged (behaviour lock). `auto_routing.confidence_threshold` is still accepted in config.json and by `setup.py`, but has no effect.

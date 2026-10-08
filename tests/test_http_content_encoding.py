@@ -4,7 +4,7 @@ import unittest
 from unittest import mock
 import zlib
 
-import search
+from wsp_core import search
 
 
 class FakeResponse:
@@ -59,7 +59,7 @@ class HttpContentEncodingTests(unittest.TestCase):
         compressed = gzip.compress(json.dumps(body).encode("utf-8"))
 
         with mock.patch(
-            "http_client.urlopen",
+            "wsp_core.http_client.urlopen",
             return_value=FakeResponse(compressed, {"Content-Encoding": "gzip"}),
         ):
             result = search.make_get_request(
@@ -74,7 +74,7 @@ class HttpContentEncodingTests(unittest.TestCase):
         compressed = gzip.compress(json.dumps(body).encode("utf-8"))
 
         with mock.patch(
-            "http_client.urlopen",
+            "wsp_core.http_client.urlopen",
             return_value=FakeResponse(compressed, {"Content-Encoding": "gzip"}),
         ):
             result = search.make_request(

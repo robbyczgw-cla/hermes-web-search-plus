@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from contract_v3 import (
+from wsp_core.contract_v3 import (
     AttemptOutcome,
     Capability,
     ProviderAttemptV3,
@@ -15,8 +15,8 @@ from contract_v3 import (
     ResponseStatus,
     ResponseV3,
 )
-from orchestrator_v3 import ProviderPlan
-from runtime_v3 import (
+from wsp_core.orchestrator_v3 import ProviderPlan
+from wsp_core.runtime_v3 import (
     observations_from_legacy,
     project_results_from_observations,
     response_from_legacy,

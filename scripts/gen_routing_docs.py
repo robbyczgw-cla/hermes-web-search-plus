@@ -20,9 +20,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import routing  # noqa: E402
-from config import DEFAULT_CONFIG  # noqa: E402
-from quality import CANONICAL_DOMAIN_RULES  # noqa: E402
+from wsp_core import routing  # noqa: E402
+from wsp_core.config import DEFAULT_CONFIG  # noqa: E402
+from wsp_core.quality import CANONICAL_DOMAIN_RULES  # noqa: E402
 
 
 DEFAULT_OUTPUT = REPO_ROOT / "docs" / "ROUTING.md"
@@ -254,7 +254,7 @@ def render_routing_docs() -> str:
         "     Regenerate with: python scripts/gen_routing_docs.py -->",
         "",
         f"This reference is generated from the `{routing.ROUTING_POLICY}` data structures in",
-        "`routing.py` and `quality.py`. It documents how automatic provider selection",
+        "`wsp_core/routing.py` and `wsp_core/quality.py`. It documents how automatic provider selection",
         "(`provider=\"auto\"`) decides, class by class.",
         "",
         "## How Routing v2 decides",
@@ -310,7 +310,7 @@ def render_routing_docs() -> str:
         "Classes are listed in detection order (first match wins), followed by the",
         "fallback and boost-only classes. Provider boosts are additive score",
         "adjustments; negative values demote a provider for that class. Boost/demote",
-        "domains come from `CANONICAL_DOMAIN_RULES` in `quality.py` and rerank results",
+        "domains come from `CANONICAL_DOMAIN_RULES` in `wsp_core/quality.py` and rerank results",
         "after retrieval for classes where source authority matters.",
         "",
     ]

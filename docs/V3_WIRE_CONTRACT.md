@@ -4,7 +4,7 @@ This is the normative 3.0 contract for field names, enum namespaces, projection 
 
 Canonical artifacts:
 
-- `contract_v3.py` — Python DTOs and enum namespace
+- `wsp_core/contract_v3.py` — Python DTOs and enum namespace
 - `schemas/v3/request.schema.json` — self-contained Draft 2020-12 RequestV3 schema
 - `schemas/v3/response.schema.json` — self-contained Draft 2020-12 ResponseV3 schema
 - `scripts/gen_contract_v3_schemas.py` — schema generator sourcing enum values from the DTO module

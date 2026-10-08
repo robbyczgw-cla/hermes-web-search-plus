@@ -10,8 +10,8 @@ import json
 
 import pytest
 
-from config import ProviderConfigError, validate_api_key
-from errors_v3 import classify_provider_error
+from wsp_core.config import ProviderConfigError, validate_api_key
+from wsp_core.errors_v3 import classify_provider_error
 
 
 def _config_error(provider):
@@ -81,7 +81,7 @@ def test_setup_message_with_trailing_newline_is_not_trusted():
 
 def test_missing_key_guidance_is_rebuilt_from_the_registry(monkeypatch):
     monkeypatch.delenv("TINYFISH_API_KEY", raising=False)
-    from provider_registry import PROVIDER_SPECS
+    from wsp_core.provider_registry import PROVIDER_SPECS
 
     error = classify_provider_error(_config_error("tinyfish"), provider="tinyfish")
     steps = error.details["how_to_fix"]

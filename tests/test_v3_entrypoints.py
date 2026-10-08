@@ -4,10 +4,10 @@ from unittest import mock
 
 import jsonschema
 import pytest
-import search
-from compat_v3 import legacy_request_to_v3
-from contract_v3 import Capability, ResponseV3
-from http_client import ProviderRequestError
+from wsp_core import search
+from wsp_core.compat_v3 import legacy_request_to_v3
+from wsp_core.contract_v3 import Capability, ResponseV3
+from wsp_core.http_client import ProviderRequestError
 
 
 CONFIG = {

@@ -1,12 +1,6 @@
-import importlib.util
-from pathlib import Path
 from unittest import mock
 
-SEARCH_PATH = Path(__file__).resolve().parents[1] / "search.py"
-search_spec = importlib.util.spec_from_file_location("wsp_search_routing_vnext_under_test", SEARCH_PATH)
-search = importlib.util.module_from_spec(search_spec)
-assert search_spec.loader is not None
-search_spec.loader.exec_module(search)
+from wsp_core import search
 
 
 def _route(query):
@@ -31,7 +25,6 @@ def test_default_auto_allow_blocks_explicit_only_providers():
     }
 
 
-
 def test_legacy_auto_allow_config_inherits_new_guarded_provider_defaults():
     config = search._deepcopy_default_config()
     config["auto_routing"]["auto_allow"] = {"serpbase": False, "querit": False}
@@ -45,7 +38,6 @@ def test_legacy_auto_allow_config_inherits_new_guarded_provider_defaults():
     assert set(validated["auto_routing"]["auto_allow"]) == {
         "serpbase", "querit", "donsetch", "octen", "tinyfish",
     }
-
 
 
 def test_briefing_synthesis_overrides_docs_keywords():

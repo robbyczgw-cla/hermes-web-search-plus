@@ -13,11 +13,11 @@ import json
 
 import pytest
 
-import provider_stats
-import search
-from compat_v3 import legacy_request_to_v3
-from contract_v3 import Capability
-from http_client import ProviderRequestError
+from wsp_core import provider_stats
+from wsp_core import search
+from wsp_core.compat_v3 import legacy_request_to_v3
+from wsp_core.contract_v3 import Capability
+from wsp_core.http_client import ProviderRequestError
 
 
 def _config(tmp_path, providers):
@@ -208,7 +208,7 @@ def test_v3_cache_hit_is_not_a_sample(tmp_path, monkeypatch):
 
 
 def test_bench_still_never_records(tmp_path, monkeypatch):
-    import bench
+    from wsp_core import bench
 
     monkeypatch.setattr(
         search, "search_serper", lambda *_a, **_k: _payload("serper", 3)

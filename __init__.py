@@ -9,7 +9,7 @@ __version__ = "4.3.5"
 
 import argparse
 import getpass
-import importlib.util
+import importlib
 import json
 import logging
 import os
@@ -26,62 +26,31 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
 from urllib.parse import urlparse
 
-# Hermes standalone plugin discovery can execute this flat plugin from outside
-# the plugin directory. Keep sibling-module fallback imports cwd-independent
-# without shadowing host/other-plugin modules ahead of normal sys.path entries.
+# Hermes imports this directory as the package ``hermes_plugins.<slug>``; the
+# engine is the subpackage ``wsp_core`` and is imported relatively, so it can
+# never resolve to another plugin's or the host's module of the same name.
+from .wsp_core.provider_registry import (
+    DEFAULT_AUTO_ALLOW,
+    DEFAULT_PROVIDER_PRIORITY,
+    EXTRACT_PROVIDER_ENV_KEYS,
+    EXTRACT_PROVIDER_IDS,
+    KEYLESS_EXTRACT_PROVIDER_IDS,
+    KEYLESS_PROVIDER_IDS,
+    PROVIDER_ENV_KEYS,
+    PROVIDER_SPECS,
+    PROVIDER_STARTUP_DIAGNOSTICS,
+    SEARCH_PROVIDER_IDS,
+    SETUP_PRESETS,
+    keyless_public_env_var,
+    plugin_catalog,
+)
+from .wsp_core.env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, is_truthy, load_env_files
+from .wsp_core.cache import MAX_STORED_TEXT_CHARS, store_web_text
+from .wsp_core.config import REMOVED_PROVIDER_IDS, apply_profile_effects, load_config
+from .wsp_core import jev_setup
+from .wsp_core.daemon_tasks import DaemonTask
+
 _PLUGIN_DIR = Path(__file__).resolve().parent
-if str(_PLUGIN_DIR) not in sys.path:
-    sys.path.append(str(_PLUGIN_DIR))
-
-try:  # Package load path used by Hermes plugin discovery.
-    from .provider_registry import (
-        DEFAULT_AUTO_ALLOW,
-        DEFAULT_PROVIDER_PRIORITY,
-        EXTRACT_PROVIDER_ENV_KEYS,
-        EXTRACT_PROVIDER_IDS,
-        KEYLESS_EXTRACT_PROVIDER_IDS,
-        KEYLESS_PROVIDER_IDS,
-        PROVIDER_ENV_KEYS,
-        PROVIDER_SPECS,
-        PROVIDER_STARTUP_DIAGNOSTICS,
-        SEARCH_PROVIDER_IDS,
-        SETUP_PRESETS,
-        keyless_public_env_var,
-        plugin_catalog,
-    )
-    from .env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, is_truthy, load_env_files
-    from .cache import MAX_STORED_TEXT_CHARS, store_web_text
-    from .config import (
-        REMOVED_PROVIDER_IDS,
-        apply_profile_effects,
-        load_config,
-    )
-    from . import jev_setup
-except ImportError:  # Direct script/test imports from the plugin directory.
-    from provider_registry import (
-        DEFAULT_AUTO_ALLOW,
-        DEFAULT_PROVIDER_PRIORITY,
-        EXTRACT_PROVIDER_ENV_KEYS,
-        EXTRACT_PROVIDER_IDS,
-        KEYLESS_EXTRACT_PROVIDER_IDS,
-        KEYLESS_PROVIDER_IDS,
-        PROVIDER_ENV_KEYS,
-        PROVIDER_SPECS,
-        PROVIDER_STARTUP_DIAGNOSTICS,
-        SEARCH_PROVIDER_IDS,
-        SETUP_PRESETS,
-        keyless_public_env_var,
-        plugin_catalog,
-    )
-    from env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, is_truthy, load_env_files
-    from cache import MAX_STORED_TEXT_CHARS, store_web_text
-    from config import REMOVED_PROVIDER_IDS, apply_profile_effects, load_config
-    import jev_setup
-
-try:
-    from .daemon_tasks import DaemonTask
-except ImportError:
-    from daemon_tasks import DaemonTask
 
 _SEARCH_SCRIPT = Path(__file__).parent / "search.py"
 _TOOLSET_NAME = "web-search-plus"
@@ -1480,13 +1449,10 @@ _search_import_lock = threading.Lock()
 
 
 def _load_search_module() -> Any:
-    """Load the in-process search engine from this plugin's ``search.py``.
+    """Return the in-process search engine (``wsp_core.search``), or None.
 
-    ``search.py`` still uses flat absolute imports for sibling modules, so the
-    plugin directory must be on ``sys.path`` while it loads. The search module
-    itself is loaded from its exact file path under a private module name instead
-    of ``import search`` so an unrelated global ``search`` module cannot shadow the
-    plugin engine.
+    Loaded lazily on first use so plugin registration stays cheap. ``None``
+    (import failure, logged once) makes callers use the subprocess path.
     """
     global _search_module, _search_import_failed
     if _search_module is not None:
@@ -1498,61 +1464,12 @@ def _load_search_module() -> Any:
             return _search_module
         if _search_import_failed:
             return None
-        plugin_dir = str(_PLUGIN_DIR)
-        original_sys_path = list(sys.path)
-        # Hermes may already have this plugin path on sys.path, but behind the
-        # host package root. Move it to the front while flat sibling imports
-        # resolve, then restore the exact original order in the finally block.
-        sys.path[:] = [entry for entry in sys.path if entry != plugin_dir]
-        sys.path.insert(0, plugin_dir)
-        # Stash any top-level modules whose names collide with this plugin's
-        # flat sibling imports (providers, extract, routing, research, etc.).
-        # If hermes-agent's `providers` package is already in sys.modules,
-        # `from providers import extract_exa` inside extract.py resolves
-        # to the wrong module. Pop them for the duration of the load,
-        # restore afterward.
-        _COLLIDING_MODULES = (
-            "providers",
-            "bench",
-            "extract",
-            "routing",
-            "research",
-            "search",
-            "config",
-            "cache",
-            "quality",
-            "http_client",
-            "env_loader",
-            "provider_health",
-            "provider_dispatch",
-            "provider_registry",
-            "search_locale",
-        )
-        stashed: dict[str, Any] = {}
-        for _name in _COLLIDING_MODULES:
-            if _name in sys.modules:
-                stashed[_name] = sys.modules.pop(_name)
         try:
-            spec = importlib.util.spec_from_file_location("_wsp_search_engine", _SEARCH_SCRIPT)
-            if spec is None or spec.loader is None:
-                raise ImportError(f"cannot load search engine from {_SEARCH_SCRIPT}")
-            _search = importlib.util.module_from_spec(spec)
-            sys.modules["_wsp_search_engine"] = _search
-            spec.loader.exec_module(_search)
+            _search_module = importlib.import_module(".wsp_core.search", __package__ or __name__)
         except Exception:  # pragma: no cover - defensive: fall back to subprocess
-            sys.modules.pop("_wsp_search_engine", None)
             logger.exception("web-search-plus: in-process search import failed; using subprocess fallback")
             _search_import_failed = True
             return None
-        finally:
-            # Restore the original top-level modules so unrelated code that
-            # imported `providers` etc. still sees what it expects.
-            for _name in _COLLIDING_MODULES:
-                sys.modules.pop(_name, None)
-            for _name, _mod in stashed.items():
-                sys.modules[_name] = _mod
-            sys.path[:] = original_sys_path
-        _search_module = _search
         return _search_module
 
 
@@ -1843,7 +1760,7 @@ def _source_summary_excerpt(content: str, query: Optional[str] = None, limit: in
     kind = "first"
     if query:
         try:
-            from span_extraction_v3 import select_spans
+            from .wsp_core.span_extraction_v3 import select_spans
 
             spans = select_spans(text, query, max_spans=1, max_span_chars=limit)
             if spans and spans[0].get("text"):
@@ -1889,7 +1806,7 @@ def _format_results(data: dict) -> str:
         else:
             header_bits.append("cached")
         try:
-            from routing import QueryAnalyzer
+            from .wsp_core.routing import QueryAnalyzer
 
             if query and QueryAnalyzer({})._detect_recency_intent(query)[0]:
                 header_bits.append("recency query")
@@ -2363,20 +2280,7 @@ def register(ctx: Any) -> None:
     # Selected only via web.search_backend / web.extract_backend / web.backend.
     # Never auto-selected; Plus tools remain the default surface.
     try:
-        import importlib.util as _ilu
-
-        _nb_path = _PLUGIN_DIR / "native_backend.py"
-        _nb_name = __name__ + "._native_backend"
-        _nb_mod = sys.modules.get(_nb_name)
-        if _nb_mod is None and _nb_path.is_file():
-            _nb_spec = _ilu.spec_from_file_location(_nb_name, _nb_path)
-            if _nb_spec and _nb_spec.loader:
-                _nb_mod = _ilu.module_from_spec(_nb_spec)
-                # Publish only a completely imported module, under this plugin's
-                # namespace. Host modules called native_backend remain untouched.
-                _nb_spec.loader.exec_module(_nb_mod)
-                sys.modules[_nb_name] = _nb_mod
-        if _nb_mod is not None:
-            _nb_mod.register_native_backend(ctx, sys.modules[__name__])
+        native_backend = importlib.import_module(".native_backend", __package__ or __name__)
+        native_backend.register_native_backend(ctx, sys.modules[__name__])
     except Exception:  # pragma: no cover - never break Plus registration
         logger.warning("web-search-plus: native wsp backend registration skipped")

@@ -3,8 +3,8 @@ import time
 import unittest
 from copy import deepcopy
 
-import search
-from config import DEFAULT_CONFIG, _validate_runtime_config
+from wsp_core import search
+from wsp_core.config import DEFAULT_CONFIG, _validate_runtime_config
 
 
 class QualityReportTests(unittest.TestCase):

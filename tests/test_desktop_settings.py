@@ -14,7 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from config import _DESKTOP_SETTING_KEYS, load_config
+from plugin_loader import load_plugin
+from wsp_core.config import _DESKTOP_SETTING_KEYS, load_config
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -369,7 +370,7 @@ def test_pyyaml_and_fallback_apply_the_same_overlay(tmp_path, monkeypatch):
 
 
 def _registered_search_handler():
-    import __init__ as plugin
+    plugin = load_plugin("wsp_plugin_desktop_settings_handler")
 
     registered = {}
 

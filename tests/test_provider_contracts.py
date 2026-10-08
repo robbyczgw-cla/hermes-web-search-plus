@@ -1,15 +1,9 @@
-import importlib.util
 import json
-from pathlib import Path
 from unittest import mock
 
 import pytest
 
-SEARCH_PATH = Path(__file__).resolve().parents[1] / "search.py"
-search_spec = importlib.util.spec_from_file_location("wsp_search_contracts_under_test", SEARCH_PATH)
-search = importlib.util.module_from_spec(search_spec)
-assert search_spec.loader is not None
-search_spec.loader.exec_module(search)
+from wsp_core import search
 
 QUERY = "contract test query"
 API_KEY = "test-api-key"

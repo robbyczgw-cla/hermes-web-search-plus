@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-import routing
+from wsp_core import routing
 from scripts import gen_routing_docs
 
 ROUTING_DOC_PATH = Path(__file__).resolve().parents[1] / "docs" / "ROUTING.md"

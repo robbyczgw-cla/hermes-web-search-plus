@@ -7,11 +7,11 @@ import json
 
 import pytest
 
-import extract
-from cache_v3 import ResponseCacheV3, response_payload_from_cache_material
-from compat_v3 import legacy_request_to_v3
-from contract_v3 import Capability
-from orchestrator_v3 import ProviderPlan
+from wsp_core import extract
+from wsp_core.cache_v3 import ResponseCacheV3, response_payload_from_cache_material
+from wsp_core.compat_v3 import legacy_request_to_v3
+from wsp_core.contract_v3 import Capability
+from wsp_core.orchestrator_v3 import ProviderPlan
 
 
 def _config(tmp_path):

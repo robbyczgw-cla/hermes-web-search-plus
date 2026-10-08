@@ -6,8 +6,8 @@ from unittest import mock
 
 import pytest
 
-import provider_stats
-import routing
+from wsp_core import provider_stats
+from wsp_core import routing
 
 
 @pytest.fixture()
@@ -137,7 +137,7 @@ class TestAdaptiveRouting:
 
 
 def _record_many(stats_file, count):
-    import provider_stats as ps
+    from wsp_core import provider_stats as ps
 
     ps.PROVIDER_STATS_FILE = stats_file
     for _ in range(count):
@@ -148,7 +148,7 @@ def test_concurrent_processes_do_not_lose_samples(tmp_path, monkeypatch):
     import json
     import multiprocessing
 
-    import provider_stats as ps
+    from wsp_core import provider_stats as ps
 
     if getattr(ps, "fcntl", object()) is None:  # pragma: no cover - Windows
         pytest.skip("cross-process lock needs fcntl")

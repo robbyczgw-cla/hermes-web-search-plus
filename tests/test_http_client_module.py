@@ -10,7 +10,7 @@ from urllib.error import HTTPError, URLError
 
 import pytest
 
-import http_client
+from wsp_core import http_client
 
 
 class FakeResponse:
@@ -33,7 +33,7 @@ def test_http_client_make_get_request_handles_gzip_urllib_response():
     compressed = gzip.compress(json.dumps(body).encode("utf-8"))
 
     with mock.patch(
-        "http_client.urlopen",
+        "wsp_core.http_client.urlopen",
         return_value=FakeResponse(compressed, {"Content-Encoding": "gzip"}),
     ):
         result = http_client.make_get_request(
@@ -89,7 +89,7 @@ def test_parse_retry_after_handles_missing_and_garbage_values():
 
 
 def test_rate_limit_error_carries_retry_after_metadata():
-    with mock.patch("http_client.urlopen", side_effect=_make_http_error(429, {"Retry-After": "7"})):
+    with mock.patch("wsp_core.http_client.urlopen", side_effect=_make_http_error(429, {"Retry-After": "7"})):
         with pytest.raises(http_client.ProviderRequestError) as exc_info:
             http_client.make_request("https://api.example.com/search", {}, {"q": "test"})
 
@@ -100,7 +100,7 @@ def test_rate_limit_error_carries_retry_after_metadata():
 
 
 def test_service_unavailable_error_has_no_retry_after():
-    with mock.patch("http_client.urlopen", side_effect=_make_http_error(503, {"Retry-After": "7"})):
+    with mock.patch("wsp_core.http_client.urlopen", side_effect=_make_http_error(503, {"Retry-After": "7"})):
         with pytest.raises(http_client.ProviderRequestError) as exc_info:
             http_client.make_request("https://api.example.com/search", {}, {"q": "test"})
 
@@ -117,7 +117,7 @@ def test_socket_timeout_is_classified_transient():
         lambda: http_client.make_request("https://api.example.com/search", {}, {"q": "test"}),
         lambda: http_client.make_get_request("https://api.example.com/search", {}),
     ):
-        with mock.patch("http_client.urlopen", side_effect=socket.timeout("timed out")):
+        with mock.patch("wsp_core.http_client.urlopen", side_effect=socket.timeout("timed out")):
             with pytest.raises(http_client.ProviderRequestError) as exc_info:
                 func()
         assert exc_info.value.transient is True
@@ -126,21 +126,21 @@ def test_socket_timeout_is_classified_transient():
 def test_urlerror_wrapping_socket_timeout_is_transient():
     # The reason's str() ("_") does not contain "timed out"; classification
     # must rely on the exception type, not the message text.
-    with mock.patch("http_client.urlopen", side_effect=URLError(socket.timeout("_"))):
+    with mock.patch("wsp_core.http_client.urlopen", side_effect=URLError(socket.timeout("_"))):
         with pytest.raises(http_client.ProviderRequestError) as exc_info:
             http_client.make_request("https://api.example.com/search", {}, {"q": "test"})
     assert exc_info.value.transient is True
 
 
 def test_invalid_json_response_raises_provider_error():
-    with mock.patch("http_client.urlopen", return_value=FakeResponse(b"<html>bad gateway</html>")):
+    with mock.patch("wsp_core.http_client.urlopen", return_value=FakeResponse(b"<html>bad gateway</html>")):
         with pytest.raises(http_client.ProviderRequestError) as exc_info:
             http_client.make_get_request("https://api.example.com/search", {})
     assert exc_info.value.transient is True
 
 
 def test_non_utf8_response_raises_provider_error():
-    with mock.patch("http_client.urlopen", return_value=FakeResponse(b"\xff\xfe\xfa")):
+    with mock.patch("wsp_core.http_client.urlopen", return_value=FakeResponse(b"\xff\xfe\xfa")):
         with pytest.raises(http_client.ProviderRequestError) as exc_info:
             http_client.make_get_request("https://api.example.com/search", {})
     assert exc_info.value.transient is True
@@ -148,7 +148,7 @@ def test_non_utf8_response_raises_provider_error():
 
 def test_corrupt_gzip_response_raises_provider_error():
     response = FakeResponse(b"\x1f\x8bgarbage", {"Content-Encoding": "gzip"})
-    with mock.patch("http_client.urlopen", return_value=response):
+    with mock.patch("wsp_core.http_client.urlopen", return_value=response):
         with pytest.raises(http_client.ProviderRequestError) as exc_info:
             http_client.make_get_request("https://api.example.com/search", {})
     assert exc_info.value.transient is True
@@ -156,7 +156,7 @@ def test_corrupt_gzip_response_raises_provider_error():
 
 def test_corrupt_deflate_response_raises_provider_error():
     response = FakeResponse(b"not-deflate", {"Content-Encoding": "deflate"})
-    with mock.patch("http_client.urlopen", return_value=response):
+    with mock.patch("wsp_core.http_client.urlopen", return_value=response):
         with pytest.raises(http_client.ProviderRequestError) as exc_info:
             http_client.make_get_request("https://api.example.com/search", {})
     assert exc_info.value.transient is True
@@ -164,7 +164,7 @@ def test_corrupt_deflate_response_raises_provider_error():
 
 def test_http_error_with_corrupt_body_still_reports_status():
     error = _make_http_error(500, {"Content-Encoding": "gzip"}, body=b"\x1f\x8bgarbage")
-    with mock.patch("http_client.urlopen", side_effect=error):
+    with mock.patch("wsp_core.http_client.urlopen", side_effect=error):
         with pytest.raises(http_client.ProviderRequestError) as exc_info:
             http_client.make_request("https://api.example.com/search", {}, {"q": "test"})
     assert exc_info.value.status_code == 500
@@ -172,7 +172,7 @@ def test_http_error_with_corrupt_body_still_reports_status():
 
 def test_http_error_with_non_utf8_body_does_not_crash_detail_extraction():
     error = _make_http_error(500, body=b"\xff\xfe server exploded")
-    with mock.patch("http_client.urlopen", side_effect=error):
+    with mock.patch("wsp_core.http_client.urlopen", side_effect=error):
         with pytest.raises(http_client.ProviderRequestError) as exc_info:
             http_client.make_request("https://api.example.com/search", {}, {"q": "test"})
     assert exc_info.value.status_code == 500

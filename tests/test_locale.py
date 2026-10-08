@@ -13,10 +13,10 @@ import contextlib
 import unittest
 from unittest import mock
 
-import routing
-import search
-import search_locale
-from search_locale import detect_location_country, provider_supports_locale, resolve_locale
+from wsp_core import routing
+from wsp_core import search
+from wsp_core import search_locale
+from wsp_core.search_locale import detect_location_country, provider_supports_locale, resolve_locale
 
 
 def _config(locale=None, **provider_overrides):
@@ -201,7 +201,7 @@ class LocaleRequestPassThroughTests(unittest.TestCase):
                 captured["body"] = body
                 return {"organic": [{"title": "T", "link": "https://example.test/a", "snippet": "s"}]}
 
-            stack.enter_context(mock.patch("search.make_request", side_effect=fake_post))
+            stack.enter_context(mock.patch("wsp_core.search.make_request", side_effect=fake_post))
             result = search.run_search_request(query=query, provider="serper", config=config, **kwargs)
         return captured, result
 
@@ -265,7 +265,7 @@ class LocaleRequestPassThroughTests(unittest.TestCase):
                 captured["url"] = url
                 return {"web": {"results": [{"title": "T", "url": "https://example.test/a", "description": "s"}]}}
 
-            stack.enter_context(mock.patch("search.make_get_request", side_effect=fake_get))
+            stack.enter_context(mock.patch("wsp_core.search.make_get_request", side_effect=fake_get))
             result = search.run_search_request(query=query, provider="brave", config=config, **kwargs)
         return captured, result
 
