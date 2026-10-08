@@ -597,7 +597,7 @@ def search_brave(
             snippet_parts.append(description)
         extra_snippets = item.get("extra_snippets") or []
         if extra_snippets:
-            snippet_parts.extend(extra_snippets[:2])
+            snippet_parts.extend(extra_snippets[:1])
         result = {
             "title": item.get("title", ""),
             "url": item.get("url", ""),
