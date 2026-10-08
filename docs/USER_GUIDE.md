@@ -334,19 +334,19 @@ Providers with region/language request parameters (Serper, Brave, You.com, SerpB
 ```
 
 - `country`: ISO 3166-1 alpha-2 code (for example `at`, `fr`, `es`) used as the default region for locale-aware providers.
-- `language`: ISO 639-1 code (for example `de`), or `"auto"` to infer the language from each query.
+- `language`: ISO 639-1 code (for example `de`), or `"auto"` to infer the language from each query. The `--language` flag and the `language` tool parameter accept `auto` for a single call.
 
-`"auto"` mode uses a lightweight, local stopword/character heuristic (no LLM, no extra dependency, no IP geolocation) covering `de`, `es`, `fr`, `it`, `pt`, `nl`, and `en`. It is deliberately conservative: it needs at least two distinct language signals and a single unambiguous winner. A query like "Wiener Kaffeehaus Öffnungszeiten" infers German; a terse technical query like "DAC R2R NOS" or "PostgreSQL 17 release notes" infers nothing and keeps the default language.
+`"auto"` mode uses a lightweight, local stopword/character heuristic (no LLM, no extra dependency, no IP geolocation) covering `de`, `es`, `fr`, `it`, `pt`, `nl`, and `en`, plus Japanese (kana), Russian (Cyrillic), and Arabic by script. It is deliberately conservative: it needs at least two distinct language signals and a single unambiguous winner, or a script that identifies the language. Conflicting evidence (for example kana inside an English sentence) and Han-only text (Chinese or Japanese) infer nothing. A query like "Wiener Kaffeehaus Öffnungszeiten" infers German; a terse technical query like "DAC R2R NOS" or "PostgreSQL 17 release notes" infers nothing, and then **no language parameter is sent**, so the provider's own default applies. Without `"auto"` the language still defaults to `en`.
 
 Explicit location hints in the query move the country: a small curated table of well-known city and country names (Vienna/Wien, Berlin, Paris, Madrid, London, Rome, Amsterdam, ...) is checked, so "mejores restaurantes Madrid" searches with `country=es` and "boulangerie Paris horaires" with `country=fr` even when your configured default is `at`. Conflicting hints ("compare bakeries in Paris and Madrid") change nothing.
 
 Resolution precedence:
 
-1. CLI flags / tool parameters (`--country` / `--language`, or the `country` / `language` tool parameters)
-2. Explicit provider-specific config in `config.json` (for example `serper.country` or `brave.search_lang`)
+1. CLI flags / tool parameters (`--country` / `--language`, or the `country` / `language` tool parameters); a language of `auto` replaces `defaults.locale.language` for that call
+2. Explicit provider-specific config in `config.json` (for example `serper.country` or `brave.search_lang`); it also wins over `auto`
 3. Explicit location hint in the query (country only)
-4. `defaults.locale.country` / `defaults.locale.language` (with `"auto"` triggering language inference)
-5. Fallback `us` / `en`
+4. `defaults.locale.country` / `defaults.locale.language` (with `"auto"` triggering language detection)
+5. Fallback `us` / `en` (language: nothing is sent when `auto` detects nothing)
 
 **Query language does not imply country.** A German query can come from Austria or Switzerland just as well as Germany, so inferred language never moves the region — only explicit location hints, configuration, or flags do.
 
@@ -359,6 +359,8 @@ Result metadata reports the resolved locale and where each value came from, foll
   "source": {"country": "config", "language": "inferred"}
 }
 ```
+
+`source.language` is `config`, `cli`, `inferred`, `jev`, `fallback`, or `provider_default` (`auto` found nothing, `language` is `null`, and the request carries no language parameter).
 
 Backward compatibility: without `defaults.locale` and without flags, everything still resolves to `us`/`en` exactly as before. Providers without locale parameters (Tavily, Exa, Linkup, Parallel, Keenable) are unaffected.
 

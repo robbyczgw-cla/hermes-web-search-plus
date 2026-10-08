@@ -253,12 +253,15 @@ def search_serper(
     api_key: str,
     max_results: int = 5,
     country: str = "us",
-    language: str = "en",
+    language: Optional[str] = "en",
     search_type: str = "search",
     time_range: Optional[str] = None,
     include_images: bool = False,
 ) -> dict:
-    """Search using Serper (Google Search API)."""
+    """Search using Serper (Google Search API).
+
+    ``language=None`` omits ``hl`` so Serper applies its own default.
+    """
     endpoint = f"https://google.serper.dev/{search_type}"
 
     body = {
@@ -268,6 +271,8 @@ def search_serper(
         "num": max_results,
         "autocorrect": True,
     }
+    if not language:
+        del body["hl"]
 
     if time_range and time_range != "none":
         tbs_map = {
@@ -312,11 +317,10 @@ def search_serper(
     images = []
     if include_images:
         try:
-            img_data = make_request(
-                "https://google.serper.dev/images",
-                headers,
-                {"q": query, "gl": country, "hl": language, "num": 5},
-            )
+            image_body = {"q": query, "gl": country, "hl": language, "num": 5}
+            if not language:
+                del image_body["hl"]
+            img_data = make_request("https://google.serper.dev/images", headers, image_body)
             images = [img.get("imageUrl", "") for img in img_data.get("images", [])[:5] if img.get("imageUrl")]
         except Exception:
             pass
@@ -343,7 +347,7 @@ def search_serpbase(
     api_key: str,
     max_results: int = 5,
     country: str = "us",
-    language: str = "en",
+    language: Optional[str] = "en",
     page: int = 1,
     api_url: str = "https://api.serpbase.dev/google/search",
     timeout: int = 30,
@@ -351,7 +355,7 @@ def search_serpbase(
     """Search using SerpBase's Google Search endpoint.
 
     SerpBase returns HTTP 200 for some business failures, so `status == 0` is
-    required before parsing results.
+    required before parsing results. ``language=None`` omits ``hl``.
     """
     body = {
         "q": query,
@@ -359,6 +363,8 @@ def search_serpbase(
         "gl": country,
         "page": page,
     }
+    if not language:
+        del body["hl"]
     headers = {
         "X-API-Key": api_key,
         "Content-Type": "application/json",
@@ -398,16 +404,37 @@ def search_serpbase(
         "session_id": data.get("session_id"),
     }
 
+# Brave's search_lang is an enum; a value outside it fails the request.
+_BRAVE_SEARCH_LANGS = frozenset(
+    "ar eu bn bg ca zh-hans zh-hant hr cs da nl en en-gb et fi fr gl de el gu he hi hu "
+    "is it ja jp kn ko lv lt ms ml mr nb pl pt-br pt-pt pa ro ru sr sk sl es sv ta te "
+    "th tr uk vi".split()
+)
+
+
+def _brave_search_lang(language: Optional[str], country: str) -> Optional[str]:
+    """Brave's code for an ISO 639-1 language, or None to leave search_lang out."""
+    if not language:
+        return None
+    code = language.lower()
+    region = (country or "").lower()
+    if code == "pt":
+        return "pt-br" if region == "br" else "pt-pt"
+    if code == "zh":
+        return "zh-hant" if region in ("tw", "hk", "mo") else "zh-hans"
+    return code if code in _BRAVE_SEARCH_LANGS else None
+
+
 def search_brave(
     query: str,
     api_key: str,
     max_results: int = 5,
     country: str = "US",
-    language: str = "en",
+    language: Optional[str] = "en",
     time_range: Optional[str] = None,
     safesearch: str = "moderate",
 ) -> dict:
-    """Search using Brave Search API."""
+    """Search using Brave Search API. ``language=None`` omits ``search_lang``."""
     freshness_map = {
         "hour": "pd",
         "day": "pd",
@@ -415,14 +442,17 @@ def search_brave(
         "month": "pm",
         "year": "py",
     }
+    search_lang = _brave_search_lang(language, country)
     params = {
         "q": query,
         "count": max_results,
         "country": country.upper(),
-        "search_lang": language,
+        "search_lang": search_lang,
         "safesearch": safesearch,
         "spellcheck": 1,
     }
+    if not search_lang:
+        del params["search_lang"]
     if time_range and time_range in freshness_map:
         params["freshness"] = freshness_map[time_range]
 
@@ -541,7 +571,7 @@ def search_querit(
     query: str,
     api_key: str,
     max_results: int = 5,
-    language: str = "en",
+    language: Optional[str] = "en",
     country: str = "us",
     time_range: Optional[str] = None,
     include_domains: Optional[List[str]] = None,
@@ -1283,7 +1313,7 @@ def search_you(
     api_key: str,
     max_results: int = 5,
     country: str = "US",
-    language: str = "en",
+    language: Optional[str] = "en",
     freshness: Optional[str] = None,
     safesearch: str = "moderate",
     include_news: bool = True,
@@ -1302,7 +1332,7 @@ def search_you(
         api_key: You.com API key
         max_results: Maximum results to return (default 5, max 100)
         country: ISO 3166-2 country code (e.g., US, GB, DE)
-        language: BCP 47 language code (e.g., en, de, fr)
+        language: BCP 47 language code (e.g., en, de, fr); None omits the parameter
         freshness: Filter by recency: day, week, month, year, or YYYY-MM-DDtoYYYY-MM-DD
         safesearch: Content filter: off, moderate (default), strict
         include_news: Include news results when relevant (default True)
@@ -1427,7 +1457,7 @@ def search_searxng(
     max_results: int = 5,
     categories: Optional[List[str]] = None,
     engines: Optional[List[str]] = None,
-    language: str = "en",
+    language: Optional[str] = "en",
     time_range: Optional[str] = None,
     safesearch: int = 0,
 ) -> dict:
@@ -1445,7 +1475,7 @@ def search_searxng(
         max_results: Maximum results to return (default 5)
         categories: Search categories (general, images, news, videos, etc.)
         engines: Specific engines to use (google, bing, duckduckgo, etc.)
-        language: Language code (e.g., en, de, fr)
+        language: Language code (e.g., en, de, fr); None omits the parameter
         time_range: Filter by recency: day, week, month, year
         safesearch: Content filter: 0=off, 1=moderate, 2=strict
 
@@ -1460,6 +1490,8 @@ def search_searxng(
         "language": language,
         "safesearch": str(safesearch),
     }
+    if not language:
+        del params["language"]
 
     if categories:
         params["categories"] = ",".join(categories)

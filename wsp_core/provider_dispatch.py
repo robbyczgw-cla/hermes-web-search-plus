@@ -47,7 +47,8 @@ def _locale(prov: str, args: Any, config: Dict[str, Any]):
     CLI flags arrive through ``args.country``/``args.language`` (None unless
     explicitly passed); everything else — explicit provider config, query
     location hints, ``defaults.locale``, us/en fallback — is resolved centrally
-    in search_locale.resolve_locale.
+    in search_locale.resolve_locale. The language is None when "auto" found no
+    confident language; the provider functions then omit the parameter.
     """
     country, language, _meta = resolve_locale(
         prov,

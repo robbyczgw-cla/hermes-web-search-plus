@@ -90,7 +90,13 @@ from .provider_registry import (
     doctor_catalog,
 )
 from .request_gate_v3 import validate_provider_mode
-from .search_locale import provider_supports_locale, resolve_locale
+from .search_locale import (
+    AUTO_LANGUAGE,
+    apply_auto_language,
+    is_auto_language,
+    provider_supports_locale,
+    resolve_locale,
+)
 from .env_loader import load_env_files
 from .research import run_research_mode
 from .attempt_engine_v3 import AttemptContext, AttemptEngine
@@ -433,7 +439,7 @@ Full docs: See README.md and SKILL.md
     parser.add_argument(
         "--language",
         default=None,
-        help="ISO 639-1 language override (e.g. de); beats config defaults and query language inference"
+        help="ISO 639-1 language override (e.g. de), or 'auto' to detect it from the query; beats config defaults"
     )
     parser.add_argument(
         "--type", 
@@ -740,6 +746,7 @@ def main():
     config = load_config()
     parser = build_parser(config)
     args = parser.parse_args()
+    args.language, config = apply_auto_language(args.language, config)
 
     migration_options_used = bool(
         args.apply or args.rollback or args.migration_backup_root is not None
@@ -930,7 +937,7 @@ def _legacy_search_cache_context(
         cli_language=args.language,
     )
     return {
-        "locale": f"{locale_country}:{locale_language}",
+        "locale": f"{locale_country}:{locale_language or ''}",
         "freshness": args.freshness,
         "time_range": getattr(args, "time_range", None),
         "include_domains": sorted(args.include_domains)
@@ -2094,12 +2101,26 @@ def _race_providers(engine, candidates, contexts, operation_for, hedge_delay, de
     return _Race(winner, payload, receipts, empty_providers)
 
 
+def _search_cache_vary(
+    request: RequestV3, plan: ProviderPlan, config: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Keep language "auto" apart from fixed-language entries in the v3 cache.
+
+    A per-call "auto" never appears in the request (the contract has no value
+    for it), so the cache key would equal that of a plain request while the
+    provider call differs.
+    """
+    locale = (config.get("defaults") or {}).get("locale") or {}
+    return {"language": AUTO_LANGUAGE} if is_auto_language(locale.get("language")) else {}
+
+
 def _search_adapter() -> CapabilityAdapter:
     return CapabilityAdapter(
         capability=Capability.SEARCH,
         plan=_plan_search_v3,
         execute=_execute_search_v3,
         normalize=response_from_legacy,
+        cache_vary=_search_cache_vary,
     )
 
 
@@ -2147,6 +2168,7 @@ def run_search_request(
     except ValueError as exc:
         return {"error": str(exc), "provider": provider, "query": query, "results": []}
     config = apply_profile_effects(config) if config is not None else load_config()
+    language, config = apply_auto_language(language, config)
     policy_mode = str((config.get("routing") or {}).get("policy_mode", "classic"))
     request = legacy_request_to_v3(
         Capability.SEARCH,
