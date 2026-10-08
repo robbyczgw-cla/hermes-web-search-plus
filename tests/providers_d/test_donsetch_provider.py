@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 from types import SimpleNamespace
 
 import pytest
 
 import provider_registry
+
+# Any existing executable satisfies the binary check; the tests patch the call.
+TRUE_BIN = shutil.which("true") or "/bin/true"
 
 
 def _provider():
@@ -139,7 +143,7 @@ def test_search_projects_donsetch_results_and_metadata(monkeypatch):
         None,
         "donsetch",
         _search_args(include_domains=["tokio.rs"]),
-        "/bin/true",
+        TRUE_BIN,
         {"donsetch": {"timeout": 30}},
         {},
     )
@@ -164,7 +168,7 @@ def test_search_rejects_unsupported_freshness_before_network(monkeypatch):
             None,
             "donsetch",
             _search_args(freshness="day"),
-            "/bin/true",
+            TRUE_BIN,
             {},
             {},
         )
@@ -207,7 +211,7 @@ def test_extract_projects_markdown_and_marks_raw_html_as_unsupported(monkeypatch
         None,
         "donsetch",
         ["https://example.org/page"],
-        "/bin/true",
+        TRUE_BIN,
         "markdown",
         True,
         True,
@@ -255,7 +259,7 @@ def test_extract_render_js_requests_browser_tier(monkeypatch):
         None,
         "donsetch",
         ["https://example.org/page"],
-        "/bin/true",
+        TRUE_BIN,
         "markdown",
         False,
         False,
@@ -666,7 +670,7 @@ def test_compact_search_projects_text_evidence_and_debug_meta_before_domain_filt
         None,
         "donsetch",
         _search_args(include_domains=["tokio.rs"]),
-        "/bin/true",
+        TRUE_BIN,
         {"donsetch": {"timeout": 30}},
         {},
     )
@@ -731,7 +735,7 @@ def test_compact_fetch_uses_debug_whitelist_and_ignores_foreign_meta(monkeypatch
         None,
         "donsetch",
         ["https://example.org/page"],
-        "/bin/true",
+        TRUE_BIN,
         "markdown",
         False,
         False,
@@ -784,7 +788,7 @@ def test_legacy_search_and_fetch_shapes_still_project(monkeypatch):
         None,
         "donsetch",
         _search_args(),
-        "/bin/true",
+        TRUE_BIN,
         {"donsetch": {"timeout": 5}},
         {},
     )
@@ -822,7 +826,7 @@ def test_legacy_search_and_fetch_shapes_still_project(monkeypatch):
         None,
         "donsetch",
         ["https://example.org/page"],
-        "/bin/true",
+        TRUE_BIN,
         "markdown",
         False,
         False,

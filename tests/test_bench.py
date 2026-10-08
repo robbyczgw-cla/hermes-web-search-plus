@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import shutil
 import sys
 import types
 from pathlib import Path
@@ -200,7 +201,7 @@ def test_bench_skips_disabled_and_unknown_providers(monkeypatch):
 
 def test_bench_excludes_guarded_donsetch_until_auto_allow_opt_in(monkeypatch):
     _clear_provider_env(monkeypatch)
-    monkeypatch.setenv("DONSETCH_BIN", "/bin/true")
+    monkeypatch.setenv("DONSETCH_BIN", shutil.which("true") or "/bin/true")
 
     assert bench.bench_eligible_providers({"auto_routing": {}}) == []
     assert bench.bench_eligible_providers(
