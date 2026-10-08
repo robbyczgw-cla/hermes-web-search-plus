@@ -5,6 +5,7 @@ from __future__ import annotations
 from email.utils import parsedate_to_datetime
 from http.client import IncompleteRead
 import http.client
+from contextlib import contextmanager
 import io
 import json
 import os
@@ -319,8 +320,33 @@ def _pooled_open(req: Request, timeout: float):
         raise URLError(exc) from exc
 
 
+_TIMEOUT_CAP = threading.local()
+
+
+@contextmanager
+def request_timeout_cap(seconds: float | None):
+    """Cap the socket timeout of every provider request made in this thread.
+
+    Providers pass their own timeouts (often 30 s). When a fallback provider
+    is waiting, a hung call should give up sooner; the engine wraps such an
+    attempt in this cap instead of threading a timeout through every adapter.
+    """
+    previous = getattr(_TIMEOUT_CAP, "seconds", None)
+    _TIMEOUT_CAP.seconds = seconds
+    try:
+        yield
+    finally:
+        _TIMEOUT_CAP.seconds = previous
+
+
+def _capped_timeout(timeout: float) -> float:
+    cap = getattr(_TIMEOUT_CAP, "seconds", None)
+    return min(timeout, cap) if cap else timeout
+
+
 def urlopen(req, timeout: float = 30):
     """Drop-in for urllib.request.urlopen: HTTP(S) only, same-origin redirects only."""
+    timeout = _capped_timeout(timeout)
     url = req.full_url if isinstance(req, Request) else str(req)
     if _origin(url) is None:
         raise ProviderRequestError("Provider URL must be an http(s) URL.", transient=False)
@@ -488,6 +514,7 @@ def _raise_provider_http_error(error: HTTPError) -> None:
 
 def make_request(url: str, headers: dict, body: dict, timeout: int = 30) -> dict:
     """Make HTTP POST request and return JSON response."""
+    timeout = _capped_timeout(timeout)
     # Ensure User-Agent is set (required by some APIs like Exa/Cloudflare)
     if "User-Agent" not in headers:
         headers["User-Agent"] = DEFAULT_USER_AGENT
@@ -518,6 +545,7 @@ def make_request(url: str, headers: dict, body: dict, timeout: int = 30) -> dict
 
 def make_get_request(url: str, headers: dict, timeout: int = 30) -> dict:
     """Make HTTP GET request and return JSON response."""
+    timeout = _capped_timeout(timeout)
     if "User-Agent" not in headers:
         headers["User-Agent"] = DEFAULT_USER_AGENT
     req = Request(url, headers=headers, method="GET")

@@ -49,3 +49,23 @@ boosts) scores below always choosing brave. The best provider depends on the
 intent: exa leads for academic, docs and general queries and is weakest for
 community queries (0.27); brave leads for community and local; serper for
 shopping.
+
+## Latency and fallback (hedged fallback)
+
+Replayed time-scaled (0.05) with `scenarios.py`; a fault makes one provider
+hang until the client timeout, answer with no results, or answer HTTP 503 on
+every call. Latencies include WSP's own per-call work scaled up with the
+replay, so compare rows, not absolute p50 values.
+
+| scenario | version | p95 | slowest | empty answers | provider calls / query | nDCG@5 |
+|---|---|---:|---:|---:|---:|---:|
+| no fault | v4.3.5 | 3165 ms | 6496 ms | 0 | 1.00 | 0.672 |
+| no fault | hedged | 3294 ms | 3931 ms | 0 | 1.10 | 0.668 |
+| serper hangs | v4.3.5 | 31845 ms | 32147 ms | 1 | 1.45 | 0.673 |
+| serper hangs | hedged | 3551 ms | 4544 ms | 0 | 1.12 | 0.688 |
+| serper answers empty | v4.3.5 | 3370 ms | 6704 ms | 27 | 1.00 | 0.373 |
+| serper answers empty | hedged | 3530 ms | 6686 ms | 0 | 1.55 | 0.688 |
+| serper answers 503 | v4.3.5 | 3626 ms | 7424 ms | 1 | 1.45 | 0.673 |
+| serper answers 503 | hedged | 3206 ms | 4323 ms | 0 | 1.10 | 0.688 |
+| brave hangs | v4.3.5 | 32551 ms | 34257 ms | 0 | 1.23 | 0.662 |
+| brave hangs | hedged | 3701 ms | 4674 ms | 0 | 1.17 | 0.658 |
