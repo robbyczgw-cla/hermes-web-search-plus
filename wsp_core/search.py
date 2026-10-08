@@ -6,22 +6,19 @@ Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
 Brave Search, SerpBase, Querit, Parallel, SearXNG, Keenable.
 Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com, Keenable, Serper.
 
-Smart Routing uses multi-signal analysis:
-  - Routing v2 language/script and query-class detection
-  - Query intent classification (shopping, research, discovery)
-  - Linguistic pattern detection (how much vs how does)
-  - Product/brand recognition
-  - URL detection
-  - Confidence scoring
+Automatic routing (provider "auto") labels the query with an intent and picks
+the first provider from a measured table: Exa for academic and documentation
+queries, Serper for shopping, Brave otherwise; the fallback chain follows
+auto_routing.provider_priority. See docs/ROUTING.md.
 
 Usage:
     python3 search.py --query "..."                    # Auto-route based on query
     python3 search.py --provider [you|serper|exa|firecrawl|tavily|linkup|brave|serpbase|querit|searxng|auto] --query "..." [options]
 
 Examples:
-    python3 search.py -q "東京 AI ニュース 今日"              # → You.com (multilingual current)
-    python3 search.py -q "arXiv 2024 LLM scaling laws"      # → Exa (academic discovery)
-    python3 search.py -q "latest OpenSSH CVE mitigation"    # → Serper (security/current)
+    python3 search.py -q "arXiv paper LLM scaling laws"            # → Exa (academic)
+    python3 search.py -q "iPhone 16 Pro Max price"                 # → Serper (shopping)
+    python3 search.py -q "latest OpenSSH CVE mitigation"           # → Brave (security)
 """
 
 from __future__ import annotations
@@ -114,7 +111,7 @@ from .state_store_v3 import SQLiteStateStore
 from . import providers as _providers
 from . import extract as _extract
 from .routing import (
-    QueryAnalyzer,  # noqa: F401
+    ROUTING_POLICY,
     _provider_auto_allowed,
     auto_route_provider,
     explain_routing,
@@ -127,7 +124,6 @@ def _load_env_file():
     load_env_files(__file__)
 
 
-ROUTING_POLICY = "routing-v2"
 EXTRACT_PROVIDER_PRIORITY = _extract.EXTRACT_PROVIDER_PRIORITY
 resolve_extract_provider_priority = _extract.resolve_extract_provider_priority
 
@@ -298,26 +294,22 @@ def build_parser(config: Dict[str, Any]) -> argparse.ArgumentParser:
         description="Web Search Plus — Intelligent multi-provider search with smart auto-routing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Intelligent Auto-Routing:
-  The query is analyzed using multi-signal detection to find the optimal provider:
-  
-  Shopping Intent → Serper (Google)
-    "how much", "price of", "buy", product+brand combos, deals, specs
-  
-  Research Intent → Tavily  
-    "how does", "explain", "what is", analysis, pros/cons, tutorials
+Automatic routing (provider "auto"):
+  The query gets one of eight intents; the intent picks the first provider.
 
-  Multilingual + Real-Time AI Search → Querit
-    multilingual search, metadata-rich results, current information for AI workflows
-  
-  Discovery Intent → Exa (Neural)
-    "similar to", "companies like", "alternatives", URLs, startups, papers
+  academic, docs   → Exa      papers, studies, DOIs; API docs, error messages, code
+  shopping         → Serper   buy, price, deals, "best ... under 300 euros"
+  everything else  → Brave    community, general, local, news, security
+
+  A missing provider is skipped (Brave, Serper, Exa, Tavily, then
+  auto_routing.provider_priority). Fallback follows provider_priority.
 
 Examples:
-  python3 search.py -q "iPhone 16 Pro Max price"          # → Serper (shopping)
-  python3 search.py -q "how does HTTPS encryption work"   # → Tavily (research)
-  python3 search.py -q "startups similar to Notion"       # → Exa (discovery)
-  python3 search.py --explain-routing -q "your query"     # Debug routing
+  python3 search.py -q "arXiv paper LLM scaling laws"            # → Exa (academic)
+  python3 search.py -q "python asyncio TaskGroup documentation"  # → Exa (docs)
+  python3 search.py -q "iPhone 16 Pro Max price"                 # → Serper (shopping)
+  python3 search.py -q "reddit best budget mechanical keyboard"  # → Brave (community)
+  python3 search.py --explain-routing -q "your query"            # Show the decision
 
 Full docs: See README.md and SKILL.md
         """,

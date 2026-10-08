@@ -13,7 +13,7 @@ def _routing() -> dict:
         "confidence": 0.9,
         "confidence_level": "high",
         "reason": "fixture",
-        "routing_policy": "routing-v2",
+        "routing_policy": "routing-v3",
         "top_signals": [],
         "scores": {"you": 1.0},
         "auto_allow_excluded": ["donsetch", "serpbase"],

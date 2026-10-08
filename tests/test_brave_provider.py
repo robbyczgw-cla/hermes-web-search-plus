@@ -4,7 +4,7 @@ import unittest
 from unittest import mock
 
 from wsp_core import providers
-from wsp_core.search import QueryAnalyzer, get_api_key, validate_api_key
+from wsp_core.search import auto_route_provider, get_api_key, validate_api_key
 
 
 class BraveProviderTests(unittest.TestCase):
@@ -44,20 +44,19 @@ class BraveProviderTests(unittest.TestCase):
         self.assertEqual(result["results"][0]["url"], "https://example.com/page")
         self.assertEqual(result["results"][0]["snippet"], "Example snippet")
 
-    def test_query_analyzer_can_route_to_brave(self):
-        config = config_module.DEFAULT_CONFIG.copy()
-        config["auto_routing"] = dict(config_module.DEFAULT_CONFIG["auto_routing"])
-        config["auto_routing"]["provider_priority"] = ["brave", "serper", "tavily", "querit", "exa", "you", "searxng"]
-        analyzer = QueryAnalyzer(config)
-
+    def test_auto_router_routes_to_brave_when_configured(self):
+        config = config_module._deepcopy_default_config()
+        config["auto_routing"]["provider_priority"] = ["serper", "tavily", "querit", "exa", "you", "searxng", "brave"]
         env = {
             "BRAVE_API_KEY": "brave-test-key-12345",
             "SERPER_API_KEY": "serper-test-key-12345",
         }
         with mock.patch.dict(os.environ, env, clear=False):
-            routing = analyzer.route("weather in singapore today")
+            routing = auto_route_provider("weather in singapore today", config)
 
-        self.assertIn(routing["provider"], {"brave", "serper"})
+        # Brave leads the measured order, whatever the user's fallback order says.
+        self.assertEqual(routing["provider"], "brave")
+        self.assertEqual(routing["candidate_order"], ["brave", "serper"])
 
 
 if __name__ == "__main__":

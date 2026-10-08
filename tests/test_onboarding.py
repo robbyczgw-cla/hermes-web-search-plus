@@ -411,7 +411,7 @@ def test_config_set_auto_allow_updates_provider_gate(tmp_path):
 def test_default_behavior_config_blocks_low_trust_auto_providers():
     config = wsp._default_behavior_config()
 
-    assert config["auto_routing"]["provider_priority"][:7] == ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave"]
+    assert config["auto_routing"]["provider_priority"][:7] == ["brave", "serper", "exa", "tavily", "you", "firecrawl", "linkup"]
     assert config["auto_routing"]["extract_provider_priority"] == list(wsp.EXTRACT_PROVIDER_IDS)
     assert config["auto_routing"]["auto_allow"]["serpbase"] is False
     assert config["auto_routing"]["auto_allow"]["querit"] is False

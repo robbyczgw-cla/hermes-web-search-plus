@@ -63,14 +63,14 @@ _BUILTIN_PROVIDER_SPECS = (
     ),
     ProviderSpec(
         provider="brave", env_var="BRAVE_API_KEY", display_name="Brave Search",
-        description="Independent general web index in the Routing v2 default pool.",
+        description="Independent general web index; first provider for most automatic searches.",
         config_section="brave", supports_search=True, supports_extract=False,
         capability_labels=("search", "news", "local"), auto_allowed_by_default=True,
         free_tier="$5 free monthly credits", signup_url="https://api.search.brave.com/app/keys",
     ),
     ProviderSpec(
         provider="tavily", env_var="TAVILY_API_KEY", display_name="Tavily",
-        description="Research/tutorial provider in the Routing v2 default pool.",
+        description="Research/tutorial provider in the default fallback chain.",
         config_section="tavily", supports_search=True, supports_extract=True,
         capability_labels=("search", "extract", "research"), auto_allowed_by_default=True,
         free_tier="1,000 free searches/month", signup_url="https://tavily.com",
@@ -113,7 +113,7 @@ _BUILTIN_PROVIDER_SPECS = (
     ),
     ProviderSpec(
         provider="you", env_var="YOU_API_KEY", display_name="You.com",
-        description="Fast Routing v2 core provider for current, multilingual, and LLM-ready search.",
+        description="Fast provider for current, multilingual, and LLM-ready search.",
         config_section="you", supports_search=True, supports_extract=True,
         capability_labels=("search", "extract"), auto_allowed_by_default=True,
         recommended=True, free_tier="Limited/API key required", signup_url="https://api.you.com",
@@ -138,7 +138,15 @@ _BUILTIN_PROVIDER_SPECS = (
 _BUILTIN_EXTRACT_PROVIDER_IDS = (
     "tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper",
 )
+# Fallback order. The first four are ordered by measured result quality
+#; the rest keep their pre-5.0 relative order.
 _BUILTIN_DEFAULT_PROVIDER_PRIORITY = (
+    "brave", "serper", "exa", "tavily", "you", "firecrawl", "linkup", "parallel",
+    "serpbase", "querit", "searxng", "keenable",
+)
+# The default every 4.x setup wrote into config.json. A config that still starts
+# with it never chose an order, so it gets the current default (config.py).
+PRE_5_DEFAULT_PROVIDER_PRIORITY = (
     "you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "parallel",
     "serpbase", "querit", "searxng", "keenable",
 )

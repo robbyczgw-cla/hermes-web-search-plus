@@ -423,15 +423,12 @@ FRESHNESS_CACHE_TTL = {
 }
 
 
-# Query classes (routing.py ROUTING_CLASS_RULES) whose answers go stale within
-# minutes. A class only ever lowers the TTL; every class not listed here keeps
-# the recency and freshness caps alone. "briefing_synthesis" and
-# "multilingual_current" are left out on purpose: they also match evergreen
-# comparisons and every query not in English or German.
+# Query intents (wsp_core/intents.py) whose answers go stale within minutes. An
+# intent only ever lowers the TTL; the others keep the recency and freshness
+# caps alone.
 CLASS_CACHE_TTL = {
-    "sports_current": 300,
-    "finance_earnings_official": 300,
-    "security_advisory": 300,
+    "news": 300,
+    "security": 300,
 }
 
 
@@ -443,11 +440,11 @@ def routing_class_of(routing: Optional[Dict[str, Any]]) -> Optional[str]:
 
 
 def _query_routing_class(query: str) -> Optional[str]:
-    """Router class computed from the query alone (no plan, e.g. an explicit provider)."""
+    """Query intent computed from the query alone (no plan, e.g. an explicit provider)."""
     try:
-        from .routing import QueryAnalyzer, detect_query_language
+        from .intents import classify_intent
 
-        return QueryAnalyzer({})._detect_routing_class(query, detect_query_language(query).hint)
+        return classify_intent(query).intent
     except Exception:
         return None
 
@@ -464,9 +461,9 @@ def recency_cache_ttl_cap(
             FRESHNESS_CACHE_TTL.get(str(freshness).strip().lower(), DEFAULT_CACHE_TTL)
         )
     try:
-        from .routing import QueryAnalyzer
+        from .routing import detect_recency
 
-        is_recency, score = QueryAnalyzer({})._detect_recency_intent(query or "")
+        is_recency, score = detect_recency(query or "")
     except Exception:
         is_recency, score = False, 0.0
     if is_recency:
