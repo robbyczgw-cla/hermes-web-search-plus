@@ -3,9 +3,9 @@
 import hashlib
 import re
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse
 
-from diversity_v3 import DEFAULT_NEAR_DUPLICATE_THRESHOLD, score_diversity
+from diversity_v3 import DEFAULT_NEAR_DUPLICATE_THRESHOLD, TRACKING_PARAMETER_NAMES, score_diversity
 
 
 ROUTING_POLICY = "routing-v2"
@@ -29,7 +29,7 @@ def _title_from_url(url: str) -> str:
         return url[:60]
 
 
-def normalize_result_url(url: str) -> str:
+def _host_and_path(url: str) -> str:
     if not url:
         return ""
     parsed = urlparse(url.strip())
@@ -38,6 +38,23 @@ def normalize_result_url(url: str) -> str:
         netloc = netloc[4:]
     path = parsed.path.rstrip("/")
     return f"{netloc}{path}"
+
+
+def normalize_result_url(url: str) -> str:
+    """Dedup key: host without www, path, and sorted non-tracking query pairs.
+
+    The query string identifies the page on many sites (YouTube ``watch?v=``,
+    Hacker News ``item?id=``), so only tracking parameters are dropped.
+    """
+    base = _host_and_path(url)
+    if not base:
+        return ""
+    pairs = sorted(
+        (name, value)
+        for name, value in parse_qsl(urlparse(url.strip()).query, keep_blank_values=True)
+        if not (name.casefold().startswith("utm_") or name.casefold() in TRACKING_PARAMETER_NAMES)
+    )
+    return f"{base}?{urlencode(pairs)}" if pairs else base
 
 
 def deduplicate_results_across_providers(results_by_provider: List[Tuple[str, Dict[str, Any]]], max_results: int) -> Tuple[List[Dict[str, Any]], int]:
@@ -239,7 +256,7 @@ def _url_matches_rule(url: str, rule: str) -> bool:
     domain = _result_domain(url)
     if "/" not in rule:
         return _domain_matches_rule(domain, rule)
-    normalized = normalize_result_url(url)
+    normalized = _host_and_path(url)
     normalized_rule = rule.lower().strip().rstrip("/")
     return normalized == normalized_rule or normalized.startswith(f"{normalized_rule}/")
 

@@ -19,9 +19,13 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v4.3.4** — see the [release notes](docs/RELEASE_NOTES_V434.md) and [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+Current release: **v4.3.5** — see the [release notes](docs/RELEASE_NOTES_V435.md) and [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
 
-### What's new in 4.3.4
+### What's new in 4.3.5
+
+Dedup keeps page-identifying query parameters such as `?v=` and drops only tracking parameters, and missing-key hints survive the v3 error path. See the [4.3.5 release notes](docs/RELEASE_NOTES_V435.md).
+
+### Earlier: 4.3.4
 
 First run without keys: `setup.py status` no longer reports `ready` with zero providers, and search/extract failures name the setup command and the env vars to set. See the [4.3.4 release notes](docs/RELEASE_NOTES_V434.md).
 

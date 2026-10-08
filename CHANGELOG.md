@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [v4.3.5] — 2026-10-08
+
+### Fixed
+
+- Result dedup keeps query parameters that identify a page (`youtube.com/watch?v=…`, `news.ycombinator.com/item?id=…`) and removes only tracking parameters (`utm_*`, `fbclid`, `gclid`, `ref` and the other names in `TRACKING_PARAMETER_NAMES`). Different videos or threads were merged into one result.
+- Missing-key guidance survives the v3 error classification. `ErrorV3` for a missing key or SearXNG URL now carries `Missing API key for <provider>` and `details.env_var` / `details.how_to_fix` / `details.setup_required` instead of the generic `Provider configuration is invalid`. Only WSP's own guidance in its exact shape is passed through; other configuration error text stays redacted.
+- Engine-owned extract without a key raises the same setup guidance as search instead of a bare `missing API key` error.
+
 ## [v4.3.4] — 2026-10-07
 
 ### Fixed
