@@ -104,6 +104,14 @@ def _read_env_file(path: Path) -> Dict[str, str]:
     return values
 
 
+def _effective_env(env_file: Mapping[str, str]) -> Dict[str, str]:
+    """The process environment, plus whatever an .env file adds. Process values win."""
+    env = dict(os.environ)
+    for key, value in env_file.items():
+        env.setdefault(key, value)
+    return env
+
+
 def _provider_config_status(env: Optional[Mapping[str, str]] = None, config: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     """Describe configured providers by capability tier.
 
@@ -1307,9 +1315,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
         if env_path:
             env = _read_env_file(Path(env_path))
         else:
-            env = dict(os.environ)
-            for key, value in _read_env_file(_get_hermes_env_path()).items():
-                env.setdefault(key, value)
+            env = _effective_env(_read_env_file(_get_hermes_env_path()))
         config = _load_behavior_config(Path(config_path)) if config_path else _load_behavior_config()
         payload = _status_payload(env, config)
         if getattr(args, "json", False):
@@ -1410,6 +1416,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
                 keyless_enable.append(item["provider"])
         # Nothing searchable after the prompts: offer the keyless Keenable tier so
         # the tools work right away. Keys added later take over automatically.
+        # Keyless use is an explicit opt-in: asked only at a terminal, default no.
         search_keys = {
             item["env"] for item in _PROVIDER_CATALOG
             if PROVIDER_SPECS[item["provider"]].supports_search
@@ -1418,19 +1425,29 @@ def _web_search_plus_cli_command(args: Any) -> None:
             not (set(values) & search_keys)
             and "keenable" not in keyless_enable
             and not _keyless_public_opted_in("keenable", config_path)
-            and not _provider_config_status(_read_env_file(env_path), config)["search_configured"]
+            and not _provider_config_status(_effective_env(env_now), config)["search_configured"]
         ):
             if force_keyless:
                 answer = "y"
+            elif not sys.stdin.isatty():
+                answer = "n"
+                print(
+                    "\nNo search key yet. `setup.py setup --keyless-public` starts with Keenable's public tier "
+                    "(no key; queries and fetched URLs go to its unauthenticated public service)."
+                )
             else:
+                print(
+                    "\nNo search key yet. Keenable's public tier needs none, but your queries and "
+                    "fetched URLs go to Keenable's unauthenticated public service."
+                )
                 try:
                     answer = input(
-                        "\nNo search key yet. Start without a key using Keenable's public tier? "
-                        "Keys you add later take over automatically. [Y/n]: "
+                        "Start without a key using Keenable's public tier? "
+                        "Keys you add later take over automatically. [y/N]: "
                     ).strip().lower()
                 except (EOFError, OSError):
                     answer = "n"
-            if answer in ("", "y", "yes"):
+            if answer in ("y", "yes"):
                 keyless_enable.append("keenable")
         for provider in keyless_enable:
             config.setdefault(PROVIDER_SPECS[provider].config_section, {})["allow_public"] = True
