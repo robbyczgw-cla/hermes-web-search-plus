@@ -256,12 +256,12 @@ def _filter_suffix(suffix: str) -> Optional[str]:
 
 
 def wildcard_domain_entries(value: Any) -> List[str]:
-    """Domain-filter entries for an API field that takes ``*.gov`` suffixes (Tavily).
+    """Domain-filter entries for an API field that takes ``*.example.com`` (Tavily).
 
-    Hosts come out as from :func:`domain_filter_host`; a suffix entry (``.gov``,
-    ``*.gov``) becomes ``*.gov``, the form such a field documents. A bare
-    ``.gov`` matched nothing on Tavily and ``gov`` was rejected. Unusable entries
-    are skipped.
+    Hosts come out as from :func:`domain_filter_host`; a wildcard entry
+    (``.example.com``, ``*.example.com``) becomes ``*.example.com``, the form such
+    a field documents. Whether the field takes a bare public suffix such as
+    ``*.gov`` is the caller's concern. Unusable entries are skipped.
     """
     entries: List[str] = []
     for token in domain_filter_tokens(value):

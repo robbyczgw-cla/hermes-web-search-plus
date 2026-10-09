@@ -263,11 +263,88 @@ def _tavily_body(monkeypatch, **domains):
     return seen["body"]
 
 
-def test_tavily_gets_a_suffix_as_a_wildcard(monkeypatch):
-    # Live: [".gov"] found nothing and ["gov"] was an HTTP 400; Tavily documents "*.com".
-    body = _tavily_body(monkeypatch, include_domains=[".gov", "*.ac.uk", "https://www.cisa.gov/x"], exclude_domains=".mil")
-    assert body["include_domains"] == ["*.gov", "*.ac.uk", "cisa.gov"]
-    assert body["exclude_domains"] == ["*.mil"]
+@pytest.mark.parametrize("domains", [
+    {"include_domains": [".gov"]},
+    {"include_domains": ["*.ac.uk", "cisa.gov"]},
+    {"include_domains": ["cisa.gov"], "exclude_domains": [".mil"]},
+])
+def test_tavily_refuses_a_public_suffix_and_never_sends_it(monkeypatch, domains):
+    # Live: Tavily answered "*.gov" and "gov" with HTTP 400 and ".gov" with no results.
+    def forbidden(*args, **kwargs):
+        raise AssertionError("the request must not be sent")
+
+    monkeypatch.setattr(providers, "make_request", forbidden)
+    with pytest.raises(ValueError, match="Tavily cannot filter by a domain suffix"):
+        providers.search_tavily(query="q", api_key="k", **domains)
+
+
+def test_tavily_keeps_a_wildcard_for_a_concrete_domain(monkeypatch):
+    # Tavily takes "*.example.com" (a domain and its subdomains), live.
+    body = _tavily_body(monkeypatch, include_domains=["*.example.com", ".docs.rs", "https://www.cisa.gov/x"])
+    assert body["include_domains"] == ["*.example.com", "*.docs.rs", "cisa.gov"]
+
+
+@pytest.mark.parametrize("entry, public", [
+    (".gov", True), ("*.gov", True), ("*.ac.uk", True), (".co.uk", True), (".de", True),
+    ("*.example.com", False), (".docs.rs", False), ("cisa.gov", False), ("gov", False), ("x OR y", False),
+])
+def test_public_suffix_entries_are_told_apart_from_domain_wildcards(entry, public):
+    assert providers.public_suffix_entries([entry]) == ([entry] if public else [])
+
+
+def test_an_explicit_tavily_search_with_a_suffix_filter_says_why(monkeypatch):
+    def forbidden(**kwargs):
+        raise AssertionError("the provider must not be called")
+
+    _isolated_search(monkeypatch, "tavily", "TAVILY_API_KEY", forbidden)
+
+    result = search.run_search_request(query="cve advisory", provider="Tavily", include_domains=".gov")
+
+    assert result["error"].startswith("Tavily cannot filter by a domain suffix such as .gov")
+    assert "Brave, Serper, Exa or Firecrawl" in result["error"]
+    assert result["results"] == []
+
+
+def test_an_automatic_search_with_a_suffix_filter_never_routes_to_tavily(monkeypatch):
+    seen = {}
+
+    def capture(request, adapter, config):
+        seen["config"] = config
+        raise RuntimeError("stop after planning")
+
+    monkeypatch.setattr(search, "execute_v3_request", capture)
+    config = {"auto_routing": {"disabled_providers": ["you"]}}
+
+    with pytest.raises(RuntimeError):
+        search.run_search_request(query="cve advisory", include_domains=[".gov"], config=config)
+
+    assert set(seen["config"]["auto_routing"]["disabled_providers"]) >= {"tavily", "you"}
+    assert config["auto_routing"] == {"disabled_providers": ["you"]}  # the caller's routing is untouched
+
+
+def test_a_hostname_filter_keeps_tavily_eligible(monkeypatch):
+    seen = {}
+
+    def capture(request, adapter, config):
+        seen["config"] = config
+        raise RuntimeError("stop after planning")
+
+    monkeypatch.setattr(search, "execute_v3_request", capture)
+
+    with pytest.raises(RuntimeError):
+        search.run_search_request(query="cve advisory", include_domains=["cisa.gov"], config={})
+
+    assert "tavily" not in (seen["config"].get("auto_routing") or {}).get("disabled_providers", [])
+
+
+def test_the_command_line_refuses_a_suffix_filter_for_tavily(monkeypatch, capsys):
+    monkeypatch.setattr("sys.argv", ["search.py", "--query", "cve", "--provider", "tavily", "--include-domains", ".gov"])
+
+    with pytest.raises(SystemExit) as exit_info:
+        search.main()
+
+    assert exit_info.value.code == 2
+    assert "Tavily cannot filter by a domain suffix" in capsys.readouterr().err
 
 
 def test_tavily_skips_unusable_entries_and_lets_exclude_win(monkeypatch):

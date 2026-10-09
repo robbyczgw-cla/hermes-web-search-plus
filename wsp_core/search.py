@@ -25,6 +25,7 @@ from __future__ import annotations
 
 
 import argparse
+import copy
 import json
 import os
 import queue
@@ -856,6 +857,11 @@ def main():
         domain_filters(args.include_domains, args.exclude_domains)
     except ValueError as exc:
         parser.error(str(exc))
+    if (
+        str(args.provider or "").lower() in _providers.DOMAIN_SUFFIX_FILTER_UNSUPPORTED
+        and _providers.public_suffix_entries(args.include_domains, args.exclude_domains)
+    ):
+        parser.error(_providers.domain_suffix_unsupported_message(str(args.provider).lower()))
     
     # Handle --explain-routing
     if args.explain_routing:
@@ -2191,16 +2197,28 @@ def run_search_request(
     """
     if not query and not (include_domains or exclude_domains):
         return {"error": "query is required", "provider": provider, "query": query, "results": []}
+    requested = str(provider or "auto").strip().lower()
+    suffix_filters = _providers.public_suffix_entries(include_domains, exclude_domains)
     try:
         freshness = _providers.normalize_freshness(freshness)
         search_type = _providers.normalize_search_type(search_type)
         domain_filters(include_domains, exclude_domains)  # raises when include_domains has no usable domain
+        if suffix_filters and requested in _providers.DOMAIN_SUFFIX_FILTER_UNSUPPORTED:
+            raise ValueError(_providers.domain_suffix_unsupported_message(requested))
     except ValueError as exc:
         return {"error": str(exc), "provider": provider, "query": query, "results": []}
     # One list of entries whatever the caller sent ("a.com, b.com" or a bare string).
     include_domains = domain_filter_tokens(include_domains) or None
     exclude_domains = domain_filter_tokens(exclude_domains) or None
     config = apply_profile_effects(config) if config is not None else load_config()
+    if suffix_filters:
+        # A suffix filter (".gov") must not route to a provider that cannot apply
+        # it, neither first nor as fallback or research member.
+        config = copy.deepcopy(config)
+        auto = config.setdefault("auto_routing", {})
+        auto["disabled_providers"] = sorted(
+            set(auto.get("disabled_providers") or []) | _providers.DOMAIN_SUFFIX_FILTER_UNSUPPORTED
+        )
     language, config = apply_auto_language(language, config)
     policy_mode = str((config.get("routing") or {}).get("policy_mode", "classic"))
     request = legacy_request_to_v3(
