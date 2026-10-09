@@ -2,9 +2,10 @@
 """Generate docs/ROUTING.md from the routing, intent, quality and cache constants.
 
 The reference is rendered deterministically from the real module constants:
-the first-provider table and measured order (routing.py), the intents and
-their cue tables (intents.py), the authority domains (quality.py), the cache
-caps (cache.py) and the default provider lists (provider_registry.py, config.py).
+the first-provider table and measured order (wsp_core/routing.py), the intents
+and their cue tables (wsp_core/intents.py), the authority domains
+(wsp_core/quality.py), the cache caps (wsp_core/cache.py) and the default
+provider lists (wsp_core/provider_registry.py, wsp_core/config.py).
 The document cannot drift from behavior without failing the --check mode used
 in CI/tests.
 
@@ -354,7 +355,8 @@ def _fallback_section() -> List[str]:
     lines += _para(
         f"4.x setups wrote this list into `config.json`: {_code(legacy)}. A "
         "`provider_priority` that starts with exactly this list is treated as never customized. "
-        "When the config is loaded it is replaced by the current default. Providers that come after the "
+        "When the config is loaded it is replaced by the current default, unless `auto_routing.order` "
+        "is `custom` (then it is your chosen order). Providers that come after the "
         "old list are kept, after the entries of the new default. Any other list is used as "
         "written."
     )

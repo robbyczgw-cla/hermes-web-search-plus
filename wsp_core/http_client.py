@@ -9,6 +9,7 @@ from contextlib import contextmanager
 import io
 import json
 import os
+import re
 import socket
 import ssl
 import threading
@@ -38,6 +39,8 @@ _REDIRECT_CODES = {301, 302, 303, 307, 308}
 # limited separately, so a small compressed body cannot expand without bound.
 MAX_WIRE_RESPONSE_BYTES = 16 * 1024 * 1024
 MAX_DECODED_RESPONSE_BYTES = 16 * 1024 * 1024
+# HTTP error bodies are only inspected to classify the error, never shown.
+_ERROR_BODY_LIMIT = 4096
 # Errors that mean a reused idle socket was already closed by the server.
 _STALE_CONNECTION_ERRORS = (
     http.client.RemoteDisconnected,
@@ -240,17 +243,18 @@ def _safe_opener():
     return opener
 
 
-def _read_bounded_wire(response) -> bytes:
-    """Read at most MAX_WIRE_RESPONSE_BYTES from a response, or refuse."""
+def _read_bounded_wire(response, limit: int | None = None) -> bytes:
+    """Read at most ``limit`` (default MAX_WIRE_RESPONSE_BYTES) from a response, or refuse."""
+    limit = MAX_WIRE_RESPONSE_BYTES if limit is None else limit
     declared = _response_header(response, "Content-Length").strip()
-    if declared.isdigit() and int(declared) > MAX_WIRE_RESPONSE_BYTES:
+    if declared.isdigit() and int(declared) > limit:
         raise _too_large()
     try:
-        raw = response.read(MAX_WIRE_RESPONSE_BYTES + 1)
+        raw = response.read(limit + 1)
     except TypeError:
         # Duck-typed responses whose read() takes no size argument.
         raw = response.read()
-    if len(raw) > MAX_WIRE_RESPONSE_BYTES:
+    if len(raw) > limit:
         raise _too_large()
     return raw
 
@@ -359,7 +363,7 @@ def urlopen(req, timeout: float = 30):
     return _pooled_open(req, timeout)
 
 
-DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/4.3.5"
+DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/5.0.0"
 
 
 class ProviderRequestError(Exception):
@@ -371,12 +375,16 @@ class ProviderRequestError(Exception):
         status_code: int | None = None,
         transient: bool = False,
         retry_after: float | None = None,
+        out_of_credit: bool = False,
     ):
         super().__init__(message)
         self.status_code = status_code
         self.transient = transient
         # Provider-requested wait (seconds) from a Retry-After header, if any.
         self.retry_after = retry_after
+        # The provider account is empty. status_code stays the provider's real
+        # status (Linkup answers 429, Serper 400); this flag drives QUOTA.
+        self.out_of_credit = out_of_credit
 
 
 def _response_header(response, name: str) -> str:
@@ -396,15 +404,15 @@ def _response_header(response, name: str) -> str:
     return ""
 
 
-def _bounded_inflate(raw: bytes, wbits: int) -> bytes:
-    """Decompress raw (possibly multi-member) data, never exceeding the decoded limit."""
+def _bounded_inflate(raw: bytes, wbits: int, limit: int) -> bytes:
+    """Decompress raw (possibly multi-member) data, never exceeding ``limit`` decoded bytes."""
     out = bytearray()
     data = raw
     while True:
         inflater = zlib.decompressobj(wbits)
-        chunk = inflater.decompress(data, MAX_DECODED_RESPONSE_BYTES - len(out) + 1)
+        chunk = inflater.decompress(data, limit - len(out) + 1)
         out += chunk
-        if len(out) > MAX_DECODED_RESPONSE_BYTES:
+        if len(out) > limit:
             raise _too_large()
         if not inflater.eof:
             raise zlib.error("truncated stream")
@@ -415,16 +423,20 @@ def _bounded_inflate(raw: bytes, wbits: int) -> bytes:
             return bytes(out)
 
 
-def _read_response_body(response) -> bytes:
-    """Read a bounded body and decode supported Content-Encoding values (bounded)."""
-    raw = _read_bounded_wire(response)
+def _read_response_body(response, limit: int | None = None) -> bytes:
+    """Read a bounded body and decode supported Content-Encoding values (bounded).
+
+    ``limit`` replaces both default bounds, for bodies that are only inspected.
+    """
+    decoded_limit = MAX_DECODED_RESPONSE_BYTES if limit is None else limit
+    raw = _read_bounded_wire(response, limit)
     if not raw:
         return raw
     encoding = _response_header(response, "Content-Encoding").strip().lower()
 
     if encoding in {"gzip", "x-gzip"} or raw.startswith(b"\x1f\x8b"):
         try:
-            return _bounded_inflate(raw, 16 + zlib.MAX_WBITS)
+            return _bounded_inflate(raw, 16 + zlib.MAX_WBITS, decoded_limit)
         except (OSError, EOFError, zlib.error):
             raise ProviderRequestError(
                 "Provider sent a corrupted gzip response body. Please retry.",
@@ -432,11 +444,11 @@ def _read_response_body(response) -> bytes:
             )
     if encoding == "deflate":
         try:
-            return _bounded_inflate(raw, zlib.MAX_WBITS)
+            return _bounded_inflate(raw, zlib.MAX_WBITS, decoded_limit)
         except zlib.error:
             # Some servers send raw deflate without the zlib wrapper.
             try:
-                return _bounded_inflate(raw, -zlib.MAX_WBITS)
+                return _bounded_inflate(raw, -zlib.MAX_WBITS, decoded_limit)
             except zlib.error:
                 raise ProviderRequestError(
                     "Provider sent a corrupted deflate response body. Please retry.",
@@ -448,7 +460,7 @@ def _read_response_body(response) -> bytes:
             "Disable brotli for this provider or install a brotli-capable transport.",
             transient=False,
         )
-    if len(raw) > MAX_DECODED_RESPONSE_BYTES:
+    if len(raw) > decoded_limit:
         raise _too_large()
     return raw
 
@@ -502,24 +514,61 @@ def _parse_retry_after(error: HTTPError) -> float | None:
     return max(0.0, retry_at.timestamp() - time.time())
 
 
-# Body markers of an empty account. Some providers (Linkup) answer 429 for
-# this; it is a quota problem, not a rate limit that clears in seconds.
-_OUT_OF_CREDIT_MARKERS = (
-    "insufficient_funds", "insufficient funds", "not have enough funds",
-    "insufficient_credits", "insufficient credits", "out of credits",
-    "no credits", "credit balance", "quota exceeded", "quota_exceeded",
+# Wording that says the account itself is empty. Some providers answer 429
+# (Linkup) or 400 (Serper) for this; it is a quota problem, not a rate limit
+# that clears in seconds. "Quota exceeded" is left out on purpose: providers
+# also use it for per-minute limits.
+_OUT_OF_CREDIT_WORDING = re.compile(
+    r"(?<![a-z0-9])(?:insufficient[ _](?:credits|funds)|(?:out of|not enough|no) credits"
+    r"|credit balance|not have enough funds)(?![a-z0-9])"
 )
+# Structured provider codes for the same thing (Linkup: INSUFFICIENT_FUNDS_CREDITS).
+_OUT_OF_CREDIT_CODES = frozenset({
+    "insufficient_funds_credits", "insufficient_credits", "insufficient_funds",
+})
+# A 429 carrying one of these is a rate limit that clears by itself, whatever
+# its body says.
+_RATE_LIMIT_HINT_HEADERS = ("Retry-After", "RateLimit-Reset", "X-RateLimit-Reset")
+
+
+def _error_body_text(error: HTTPError) -> str:
+    """The decoded start of an HTTP error body, for classification only.
+
+    Decoded like any response body (Brave answers gzip). Callers must never
+    copy this text into messages, logs or results.
+    """
+    try:
+        body = _read_response_body(error, _ERROR_BODY_LIMIT)
+    except Exception:
+        return ""
+    return body.decode("utf-8", "replace")
+
+
+def _json_error_codes(text: str) -> list[str]:
+    try:
+        data = json.loads(text)
+    except (ValueError, RecursionError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    nested = data.get("error")
+    sources = (data, nested) if isinstance(nested, dict) else (data,)
+    codes = (source.get(key) for source in sources for key in ("code", "error_code"))
+    return [code.strip().lower() for code in codes if isinstance(code, str)]
 
 
 def _out_of_credit(error: HTTPError) -> bool:
-    if error.code not in {402, 403, 429}:
+    """True when an HTTP error says the provider account is empty."""
+    if error.code == 402:
+        return True
+    if error.code not in {400, 403, 429}:
         return False
-    try:
-        body = error.read(4096)
-    except Exception:
+    if error.code == 429 and any(_response_header(error, name).strip() for name in _RATE_LIMIT_HINT_HEADERS):
         return False
-    text = body.decode("utf-8", "replace").lower() if isinstance(body, bytes) else str(body).lower()
-    return any(marker in text for marker in _OUT_OF_CREDIT_MARKERS)
+    text = _error_body_text(error)
+    if any(code in _OUT_OF_CREDIT_CODES for code in _json_error_codes(text)):
+        return True
+    return _OUT_OF_CREDIT_WORDING.search(text.lower()) is not None
 
 
 def _raise_provider_http_error(error: HTTPError) -> None:
@@ -527,8 +576,9 @@ def _raise_provider_http_error(error: HTTPError) -> None:
         raise ProviderRequestError(
             f"Out of credits: the provider account has no funds left; top it up or "
             f"remove its key (HTTP {error.code})",
-            status_code=402,
+            status_code=error.code,
             transient=False,
+            out_of_credit=True,
         )
     friendly_msg = _friendly_http_error(error.code)
     raise ProviderRequestError(

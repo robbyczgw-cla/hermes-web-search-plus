@@ -1,5 +1,5 @@
 name: web-search-plus
-version: "4.3.5"
+version: "5.0.0"
 description: "Multi-provider web search, URL extraction, quality reports, and opt-in research mode"
 author: robbyczgw-cla
 requires_env: []
@@ -43,13 +43,17 @@ onboarding:
   env_override: "WEB_SEARCH_PLUS_CONFIG"
   note: "No single provider key is globally required. Add at least one search-capable provider for web_search_plus; add Linkup or another extraction-capable provider for web_extract_plus. Setup keys live in .env; routing preferences live in config.json and can choose fixed-provider mode or tuned auto-routing without relying on unreleased Hermes core plugin-CLI support. Use setup.py fastpath to inspect advisory Hermes config hints for lower-latency direct tool routing."
   recommended_env:
-    - name: YOU_API_KEY
-      description: "You.com — fast Routing v2 core provider"
-      url: "https://api.you.com"
+    - name: BRAVE_API_KEY
+      description: "Brave Search — first choice for most automatic searches"
+      url: "https://api.search.brave.com/app/keys"
       secret: true
     - name: SERPER_API_KEY
-      description: "Serper — reliable Google-like fallback for search/news/shopping/local"
+      description: "Serper — Google results; first for security and shopping queries"
       url: "https://serper.dev/api-key"
+      secret: true
+    - name: EXA_API_KEY
+      description: "Exa — first for docs and academic queries"
+      url: "https://dashboard.exa.ai/api-keys"
       secret: true
     - name: LINKUP_API_KEY
       description: "Linkup — cheap clean extraction (€5 free monthly credits)"

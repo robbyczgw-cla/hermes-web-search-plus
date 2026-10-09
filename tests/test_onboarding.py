@@ -912,23 +912,143 @@ def test_setup_skips_keyless_prompt_when_already_opted_in(tmp_path, monkeypatch,
     assert "No keys entered; nothing changed." in capsys.readouterr().out
 
 
-def test_starter_setup_without_any_key_offers_keyless_start(tmp_path, monkeypatch, capsys):
+class _Stdin:
+    def __init__(self, tty: bool):
+        self._tty = tty
+
+    def isatty(self) -> bool:
+        return self._tty
+
+
+def _run_starter_setup(tmp_path, monkeypatch, *, tty: bool, answer: str, config_text: str | None = None):
+    """Run `setup --no-jev` with blank key prompts; return the Keenable offer prompts shown."""
     env_path = tmp_path / ".env"
     config_path = tmp_path / "config.json"
+    if config_text is not None:
+        config_path.write_text(config_text)
     _isolate_keyless_env(monkeypatch, config_path)
+    monkeypatch.setattr(wsp.sys, "stdin", _Stdin(tty))
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["setup", "--no-jev", "--env-path", str(env_path), "--config-path", str(config_path)])
     prompts = []
     monkeypatch.setattr(wsp.getpass, "getpass", lambda _prompt: "")
-    monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or "")
+    monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or (answer(prompt) if callable(answer) else answer))
 
     args.func(args)
 
-    assert any("Start without a key using Keenable" in prompt for prompt in prompts)
-    assert "Enabled keyless public search for Keenable" in capsys.readouterr().out
+    return env_path, config_path, prompts
+
+
+def _allow_public_written(config_path) -> bool:
+    return config_path.exists() and "allow_public" in config_path.read_text()
+
+
+@pytest.mark.parametrize("answer", ["y", "Yes"])
+def test_starter_setup_without_any_key_opts_in_to_keyless_start_on_yes(tmp_path, monkeypatch, capsys, answer):
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer=answer)
+
+    out = capsys.readouterr().out
+    assert any("Start without a key using Keenable" in prompt and "[y/N]" in prompt for prompt in prompts)
+    assert "Enabled keyless public search for Keenable" in out
     assert json.loads(config_path.read_text())["keenable"]["allow_public"] is True
     assert not env_path.exists()
+
+
+@pytest.mark.parametrize("answer", ["", "n", "no", "maybe", "  "])
+def test_starter_setup_without_any_key_declines_keyless_start_unless_told_yes(tmp_path, monkeypatch, capsys, answer):
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer=answer)
+
+    assert any("Start without a key using Keenable" in prompt for prompt in prompts)
+    assert "No keys entered; nothing changed." in capsys.readouterr().out
+    assert not _allow_public_written(config_path)
+    assert not env_path.exists()
+
+
+def test_keyless_offer_says_what_is_sent_before_it_asks(tmp_path, monkeypatch, capsys):
+    shown_before_prompt = []
+
+    def answer(prompt):
+        shown_before_prompt.append(capsys.readouterr().out)
+        return ""
+
+    _run_starter_setup(tmp_path, monkeypatch, tty=True, answer=answer)
+
+    offer = [text for text in shown_before_prompt if "unauthenticated public service" in text]
+    assert len(offer) == 1
+    assert "queries and fetched URLs" in offer[0]
+    assert "Keenable" in offer[0]
+
+
+def test_starter_setup_without_a_terminal_never_opts_in_to_keyless(tmp_path, monkeypatch, capsys):
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=False, answer="y")
+
+    out = capsys.readouterr().out
+    assert not any("Keenable" in prompt for prompt in prompts)
+    assert "--keyless-public" in out
+    assert "unauthenticated public service" in out
+    assert "No keys entered; nothing changed." in out
+    assert not _allow_public_written(config_path)
+    assert not env_path.exists()
+
+
+def test_piped_blank_lines_do_not_opt_in_to_keyless(tmp_path):
+    script = Path(__file__).resolve().parents[1] / "setup.py"
+    env_path = tmp_path / ".env"
+    config_path = tmp_path / "config.json"
+    clean_env = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": str(tmp_path),
+        "HERMES_HOME": str(tmp_path / "hermes"),
+        "WEB_SEARCH_PLUS_CONFIG": str(config_path),
+    }
+
+    result = subprocess.run(
+        [sys.executable, str(script), "setup", "--no-jev", "--env-path", str(env_path), "--config-path", str(config_path)],
+        input="\n" * 40,
+        env=clean_env,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "--keyless-public" in result.stdout
+    assert "No keys entered; nothing changed." in result.stdout
+    assert not _allow_public_written(config_path)
+
+
+def test_starter_setup_with_a_search_key_in_the_process_environment_does_not_offer_keyless(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("BRAVE_API_KEY", "brave-env-key-123456")
+
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer="y")
+
+    assert not any("Keenable" in prompt for prompt in prompts)
+    assert "Start without a key" not in capsys.readouterr().out
+    assert not _allow_public_written(config_path)
+
+
+@pytest.mark.parametrize(
+    "config_text",
+    [
+        '{"version": 1, "keenable": {"api_key": "keenable-config-key-123456"}}\n',
+        '{"version": 1, "searxng": {"base_url": "https://search.example"}}\n',
+        '{"version": 1, "keenable": {"allow_public": true}}\n',
+    ],
+    ids=["keenable-key", "searxng-url", "keyless-already-on"],
+)
+def test_starter_setup_with_a_search_provider_in_the_config_does_not_offer_keyless(tmp_path, monkeypatch, config_text):
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer="y", config_text=config_text)
+
+    assert not any("Keenable" in prompt for prompt in prompts)
+
+
+def test_starter_setup_with_a_search_key_in_the_env_file_does_not_offer_keyless(tmp_path, monkeypatch):
+    (tmp_path / ".env").write_text("EXA_API_KEY=exa-file-key-123456\n")
+
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer="y")
+
+    assert not any("Keenable" in prompt for prompt in prompts)
+    assert not _allow_public_written(config_path)
 
 
 def test_starter_setup_with_a_search_key_does_not_offer_keyless(tmp_path, monkeypatch, capsys):

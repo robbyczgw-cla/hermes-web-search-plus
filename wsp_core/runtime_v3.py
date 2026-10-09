@@ -315,6 +315,7 @@ def _observation(
         or item.get("publish_date")
         or item.get("publishedDate")
         or item.get("page_age")
+        or item.get("age")
     )
     published_at = None
     if isinstance(raw_date, str):
@@ -542,8 +543,13 @@ def response_from_legacy(
     else:
         status = ResponseStatus.OK
 
+    # A hedge loser is cancelled because another attempt won, not by a budget.
+    superseded = set(payload.get("_v3_superseded_providers") or ())
     budget_limited = payload.get("_v3_budget_limited") is True or any(
-        attempt.outcome is AttemptOutcome.CANCELLED
+        (
+            attempt.outcome is AttemptOutcome.CANCELLED
+            and attempt.provider not in superseded
+        )
         or attempt.skip_reason
         in {SkipReason.BUDGET_BLOCKED, SkipReason.DEADLINE_EXCEEDED}
         for attempt in provider_attempts

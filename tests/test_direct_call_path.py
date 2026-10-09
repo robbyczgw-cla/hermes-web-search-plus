@@ -115,6 +115,8 @@ def test_option_like_text_reaches_the_provider_as_data(monkeypatch, text):
     monkeypatch.setattr(providers, "search_serper", fake_search_serper)
     monkeypatch.setenv("SERPER_API_KEY", "test-key-0123456789")
 
-    plugin._run_search(text, provider="serper", no_cache=True, include_domains=[text])
+    # An option-like exclude entry is not a domain: it is skipped, never argv.
+    # (As an include entry it is a validation error; see test_domain_filter_translation.)
+    plugin._run_search(text, provider="serper", no_cache=True, exclude_domains=[text])
 
     assert seen["query"] == text

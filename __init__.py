@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v4.3.5
+web-search-plus — Hermes Plugin v5.0.0
 Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "4.3.5"
+__version__ = "5.0.0"
 
 import argparse
 import getpass
@@ -47,7 +47,10 @@ from .wsp_core.provider_registry import (
 from .wsp_core.env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, is_truthy, load_env_files
 from .wsp_core.cache import MAX_STORED_TEXT_CHARS, store_web_text
 from .wsp_core.config import (
+    ORDER_AUTO_WORDS,
     REMOVED_PROVIDER_IDS,
+    _apply_desktop_settings,
+    _desktop_settings,
     _replace_pre_5_default_priority,
     apply_profile_effects,
     load_config,
@@ -101,6 +104,14 @@ def _read_env_file(path: Path) -> Dict[str, str]:
         if key.strip() and value:
             values[key.strip()] = value
     return values
+
+
+def _effective_env(env_file: Mapping[str, str]) -> Dict[str, str]:
+    """The process environment, plus whatever an .env file adds. Process values win."""
+    env = dict(os.environ)
+    for key, value in env_file.items():
+        env.setdefault(key, value)
+    return env
 
 
 def _provider_config_status(env: Optional[Mapping[str, str]] = None, config: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
@@ -564,7 +575,8 @@ def _merge_behavior_config(user_config: Mapping[str, Any]) -> Dict[str, Any]:
             priority = _normalize_provider_csv(auto_user["provider_priority"], routing=True)
         else:
             priority = _normalize_provider_csv(",".join(str(p) for p in auto_user["provider_priority"]), routing=True)
-        priority = _replace_pre_5_default_priority(priority)
+        if auto["order"] != "custom":
+            priority = _replace_pre_5_default_priority(priority)
         auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
     if auto_user.get("extract_provider_priority"):
         if isinstance(auto_user["extract_provider_priority"], str):
@@ -705,7 +717,7 @@ def _routing_summary(config: Mapping[str, Any]) -> str:
         "  auto-allow false: " + (
             ", ".join(p for p, allowed in sorted((auto.get("auto_allow") or {}).items()) if allowed is False) or "none"
         ),
-        f"  confidence threshold: {auto.get('confidence_threshold', 0.3)}",
+        f"  confidence threshold: {auto.get('confidence_threshold', 0.3)} (no effect since 5.0)",
     ]
     effective_pool = [
         provider
@@ -1072,7 +1084,7 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     setup.add_argument("--auto-allow", help="Comma-separated providers allowed in auto-routing")
     setup.add_argument("--auto-deny", help="Comma-separated providers blocked from auto-routing but still usable explicitly")
     setup.add_argument("--fallback-provider", help="Fallback provider when no route is available")
-    setup.add_argument("--confidence-threshold", type=float, help="Auto-routing confidence threshold 0.0-1.0")
+    setup.add_argument("--confidence-threshold", type=float, help="Accepted for compatibility; no effect since 5.0")
     jev = setup.add_mutually_exclusive_group()
     jev.add_argument("--jev", action="store_true", help="Enable optional Jev during setup")
     jev.add_argument("--no-jev", action="store_true", help="Leave optional Jev disabled (default)")
@@ -1143,7 +1155,7 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     allow_auto.add_argument("mode", choices=["on", "off", "true", "false", "yes", "no"])
     allow_auto.add_argument("--config-path")
     allow_auto.add_argument("--dry-run", action="store_true")
-    threshold = config_subs.add_parser("set-threshold", help="Set routing confidence threshold")
+    threshold = config_subs.add_parser("set-threshold", help="Set the 4.x routing confidence threshold (no effect since 5.0)")
     threshold.add_argument("value", type=float)
     threshold.add_argument("--config-path")
     threshold.add_argument("--dry-run", action="store_true")
@@ -1218,7 +1230,7 @@ def _handle_config_command(args: Any) -> None:
         config["auto_routing"]["provider_priority"] = _normalize_provider_csv(getattr(args, "providers"), routing=True)
     elif subcommand == "set-order":
         raw = str(getattr(args, "providers")).strip().lower()
-        if raw in {"auto", "automatic", "measured"}:
+        if raw in ORDER_AUTO_WORDS:
             config["auto_routing"]["order"] = "measured"
         else:
             config["auto_routing"]["order"] = "custom"
@@ -1305,16 +1317,20 @@ def _web_search_plus_cli_command(args: Any) -> None:
         if env_path:
             env = _read_env_file(Path(env_path))
         else:
-            env = dict(os.environ)
-            for key, value in _read_env_file(_get_hermes_env_path()).items():
-                env.setdefault(key, value)
-        config = _load_behavior_config(Path(config_path)) if config_path else _load_behavior_config()
+            env = _effective_env(_read_env_file(_get_hermes_env_path()))
+        path = Path(config_path) if config_path else _get_plugin_config_path()
+        # Status shows what searches use: config.json plus the Hermes Desktop
+        # settings, which the engine lays over it at load time. Never written back.
+        desktop = _desktop_settings(path)
+        config = _apply_desktop_settings(json.loads(json.dumps(_load_behavior_config(path))), desktop)
         payload = _status_payload(env, config)
         if getattr(args, "json", False):
             print(json.dumps(payload, indent=2, sort_keys=True))
         else:
             print(_render_setup_guidance(env=env, fancy=not getattr(args, "plain", False), config=config))
             print("\n" + _routing_summary(config))
+            if desktop:
+                print("  from Hermes Desktop settings: " + ", ".join(sorted(desktop)))
             donsetch = payload.get("donsetch") or {}
             if donsetch.get("binary_configured") or donsetch.get("state") != "missing":
                 print(
@@ -1408,6 +1424,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
                 keyless_enable.append(item["provider"])
         # Nothing searchable after the prompts: offer the keyless Keenable tier so
         # the tools work right away. Keys added later take over automatically.
+        # Keyless use is an explicit opt-in: asked only at a terminal, default no.
         search_keys = {
             item["env"] for item in _PROVIDER_CATALOG
             if PROVIDER_SPECS[item["provider"]].supports_search
@@ -1416,19 +1433,29 @@ def _web_search_plus_cli_command(args: Any) -> None:
             not (set(values) & search_keys)
             and "keenable" not in keyless_enable
             and not _keyless_public_opted_in("keenable", config_path)
-            and not _provider_config_status(_read_env_file(env_path), config)["search_configured"]
+            and not _provider_config_status(_effective_env(env_now), config)["search_configured"]
         ):
             if force_keyless:
                 answer = "y"
+            elif not sys.stdin.isatty():
+                answer = "n"
+                print(
+                    "\nNo search key yet. `setup.py setup --keyless-public` starts with Keenable's public tier "
+                    "(no key; queries and fetched URLs go to its unauthenticated public service)."
+                )
             else:
+                print(
+                    "\nNo search key yet. Keenable's public tier needs none, but your queries and "
+                    "fetched URLs go to Keenable's unauthenticated public service."
+                )
                 try:
                     answer = input(
-                        "\nNo search key yet. Start without a key using Keenable's public tier? "
-                        "Keys you add later take over automatically. [Y/n]: "
+                        "Start without a key using Keenable's public tier? "
+                        "Keys you add later take over automatically. [y/N]: "
                     ).strip().lower()
                 except (EOFError, OSError):
                     answer = "n"
-            if answer in ("", "y", "yes"):
+            if answer in ("y", "yes"):
                 keyless_enable.append("keenable")
         for provider in keyless_enable:
             config.setdefault(PROVIDER_SPECS[provider].config_section, {})["allow_public"] = True
@@ -1723,14 +1750,25 @@ _SNIPPET_DISPLAY_CHARS = 1200
 
 
 def _display_snippet(snippet: str) -> str:
-    """A long snippet on one line, cut at a word boundary; short ones unchanged."""
+    """A long snippet on one line, cut for display; short ones unchanged.
+
+    The cut falls on a word boundary if that keeps at least half of the limit;
+    text with few spaces (CJK, long URLs, minified code) is cut at the limit
+    instead. A snippet whose cut would save less than the marker adds is shown
+    whole. In the marker N counts the characters shown, M the snippet's length.
+    """
     if len(snippet) <= _SNIPPET_DISPLAY_CHARS:
         return snippet
     flat = " ".join(snippet.split())
     if len(flat) <= _SNIPPET_DISPLAY_CHARS:
         return flat
-    cut = flat[:_SNIPPET_DISPLAY_CHARS].rsplit(" ", 1)[0] or flat[:_SNIPPET_DISPLAY_CHARS]
-    return f"{cut} … [TRUNCATED: showing first {len(cut)} of {len(snippet)} characters]"
+    # The window includes the character at the limit: a space there ends the
+    # last whole word, so that word stays.
+    cut = flat[: _SNIPPET_DISPLAY_CHARS + 1].rpartition(" ")[0]
+    if len(cut) < _SNIPPET_DISPLAY_CHARS // 2:
+        cut = flat[:_SNIPPET_DISPLAY_CHARS]
+    shown = f"{cut} … [TRUNCATED: showing first {len(cut)} of {len(snippet)} characters]"
+    return shown if len(shown) < len(flat) else flat
 
 
 _UNTRUSTED_WEB_DATA_NOTICE = (
@@ -2016,15 +2054,11 @@ def register(ctx: Any) -> None:
     schema = {
         "name": "web_search_plus",
         "description": (
-            "Multi-provider web search with intelligent auto-routing. "
-            "Automatically selects the best provider based on query intent: "
-            "Serper for shopping/news/facts, Tavily for research/analysis, "
-            "Exa for semantic discovery, "
-            "Brave for general web search, "
-            "Linkup for source-backed grounding/citations, "
-            "Firecrawl for web search plus optional scrape-ready results, "
-            "You.com for real-time snippets, SearXNG for privacy-focused/self-hosted search, "
-            "and SerpBase/Querit only when explicitly enabled or forced. "
+            "Multi-provider web search with automatic routing by query type: "
+            "Brave first for general, news, local and community queries, "
+            "Exa for docs and academic queries, Serper for security and shopping queries; "
+            "if a provider fails, is slow or returns nothing, the next configured one is tried. "
+            "SerpBase/Querit only when explicitly enabled or forced. "
             "All providers are constrained to source-result/source-text modes. "
             "Override with provider param if needed."
         ),
@@ -2038,7 +2072,7 @@ def register(ctx: Any) -> None:
                 "provider": {
                     "type": "string",
                     "enum": ["auto", *SEARCH_PROVIDER_IDS],
-                    "description": "Search provider. Use 'auto' for intelligent routing (default). Brave and Serper share generic web-search intents and ties are distributed deterministically per query.",
+                    "description": "Search provider. Use 'auto' for routing by query type (default).",
                     "default": "auto",
                 },
                 "depth": {

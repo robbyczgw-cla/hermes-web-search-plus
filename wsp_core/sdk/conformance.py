@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-from unittest.mock import patch
 
 from .api import extract_result, search_result, source_result
 
@@ -17,6 +16,10 @@ def provider_conformance_errors() -> tuple[str, ...]:
     making a provider request.  It is equally strict for built-ins and modules
     discovered from ``providers.d``.
     """
+    # Imported here: the SDK registers this module at engine start-up, and
+    # unittest.mock is not worth loading before a conformance run.
+    from unittest.mock import patch
+
     from ..config import ProviderConfigError, validate_api_key
     from ..provider_adapter_protocol import dispatch_conformance_errors, validate_adapter_result
     from ..provider_dispatch import EXTRACT_DISPATCH, SEARCH_DISPATCH

@@ -136,7 +136,8 @@ appended in default order, so a short list does not remove providers from the ch
 4.x setups wrote this list into `config.json`: `you`, `serper`, `exa`, `firecrawl`,
 `tavily`, `linkup`, `brave`, `parallel`, `serpbase`, `querit`, `searxng`, `keenable`. A
 `provider_priority` that starts with exactly this list is treated as never customized.
-When the config is loaded it is replaced by the current default. Providers that come
+When the config is loaded it is replaced by the current default, unless
+`auto_routing.order` is `custom` (then it is your chosen order). Providers that come
 after the old list are kept, after the entries of the new default. Any other list is
 used as written.
 

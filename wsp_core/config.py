@@ -242,6 +242,8 @@ def _deepcopy_default_config() -> Dict[str, Any]:
 
 
 _ROUTING_PROVIDER_NAMES = set(PROVIDER_SPECS)
+# ``set-order`` and the Desktop "Provider order" field read these as "routing by query type".
+ORDER_AUTO_WORDS = frozenset({"auto", "automatic", "measured"})
 REMOVED_PROVIDER_IDS = frozenset({"perplexity", "kilo-perplexity", "kilo_perplexity"})
 
 
@@ -630,7 +632,7 @@ def _quarantine_runtime_config(config_path: Path, reason: str) -> None:
         }), file=sys.stderr)
 
 
-_DESKTOP_SETTING_KEYS = ("country", "language", "max_results", "auto_routing", "searxng_url")
+_DESKTOP_SETTING_KEYS = ("country", "language", "max_results", "auto_routing", "provider_order", "searxng_url")
 
 
 def _coerce_yamlish_scalar(raw: str) -> Any:
@@ -871,6 +873,20 @@ def _present_desktop_text(value: Any) -> Optional[str]:
     return text or None
 
 
+def _desktop_provider_order(raw: str) -> List[str]:
+    """The list ``setup.py config set-order`` would store for this text, or [].
+
+    set-order exits on a name it does not know. A config loader must not, so
+    names that are not providers (including removed ones) are dropped and the
+    rest keep their order. Missing default providers are appended, as for
+    every stored order.
+    """
+    names = [part for part in raw.split(",") if part.strip().lower() in _ROUTING_PROVIDER_NAMES]
+    if not names:
+        return []
+    return _append_missing_default_providers(_normalize_routing_provider_list_config(names))
+
+
 def _apply_desktop_settings(config: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
     """Overlay declared Desktop scalars onto config.json. Empty and 0 do not wipe."""
     if not settings:
@@ -917,10 +933,10 @@ def _apply_desktop_settings(config: Dict[str, Any], settings: Dict[str, Any]) ->
             if not isinstance(auto, dict):
                 auto = {}
                 config["auto_routing"] = auto
-            if raw_order.strip().lower() in {"auto", "automatic", "measured"}:
+            if raw_order.strip().lower() in ORDER_AUTO_WORDS:
                 auto["order"] = "measured"
             else:
-                names = [part.strip().lower() for part in raw_order.split(",") if part.strip()]
+                names = _desktop_provider_order(raw_order)
                 if names:
                     auto["order"] = "custom"
                     auto["provider_priority"] = names

@@ -117,6 +117,7 @@ def test_safe_provider_error_codes_do_not_retain_exception_text() -> None:
     cases = [
         (ProviderRequestError("secret", status_code=401), "auth_error"),
         (ProviderRequestError("secret", status_code=429, transient=True), "rate_limited"),
+        (ProviderRequestError("secret", status_code=429, out_of_credit=True), "provider_error"),
         (ProviderRequestError("secret", status_code=503, transient=True), "provider_unavailable"),
         (ProviderRequestError("secret", transient=True), "transient_provider_error"),
         (TimeoutError("secret"), "timeout"),

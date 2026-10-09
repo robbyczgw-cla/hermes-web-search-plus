@@ -89,6 +89,9 @@ class AdmissionDecision:
     skip_reason: Optional[SkipReason] = None
     store_available: bool = True
     blocking_error_class: Optional[ErrorClass] = None
+    # Transient and timeout buckets that hold failures below the open
+    # threshold; a success must clear them or blips add up across requests.
+    failing_error_classes: tuple[ErrorClass, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -463,6 +466,11 @@ class SQLiteStateStore:
             return AdmissionDecision(
                 True, CircuitState.UNKNOWN, None, store_available=False
             )
+        failing = tuple(
+            error
+            for error in CONSECUTIVE_FAILURES_TO_OPEN
+            if records[error].failure_count > 0
+        )
         expired = []
         for error_class, skip_reason in checks:
             record = records[error_class]
@@ -490,6 +498,7 @@ class SQLiteStateStore:
                     True,
                     CircuitState.HALF_OPEN,
                     blocking_error_class=error_class,
+                    failing_error_classes=failing,
                 )
             if not self._available:
                 return AdmissionDecision(
@@ -505,7 +514,9 @@ class SQLiteStateStore:
                 skip_reason,
                 blocking_error_class=error_class,
             )
-        return AdmissionDecision(True, CircuitState.CLOSED)
+        return AdmissionDecision(
+            True, CircuitState.CLOSED, failing_error_classes=failing
+        )
 
     def _get_circuits(
         self, key: CircuitKey, error_classes: tuple[ErrorClass, ...]

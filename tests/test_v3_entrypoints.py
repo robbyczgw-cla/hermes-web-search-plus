@@ -113,8 +113,8 @@ def test_engine_owned_provider_call_bypasses_all_legacy_retry_and_health(monkeyp
     monkeypatch.setattr(search, "execute_provider_with_retry", forbidden)
     monkeypatch.setattr(search, "mark_provider_failure", forbidden)
     monkeypatch.setattr(search, "reset_provider_health", forbidden)
-    # Adaptive routing samples are not legacy health: the engine owns retry
-    # and circuit state, but every real provider call still trains the router.
+    # Latency samples are not legacy health: the engine owns retry and
+    # circuit state, but every real provider call still records its latency.
     outcomes = []
     monkeypatch.setattr(
         search,
