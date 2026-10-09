@@ -58,6 +58,12 @@ def test_an_include_list_without_a_usable_domain_fails_closed(bad):
         pd._with_site_operators("q", _args(query="q", include_domains=[bad]))
 
 
+def test_a_suffix_filter_restricts_the_search():
+    # "Government sites only" is a filter, not an unusable entry.
+    args = _args(query="q", include_domains=[".gov", "*.ac.uk"], exclude_domains=[".example"])
+    assert pd._with_site_operators("q", args) == "q site:gov OR site:ac.uk -site:example"
+
+
 @pytest.mark.parametrize("blank", ["", "  ", None, [], [""], [None]])
 def test_a_blank_include_list_is_no_filter(blank):
     assert pd._with_site_operators("q", _args(query="q", include_domains=blank)) == "q"

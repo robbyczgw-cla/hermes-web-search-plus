@@ -90,6 +90,22 @@ def test_anything_that_is_not_a_plain_domain_is_rejected(entry):
     assert urls.domain_filter_host(entry) is None
 
 
+@pytest.mark.parametrize("entry, suffix", [
+    (".gov", "gov"),
+    ("*.edu", "edu"),
+    (".ac.uk", "ac.uk"),
+    ("*.GOV.UK", "gov.uk"),
+    (".рф", "xn--p1ai"),
+])
+def test_a_suffix_entry_stays_a_suffix(entry, suffix):
+    assert urls.domain_filter_host(entry) == suffix
+
+
+@pytest.mark.parametrize("entry", [".", "*.", "..gov", "*gov", ".-gov", ".gov.", ".site:gov", ".gov OR"])
+def test_a_malformed_suffix_entry_is_rejected(entry):
+    assert urls.domain_filter_host(entry) is None
+
+
 def test_domain_filters_split_strings_and_lists_alike():
     assert urls.domain_filter_tokens("a.com, b.com;c.com\nd.com") == ["a.com", "b.com;c.com", "d.com"]
     assert urls.domain_filter_tokens(["a.com b.com", None, "", 5]) == ["a.com", "b.com", "5"]

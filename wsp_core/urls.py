@@ -195,6 +195,10 @@ SITE_OPERATOR_LIMIT = 10  # operators per list
 _FILTER_HOST = re.compile(
     r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})"
 )
+# A suffix filter such as ``.gov`` or ``*.ac.uk``: the labels after the dot.
+_FILTER_SUFFIX = re.compile(
+    r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})"
+)
 _FILTER_SEPARATORS = re.compile(r"[\s,]+")
 
 
@@ -220,9 +224,13 @@ def domain_filter_host(entry: str) -> Optional[str]:
     A URL is reduced to its host (scheme, userinfo, port and path dropped),
     ``www.`` and a trailing dot are removed and an internationalised name is
     converted to punycode. Only ``label.label.tld`` made of ``[a-z0-9-]`` is
-    accepted, so the result is always safe to put after ``site:``.
+    accepted, so the result is always safe to put after ``site:``. An entry
+    written as a suffix (``.gov``, ``*.ac.uk``) stays a suffix: ``gov``,
+    ``ac.uk``, which ``site:`` also takes.
     """
     candidate = entry.strip()
+    if candidate.startswith((".", "*.")):
+        return _filter_suffix(candidate.removeprefix("*").removeprefix("."))
     try:
         host = urlsplit(candidate if "://" in candidate else "//" + candidate).hostname
     except ValueError:
@@ -237,6 +245,14 @@ def domain_filter_host(entry: str) -> Optional[str]:
     except UnicodeError:
         return None
     return host if _FILTER_HOST.fullmatch(host) else None
+
+
+def _filter_suffix(suffix: str) -> Optional[str]:
+    try:
+        suffix = suffix.lower().encode("idna").decode("ascii")
+    except UnicodeError:
+        return None
+    return suffix if _FILTER_SUFFIX.fullmatch(suffix) else None
 
 
 def _hosts(tokens: List[str]) -> List[str]:
