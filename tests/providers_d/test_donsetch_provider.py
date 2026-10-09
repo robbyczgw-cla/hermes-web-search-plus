@@ -516,11 +516,11 @@ def test_version_detection_classifies_missing_tested_compatible_and_incompatible
         path.chmod(0o700)
         return str(path)
 
-    tested = module["inspect_donsetch_readiness"](binary=_version_bin("4.2.9"))
+    tested = module["inspect_donsetch_readiness"](binary=_version_bin("4.7.0"))
     assert tested["state"] == "executable"
-    assert tested["version"] == "4.2.9"
+    assert tested["version"] == "4.7.0"
     assert tested["compatibility"] == "tested"
-    assert tested["tested_version"] == "4.2.9"
+    assert tested["tested_version"] == "4.7.0"
     assert "api_key" not in tested
 
     other = module["inspect_donsetch_readiness"](binary=_version_bin("4.2.8"))
@@ -844,3 +844,29 @@ def test_indented_footer_words_remain_source_snippets():
     text = "1. Sone · Study : example.org\n   Weak results are discussed in this study.\nDegraded retrieval : 1/2 backends available."
     result = module["parse_search_evidence"](text, rows)
     assert result[1]["snippet"] == "Weak results are discussed in this study."
+
+
+def test_donsetch_470_fetch_failure_keeps_code_and_next_action():
+    _spec, module = _provider()
+    payload = {
+        "structured": {
+            "ok": False, "content_ok": False, "read_status": "blocked",
+            "code": "ssrf_blocked", "errorKind": "invalid_input",
+            "next_action": "pass a public http(s) URL\n without embedded credentials",
+            "url": "http://127.0.0.1:9/x",
+        },
+        "text": "blocked: 127.0.0.1 is a private/loopback address",
+        "meta": {},
+    }
+    item = module["_project_fetch_item"](payload, "http://127.0.0.1:9/x")
+    assert item["error"] == "donsetch_fetch_failed"
+    assert item["donsetch_code"] == "ssrf_blocked"
+    assert item["donsetch_error_kind"] == "invalid_input"
+    assert item["next_action"] == "pass a public http(s) URL without embedded credentials"
+
+
+def test_donsetch_fetch_failure_drops_malformed_codes():
+    _spec, module = _provider()
+    payload = {"structured": {"content_ok": False, "code": "x" * 200, "errorKind": "bad kind!"}, "text": "", "meta": {}}
+    item = module["_project_fetch_item"](payload, "https://example.com/")
+    assert "donsetch_code" not in item and "donsetch_error_kind" not in item
