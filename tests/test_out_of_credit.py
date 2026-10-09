@@ -260,3 +260,29 @@ def test_tool_text_names_the_failing_provider():
     })
     assert text.splitlines()[0] == "Search error: All providers failed"
     assert "- linkup: Provider quota is exhausted" in text
+
+
+def test_an_empty_account_stays_explained_while_the_provider_is_blocked(monkeypatch):
+    # Live with Linkup: the first search said why; every later one said only
+    # "quota_blocked" for an hour.
+    from wsp_core import providers, search
+
+    calls = []
+
+    def empty_account(**kwargs):
+        calls.append(1)
+        raise http_client.ProviderRequestError(
+            "Out of credits", status_code=429, transient=False, out_of_credit=True
+        )
+
+    monkeypatch.setenv("LINKUP_API_KEY", "test-key-0123456789")
+    monkeypatch.setattr(providers, "search_linkup", empty_account)
+
+    first = search.run_search_request(query="first query", provider="linkup", no_cache=True)
+    second = search.run_search_request(query="second query", provider="linkup", no_cache=True)
+
+    assert calls == [1]  # the second search does not hit the empty account again
+    assert first["provider_errors"][0]["error"].startswith("Out of credits: the provider account")
+    blocked = second["provider_errors"][0]["error"]
+    assert blocked.startswith("Out of credits or quota at its last call; skipped for up to an hour")
+    assert "quota_blocked" not in blocked

@@ -1938,7 +1938,7 @@ def _execute_search_v3(
                     "error": (
                         receipt.error.message
                         if receipt.error is not None
-                        else receipt.skip_reason.value
+                        else _SKIP_REASON_TEXT.get(receipt.skip_reason, receipt.skip_reason.value)
                         if receipt.skip_reason is not None
                         else "provider attempt failed"
                     ),
@@ -2005,6 +2005,23 @@ def _last_resort_probe(engine, store, provider, contexts, operation_for, race):
         return _Race(None, None, receipts, race.empty_providers)
     empty = [] if payload.get("results") else [provider]
     return _Race(provider, payload, receipts, empty)
+
+
+# Why a provider was not called, as the search error lists it. The first
+# failure names its cause ("Out of credits: ..."); while the resulting block
+# lasts, these keep it readable instead of a bare "quota_blocked". WSP's own
+# fixed text, never the provider's.
+_SKIP_REASON_TEXT = {
+    SkipReason.QUOTA_BLOCKED: (
+        "Out of credits or quota at its last call; skipped for up to an hour. "
+        "Top up the account or remove its key"
+    ),
+    SkipReason.AUTH_BLOCKED: "Authentication failed at its last call; skipped for a few minutes. Check its API key",
+    SkipReason.RATE_LIMITED: "Rate limit reached at its last call; skipped until it resets",
+    SkipReason.CIRCUIT_OPEN: "Failed several times in a row; skipped for about a minute",
+    SkipReason.BUDGET_BLOCKED: "Call budget for this request or day is used up",
+    SkipReason.DEADLINE_EXCEEDED: "Not tried: the request ran out of time",
+}
 
 
 @dataclass
