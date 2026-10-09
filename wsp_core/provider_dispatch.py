@@ -30,6 +30,7 @@ from .provider_adapter_protocol import (
 )
 from .provider_registry import PROVIDER_SPECS
 from .search_locale import resolve_locale
+from .urls import SITE_OPERATOR_LIMIT, domain_filters
 
 
 def _resolve(namespace: Any, name: str) -> Callable[..., Dict[str, Any]]:
@@ -68,20 +69,8 @@ def _locale(prov: str, args: Any, config: Dict[str, Any]):
 # =============================================================================
 
 
-_SITE_DOMAIN = re.compile(r"^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
-
-
-def _site_domains(values: Any) -> list:
-    """Bare hostnames only, so a domain list cannot inject search operators."""
-    out = []
-    for value in values or []:
-        host = str(value or "").strip().lower()
-        host = host.split("://", 1)[-1].split("/", 1)[0]
-        if host.startswith("www."):
-            host = host[4:]
-        if _SITE_DOMAIN.match(host) and host not in out:
-            out.append(host)
-    return out
+# ``site:`` as an operator, not inside ``-site:`` or a longer word.
+_SITE_OPERATOR = re.compile(r"(?<![\w-])site:", re.IGNORECASE)
 
 
 def _with_site_operators(query: str, args: Any) -> str:
@@ -89,15 +78,20 @@ def _with_site_operators(query: str, args: Any) -> str:
 
     Brave, Serper, SerpBase and You.com have no include/exclude-domain field, so
     ``include_domains`` used to be dropped silently for them. All four honour
-    ``site:`` / ``-site:`` in the query text.
+    ``site:`` / ``-site:`` in the query text. Entries are reduced to bare
+    hostnames by :func:`urls.domain_filters`, which raises ``ValueError`` when
+    include entries were given and none is usable: an unrestricted search must
+    not stand in for a restricted one.
     """
-    include = _site_domains(getattr(args, "include_domains", None))
-    exclude = _site_domains(getattr(args, "exclude_domains", None))
-    lowered = (query or "").lower()
-    parts = [query or ""]
-    if include and "site:" not in lowered:
-        parts.append(" OR ".join(f"site:{d}" for d in include[:10]))
-    parts.extend(f"-site:{d}" for d in exclude[:10] if f"-site:{d}".lower() not in lowered)
+    include, exclude = domain_filters(
+        getattr(args, "include_domains", None), getattr(args, "exclude_domains", None)
+    )
+    query = query or ""
+    present = set(query.lower().split())
+    parts = [query]
+    if include and not _SITE_OPERATOR.search(query):
+        parts.append(" OR ".join(f"site:{d}" for d in include[:SITE_OPERATOR_LIMIT]))
+    parts.extend(f"-site:{d}" for d in exclude[:SITE_OPERATOR_LIMIT] if f"-site:{d}" not in present)
     return " ".join(p for p in parts if p).strip()
 
 

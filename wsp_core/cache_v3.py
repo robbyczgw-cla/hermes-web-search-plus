@@ -155,6 +155,11 @@ def legacy_payload_from_cache_material(material: Dict[str, Any]) -> Dict[str, An
         for item in material.get("legacy_projection_hints") or []
         if isinstance(item, dict) and item.get("url")
     }
+    observations_by_id = {
+        str(item.get("observation_id")): item
+        for item in material.get("observations") or []
+        if isinstance(item, dict)
+    }
     results = []
     for item in material.get("projection") or []:
         title = item.get("title")
@@ -185,6 +190,16 @@ def legacy_payload_from_cache_material(material: Dict[str, Any]) -> Dict[str, An
                 if isinstance(text, dict)
                 else None
             )
+            # The tool output prints the publication date from the item. The
+            # provider's own value survives only in the observation. A relative
+            # form ("3 days ago") is read against the time of the hit.
+            observation = observations_by_id.get(
+                str(item.get("representative_observation_id"))
+            )
+            published = (observation or {}).get("published_at")
+            raw_date = published.get("raw") if isinstance(published, dict) else None
+            if isinstance(raw_date, str) and raw_date:
+                legacy_item["published_at"] = raw_date
         results.append(legacy_item)
     legacy = {
         "provider": material.get("origin_provider"),

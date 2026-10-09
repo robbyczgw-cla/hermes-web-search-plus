@@ -32,7 +32,7 @@ from wsp_sdk import ProviderSpec, extract_result, search_result, source_result
 _ALLOWED_OUTPUT_FORMATS = {"markdown"}
 _ALLOWED_SEARCH_TYPES = {"search", "news"}
 _ALLOWED_INTENTS = {"auto", "web", "code", "paper", "news", "entity"}
-TESTED_VERSION = "4.2.9"
+TESTED_VERSION = "4.7.0"
 STDERR_LIMIT = 2048
 _VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 _SECRET_RE = re.compile(
@@ -798,6 +798,22 @@ def execute_search(search_module, prov, args, key, config, routing_info):
     )
 
 
+_ERROR_CODE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]{0,63}$")
+
+
+def _fetch_failure(structured: dict[str, Any], url: str, status: int) -> dict[str, Any]:
+    """DonSeTch 4.7+ returns failures as data: a code, an errorKind and a next action."""
+    failure: dict[str, Any] = {"url": url, "error": "donsetch_fetch_failed", "status": status}
+    for field, key in (("code", "donsetch_code"), ("errorKind", "donsetch_error_kind")):
+        value = structured.get(field)
+        if isinstance(value, str) and _ERROR_CODE_RE.match(value):
+            failure[key] = value
+    hint = structured.get("next_action")
+    if isinstance(hint, str) and hint.strip():
+        failure["next_action"] = sanitize_stderr(" ".join(hint.split()), limit=200)
+    return failure
+
+
 def _project_fetch_item(payload: dict[str, Any], fallback_url: str) -> dict[str, Any]:
     structured = payload.get("structured")
     if not isinstance(structured, dict):
@@ -828,7 +844,7 @@ def _project_fetch_item(payload: dict[str, Any], fallback_url: str) -> dict[str,
         or status >= 400
         or not content.strip()
     ):
-        return {"url": url, "error": "donsetch_fetch_failed", "status": status}
+        return _fetch_failure(structured, url, status)
     return source_result(
         url,
         title=title,

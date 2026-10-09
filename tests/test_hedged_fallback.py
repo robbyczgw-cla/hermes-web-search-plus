@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import threading
 import time
+from dataclasses import replace
 
 import pytest
 
@@ -180,3 +181,146 @@ def test_hedged_response_is_a_valid_v3_receipt(monkeypatch, keyed):
     assert decisions["brave"]["decision"] == "selected"
     outcomes = {attempt.provider: attempt.outcome.value for attempt in response.provider_attempts}
     assert outcomes["serper"] == "cancelled"
+
+
+# --- a hedge loser is cancelled by the win, not by a budget ------------------
+
+
+def _slow(name, release, wait=3.0):
+    def search_fn(query, api_key, max_results=5, **_kwargs):
+        release.wait(wait)
+        return _answer(name)(query, api_key, max_results)
+    return search_fn
+
+
+def _v3_search(config, query="hedge budget", **budget):
+    request = search.legacy_request_to_v3("search", {"query": query, "no_cache": True})
+    return search.run_search_request_v3(replace(request, budget=budget), config=config)
+
+
+def _warning_codes(response):
+    return [warning["code"] for warning in response.warnings]
+
+
+def test_a_hedge_win_over_a_slow_primary_is_not_budget_limited(monkeypatch, keyed):
+    _route_to(monkeypatch, "serper")
+    release = threading.Event()
+    monkeypatch.setattr(providers, "search_serper", _slow("serper", release))
+    monkeypatch.setattr(providers, "search_brave", _answer("brave"))
+
+    response = _v3_search(_config())
+    release.set()
+
+    assert response.status.value == "ok"
+    assert _warning_codes(response) == []
+    outcomes = {attempt.provider: attempt.outcome.value for attempt in response.provider_attempts}
+    assert outcomes["serper"] == "cancelled"  # the receipt still says what happened
+    assert response.routing_receipt["selected_provider"] == "brave"
+
+
+def test_a_primary_that_wins_after_a_hedge_started_is_not_degraded(monkeypatch, keyed):
+    _route_to(monkeypatch, "serper")
+    release = threading.Event()
+
+    def late_serper(query, api_key, max_results=5, **_kwargs):
+        time.sleep(0.5)  # past the 0.2 s hedge delay, so brave starts
+        return _answer("serper")(query, api_key, max_results)
+
+    monkeypatch.setattr(providers, "search_serper", late_serper)
+    monkeypatch.setattr(providers, "search_brave", _slow("brave", release))
+
+    response = _v3_search(_config())
+    release.set()
+
+    assert response.status.value == "ok"
+    assert _warning_codes(response) == []
+    assert response.routing_receipt["selected_provider"] == "serper"
+    assert response.routing_receipt["fallback_reason"] == "none"
+    outcomes = {attempt.provider: attempt.outcome.value for attempt in response.provider_attempts}
+    assert outcomes["brave"] == "cancelled"
+
+
+def test_a_hedge_win_is_cached_as_ok(monkeypatch, keyed):
+    _route_to(monkeypatch, "serper")
+    release = threading.Event()
+    monkeypatch.setattr(providers, "search_serper", _slow("serper", release))
+    monkeypatch.setattr(providers, "search_brave", _answer("brave"))
+    request = search.legacy_request_to_v3("search", {"query": "hedge cache"})
+
+    search.run_search_request_v3(request, config=_config())
+    release.set()
+    again = search.run_search_request_v3(request, config=_config())
+
+    assert again.cache_status["disposition"] == "fresh_hit"
+    assert again.status.value == "ok"
+    assert _warning_codes(again) == []
+
+
+def test_a_request_deadline_still_reports_a_budget_limit(monkeypatch, keyed):
+    _route_to(monkeypatch, "serper")
+    release = threading.Event()
+    monkeypatch.setattr(providers, "search_serper", _empty("serper"))
+    monkeypatch.setattr(providers, "search_brave", _slow("brave", release))
+    monkeypatch.setattr(providers, "search_exa", _empty("exa"))
+
+    response = _v3_search(_config(), max_wall_time_ms=600)
+    release.set()
+
+    assert response.status.value == "degraded"
+    assert "wsp.budget.limited" in _warning_codes(response)
+    outcomes = {attempt.provider: attempt.outcome.value for attempt in response.provider_attempts}
+    assert outcomes["brave"] == "cancelled"
+
+
+# --- the v3 response cache ---------------------------------------------------
+
+
+def _cached_search(config, **kwargs):
+    return search.run_search_request(query="cache test", config=config, **kwargs)
+
+
+def test_an_all_empty_answer_is_not_cached(monkeypatch, keyed):
+    _route_to(monkeypatch, "serper")
+    calls = []
+    answering = {"results": False}
+
+    def serper(query, api_key, max_results=5, **_kwargs):
+        calls.append("serper")
+        return (_answer if answering["results"] else _empty)("serper")(query, api_key, max_results)
+
+    monkeypatch.setattr(providers, "search_serper", serper)
+    monkeypatch.setattr(providers, "search_brave", _empty("brave"))
+    monkeypatch.setattr(providers, "search_exa", _empty("exa"))
+    config = _config()
+
+    first = _cached_search(config)
+    assert first["results"] == []
+    calls.clear()
+
+    # The provider recovers: a repeat must reach it instead of the cached nothing.
+    answering["results"] = True
+    second = _cached_search(config)
+
+    assert calls == ["serper"]
+    assert not second.get("cached")
+    assert second["results"][0]["snippet"] == "from serper"
+
+
+def test_a_non_empty_answer_is_still_cached(monkeypatch, keyed):
+    _route_to(monkeypatch, "serper")
+    calls = []
+
+    def serper(query, api_key, max_results=5, **_kwargs):
+        calls.append("serper")
+        return _answer("serper")(query, api_key, max_results)
+
+    monkeypatch.setattr(providers, "search_serper", serper)
+    config = _config()
+
+    first = _cached_search(config)
+    second = _cached_search(config)
+
+    assert first["results"] and not first.get("cached")
+    assert second["results"][0]["snippet"] == "from serper"
+    assert second["cached"] is True
+    assert calls == ["serper"]

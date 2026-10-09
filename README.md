@@ -19,7 +19,7 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v4.3.5**. Version history: [Changelog](CHANGELOG.md).
+Current release: **v5.0.0**. Version history: [Changelog](CHANGELOG.md).
 
 ### What's new in 5.0
 
@@ -27,9 +27,9 @@ Current release: **v4.3.5**. Version history: [Changelog](CHANGELOG.md).
 - **Better results.** Two blind judges compared 4.3.5 and 5.0 answer by answer and preferred 5.0 in about two thirds of the queries, in all eight query types.
 - **Shorter answers.** Results are about 35 % shorter for the agent; the source a query asks for is found as often as before.
 - **Searches in the query's language.** A clearly German or French query is searched in German or French, unless you set a language yourself.
-- **Simpler setup.** `setup.py setup` asks for the four providers automatic routing uses most: Brave, Serper, Exa and Linkup. Without a key, it offers Keenable's free public tier so search works right away.
+- **Simpler setup.** `setup.py setup` asks for the four providers automatic routing uses most: Brave, Serper, Exa and Linkup. Without a key, it asks (in a terminal, default no) whether to start on Keenable's free public tier so search works right away.
 
-5.0 changes how automatic routing chooses providers, so most searches now use your Brave quota. Code that imports engine modules directly has to change its imports. Details: [Breaking changes in 5.0](CHANGELOG.md#breaking-changes).
+5.0 changes how automatic routing chooses providers: with a Brave key, most searches now go to Brave. Code that imports engine modules directly has to change its imports. Prefer your own order? `setup.py config set-order exa,serper,brave` uses it for every query. Details: [Breaking changes in 5.0](CHANGELOG.md#breaking-changes).
 
 ---
 
@@ -83,7 +83,7 @@ python3 ~/.hermes/plugins/web-search-plus/setup.py setup --preset self-hosted
 python3 ~/.hermes/plugins/web-search-plus/setup.py status
 ```
 
-It selects the derived `self_hosted` profile: automatic search uses only your SearXNG instance and keyless Keenable, while automatic extraction runs through Keenable's public fetch tier (SearXNG does not extract; the public tier is rate-limited and has no SLA). Configure SearXNG with `searxng.base_url` (the older `instance_url` still works); the preset enables Keenable's existing public tier without writing a key. See the [Self-hosted profile guide](docs/USER_GUIDE.md#self-hosted-profile) for prerequisites and explicit-provider behavior.
+It selects the derived `self_hosted` profile: automatic search uses only your SearXNG instance and keyless Keenable, while automatic extraction runs through Keenable's public fetch tier (SearXNG does not extract; the public tier is rate-limited and has no SLA). Configure SearXNG with `searxng.base_url` (the older `instance_url` still works); an instance on localhost or your LAN also needs `SEARXNG_ALLOW_PRIVATE=1` in `.env`; the preset enables Keenable's existing public tier without writing a key. See the [Self-hosted profile guide](docs/USER_GUIDE.md#self-hosted-automatic-routing-profile) for prerequisites and explicit-provider behavior.
 
 ### Optional Octen source search via Monid
 

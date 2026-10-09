@@ -64,7 +64,10 @@ Two consequences:
   starts with `tavily` still leaves `brave` first while `brave` is eligible. To keep a
   provider from being chosen first, put it in `disabled_providers` or set its
   `auto_allow` entry to `false`. To use one provider for every search, turn automatic
-  routing off and set `default_provider` (see [Configuration](#configuration)).
+  routing off and set `default_provider` (see [Configuration](#configuration)). To use
+  your own order for every query instead of the per-intent table, run `setup.py config
+  set-order exa,serper,brave` (or pick "your own order" in `setup.py setup`); `set-order
+  auto` returns to this table.
 
 ## The measured order
 
@@ -133,7 +136,8 @@ appended in default order, so a short list does not remove providers from the ch
 4.x setups wrote this list into `config.json`: `you`, `serper`, `exa`, `firecrawl`,
 `tavily`, `linkup`, `brave`, `parallel`, `serpbase`, `querit`, `searxng`, `keenable`. A
 `provider_priority` that starts with exactly this list is treated as never customized.
-When the config is loaded it is replaced by the current default. Providers that come
+When the config is loaded it is replaced by the current default, unless
+`auto_routing.order` is `custom` (then it is your chosen order). Providers that come
 after the old list are kept, after the entries of the new default. Any other list is
 used as written.
 

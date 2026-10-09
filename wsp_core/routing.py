@@ -304,7 +304,12 @@ def route_query(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
     disabled = set(auto_config.get("disabled_providers", []))
     intent = classify_intent(query)
     priority = list(auto_config.get("provider_priority", list(DEFAULT_PROVIDER_PRIORITY)))
-    preferred = [INTENT_FIRST_PROVIDER.get(intent.intent), *MEASURED_PROVIDER_ORDER, *priority]
+    custom_order = auto_config.get("order") == "custom"
+    if custom_order:
+        # The user's own order: provider_priority decides, no per-intent rule.
+        preferred = list(priority)
+    else:
+        preferred = [INTENT_FIRST_PROVIDER.get(intent.intent), *MEASURED_PROVIDER_ORDER, *priority]
     first = next(
         (p for p in preferred if p and _auto_eligible(p, config, auto_config, disabled)), None
     )
@@ -333,7 +338,7 @@ def route_query(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
     routing = {
         "confidence": confidence,
         "confidence_level": "high" if confidence >= 0.7 else "medium" if confidence >= 0.4 else "low",
-        "reason": f"intent_{intent.intent}" if intent.signals else "no_signals_matched",
+        "reason": "custom_order" if custom_order else (f"intent_{intent.intent}" if intent.signals else "no_signals_matched"),
         "routing_policy": ROUTING_POLICY,
         "exa_depth": "normal",
         "scores": {},

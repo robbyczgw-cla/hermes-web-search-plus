@@ -5,7 +5,15 @@ import time
 
 import pytest
 
-from wsp_core.contract_v3 import Capability, CircuitState, ErrorClass, SkipReason
+from wsp_core.attempt_engine_v3 import AttemptContext, AttemptEngine
+from wsp_core.contract_v3 import (
+    AttemptOutcome,
+    Capability,
+    CircuitState,
+    ErrorClass,
+    SkipReason,
+)
+from wsp_core.http_client import ProviderRequestError
 from wsp_core.state_store_v3 import CircuitKey, SQLiteStateStore
 
 
@@ -39,6 +47,106 @@ def test_success_resets_the_consecutive_count(tmp_path):
     store.record_success(_key(), ErrorClass.TRANSIENT, now=102)
     store.record_failure(_key(), ErrorClass.TRANSIENT, now=103)
     assert store.admit(_key(), now=104).allowed is True
+
+
+def _attempt(index):
+    return AttemptContext(
+        provider="brave",
+        capability=Capability.SEARCH,
+        endpoint="provider://brave/search",
+        credential_fingerprint="fp",
+        budget_scope=f"request-{index}",
+        budget_window="request",
+    )
+
+
+def _ok():
+    return {"results": [{"title": "t", "url": "https://example.com", "snippet": "s"}]}
+
+
+def _http_503():
+    raise ProviderRequestError("upstream", status_code=503, transient=True)
+
+
+def _timeout():
+    raise TimeoutError("provider call timed out")
+
+
+def _run(engine, sequence):
+    return [
+        engine.execute(_attempt(index), operation, now=lambda: 1000)
+        for index, operation in enumerate(sequence)
+    ]
+
+
+@pytest.mark.parametrize("failure", [_http_503, _timeout])
+def test_failures_separated_by_successes_never_open_the_circuit(tmp_path, failure):
+    # Each execute() sees only its own outcome: the success after a failure
+    # has no error in its own call, yet it must still reset the count.
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    engine = AttemptEngine(store, max_attempts=1)
+
+    executions = _run(engine, [failure, _ok] * 4)
+
+    assert [e.receipt.outcome for e in executions] == [
+        AttemptOutcome.FAILED,
+        AttemptOutcome.SUCCESS,
+    ] * 4
+    assert all(e.receipt.skip_reason is None for e in executions)
+    for error_class in (ErrorClass.TRANSIENT, ErrorClass.TIMEOUT):
+        assert store.get_circuit(_attempt(0).circuit_key, error_class).failure_count == 0
+
+
+@pytest.mark.parametrize("failure", [_http_503, _timeout])
+def test_three_consecutive_failures_still_open_the_circuit_through_the_engine(
+    tmp_path, failure
+):
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    engine = AttemptEngine(store, max_attempts=1)
+
+    executions = _run(engine, [failure, failure, failure, _ok])
+
+    assert [e.receipt.outcome for e in executions[:3]] == [AttemptOutcome.FAILED] * 3
+    assert executions[3].receipt.outcome is AttemptOutcome.SKIPPED
+    assert executions[3].receipt.skip_reason is SkipReason.CIRCUIT_OPEN
+
+
+def test_a_success_clears_blips_recorded_under_the_other_error_class(tmp_path):
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    engine = AttemptEngine(store, max_attempts=1)
+
+    _run(engine, [_http_503, _timeout, _ok, _http_503, _timeout, _ok])
+
+    key = _attempt(0).circuit_key
+    assert store.get_circuit(key, ErrorClass.TRANSIENT).failure_count == 0
+    assert store.get_circuit(key, ErrorClass.TIMEOUT).failure_count == 0
+
+
+def test_healthy_requests_do_not_touch_the_circuit_table_to_record_success(tmp_path):
+    class CountingStore(SQLiteStateStore):
+        successes = 0
+
+        def record_success(self, key, error_class, *, now):
+            type(self).successes += 1
+            super().record_success(key, error_class, now=now)
+
+    store = CountingStore(tmp_path / "state.sqlite3")
+    engine = AttemptEngine(store, max_attempts=1)
+
+    _run(engine, [_ok, _ok, _ok])
+    assert CountingStore.successes == 0
+
+    _run(engine, [_http_503, _ok, _ok])
+    assert CountingStore.successes == 1
+
+
+def test_admission_reports_the_buckets_a_success_must_clear(tmp_path):
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    assert store.admit(_key(), now=100).failing_error_classes == ()
+    store.record_failure(_key(), ErrorClass.TIMEOUT, now=100)
+    decision = store.admit(_key(), now=101)
+    assert decision.allowed is True
+    assert decision.failing_error_classes == (ErrorClass.TIMEOUT,)
 
 
 @pytest.mark.parametrize(
