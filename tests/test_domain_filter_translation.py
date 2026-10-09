@@ -157,13 +157,19 @@ def _firecrawl_query(monkeypatch, **domains):
     return seen["body"]["query"]
 
 
+def test_firecrawl_joins_several_include_domains_with_or(monkeypatch):
+    # "site:docs.rs site:tokio.rs" asks for pages on both hosts at once: no results.
+    query = _firecrawl_query(monkeypatch, include_domains=["docs.rs", "tokio.rs"])
+    assert query == "q site:docs.rs OR site:tokio.rs"
+
+
 def test_firecrawl_domains_cannot_inject_operators(monkeypatch):
     query = _firecrawl_query(
         monkeypatch,
         include_domains=["a.com", "x.com OR site:evil.com"],
         exclude_domains=["b.com -site:ok.com", "--help"],
     )
-    assert query == "q site:a.com site:x.com -site:b.com"
+    assert query == "q site:a.com OR site:x.com -site:b.com"
 
 
 def test_firecrawl_normalises_and_lets_exclude_win(monkeypatch):
@@ -172,7 +178,7 @@ def test_firecrawl_normalises_and_lets_exclude_win(monkeypatch):
         include_domains="https://www.a.com:8443/x, münchen.de, c.com",
         exclude_domains=["c.com."],
     )
-    assert query == "q site:a.com site:xn--mnchen-3ya.de -site:c.com"
+    assert query == "q site:a.com OR site:xn--mnchen-3ya.de -site:c.com"
 
 
 def test_firecrawl_without_a_usable_include_does_not_search_unrestricted(monkeypatch):

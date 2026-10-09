@@ -882,7 +882,9 @@ def search_firecrawl(
 
     include, exclude = domain_filters(include_domains, exclude_domains)
     if include:
-        body["query"] += " " + " ".join(f"site:{domain}" for domain in include[:SITE_OPERATOR_LIMIT])
+        # OR, as for the other site: providers: "site:a site:b" means both at once
+        # and returns nothing (seen live with docs.rs and tokio.rs).
+        body["query"] += " " + " OR ".join(f"site:{domain}" for domain in include[:SITE_OPERATOR_LIMIT])
     if exclude:
         body["query"] += " " + " ".join(f"-site:{domain}" for domain in exclude[:SITE_OPERATOR_LIMIT])
 
