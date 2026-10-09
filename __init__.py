@@ -565,7 +565,8 @@ def _merge_behavior_config(user_config: Mapping[str, Any]) -> Dict[str, Any]:
             priority = _normalize_provider_csv(auto_user["provider_priority"], routing=True)
         else:
             priority = _normalize_provider_csv(",".join(str(p) for p in auto_user["provider_priority"]), routing=True)
-        priority = _replace_pre_5_default_priority(priority)
+        if auto["order"] != "custom":
+            priority = _replace_pre_5_default_priority(priority)
         auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
     if auto_user.get("extract_provider_priority"):
         if isinstance(auto_user["extract_provider_priority"], str):

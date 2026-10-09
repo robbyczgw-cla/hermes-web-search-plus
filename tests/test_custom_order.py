@@ -5,6 +5,7 @@ import pytest
 
 from wsp_core import config as cfg
 from wsp_core import routing
+from wsp_core.provider_registry import PRE_5_DEFAULT_PROVIDER_PRIORITY
 
 
 @pytest.fixture(autouse=True)
@@ -80,3 +81,41 @@ def test_cli_set_order_persists_and_resets(tmp_path, monkeypatch):
     args = parser.parse_args(["config", "set-order", "auto", "--config-path", str(path)])
     args.func(args)
     assert json.loads(path.read_text())["auto_routing"]["order"] == "measured"
+
+
+_FOUR_X_ORDER = ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave"]
+
+
+def _run_config_cli(wsp, path, *argv):
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["config", *argv, "--config-path", str(path)])
+    args.func(args)
+
+
+@pytest.mark.parametrize(
+    "ordered",
+    [_FOUR_X_ORDER, list(PRE_5_DEFAULT_PROVIDER_PRIORITY)],
+    ids=["4x-order-seven", "4x-default-list-complete"],
+)
+def test_a_4x_order_set_with_set_order_survives_later_config_writes(tmp_path, monkeypatch, ordered):
+    import json
+    from plugin_loader import load_plugin
+
+    wsp = load_plugin("wsp_plugin_custom_order_4x_sequence")
+    path = tmp_path / "config.json"
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(path))
+
+    _run_config_cli(wsp, path, "set-order", ",".join(ordered))
+    stored = json.loads(path.read_text())["auto_routing"]
+    assert stored["order"] == "custom"
+    assert stored["provider_priority"][: len(ordered)] == ordered
+
+    _run_config_cli(wsp, path, "set-fallback", "exa")
+    after = json.loads(path.read_text())["auto_routing"]
+
+    assert after["order"] == "custom"
+    assert after["provider_priority"] == stored["provider_priority"]
+    assert cfg.load_config()["auto_routing"]["provider_priority"][: len(ordered)] == ordered
