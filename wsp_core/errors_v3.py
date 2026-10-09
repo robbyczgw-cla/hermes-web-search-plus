@@ -19,6 +19,11 @@ _MESSAGES = {
     ErrorClass.INTERNAL: "Provider execution failed",
 }
 
+# WSP's own text for an account the provider reports as empty (HTTP 402, or
+# Linkup's 429 / Serper's 400 with credit wording). More useful than the
+# generic quota line, and never copied from the provider's answer.
+_OUT_OF_CREDIT_MESSAGE = "Out of credits: the provider account has no funds left; top it up or remove its key"
+
 _CODES = {
     ErrorClass.CONFIG: "wsp.config.provider_invalid",
     ErrorClass.AUTH: "wsp.provider.auth",
@@ -132,6 +137,8 @@ def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
         error_class = ErrorClass.INTERNAL
 
     message = _MESSAGES[error_class]
+    if error_class is ErrorClass.QUOTA and getattr(error, "out_of_credit", False):
+        message = _OUT_OF_CREDIT_MESSAGE
     details: dict = {}
     if error_class is ErrorClass.CONFIG:
         guidance = _setup_guidance(error)

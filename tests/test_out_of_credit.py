@@ -49,6 +49,18 @@ def test_linkup_style_429_without_funds_is_quota():
     assert classify_provider_error(error, provider="linkup").error_class is ErrorClass.QUOTA
 
 
+def test_an_empty_account_is_named_out_of_credits_in_the_v3_error():
+    # Live with Linkup: the tool said "Provider quota is exhausted", not what to do.
+    classified = classify_provider_error(_raised(429, LINKUP_BODY), provider="linkup")
+    assert classified.message.startswith("Out of credits: the provider account has no funds left")
+    assert "INSUFFICIENT_FUNDS" not in classified.message
+
+
+def test_other_quota_errors_keep_the_generic_quota_message():
+    error = http_client.ProviderRequestError("Tavily plan limit", status_code=432)
+    assert classify_provider_error(error, provider="tavily").message == "Provider quota is exhausted"
+
+
 def test_quota_keeps_the_providers_real_http_status():
     error = _raised(429, LINKUP_BODY)
     assert error.status_code == 429
