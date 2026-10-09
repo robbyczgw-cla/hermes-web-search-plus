@@ -47,6 +47,7 @@ from .wsp_core.provider_registry import (
 from .wsp_core.env_loader import clean_env_value as _shared_clean_env_value, get_hermes_env_path, is_truthy, load_env_files
 from .wsp_core.cache import MAX_STORED_TEXT_CHARS, store_web_text
 from .wsp_core.config import (
+    ORDER_AUTO_WORDS,
     REMOVED_PROVIDER_IDS,
     _replace_pre_5_default_priority,
     apply_profile_effects,
@@ -1218,7 +1219,7 @@ def _handle_config_command(args: Any) -> None:
         config["auto_routing"]["provider_priority"] = _normalize_provider_csv(getattr(args, "providers"), routing=True)
     elif subcommand == "set-order":
         raw = str(getattr(args, "providers")).strip().lower()
-        if raw in {"auto", "automatic", "measured"}:
+        if raw in ORDER_AUTO_WORDS:
             config["auto_routing"]["order"] = "measured"
         else:
             config["auto_routing"]["order"] = "custom"

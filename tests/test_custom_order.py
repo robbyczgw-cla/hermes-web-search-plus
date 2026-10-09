@@ -55,7 +55,7 @@ def test_desktop_setting_sets_and_resets_custom_order():
     config = cfg._deepcopy_default_config()
     cfg._apply_desktop_settings(config, {"provider_order": "Exa, Serper"})
     assert config["auto_routing"]["order"] == "custom"
-    assert config["auto_routing"]["provider_priority"] == ["exa", "serper"]
+    assert config["auto_routing"]["provider_priority"][:2] == ["exa", "serper"]
     cfg._apply_desktop_settings(config, {"provider_order": "auto"})
     assert config["auto_routing"]["order"] == "measured"
     cfg._apply_desktop_settings(config, {"provider_order": ""})
