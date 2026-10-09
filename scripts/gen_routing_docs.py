@@ -355,7 +355,8 @@ def _fallback_section() -> List[str]:
     lines += _para(
         f"4.x setups wrote this list into `config.json`: {_code(legacy)}. A "
         "`provider_priority` that starts with exactly this list is treated as never customized. "
-        "When the config is loaded it is replaced by the current default. Providers that come after the "
+        "When the config is loaded it is replaced by the current default, unless `auto_routing.order` "
+        "is `custom` (then it is your chosen order). Providers that come after the "
         "old list are kept, after the entries of the new default. Any other list is used as "
         "written."
     )
