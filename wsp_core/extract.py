@@ -33,15 +33,9 @@ from .bounded_context_v3 import (
     apply_bounded_context,
     prepare_extract_request,
 )
-from .attempt_engine_v3 import AttemptContext, AttemptEngine
+from .attempt_engine_v3 import AttemptEngine, provider_attempt_context, request_deadline
 from .errors_v3 import ProviderContractFailure
 from .http_client import ProviderRequestError
-from .provider_health import (
-    execute_provider_with_retry,
-    mark_provider_failure,
-    provider_in_cooldown,
-    reset_provider_health,
-)
 # Provider dispatch resolves implementations late through this module.
 from . import providers as _providers
 from .provider_adapter_protocol import validate_adapter_result
@@ -358,9 +352,12 @@ def _extract_plus_core(
     include_raw_html: bool = False,
     render_js: bool = False,
     config: Optional[Dict[str, Any]] = None,
-    engine_owned_attempt: bool = False,
 ) -> dict:
-    """Extract URL content with provider fallback."""
+    """One extraction attempt against one provider.
+
+    The v3 attempt engine owns fallback, retry and circuit state, so failures
+    raise instead of moving on to another provider.
+    """
     config = config or load_config()
     selected = provider or "auto"
     profile_deviation = (
@@ -373,133 +370,44 @@ def _extract_plus_core(
     try:
         urls = _validate_extract_urls(urls, config)
     except (ValueError, ExtractUrlSecurityError) as exc:
+        return {"provider": selected, "results": [], "error": str(exc), "requested_provider": selected}
+    if selected not in EXTRACT_PROVIDER_PRIORITY:
         return {
             "provider": selected,
             "results": [],
-            "error": str(exc),
-            "requested_provider": selected,
+            "error": "All extraction providers failed",
+            "fallback_errors": [{"provider": selected, "error": f"Provider {selected} does not support extraction"}],
         }
-    auto_config = config.get("auto_routing", {})
-    if not isinstance(auto_config, dict):
-        auto_config = {}
-    disabled_providers = set(auto_config.get("disabled_providers", []))
-    if engine_owned_attempt:
-        base_providers = [selected]
-    else:
-        priority = (
-            resolve_extract_provider_priority(config)
-            if selected == "auto"
-            else EXTRACT_PROVIDER_PRIORITY
-        )
-        automatic = [
-            candidate
-            for candidate in priority
-            if _extract_provider_auto_allowed(candidate, auto_config)
-        ]
-        base_providers = (
-            automatic
-            if selected == "auto"
-            else [selected] + [candidate for candidate in automatic if candidate != selected]
-        )
-    providers = [
-        candidate
-        for candidate in base_providers
-        if candidate == selected or candidate not in disabled_providers
-    ]
-    errors = []
-    cooldown_skips = []
-    for prov in providers:
-        if prov not in EXTRACT_PROVIDER_PRIORITY:
-            errors.append({"provider": prov, "error": f"Provider {prov} does not support extraction"})
-            continue
-        key = get_api_key(prov, config)
-        keyless_allowed = keyless_public_allowed(prov, config)
-        if not key and not keyless_allowed:
-            if engine_owned_attempt:
-                validate_api_key(prov, config)  # raises WSP setup guidance
-                raise ProviderConfigError(f"missing API key for {prov}")
-            errors.append({"provider": prov, "error": "missing_api_key"})
-            continue
-        if not engine_owned_attempt:
-            in_cooldown, remaining = provider_in_cooldown(prov)
-            if in_cooldown and not (selected != "auto" and prov == selected):
-                cooldown_skips.append({"provider": prov, "cooldown_remaining_seconds": remaining})
-                continue
-        try:
-            def execute_extract() -> Dict[str, Any]:
-                # Provider-specific kwargs-building lives in
-                # provider_dispatch.EXTRACT_DISPATCH; this module is passed so
-                # adapters resolve extract_<provider> late.
-                adapter = EXTRACT_DISPATCH.get(prov)
-                if adapter is None:
-                    raise ValueError(f"Unknown extract provider: {prov}")
-                return validate_adapter_result(
-                    prov,
-                    "extract",
-                    adapter(
-                        _providers,
-                        prov,
-                        urls,
-                        key,
-                        output_format,
-                        include_images,
-                        include_raw_html,
-                        render_js,
-                        config,
-                        keyless_allowed,
-                    ),
-                )
+    key = get_api_key(selected, config)
+    keyless_allowed = keyless_public_allowed(selected, config)
+    if not key and not keyless_allowed:
+        validate_api_key(selected, config)  # raises WSP setup guidance
+        raise ProviderConfigError(f"missing API key for {selected}")
+    adapter = EXTRACT_DISPATCH.get(selected)
+    if adapter is None:
+        raise ValueError(f"Unknown extract provider: {selected}")
+    # provider_dispatch.EXTRACT_DISPATCH builds provider kwargs; this module is
+    # passed so adapters resolve extract_<provider> late.
+    result = validate_adapter_result(
+        selected,
+        "extract",
+        adapter(_providers, selected, urls, key, output_format, include_images,
+                include_raw_html, render_js, config, keyless_allowed),
+    )
+    from .jev_optional import filter_extract_results
 
-            result = (
-                execute_extract()
-                if engine_owned_attempt
-                else execute_provider_with_retry(prov, execute_extract)
-            )
-            res_list = result.get("results") or []
-            from .jev_optional import filter_extract_results
-
-            res_list, jev_meta = filter_extract_results(res_list, config=config)
-            result["results"] = res_list
-            if jev_meta:
-                result.setdefault("metadata", {})["jev_extract_quality"] = jev_meta
-            if not res_list and jev_meta:
-                if engine_owned_attempt:
-                    raise ProviderContractFailure("jev_extract_quality_rejected")
-                errors.append({
-                    "provider": prov,
-                    "error": "jev_extract_quality_rejected",
-                    "details": jev_meta,
-                })
-                continue
-            all_failed = bool(res_list) and all(r.get("error") for r in res_list)
-            if all_failed:
-                if engine_owned_attempt:
-                    raise ProviderContractFailure("all_urls_failed")
-                errors.append({
-                    "provider": prov,
-                    "error": "all_urls_failed",
-                    "details": [r.get("error") for r in res_list],
-                })
-                continue
-            if not engine_owned_attempt:
-                reset_provider_health(prov)
-            result["routing"] = {"provider": prov, "requested_provider": selected, "fallback_used": bool(errors) or bool(cooldown_skips), "fallback_errors": errors}
-            if profile_deviation:
-                result.setdefault("metadata", {})["profile_deviation"] = True
-            if cooldown_skips:
-                result["routing"]["cooldown_skips"] = cooldown_skips
-            return result
-        except Exception as e:
-            if engine_owned_attempt:
-                raise
-            error_msg = str(e)
-            cooldown_info = mark_provider_failure(prov, error_msg, retry_after=getattr(e, "retry_after", None))
-            errors.append({"provider": prov, "error": error_msg, "cooldown_seconds": cooldown_info.get("cooldown_seconds")})
-            continue
-    error_result = {"provider": selected, "results": [], "error": "All extraction providers failed", "fallback_errors": errors}
-    if cooldown_skips:
-        error_result["cooldown_skips"] = cooldown_skips
-    return error_result
+    res_list, jev_meta = filter_extract_results(result.get("results") or [], config=config)
+    result["results"] = res_list
+    if jev_meta:
+        result.setdefault("metadata", {})["jev_extract_quality"] = jev_meta
+        if not res_list:
+            raise ProviderContractFailure("jev_extract_quality_rejected")
+    if res_list and all(r.get("error") for r in res_list):
+        raise ProviderContractFailure("all_urls_failed")
+    result["routing"] = {"provider": selected, "requested_provider": selected, "fallback_used": False, "fallback_errors": []}
+    if profile_deviation:
+        result.setdefault("metadata", {})["profile_deviation"] = True
+    return result
 
 
 def _plan_extract_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
@@ -577,35 +485,13 @@ def _execute_extract_v3(
     fallback_errors = []
     payload = None
     successful_provider = None
-    max_wall_time_ms = request.budget.get("max_wall_time_ms")
-    deadline = (
-        time.monotonic() + (max_wall_time_ms / 1000)
-        if isinstance(max_wall_time_ms, int)
-        and not isinstance(max_wall_time_ms, bool)
-        and max_wall_time_ms > 0
-        else None
-    )
+    deadline = request_deadline(request.budget)
     daily_budget = _daily_preflight_budget(config)
 
     for provider in plan.candidate_order:
-        provider_config = config.get(provider) or {}
-        endpoint = str(
-            provider_config.get("endpoint")
-            or provider_config.get("base_url")
-            or provider_config.get("url")
-            or f"provider://{provider}/extract"
-        )
-        credential = get_api_key(provider, config) or f"keyless:{provider}"
-        context = AttemptContext(
-            provider=provider,
-            capability=Capability.EXTRACT,
-            endpoint=endpoint,
-            credential_fingerprint=store.fingerprint_credential(credential),
-            budget_scope=scope,
-            budget_window="request",
-            budget_limit_units=budget_limit,
-            deadline_monotonic=deadline,
-            **daily_budget,
+        context = provider_attempt_context(
+            store, provider, Capability.EXTRACT, config.get(provider) or {}, get_api_key(provider, config),
+            budget_scope=scope, budget_limit_units=budget_limit, deadline_monotonic=deadline, **daily_budget,
         )
         if payload is not None:
             receipts.append(
@@ -627,7 +513,6 @@ def _execute_extract_v3(
                 include_raw_html=bool(options.get("include_raw_html", False)),
                 render_js=bool(options.get("render_js", False)),
                 config=dict(config),
-                engine_owned_attempt=True,
             )
             if result.get("error"):
                 raise ProviderRequestError(str(result["error"]), transient=False)
