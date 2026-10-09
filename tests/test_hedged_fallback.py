@@ -180,3 +180,57 @@ def test_hedged_response_is_a_valid_v3_receipt(monkeypatch, keyed):
     assert decisions["brave"]["decision"] == "selected"
     outcomes = {attempt.provider: attempt.outcome.value for attempt in response.provider_attempts}
     assert outcomes["serper"] == "cancelled"
+
+
+# --- the v3 response cache ---------------------------------------------------
+
+
+def _cached_search(config, **kwargs):
+    return search.run_search_request(query="cache test", config=config, **kwargs)
+
+
+def test_an_all_empty_answer_is_not_cached(monkeypatch, keyed):
+    _route_to(monkeypatch, "serper")
+    calls = []
+    answering = {"results": False}
+
+    def serper(query, api_key, max_results=5, **_kwargs):
+        calls.append("serper")
+        return (_answer if answering["results"] else _empty)("serper")(query, api_key, max_results)
+
+    monkeypatch.setattr(providers, "search_serper", serper)
+    monkeypatch.setattr(providers, "search_brave", _empty("brave"))
+    monkeypatch.setattr(providers, "search_exa", _empty("exa"))
+    config = _config()
+
+    first = _cached_search(config)
+    assert first["results"] == []
+    calls.clear()
+
+    # The provider recovers: a repeat must reach it instead of the cached nothing.
+    answering["results"] = True
+    second = _cached_search(config)
+
+    assert calls == ["serper"]
+    assert not second.get("cached")
+    assert second["results"][0]["snippet"] == "from serper"
+
+
+def test_a_non_empty_answer_is_still_cached(monkeypatch, keyed):
+    _route_to(monkeypatch, "serper")
+    calls = []
+
+    def serper(query, api_key, max_results=5, **_kwargs):
+        calls.append("serper")
+        return _answer("serper")(query, api_key, max_results)
+
+    monkeypatch.setattr(providers, "search_serper", serper)
+    config = _config()
+
+    first = _cached_search(config)
+    second = _cached_search(config)
+
+    assert first["results"] and not first.get("cached")
+    assert second["results"][0]["snippet"] == "from serper"
+    assert second["cached"] is True
+    assert calls == ["serper"]

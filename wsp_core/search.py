@@ -2115,6 +2115,22 @@ def _search_cache_vary(
     return {"language": AUTO_LANGUAGE} if is_auto_language(locale.get("language")) else {}
 
 
+def _search_cache_write_eligible(
+    _request: RequestV3,
+    _plan: ProviderPlan,
+    response: ResponseV3,
+    _legacy_payload: Dict[str, Any],
+    _config: Dict[str, Any],
+) -> bool:
+    """Cache only answers that have results.
+
+    When every candidate answers with nothing, the cause is often transient. A
+    cached empty answer would keep repeats from reaching a provider for the
+    whole TTL, which defeats the empty-answer fallback.
+    """
+    return bool(response.results)
+
+
 def _search_adapter() -> CapabilityAdapter:
     return CapabilityAdapter(
         capability=Capability.SEARCH,
@@ -2122,6 +2138,7 @@ def _search_adapter() -> CapabilityAdapter:
         execute=_execute_search_v3,
         normalize=response_from_legacy,
         cache_vary=_search_cache_vary,
+        cache_write_eligible=_search_cache_write_eligible,
     )
 
 
