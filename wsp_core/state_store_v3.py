@@ -24,6 +24,14 @@ DEFAULT_OPEN_SECONDS = {
     ErrorClass.TRANSIENT: 60,
     ErrorClass.TIMEOUT: 60,
 }
+# A single 5xx or timeout is usually a blip. Transient and timeout buckets
+# block admission only after this many consecutive failures; a success
+# deletes the bucket and resets the count. Auth, quota and rate-limit
+# buckets still block on the first failure: they are not blips.
+CONSECUTIVE_FAILURES_TO_OPEN = {
+    ErrorClass.TRANSIENT: 3,
+    ErrorClass.TIMEOUT: 3,
+}
 
 # Database files whose schema this process has initialized, keyed by path and
 # inode: a deleted or replaced file (restore, another process's migration) is
@@ -459,6 +467,12 @@ class SQLiteStateStore:
         for error_class, skip_reason in checks:
             record = records[error_class]
             if record.state is CircuitState.CLOSED:
+                continue
+            threshold = CONSECUTIVE_FAILURES_TO_OPEN.get(error_class, 1)
+            if (
+                record.state is CircuitState.OPEN
+                and record.failure_count < threshold
+            ):
                 continue
             active = record.open_until is None or record.open_until > now
             if active:
