@@ -315,6 +315,7 @@ def _observation(
         or item.get("publish_date")
         or item.get("publishedDate")
         or item.get("page_age")
+        or item.get("age")
     )
     published_at = None
     if isinstance(raw_date, str):
