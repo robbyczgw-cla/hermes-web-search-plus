@@ -1742,14 +1742,25 @@ _SNIPPET_DISPLAY_CHARS = 1200
 
 
 def _display_snippet(snippet: str) -> str:
-    """A long snippet on one line, cut at a word boundary; short ones unchanged."""
+    """A long snippet on one line, cut for display; short ones unchanged.
+
+    The cut falls on a word boundary if that keeps at least half of the limit;
+    text with few spaces (CJK, long URLs, minified code) is cut at the limit
+    instead. A snippet whose cut would save less than the marker adds is shown
+    whole. In the marker N counts the characters shown, M the snippet's length.
+    """
     if len(snippet) <= _SNIPPET_DISPLAY_CHARS:
         return snippet
     flat = " ".join(snippet.split())
     if len(flat) <= _SNIPPET_DISPLAY_CHARS:
         return flat
-    cut = flat[:_SNIPPET_DISPLAY_CHARS].rsplit(" ", 1)[0] or flat[:_SNIPPET_DISPLAY_CHARS]
-    return f"{cut} … [TRUNCATED: showing first {len(cut)} of {len(snippet)} characters]"
+    # The window includes the character at the limit: a space there ends the
+    # last whole word, so that word stays.
+    cut = flat[: _SNIPPET_DISPLAY_CHARS + 1].rpartition(" ")[0]
+    if len(cut) < _SNIPPET_DISPLAY_CHARS // 2:
+        cut = flat[:_SNIPPET_DISPLAY_CHARS]
+    shown = f"{cut} … [TRUNCATED: showing first {len(cut)} of {len(snippet)} characters]"
+    return shown if len(shown) < len(flat) else flat
 
 
 _UNTRUSTED_WEB_DATA_NOTICE = (
