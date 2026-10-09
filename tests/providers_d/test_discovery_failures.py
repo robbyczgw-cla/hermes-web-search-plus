@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from provider_registry import PROVIDER_SPECS, discover_providers
+from wsp_core.provider_registry import PROVIDER_SPECS, discover_providers
 from wsp_sdk import DuplicateProviderError
 
 

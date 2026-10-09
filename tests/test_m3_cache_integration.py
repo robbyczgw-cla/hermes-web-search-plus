@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 
-from compat_v3 import legacy_request_to_v3
-from contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
-from orchestrator_v3 import CapabilityAdapter, ProviderPlan, execute_v3_request
+from wsp_core.compat_v3 import legacy_request_to_v3
+from wsp_core.contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
+from wsp_core.orchestrator_v3 import CapabilityAdapter, ProviderPlan, execute_v3_request
 
 
 def _response(request: RequestV3, plan: ProviderPlan, _payload: dict) -> ResponseV3:

@@ -3,14 +3,13 @@ from __future__ import annotations
 import importlib
 import json
 import sqlite3
-import time
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from config import DEFAULT_CONFIG
+from wsp_core.config import DEFAULT_CONFIG
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "v3" / "ws3"
@@ -40,8 +39,8 @@ def journal_record(record: dict[str, Any]) -> dict[str, Any]:
 def test_receipt_builder_reads_owned_journal_and_projects_frozen_dto(
     tmp_path: Path,
 ) -> None:
-    console = importlib.import_module("operator_console_v3")
-    receipts = importlib.import_module("operator_receipts_v3")
+    console = importlib.import_module("wsp_core.operator_console_v3")
+    receipts = importlib.import_module("wsp_core.operator_receipts_v3")
     expected = fixture("receipts.json")
     journal = receipts.OperatorReceiptJournal(tmp_path, now=lambda: 1783890301.0)
     for record in reversed(expected["receipts"]):
@@ -51,7 +50,7 @@ def test_receipt_builder_reads_owned_journal_and_projects_frozen_dto(
 
 
 def test_benchmark_history_reads_only_marker_owned_records(tmp_path: Path) -> None:
-    console = importlib.import_module("operator_console_v3")
+    console = importlib.import_module("wsp_core.operator_console_v3")
     expected = fixture("benchmark-history.json")
     history_path = tmp_path / "operator" / "v3" / "benchmark-history.jsonl"
     history_path.parent.mkdir(parents=True)
@@ -83,40 +82,11 @@ def test_benchmark_history_reads_only_marker_owned_records(tmp_path: Path) -> No
     assert foreign.read_bytes() == before
 
 
-def test_shadow_evaluation_builder_matches_frozen_aggregate_fixture(
-    tmp_path: Path,
-) -> None:
-    console = importlib.import_module("operator_console_v3")
-    state = importlib.import_module("state_store_v3").SQLiteStateStore(
-        tmp_path / "state.sqlite3"
-    )
-    now = time.time()
-    for agreement, shadow_provider in (
-        (True, "serper"),
-        (False, "linkup"),
-        (False, "linkup"),
-    ):
-        assert state.record_shadow_evaluation(
-            routing_class="policy_pdf",
-            classic_provider="serper",
-            shadow_provider=shadow_provider,
-            agreement=agreement,
-            policy_id="shadow-quality",
-            policy_revision="3.1",
-            now=now,
-        )
-
-    assert console.build_shadow_evaluation(state) == fixture("shadow-evaluation.json")
-    assert console.serialize_endpoint_payload(
-        console.build_shadow_evaluation(state)
-    ).endswith(b"\n")
-
-
 def test_overview_is_truthful_when_owned_state_is_absent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    console = importlib.import_module("operator_console_v3")
+    console = importlib.import_module("wsp_core.operator_console_v3")
     config = deepcopy(DEFAULT_CONFIG)
     config["serper"]["api_key"] = "fixture-provider-key"
     monkeypatch.delenv("SERPER_API_KEY", raising=False)
@@ -177,7 +147,7 @@ def test_overview_is_truthful_when_owned_state_is_absent(
 def test_overview_refuses_symlinked_cache_and_state_ancestors(
     tmp_path: Path,
 ) -> None:
-    console = importlib.import_module("operator_console_v3")
+    console = importlib.import_module("wsp_core.operator_console_v3")
     real_root = tmp_path / "foreign"
     response = real_root / "v3" / "response" / "entry.json"
     response.parent.mkdir(parents=True)
@@ -205,7 +175,7 @@ def test_overview_refuses_symlinked_cache_and_state_ancestors(
 
 
 def _state_store_with_samples(tmp_path: Path, samples):
-    state_store = importlib.import_module("state_store_v3")
+    state_store = importlib.import_module("wsp_core.state_store_v3")
     db_path = tmp_path / "state.sqlite3"
     connection = sqlite3.connect(db_path)
     state_store.initialize_state_schema(connection)
@@ -226,7 +196,7 @@ def _state_store_with_samples(tmp_path: Path, samples):
 def test_provider_health_aggregates_daily_samples_from_state_store(
     tmp_path: Path,
 ) -> None:
-    console = importlib.import_module("operator_console_v3")
+    console = importlib.import_module("wsp_core.operator_console_v3")
     day = 86400
     store = _state_store_with_samples(
         tmp_path,
@@ -278,7 +248,7 @@ def test_provider_health_aggregates_daily_samples_from_state_store(
 def test_provider_health_bounds_days_and_windows_from_newest_sample(
     tmp_path: Path,
 ) -> None:
-    console = importlib.import_module("operator_console_v3")
+    console = importlib.import_module("wsp_core.operator_console_v3")
     day = 86400
     store = _state_store_with_samples(
         tmp_path,
@@ -295,8 +265,8 @@ def test_provider_health_bounds_days_and_windows_from_newest_sample(
 
 
 def test_provider_health_handles_missing_state_database(tmp_path: Path) -> None:
-    console = importlib.import_module("operator_console_v3")
-    state_store = importlib.import_module("state_store_v3")
+    console = importlib.import_module("wsp_core.operator_console_v3")
+    state_store = importlib.import_module("wsp_core.state_store_v3")
     store = state_store.SQLiteStateStore.open_readonly(tmp_path / "absent.sqlite3")
 
     payload = console.build_provider_health(store, days=7)
@@ -305,7 +275,7 @@ def test_provider_health_handles_missing_state_database(tmp_path: Path) -> None:
 
 
 def test_provider_health_includes_live_rolling_stats(tmp_path: Path) -> None:
-    console = importlib.import_module("operator_console_v3")
+    console = importlib.import_module("wsp_core.operator_console_v3")
     day = 86400
     store = _state_store_with_samples(
         tmp_path, [("serper", 0, 10 * day + 100, 200, 5, 0)]

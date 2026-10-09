@@ -1,28 +1,22 @@
 """Release-blocking source-only Charter gates for the live v2 execution surface."""
 
 from __future__ import annotations
+from wsp_core import providers
 
-import importlib.util
 from pathlib import Path
 
 import pytest
 
-import provider_dispatch
-import providers
-from provider_registry import PROVIDER_SPECS
-from request_gate_v3 import validate_outbound_body, validate_provider_mode
+from wsp_core.provider_registry import PROVIDER_SPECS
+from wsp_core.request_gate_v3 import validate_outbound_body, validate_provider_mode
 
-
+from plugin_loader import load_plugin
 ROOT = Path(__file__).resolve().parents[1]
 BANNED_LABELS = {"answer", "synthesis", "reasoning", "claim", "verification"}
 
 
 def _load_plugin_module():
-    spec = importlib.util.spec_from_file_location("wsp_charter_plugin", ROOT / "__init__.py")
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = load_plugin("wsp_charter_plugin")
     return module
 
 
@@ -46,7 +40,7 @@ def test_no_provider_advertises_answer_or_synthesis_capability():
 
 
 def test_cli_help_does_not_advertise_answer_providers():
-    import search
+    from wsp_core import search
 
     help_text = search.build_parser({}).format_help()
 
@@ -55,14 +49,18 @@ def test_cli_help_does_not_advertise_answer_providers():
     assert "synthesized up-to-date answers" not in help_text
 
 
-def test_answer_only_providers_are_explicitly_rejected_and_not_dispatched():
-    for provider in ("perplexity", "kilo-perplexity"):
-        spec = PROVIDER_SPECS[provider]
-        assert spec.supports_search is False
-        assert spec.rejected_reason == "no_verified_source_only_endpoint"
-        assert provider not in provider_dispatch.SEARCH_DISPATCH
-        with pytest.raises(ValueError, match="no_verified_source_only_endpoint"):
-            validate_provider_mode(provider, "search")
+def test_removed_provider_request_is_rejected_as_unknown_before_network(monkeypatch):
+    called = False
+
+    def no_network(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("network reached")
+
+    monkeypatch.setattr(providers, "make_request", no_network)
+    with pytest.raises(ValueError, match="unknown provider"):
+        validate_provider_mode("perplexity", "search")
+    assert called is False
 
 
 def test_formatter_cannot_render_legacy_answer_payload():
@@ -149,21 +147,6 @@ def test_exa_synthesis_depths_fail_before_network(monkeypatch):
     assert called is False
 
 
-def test_perplexity_variants_fail_before_network(monkeypatch):
-    called = False
-
-    def no_network(*args, **kwargs):
-        nonlocal called
-        called = True
-        raise AssertionError("network reached")
-
-    monkeypatch.setattr(providers, "make_request", no_network)
-    for provider in ("perplexity", "kilo-perplexity"):
-        with pytest.raises(ValueError, match="no_verified_source_only_endpoint"):
-            providers.search_perplexity(
-                "charter probe", "secret", provider_name=provider
-            )
-    assert called is False
 
 
 def test_central_gate_rejects_answer_shaped_or_prompt_bodies():
@@ -181,7 +164,7 @@ def test_central_gate_rejects_answer_shaped_or_prompt_bodies():
 
 
 def test_router_can_never_select_rejected_or_non_source_modes():
-    from routing import iter_all_selectable_provider_modes
+    from wsp_core.routing import iter_all_selectable_provider_modes
 
     banned = {
         provider

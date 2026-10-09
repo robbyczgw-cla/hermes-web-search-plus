@@ -1,8 +1,8 @@
 """Regression tests for reviewer follow-ups: IPv6 forms, urllib handlers, empty encoded body."""
+from wsp_core import extract
 import pytest
 
-import extract
-import http_client
+from wsp_core import http_client
 
 
 @pytest.mark.parametrize("addr", ["::127.0.0.1", "::a9fe:a9fe", "::ffff:0:7f00:1", "fec0::1", "::1", "::"])

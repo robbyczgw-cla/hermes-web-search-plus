@@ -1,11 +1,15 @@
+from wsp_core import extract
+import os
+import shutil
 import socket
 
 import pytest
 
-import cache
-import extract
-import provider_stats
-import search
+from wsp_core import cache
+from wsp_core import provider_stats
+from wsp_core import search
+from wsp_core.config import keyless_public_env_var
+from wsp_core.provider_registry import PROVIDER_SPECS
 
 
 @pytest.fixture(autouse=True)
@@ -38,3 +42,65 @@ def _isolate_runtime_state(tmp_path, monkeypatch):
     monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
     monkeypatch.setattr(search, "CACHE_DIR", tmp_path)
     monkeypatch.setattr(extract, "CACHE_DIR", tmp_path)
+
+
+@pytest.fixture(autouse=True)
+def _no_operator_credentials(monkeypatch):
+    """Never let a test see the developer's real provider credentials.
+
+    wsp_core loads .env files (plugin directory, its parent, the Hermes profile)
+    into os.environ when it is imported. Routing depends on which providers are
+    configured, so real keys changed routing decisions and sent a research
+    fan-out to a provider the test had not mocked. A test that needs a key sets
+    a dummy one itself.
+    """
+    for spec in PROVIDER_SPECS.values():
+        monkeypatch.delenv(spec.env_var, raising=False)
+        if spec.keyless:
+            monkeypatch.delenv(keyless_public_env_var(spec.provider), raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _no_operator_donsetch(monkeypatch):
+    """Never let a test find the developer's real DonSeTch binary.
+
+    DonSeTch is resolved from DONSETCH_BIN or PATH. The real binary can start a
+    local Chrome for browser-tier fetches, and setup/status tests probe it with
+    ``donsetch --version`` - on a machine with DonSeTch installed every test
+    run launched Chrome. Tests that need a binary pass an explicit path.
+    """
+    monkeypatch.delenv("DONSETCH_BIN", raising=False)
+    real_which = shutil.which
+
+    def which(cmd, *args, **kwargs):
+        if os.path.basename(str(cmd)).lower().startswith("donsetch"):
+            return None
+        return real_which(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "which", which)
+
+
+@pytest.fixture(autouse=True)
+def _no_external_network(monkeypatch):
+    """Fail any test that opens a real connection beyond loopback.
+
+    Provider HTTP must be mocked. A test whose mock silently stops applying
+    would otherwise reach the real provider with a fake key and still "pass"
+    on the resulting error, so violations are recorded and failed at teardown
+    even when the engine swallowed the exception.
+    """
+    real_connect = socket.socket.connect
+    violations = []
+
+    def guarded_connect(self, address, *args, **kwargs):
+        host = address[0] if isinstance(address, tuple) else address
+        if self.family == socket.AF_UNIX or (
+            isinstance(host, str) and (host.startswith("127.") or host in {"::1", "localhost"})
+        ):
+            return real_connect(self, address, *args, **kwargs)
+        violations.append(address)
+        raise ConnectionRefusedError(f"test tried to open a real network connection to {address!r}")
+
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    yield
+    assert not violations, f"test opened real network connections: {violations}"

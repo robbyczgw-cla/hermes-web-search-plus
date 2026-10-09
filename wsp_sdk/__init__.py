@@ -1,47 +1,15 @@
-"""Public Provider SDK for Web Search Plus 3.x.
+"""Public Provider SDK for Web Search Plus.
 
-This API is additive-only throughout the 3.x series.  Provider modules should
-depend on this package rather than private registry or dispatch modules.
+The implementation lives in ``wsp_core.sdk``. Provider modules in
+``providers.d`` keep importing ``wsp_sdk``: during discovery the engine binds
+that name to its own SDK. This package serves code that imports ``wsp_sdk``
+from the plugin directory directly, e.g. a provider's own tests; it binds the
+same name (and ``wsp_sdk.api``, ``.errors``, ``.conformance``) to the very
+modules the engine uses, so there is one class object per name in a process.
 """
 
-from .api import (
-    ExtractExecute,
-    ProviderSpec,
-    SearchExecute,
-    extract_result,
-    make_extract_result,
-    make_search_result,
-    register_provider,
-    search_result,
-    source_result,
-)
-from .errors import (
-    DuplicateProviderError,
-    ProviderConfigError,
-    ProviderContractFailure,
-    ProviderDiscoveryError,
-    ProviderRegistrationError,
-    ProviderSDKError,
-    ProviderStartupDiagnostic,
-)
-from http_client import ProviderRequestError
+from wsp_core import sdk as _sdk
+from wsp_core.sdk import *  # noqa: F401,F403
+from wsp_core.sdk import __all__  # noqa: F401
 
-__all__ = [
-    "DuplicateProviderError",
-    "ExtractExecute",
-    "ProviderConfigError",
-    "ProviderContractFailure",
-    "ProviderDiscoveryError",
-    "ProviderRegistrationError",
-    "ProviderRequestError",
-    "ProviderSDKError",
-    "ProviderSpec",
-    "ProviderStartupDiagnostic",
-    "SearchExecute",
-    "extract_result",
-    "make_extract_result",
-    "make_search_result",
-    "register_provider",
-    "search_result",
-    "source_result",
-]
+_sdk._bind_public_name(__name__)

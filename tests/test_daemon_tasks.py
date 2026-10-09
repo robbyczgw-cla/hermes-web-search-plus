@@ -1,6 +1,6 @@
 import threading
 
-from daemon_tasks import DaemonTask
+from wsp_core.daemon_tasks import DaemonTask
 
 
 def test_done_callback_registered_before_completion_runs_once():

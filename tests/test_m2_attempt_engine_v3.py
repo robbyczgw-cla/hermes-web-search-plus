@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from contract_v3 import (
+from wsp_core.contract_v3 import (
     AttemptOutcome,
     Capability,
     CircuitState,
     ErrorClass,
     SkipReason,
 )
-from attempt_engine_v3 import AttemptContext, AttemptEngine
-from http_client import ProviderRequestError
-from state_store_v3 import SQLiteStateStore, credential_fingerprint
+from wsp_core.attempt_engine_v3 import AttemptContext, AttemptEngine
+from wsp_core.http_client import ProviderRequestError
+from wsp_core.state_store_v3 import SQLiteStateStore, credential_fingerprint
 
 
 def _context(*, budget_units: int = 1, budget_limit_units: int = 3) -> AttemptContext:
@@ -55,6 +55,24 @@ def test_attempt_engine_retries_transient_and_records_one_provider_receipt(tmp_p
     assert execution.receipt.tries[0]["error"]["error_class"] == "transient"
     assert execution.receipt.tries[1]["error"] is None
     assert store.get_budget("request-1", "request").used_units == 2
+
+
+def test_request_budget_blocks_after_max_provider_attempts(tmp_path):
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    engine = AttemptEngine(store, max_attempts=1)
+    context = _context(budget_limit_units=1)
+    calls = []
+
+    first = engine.execute(
+        context, lambda: calls.append("called") or {"results": []}, now=lambda: 100
+    )
+    blocked = engine.execute(
+        context, lambda: calls.append("unexpected") or {"results": []}, now=lambda: 101
+    )
+
+    assert first.payload == {"results": []}
+    assert blocked.receipt.skip_reason is SkipReason.BUDGET_BLOCKED
+    assert calls == ["called"]
 
 
 def test_attempt_ids_are_unique_for_same_context_and_second(tmp_path):

@@ -1,9 +1,10 @@
 from __future__ import annotations
+from wsp_core import config as config_module
 
 import time
 
-import search
-from research import run_research_mode
+from wsp_core import search
+from wsp_core.research import run_research_mode
 
 
 def _routing() -> dict:
@@ -12,7 +13,7 @@ def _routing() -> dict:
         "confidence": 0.9,
         "confidence_level": "high",
         "reason": "fixture",
-        "routing_policy": "routing-v2",
+        "routing_policy": "routing-v3",
         "top_signals": [],
         "scores": {"you": 1.0},
         "auto_allow_excluded": ["donsetch", "serpbase"],
@@ -21,7 +22,7 @@ def _routing() -> dict:
 
 
 def _config(tmp_path) -> dict:
-    config = search._deepcopy_default_config()
+    config = config_module._deepcopy_default_config()
     config["auto_routing"]["provider_priority"] = ["you"]
     config["auto_routing"]["disabled_providers"] = []
     config["auto_routing"]["auto_allow"].update(

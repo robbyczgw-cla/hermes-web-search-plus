@@ -9,7 +9,7 @@ This document explains the runtime shape of `web-search-plus`: what runs locally
 ```text
 Hermes Agent
   → plugin tool schema and handler in __init__.py
-  → provider/routing engine in search.py
+  → engine package wsp_core/ (routing, providers, cache, extraction)
   → configured external provider APIs
   → normalized result returned to Hermes
 ```
@@ -20,15 +20,18 @@ The plugin does not run a separate hosted backend. It does not add an analytics 
 
 - `plugin.yaml`: plugin manifest, optional environment variables, onboarding commands, and tool declarations.
 - `__init__.py`: Hermes plugin entrypoint, tool schemas, setup/onboarding helpers, and wrapper functions exposed to Hermes.
-- `search.py`: provider adapters, routing, caching, cooldowns, extraction, and CLI.
-- `provider_registry.py`: data-only provider metadata registry (single source of truth).
-- `provider_dispatch.py`: registry-driven `SEARCH_DISPATCH`/`EXTRACT_DISPATCH` adapter tables used by `search.py` and `extract.py`.
-- `setup.py`: thin standalone CLI entrypoint that loads setup helpers from `__init__.py`.
+- `wsp_core/`: the engine, host-neutral and imported relatively, so it works as `hermes_plugins.<slug>.wsp_core` and can be shared with other hosts unchanged.
+  - `wsp_core/search.py`: search pipeline entry points and the CLI.
+  - `wsp_core/providers.py`: provider adapters; `wsp_core/routing.py`: auto-routing.
+  - `wsp_core/provider_registry.py`: data-only provider metadata registry (single source of truth).
+  - `wsp_core/provider_dispatch.py`: registry-driven `SEARCH_DISPATCH`/`EXTRACT_DISPATCH` adapter tables.
+  - `wsp_core/sdk/`: the Provider SDK implementation behind the public `wsp_sdk` name.
+- `search.py`: the documented command line (`python search.py --query ...`); it only calls `wsp_core.search.main`.
+- `wsp_sdk/`: public Provider SDK import name. `providers.d` modules import `wsp_sdk`; the engine binds that name to its own `wsp_core.sdk` during discovery.
+- `setup.py`: thin standalone CLI entrypoint that loads the plugin package and its setup helpers.
 - `tests/`: unit and regression coverage for providers, onboarding, routing, extraction, and docs-sensitive configuration.
 
-## Compatibility shims
-
-Compatibility shims in `search.py` intentionally preserve legacy imports and monkeypatch seams while the modular split settles. The public shim policy is available via `get_compatibility_shim_policy()` and must keep wrappers in place until the ProviderSpec registry has stabilized for a documented minor release window.
+Default file locations are relative to the plugin directory and did not change when the engine moved into `wsp_core/`: cache and runtime state in `../.cache`, behaviour config in `../config.json`, keys in the plugin `.env`, the parent `.env` and the Hermes profile `.env`.
 
 ## Tool surface
 
@@ -43,9 +46,8 @@ Each provider adapter normalizes provider-specific request and response details 
 
 Provider capability classes:
 
-- Search-only: Brave, SearXNG, SerpBase, and Querit. Brave participates in the default auto-pool at priority 7; SerpBase and Querit default to `auto_allow=false` and are explicit/guarded unless users opt in.
+- Search-only: Brave, SearXNG, SerpBase, and Querit. Brave is first in the default auto-pool; SerpBase and Querit default to `auto_allow=false` and are explicit/guarded unless users opt in.
 - Search and extraction: You.com, Serper, Firecrawl, Tavily, Exa, Linkup, Parallel, Keenable, and the optional local DonSeTch MCP sidecar. Serper extraction uses its webpage scraper (`scrape.serper.dev`) and sits last in the default auto-extraction fallback chain. DonSeTch defaults to `auto_allow=false` for both capabilities and is explicit-only unless deliberately enabled.
-- Rejected legacy endpoints: native Perplexity and Kilo Perplexity remain metadata-only rejection records because no verified source-only endpoint is registered.
 
 Provider pricing, freshness, ranking, localization, and vertical support are controlled by the providers. The plugin normalizes responses; it does not make providers equivalent.
 
@@ -62,9 +64,10 @@ Default routing config includes:
 {
   "auto_routing": {
     "enabled": true,
+    "order": "measured",
     "fallback_provider": "serper",
-    "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "serpbase", "querit", "searxng", "keenable"],
-    "extract_provider_priority": ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper"],
+    "provider_priority": ["brave", "serper", "exa", "tavily", "you", "firecrawl", "linkup", "parallel", "serpbase", "querit", "searxng", "keenable"],
+    "extract_provider_priority": ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper", "donsetch"],
     "disabled_providers": [],
     "auto_allow": {
       "serpbase": false,
@@ -78,26 +81,25 @@ Default routing config includes:
 }
 ```
 
+`confidence_threshold` is accepted for compatibility but has no effect since 5.0.
+
 Secrets and routing are separate so users can configure a provider key without automatically letting that provider receive automatic traffic. Search `provider_priority` and `extract_provider_priority` are independent: search ranking does not silently reorder URL extraction. A partial extraction list is normalized and completed with missing extract-capable providers in registry order.
 
 ## Routing engine
 
 Routing is rule-based. It is not ML and it is not magic.
 
-High-level flow:
+High-level flow (routing policy `routing-v3`, details in [Routing](ROUTING.md)):
 
-1. Analyze query text for signals: current-info intent, product/local intent, research language, direct-answer intent, semantic-discovery intent, privacy intent, complexity, recency, language/script hints, and benchmark-derived query classes.
-2. Score known providers for those signals.
-3. Apply conservative Routing v2 boosts and penalties for classes such as multilingual current queries, AT/local shopping, GitHub/docs, package/API docs, arXiv/academic, Reddit/community, CVE/security, official/regulatory, finance/IR, weather/local factual, and briefing/synthesis.
-4. Remove providers that do not have a key or required local config.
-5. Remove providers listed in `disabled_providers`.
-6. Remove providers with `auto_allow=false` from automatic routing.
-7. Choose the highest-scoring remaining provider.
-8. Break ties deterministically using query text and `provider_priority`.
-9. Execute the provider call with retry/cooldown handling.
-10. Return quality diagnostics if requested.
+1. Assign the query one of eight intents from text cues (`wsp_core/intents.py`): academic, community, docs, general, local, news, security, shopping.
+2. Build the candidate order: the intent's first-provider rule if it has one (Exa for academic and docs, Serper for security and shopping), then the measured order (Brave, Serper, Exa, Tavily), then `provider_priority`. With `auto_routing.order: custom`, `provider_priority` alone is the order for every query.
+3. Remove providers that do not have a key or required local config.
+4. Remove providers listed in `disabled_providers`.
+5. Remove providers with `auto_allow=false` from automatic routing.
+6. Try the first remaining provider. In the tools, the next one starts when it fails, returns no results, or is slower than its usual latency; the first non-empty answer wins.
+7. Return quality diagnostics if requested.
 
-When no provider is eligible, the router reports `no_available_providers` and falls back to the configured fallback provider path. If that provider has no key, the call fails visibly instead of inventing results.
+The router does not score providers per query and calls no model. When no provider is eligible, the router reports `no_available_providers` and falls back to the configured fallback provider path. If that provider has no key, the call fails visibly instead of inventing results.
 
 ## Auto-allow gate
 
@@ -142,10 +144,9 @@ The gate exists for providers where silent automatic use could surprise users be
 
 The plugin favors partial truth over fake certainty.
 
-- Provider calls use shared transient-error retry behavior.
-- Transient HTTP codes include `429` and `503`.
-- Retry backoff is short and bounded.
-- Repeated provider failures update provider health state and cooldown.
+- Automatic search tries the routed provider first and keeps the other eligible providers as fallbacks. The next one starts as soon as the current one fails or answers with no results, or when it is slower than its usual latency (the 75th percentile of its recent calls, at least `v3.hedge_min_delay_seconds`, default 2.5 s). At most two run at once; the first non-empty answer wins. If every provider answers empty, the empty answer of the routed provider is returned.
+- While a fallback exists, each provider gets one try with a socket timeout of `v3.attempt_timeout_seconds` (default 10 s). An explicitly requested provider without fallback keeps one retry for transient errors (`429`, `503`, timeouts) and its own timeout.
+- Repeated provider failures open a circuit for that provider and update provider health state and cooldown.
 - Cooldowns step through 1 minute, 5 minutes, 25 minutes, and 1 hour.
 - Cooldown state is local and stored in `provider_health.json` under the cache directory.
 - Research mode keeps partial provider results when later extraction or provider calls fail.
@@ -221,9 +222,9 @@ The plugin does not promise “no data leaves your machine.” A more accurate s
 
 ## Extending with a new provider
 
-Provider wiring is registry-driven. `provider_registry.py` is the data-only
+Provider wiring is registry-driven. `wsp_core/provider_registry.py` is the data-only
 single source of truth (id, env var, capabilities, onboarding metadata,
-`auto_allow` default), and `provider_dispatch.py` maps each provider id to a
+`auto_allow` default), and `wsp_core/provider_dispatch.py` maps each provider id to a
 search/extract adapter in `SEARCH_DISPATCH` / `EXTRACT_DISPATCH`. CLI choices,
 tool-schema enums, doctor output, onboarding, and extraction priority all
 derive from the registry, and completeness tests
@@ -233,10 +234,10 @@ one surface.
 
 A provider addition should include:
 
-- a `ProviderSpec` entry in `provider_registry.py` (id, env var, capabilities, `auto_allow` default)
-- provider function(s) in `providers.py` (`search_<provider>`, optionally `extract_<provider>`) plus the `search.py` seam wrapper
-- a dispatch adapter per capability in `provider_dispatch.py`, registered in `SEARCH_DISPATCH`/`EXTRACT_DISPATCH`
-- routing score/match behavior in `routing.py` if it participates in auto-routing
+- a `ProviderSpec` entry in `wsp_core/provider_registry.py` (id, env var, capabilities, `auto_allow` default)
+- provider function(s) in `wsp_core/providers.py` (`search_<provider>`, optionally `extract_<provider>`)
+- a dispatch adapter per capability in `wsp_core/provider_dispatch.py`, registered in `SEARCH_DISPATCH`/`EXTRACT_DISPATCH`; dispatch resolves functions from `wsp_core/providers.py`
+- routing score/match behavior in `wsp_core/routing.py` if it participates in auto-routing
 - docs in README, User Guide, FAQ, and Architecture when behavior is user-visible (`docs/PROVIDERS.md` regenerates from the registry)
 - tests for response normalization and missing-key behavior (dispatch/enum/onboarding completeness is enforced by existing registry-driven tests)
 

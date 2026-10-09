@@ -1,23 +1,24 @@
-"""v3 engine-owned provider calls still feed adaptive routing samples.
+"""v3 engine-owned provider calls still feed the rolling latency samples.
 
-Routing reads provider_stats.performance_adjustments() on every auto-routed
-search. The v3 AttemptEngine owns retries, cooldowns, and circuit state, but
-the performance memory is a separate signal. Without these samples the
-router falls back to static priority and the Operator Console provider-health
-view goes stale.
+The hedged fallback reads provider_stats.latency_quantile() and the Operator
+Console provider-health view reads provider_stats.json. The v3 AttemptEngine
+owns retries, cooldowns, and circuit state, but the latency memory is a
+separate signal. Without these samples the hedge delay falls back to its fixed
+floor and the health view goes stale. Routing itself does not read them.
 """
 
 from __future__ import annotations
+from wsp_core import providers
 
 import json
 
 import pytest
 
-import provider_stats
-import search
-from compat_v3 import legacy_request_to_v3
-from contract_v3 import Capability
-from http_client import ProviderRequestError
+from wsp_core import provider_stats
+from wsp_core import search
+from wsp_core.compat_v3 import legacy_request_to_v3
+from wsp_core.contract_v3 import Capability
+from wsp_core.http_client import ProviderRequestError
 
 
 def _config(tmp_path, providers):
@@ -73,7 +74,7 @@ def _forbid_legacy_health(monkeypatch):
     monkeypatch.setattr(search, "reset_provider_health", forbidden)
 
 
-def test_v3_search_success_records_one_adaptive_sample(tmp_path, monkeypatch):
+def test_v3_search_success_records_one_latency_sample(tmp_path, monkeypatch):
     _forbid_legacy_health(monkeypatch)
     monkeypatch.setitem(
         search.SEARCH_DISPATCH, "serper", lambda *_a, **_k: _payload("serper", 4)
@@ -171,8 +172,8 @@ def test_v3_research_members_record_samples(tmp_path, monkeypatch):
     assert all(s["err"] is False for p in ("serper", "you") for s in samples[p])
 
 
-def test_v3_samples_reach_the_router(tmp_path, monkeypatch):
-    """End to end: enough v3 calls produce a non-empty routing adjustment."""
+def test_v3_samples_reach_the_hedge_delay(tmp_path, monkeypatch):
+    """End to end: enough v3 calls give the hedged fallback a latency quantile."""
     _forbid_legacy_health(monkeypatch)
     monkeypatch.setitem(
         search.SEARCH_DISPATCH, "serper", lambda *_a, **_k: _payload("serper", 5)
@@ -190,7 +191,7 @@ def test_v3_samples_reach_the_router(tmp_path, monkeypatch):
     assert len(_samples(provider_stats.PROVIDER_STATS_FILE)["serper"]) == (
         provider_stats.MIN_SAMPLES_FOR_ADJUSTMENT
     )
-    assert provider_stats.performance_adjustments(["serper"])["serper"] > 0
+    assert provider_stats.latency_quantile("serper") is not None
 
 
 def test_v3_cache_hit_is_not_a_sample(tmp_path, monkeypatch):
@@ -208,13 +209,13 @@ def test_v3_cache_hit_is_not_a_sample(tmp_path, monkeypatch):
 
 
 def test_bench_still_never_records(tmp_path, monkeypatch):
-    import bench
+    from wsp_core import bench
 
     monkeypatch.setattr(
-        search, "search_serper", lambda *_a, **_k: _payload("serper", 3)
+        providers, "search_serper", lambda *_a, **_k: _payload("serper", 3)
     )
     try:
-        bench._call_provider_search(search, "serper", "q", 3, _config(tmp_path, ["serper"]))
+        bench._call_provider_search(providers, "serper", "q", 3, _config(tmp_path, ["serper"]))
     except Exception as exc:  # pragma: no cover - adapter surface drift
         pytest.skip(f"bench direct call surface changed: {exc}")
 

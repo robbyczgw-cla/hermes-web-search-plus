@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from provider_registry import PROVIDER_SPECS, discover_providers
+from wsp_core.provider_registry import PROVIDER_SPECS, discover_providers
 
 
 _NON_PRODUCTION_MODULE = """\

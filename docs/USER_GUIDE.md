@@ -67,11 +67,11 @@ python3 search.py --bench
 python3 search.py --bench --json   # structured report
 ```
 
-The bench runs a small fixed query suite (docs, vendor release, community, non-English) against every configured search-capable provider and reports success rate, median latency, result volume, and simple quality signals (duplicate-free URLs, snippet coverage). Providers are ranked by a weighted score — reliability first, then speed, then quality — and the recommended priority is printed together with the exact `config set-priority` command to apply it.
+The bench runs a small fixed query suite (docs, vendor release, community, non-English) against every configured search-capable provider and reports success rate, median latency, result volume, and simple quality signals (duplicate-free URLs, snippet coverage). Providers are ranked by a weighted score — reliability first, then speed, then quality — and the recommended priority is printed together with the exact `config set-priority` command to apply it. With the default `auto_routing.order: measured`, `provider_priority` only orders the fallback chain; to make the bench order the first choice for every query, apply the same list with `config set-order` instead.
 
 Two guarantees worth knowing:
 
-- Bench calls providers directly, so a bench run never triggers provider cooldowns and never feeds the adaptive routing statistics.
+- Bench calls providers directly, so a bench run never triggers provider cooldowns and never feeds the latency statistics that time the fallback.
 - Nothing is written to your config; applying the recommendation is always an explicit step.
 
 Note that the bench makes a few real API calls per provider, so it spends a small amount of quota on every configured provider.
@@ -91,14 +91,14 @@ python ~/.hermes/plugins/web-search-plus/setup.py setup you linkup --env-path ~/
 
 Presets:
 
-- `starter`: You.com + Serper + Linkup. Best Routing v2 first-run setup.
-- `lean`: You.com + Linkup. Small fast search plus extraction.
-- `search`: You.com + Serper + Exa + Firecrawl + Tavily + Linkup. Full default Routing v2 pool.
-- `extract`: Firecrawl + Linkup + Exa + Tavily. Extraction-heavy setup.
+- `starter`: Brave + Serper + Exa + Linkup. The providers automatic routing uses first; this is what `setup.py setup` asks for by default.
+- `lean`: Brave + Linkup. Small fast search plus extraction.
+- `search`: Brave + Serper + Exa + Tavily + Firecrawl + Linkup. The full default search pool.
+- `extract`: Linkup + Firecrawl + Tavily. Extraction-heavy setup.
 - `self-hosted`: SearXNG + keyless Keenable for automatic routing without a commercial API key. A separately installed DonSeTch sidecar can be layered on for explicit local search and extraction.
 - `all`: prompt for every supported provider.
 
-Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, SearXNG, SerpBase, Querit, Keenable, and the optional local DonSeTch MCP sidecar. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, Keenable, Serper, and DonSeTch. Native Perplexity and Kilo Perplexity are not registered because their legacy answer endpoints do not expose a verified source-only mode.
+Search-capable providers include You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Parallel, Brave, SearXNG, SerpBase, Querit, Keenable, and the optional local DonSeTch MCP sidecar. Extraction-capable providers are Linkup, Firecrawl, Tavily, Exa, Parallel, You.com, Keenable, Serper, and DonSeTch.
 
 Keenable is keyless: set `KEENABLE_API_KEY` for the authenticated endpoints, or opt into its public tier (off by default). In the wizard, skip the Keenable key prompt and answer yes, or run `setup.py setup keenable --keyless-public`; it writes `keenable.allow_public: true` to `config.json` (equivalently `KEENABLE_ALLOW_PUBLIC=1`).
 
@@ -166,7 +166,7 @@ The profile governs only automatic routing. An explicit `provider="serper"` (or 
 
 ### Migration note for v2.0.0
 
-Routing v2 changes the default `provider="auto"` behavior. Existing configs keep explicit user choices, but missing `auto_allow` entries inherit the guarded defaults: SerpBase and Querit stay explicit-only until you opt them into automatic routing; Brave joins the default auto-pool at priority 7 and Parallel at priority 8 when a key is configured. Perplexity provider IDs from older configs are ignored because those endpoints are no longer registered.
+Routing v2 changes the default `provider="auto"` behavior. Existing configs keep explicit user choices, but missing `auto_allow` entries inherit the guarded defaults: SerpBase and Querit stay explicit-only until you opt them into automatic routing; Parallel joins the default auto-pool at priority 8 when a key is configured. (Since 5.0, Brave is first in the default priority; see [Routing](ROUTING.md).) Removed Perplexity and Kilo-Perplexity IDs in older configs are ignored; other unknown provider IDs still invalidate the config.
 
 ```bash
 python ~/.hermes/plugins/web-search-plus/setup.py config show --json
@@ -176,7 +176,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase
 
 ## Routing preferences
 
-For a generated class-by-class reference of what auto-routing prefers and demotes, see [Routing v2 Reference](ROUTING.md).
+For a generated reference of each intent, its first provider and the fallback chain, see [Routing Reference](ROUTING.md).
 
 Secrets and behavior are intentionally separate:
 
@@ -285,14 +285,14 @@ Search and extract results contain titles, snippets, URLs and page text written 
 When a query does not use the provider you expected, ask for routing diagnostics instead of guessing:
 
 ```bash
-python3 search.py --query "best bookshelf speakers under 1000 EUR" --provider auto --quality-report --compact --no-cache
+python3 search.py --query 'best wireless earbuds under $100' --provider auto --quality-report --compact --no-cache
 ```
 
 In the JSON output, check these fields first:
 
 - `routing.provider`: the selected provider.
-- `routing.reason`: why the router considered the match strong or weak.
-- `scores`: provider scores before final selection.
+- `routing.reason`: `intent_<name>` when the query matched an intent (`academic`, `community`, `docs`, `local`, `news`, `security`, `shopping`), `no_signals_matched` when it is a general query.
+- `routing.analysis_summary.routing_class`: the intent the query was classified as; `routing.analysis_summary.intent_signals` lists the cues that decided it.
 - `quality_report.skipped_providers`: providers skipped because of cooldown or errors.
 - `routing.auto_allow_excluded`: configured providers that were blocked from automatic routing by `auto_allow=false`.
 - `quality_report.extraction_recommended`: whether snippets look thin enough that `web_extract_plus` may help.
@@ -303,9 +303,9 @@ Example pattern:
 {
   "routing": {
     "provider": "serper",
-    "reason": "moderate_confidence_match",
-    "routing_policy": "routing-v2",
-    "routing_class": "shopping_at",
+    "reason": "intent_shopping",
+    "routing_policy": "routing-v3",
+    "routing_class": "shopping",
     "auto_allow_excluded": ["serpbase"]
   },
   "quality_report": {
@@ -316,7 +316,7 @@ Example pattern:
 }
 ```
 
-Read that as: guarded providers can have keys but remain explicit-only for `provider="auto"`, and the router selected the best eligible provider. If you want SerpBase or Querit to participate in automatic routing, opt in with `set-auto-allow <provider> on`; if a provider is cooled down, wait or inspect local provider health state.
+Read that as: guarded providers can have keys but remain explicit-only for `provider="auto"`, and the router selected the first eligible provider for the query's intent. If you want SerpBase or Querit to participate in automatic routing, opt in with `set-auto-allow <provider> on`; if a provider is cooled down, wait or inspect local provider health state.
 
 ## Search locale defaults
 
@@ -334,19 +334,19 @@ Providers with region/language request parameters (Serper, Brave, You.com, SerpB
 ```
 
 - `country`: ISO 3166-1 alpha-2 code (for example `at`, `fr`, `es`) used as the default region for locale-aware providers.
-- `language`: ISO 639-1 code (for example `de`), or `"auto"` to infer the language from each query.
+- `language`: ISO 639-1 code (for example `de`), or `"auto"` to infer the language from each query. The `--language` flag and the `language` tool parameter accept `auto` for a single call.
 
-`"auto"` mode uses a lightweight, local stopword/character heuristic (no LLM, no extra dependency, no IP geolocation) covering `de`, `es`, `fr`, `it`, `pt`, `nl`, and `en`. It is deliberately conservative: it needs at least two distinct language signals and a single unambiguous winner. A query like "Wiener Kaffeehaus Öffnungszeiten" infers German; a terse technical query like "DAC R2R NOS" or "PostgreSQL 17 release notes" infers nothing and keeps the default language.
+`"auto"` mode uses a lightweight, local stopword/character heuristic (no LLM, no extra dependency, no IP geolocation) covering `de`, `es`, `fr`, `it`, `pt`, `nl`, and `en`, plus Japanese (kana), Russian (Cyrillic), and Arabic by script. It is deliberately conservative: it needs at least two distinct language signals and a single unambiguous winner, or a script that identifies the language. Conflicting evidence (for example kana inside an English sentence) and Han-only text (Chinese or Japanese) infer nothing. A query like "Wiener Kaffeehaus Öffnungszeiten" infers German; a terse technical query like "DAC R2R NOS" or "PostgreSQL 17 release notes" infers nothing, and then **no language parameter is sent**, so the provider's own default applies. Without `"auto"` the language still defaults to `en`.
 
 Explicit location hints in the query move the country: a small curated table of well-known city and country names (Vienna/Wien, Berlin, Paris, Madrid, London, Rome, Amsterdam, ...) is checked, so "mejores restaurantes Madrid" searches with `country=es` and "boulangerie Paris horaires" with `country=fr` even when your configured default is `at`. Conflicting hints ("compare bakeries in Paris and Madrid") change nothing.
 
 Resolution precedence:
 
-1. CLI flags / tool parameters (`--country` / `--language`, or the `country` / `language` tool parameters)
-2. Explicit provider-specific config in `config.json` (for example `serper.country` or `brave.search_lang`)
+1. CLI flags / tool parameters (`--country` / `--language`, or the `country` / `language` tool parameters); a language of `auto` replaces `defaults.locale.language` for that call
+2. Explicit provider-specific config in `config.json` (for example `serper.country` or `brave.search_lang`); it also wins over `auto`
 3. Explicit location hint in the query (country only)
-4. `defaults.locale.country` / `defaults.locale.language` (with `"auto"` triggering language inference)
-5. Fallback `us` / `en`
+4. `defaults.locale.country` / `defaults.locale.language` (with `"auto"` triggering language detection)
+5. Fallback `us` / `en` (language: nothing is sent when `auto` detects nothing)
 
 **Query language does not imply country.** A German query can come from Austria or Switzerland just as well as Germany, so inferred language never moves the region — only explicit location hints, configuration, or flags do.
 
@@ -359,6 +359,8 @@ Result metadata reports the resolved locale and where each value came from, foll
   "source": {"country": "config", "language": "inferred"}
 }
 ```
+
+`source.language` is `config`, `cli`, `inferred`, `jev`, `fallback`, or `provider_default` (`auto` found nothing, `language` is `null`, and the request carries no language parameter).
 
 Backward compatibility: without `defaults.locale` and without flags, everything still resolves to `us`/`en` exactly as before. Providers without locale parameters (Tavily, Exa, Linkup, Parallel, Keenable) are unaffected.
 
@@ -421,12 +423,12 @@ Parameters:
 
 Parameter semantics:
 
-- `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `parallel`, `searxng`, `serpbase`, `querit`, or `donsetch`. Brave joins the default auto-pool at priority 7; Parallel joins at priority 8 when a key is configured. SerpBase, Querit, and DonSeTch remain available for explicit calls but default to `auto_allow=false`.
+- `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `parallel`, `searxng`, `serpbase`, `querit`, or `donsetch`. Brave is first in the default auto-pool; Parallel joins at priority 8 when a key is configured. SerpBase, Querit, and DonSeTch remain available for explicit calls but default to `auto_allow=false`.
 - `count`: result count, from 1 to 20.
 - `time_range`: `day`, `week`, `month`, or `year` where supported.
 - `freshness`: unified recency filter with the values `day`, `week`, `month`, or `year` (case-insensitive; invalid values return a clear error). It is applied natively by Serper, Brave, Querit, Firecrawl, Keenable, You.com, SearXNG, Exa, Tavily, and TinyFish, each translated into that provider's own format (for example Brave `pw`, Serper `tbs=qdr:w`, Exa absolute UTC `startPublishedDate`/`endPublishedDate` bounds, Tavily `time_range`, or TinyFish publication-time filters). Providers without recency support (Linkup, Parallel, SerpBase) still run the search normally; result metadata reports `freshness.applied=false` instead of silently dropping the filter. In `mode="research"` the applied status is reported per provider.
 - `search_type`: result vertical, `search` (default) or `news` (case-insensitive; invalid values return a clear error). Serper serves news natively via `google.serper.dev/news`; TinyFish serves it through its native news-domain mode. Providers without a native news vertical still run the normal search; result metadata reports `search_type.applied=false` instead of silently ignoring the request. In `mode="research"` the applied status is reported per provider.
-- `include_domains` / `exclude_domains`: provider-dependent domain filters.
+- `include_domains` / `exclude_domains`: domain filters, as a list or one string separated by commas or spaces. Providers with a domain field get them natively; Brave, Serper, SerpBase, You.com and Firecrawl get `site:` / `-site:` operators built from bare hostnames (`.gov` filters by suffix). An `include_domains` value without a usable domain is an error rather than an unrestricted search. Tavily cannot filter by a suffix such as `.gov` (it takes `*.example.com`); automatic search skips it for suffix filters.
 - `quality_report`: include routing diagnostics, skipped providers, result quality hints, and extraction recommendation.
 - `mode="research"`: query multiple providers and optionally extract selected URLs within a best-effort wall-clock budget.
 
@@ -472,7 +474,7 @@ The stored full text is local plaintext cache data. It may contain the complete 
 
 Search results pass through a quality layer before they reach the agent:
 
-- **Adaptive routing:** every real provider call records latency, error, and empty-result outcomes (rolling window, last 50 calls / 7 days). Routing blends a bounded adjustment (±1.0) into the scores, so providers that are currently fast and productive win close calls — strong query-class signals are never overridden. Disable with `auto_routing.adaptive_routing: false` in `config.json`; adjustments are visible in `quality_report.adaptive_adjustments`.
+- **Latency memory:** every real provider call records latency, error, and empty-result outcomes (rolling window, last 50 calls / 7 days). The hedged fallback uses them to decide how long to wait for a slow provider before racing the next one, and the Operator Console shows them as provider health. They do not steer routing: the first provider comes from the query intent alone. The 4.x setting `auto_routing.adaptive_routing` is still accepted in `config.json` and has no effect.
 - **Spam/mirror filter:** results from known Stack Overflow/GitHub content mirrors and SEO scrapers are removed (reported in `metadata.spam_filtered`). Extend via `quality.blocked_domains`, rescue a domain via `quality.allowed_domains`, or disable with `quality.filter_spam: false`.
 - **Domain diversity:** at most 2 results per domain keep their position; overflow is moved behind the diverse head (`quality.max_results_per_domain`, `0` disables).
 
@@ -500,7 +502,8 @@ The default is diagnostic-only. To let Research Mode stably move URL/content dup
 
 The plugin is designed to fail visibly rather than invent confidence.
 
-- Search result cache TTL is 1 hour by default. Recency queries and `freshness`/`time_range` cap that automatically: live/hour 60s, latest/day 300s, week 1800s.
+- Search result cache TTL is 1 hour by default. Recency queries and `freshness`/`time_range` cap that automatically: live/hour 60s, latest/day 300s, week 1800s. Queries the router files under live sports, security advisories or company earnings are capped at 300s as well.
+- Searches that differ only in letter case, spacing or Unicode form ("Best  NAS 2026" and "best nas 2026") share one cache entry.
 - Cache files and provider health state live under `WSP_CACHE_DIR`, or the plugin cache directory if unset.
 - Use `no_cache=true` on `web_search_plus`, or `--no-cache` in CLI tests, when you need a fresh provider call. Cached hits include age; recency queries are labeled.
 - Transient provider errors are retried with short backoff.

@@ -1,4 +1,5 @@
-import importlib.util
+from wsp_core import providers
+from wsp_core import config as config_module
 import os
 import subprocess
 import sys
@@ -7,13 +8,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-SEARCH_PATH = Path(__file__).resolve().parents[1] / "search.py"
-search_spec = importlib.util.spec_from_file_location("wsp_search_serpbase_under_test", SEARCH_PATH)
-search = importlib.util.module_from_spec(search_spec)
-assert search_spec.loader is not None
-search_spec.loader.exec_module(search)
+from wsp_core import search, routing as routing_module
 
-QueryAnalyzer = search.QueryAnalyzer
+SEARCH_PATH = Path(__file__).resolve().parents[1] / "search.py"
+
+auto_route_provider = search.auto_route_provider
 get_api_key = search.get_api_key
 validate_api_key = search.validate_api_key
 
@@ -43,8 +42,8 @@ class SerpBaseProviderTests(unittest.TestCase):
             "related_searches": [{"query": "related one"}, "related two"],
             "knowledge_graph": {"title": "Example KG"},
         }
-        with mock.patch.object(search, "make_request", return_value=fake_response) as mock_request:
-            result = search.search_serpbase(
+        with mock.patch.object(providers, "make_request", return_value=fake_response) as mock_request:
+            result = providers.search_serpbase(
                 query="example query",
                 api_key="serpbase-test-key-12345",
                 max_results=5,
@@ -68,33 +67,31 @@ class SerpBaseProviderTests(unittest.TestCase):
         self.assertEqual(body["page"], 1)
 
     def test_search_serpbase_raises_on_business_error(self):
-        with mock.patch.object(search, "make_request", return_value={"status": 1020, "message": "insufficient credits"}):
+        with mock.patch.object(providers, "make_request", return_value={"status": 1020, "message": "insufficient credits"}):
             with self.assertRaises(search.ProviderRequestError) as ctx:
-                search.search_serpbase("query", "serpbase-test-key-12345")
+                providers.search_serpbase("query", "serpbase-test-key-12345")
         self.assertIn("provider status 1020", str(ctx.exception))
         self.assertNotIn("insufficient credits", str(ctx.exception))
 
     def test_auto_router_excludes_serpbase_and_querit_when_auto_allow_false(self):
-        config = search._deepcopy_default_config()
+        config = config_module._deepcopy_default_config()
         config["auto_routing"]["provider_priority"] = ["serpbase", "querit", "serper"]
         config["auto_routing"]["auto_allow"] = {"serpbase": False, "querit": False}
-        analyzer = QueryAnalyzer(config)
         env = {
             "SERPBASE_API_KEY": "serpbase-test-key-12345",
             "QUERIT_API_KEY": "querit-test-key-12345",
             "SERPER_API_KEY": "serper-test-key-12345",
         }
         with mock.patch.dict(os.environ, env, clear=False):
-            routing = analyzer.route("latest iphone price today")
+            routing = auto_route_provider("latest iphone price today", config)
 
         self.assertEqual(routing["provider"], "serper")
-        self.assertNotIn("serpbase", routing["scores"])
-        self.assertNotIn("querit", routing["scores"])
+        self.assertEqual(routing["candidate_order"], ["serper"])
         self.assertIn("serpbase", routing["auto_allow_excluded"])
         self.assertIn("querit", routing["auto_allow_excluded"])
 
     def test_explicit_serpbase_key_still_works_when_auto_allow_false(self):
-        config = search._deepcopy_default_config()
+        config = config_module._deepcopy_default_config()
         config["auto_routing"]["auto_allow"] = {"serpbase": False}
         with mock.patch.dict(os.environ, {"SERPBASE_API_KEY": "serpbase-test-key-12345"}, clear=False):
             self.assertEqual(validate_api_key("serpbase", config), "serpbase-test-key-12345")
@@ -109,12 +106,14 @@ class SerpBaseProviderTests(unittest.TestCase):
                 "confidence_threshold": 0.3,
             }
         }
-        with mock.patch.object(search, "get_api_key", return_value="dummy-key"):
+        with mock.patch.object(routing_module, "get_api_key", return_value="dummy-key"):
             explanation = search.explain_routing("best price sony wh-1000xm6 Austria", config)
         excluded = explanation["routing_decision"]["auto_allow_excluded"]
         self.assertIn("serpbase", excluded)
         self.assertIn("querit", excluded)
-        self.assertIn("serpbase_signals", explanation["intent_breakdown"])
+        self.assertNotIn("serpbase", explanation["available_providers"])
+        self.assertNotIn("querit", explanation["available_providers"])
+        self.assertEqual(explanation["intent"]["intent"], "shopping")
 
     def test_explicit_serpbase_missing_key_hard_fails_without_fallback(self):
         with tempfile.TemporaryDirectory() as tmp:

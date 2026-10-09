@@ -1,11 +1,11 @@
+from wsp_core import providers
 import os
 import time
 import unittest
 from unittest import mock
 
-import providers
-import search
-from search import get_api_key, validate_api_key
+from wsp_core import search
+from wsp_core.search import get_api_key, validate_api_key
 
 
 class LinkupProviderTests(unittest.TestCase):
@@ -29,8 +29,8 @@ class LinkupProviderTests(unittest.TestCase):
                 }
             ]
         }
-        with mock.patch("search.make_request", return_value=fake_response) as mock_request:
-            result = search.search_linkup(
+        with mock.patch("wsp_core.providers.make_request", return_value=fake_response) as mock_request:
+            result = providers.search_linkup(
                 query="find credible sources for AI tutoring outcomes",
                 api_key="linkup-test-key-12345",
                 max_results=5,
@@ -55,9 +55,9 @@ class LinkupProviderTests(unittest.TestCase):
         self.assertEqual(body["excludeDomains"], ["wikipedia.org"])
 
     def test_search_linkup_rejects_sourced_answer_before_network(self):
-        with mock.patch("search.make_request") as request:
+        with mock.patch("wsp_core.providers.make_request") as request:
             with self.assertRaisesRegex(ValueError, "outputType=searchResults"):
-                search.search_linkup(
+                providers.search_linkup(
                     query="fact check AI tutoring outcomes with citations",
                     api_key="linkup-test-key-12345",
                     output_type="sourcedAnswer",
@@ -89,18 +89,24 @@ class LinkupProviderTests(unittest.TestCase):
         self.assertEqual(result["results"][1]["url"], "https://slow.test/page")
         self.assertIn("timed out", result["results"][1]["error"])
 
-    def test_auto_router_prefers_linkup_for_source_grounding_queries(self):
+    def test_auto_router_gives_linkup_no_special_rank_for_source_grounding_queries(self):
+        query = "find credible sources and citations to verify this claim"
         config = {
             "auto_routing": {"provider_priority": ["linkup", "tavily", "exa", "serper"]},
         }
-        with mock.patch.dict(os.environ, {"LINKUP_API_KEY": "linkup-test-key"}, clear=False):
-            routing = search.auto_route_provider(
-                "find credible sources and citations to verify this claim",
-                config,
-            )
+        # The measured order (brave, serper, exa, tavily) comes before the user's
+        # provider_priority, which only orders the fallback chain after it.
+        with mock.patch.dict(
+            os.environ, {"LINKUP_API_KEY": "linkup-test-key", "TAVILY_API_KEY": "tavily-test-key"}, clear=False
+        ):
+            both = search.auto_route_provider(query, config)
+        self.assertEqual(both["provider"], "tavily")
+        self.assertEqual(both["candidate_order"], ["tavily", "linkup"])
 
-        self.assertEqual(routing["provider"], "linkup")
-        self.assertGreater(routing["scores"]["linkup"], routing["scores"].get("tavily", 0))
+        # Linkup still routes when it is the only provider that is configured.
+        with mock.patch.dict(os.environ, {"LINKUP_API_KEY": "linkup-test-key"}, clear=False):
+            alone = search.auto_route_provider(query, config)
+        self.assertEqual(alone["provider"], "linkup")
 
 
 if __name__ == "__main__":

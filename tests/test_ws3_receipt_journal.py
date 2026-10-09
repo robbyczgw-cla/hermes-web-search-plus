@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import errno
 import importlib
+import os
+import time
 import json
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -10,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from contract_v3 import (
+from wsp_core.contract_v3 import (
     AttemptOutcome,
     Capability,
     ErrorClass,
@@ -20,8 +23,8 @@ from contract_v3 import (
     ResponseV3,
     SkipReason,
 )
-from compat_v3 import legacy_request_to_v3
-from orchestrator_v3 import CapabilityAdapter, ProviderPlan, execute_v3_request
+from wsp_core.compat_v3 import legacy_request_to_v3
+from wsp_core.orchestrator_v3 import CapabilityAdapter, ProviderPlan, execute_v3_request
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -48,7 +51,7 @@ def fixture(name: str) -> dict[str, Any]:
 def append_journal_in_process(args: tuple[str, int, dict[str, Any]]) -> bool:
     root, index, source = args
     fixture_now = float(source["timestamp"]) + 1.0
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     journal = journal_module.OperatorReceiptJournal(
         root,
         max_records=100,
@@ -116,7 +119,7 @@ def base_receipt(order: list[str], selected: str | None, fallback: str = "none")
 
 
 def test_complete_direct_receipt_selects_first_candidate() -> None:
-    contract = importlib.import_module("contract_v3")
+    contract = importlib.import_module("wsp_core.contract_v3")
     receipt = contract.complete_routing_receipt_v3(
         base_receipt(["serper", "linkup"], "serper"),
         [attempt("attempt_serper", "serper", AttemptOutcome.SUCCESS)],
@@ -144,7 +147,7 @@ def test_complete_direct_receipt_selects_first_candidate() -> None:
 
 
 def test_complete_fallback_receipt_preserves_attempt_order() -> None:
-    contract = importlib.import_module("contract_v3")
+    contract = importlib.import_module("wsp_core.contract_v3")
     receipt = contract.complete_routing_receipt_v3(
         base_receipt(["tavily", "serper"], "serper", "selected_failed"),
         [
@@ -177,7 +180,7 @@ def test_complete_fallback_receipt_preserves_attempt_order() -> None:
 def test_complete_receipt_maps_typed_skip_reasons(
     skip_reason: SkipReason, reason_code: str
 ) -> None:
-    contract = importlib.import_module("contract_v3")
+    contract = importlib.import_module("wsp_core.contract_v3")
     receipt = contract.complete_routing_receipt_v3(
         base_receipt(["tavily", "serper"], "serper", "selected_skipped"),
         [
@@ -212,7 +215,7 @@ def test_generated_schema_keeps_legacy_receipt_and_rejects_partial_completion() 
         **schema["$defs"]["RoutingReceipt"],
     }
     legacy = base_receipt(["serper"], "serper")
-    completed = importlib.import_module("contract_v3").complete_routing_receipt_v3(
+    completed = importlib.import_module("wsp_core.contract_v3").complete_routing_receipt_v3(
         legacy,
         [attempt("attempt_serper", "serper", AttemptOutcome.SUCCESS)],
     )
@@ -227,8 +230,8 @@ def test_generated_schema_keeps_legacy_receipt_and_rejects_partial_completion() 
 
 
 def test_cache_hit_receipt_keeps_origin_separate_from_current_attempts() -> None:
-    cache = importlib.import_module("cache_v3")
-    origin = importlib.import_module("contract_v3").complete_routing_receipt_v3(
+    cache = importlib.import_module("wsp_core.cache_v3")
+    origin = importlib.import_module("wsp_core.contract_v3").complete_routing_receipt_v3(
         base_receipt(["serper"], "serper"),
         [attempt("attempt_origin", "serper", AttemptOutcome.SUCCESS)],
     )
@@ -262,7 +265,7 @@ def test_cache_hit_receipt_keeps_origin_separate_from_current_attempts() -> None
 def test_shadow_observation_is_typed_journaled_and_never_affects_execution(
     tmp_path: Path,
 ) -> None:
-    contract = importlib.import_module("contract_v3")
+    contract = importlib.import_module("wsp_core.contract_v3")
     receipt = contract.complete_routing_receipt_v3(
         base_receipt(["serper"], "serper"),
         [attempt("attempt_aaaaaaaaaaaaaaaa", "serper", AttemptOutcome.SUCCESS)],
@@ -295,9 +298,9 @@ def test_shadow_observation_is_typed_journaled_and_never_affects_execution(
         "warning_codes": [],
         "error_code": None,
     }
-    privacy = importlib.import_module("operator_privacy_v3")
+    privacy = importlib.import_module("wsp_core.operator_privacy_v3")
     assert privacy.assert_operator_payload_safe(record) is None
-    journal = importlib.import_module("operator_receipts_v3").OperatorReceiptJournal(
+    journal = importlib.import_module("wsp_core.operator_receipts_v3").OperatorReceiptJournal(
         tmp_path,
         now=lambda: 1_783_890_301.0,
     )
@@ -313,12 +316,11 @@ def test_shadow_observation_is_typed_journaled_and_never_affects_execution(
 
 
 def test_privacy_choke_accepts_fixtures_but_rejects_allowed_key_freetext() -> None:
-    privacy = importlib.import_module("operator_privacy_v3")
+    privacy = importlib.import_module("wsp_core.operator_privacy_v3")
     for name in (
         "overview.json",
         "receipts.json",
         "benchmark-history.json",
-        "shadow-evaluation.json",
     ):
         assert privacy.assert_operator_payload_safe(fixture(name)) is None
 
@@ -351,8 +353,8 @@ def test_privacy_choke_accepts_fixtures_but_rejects_allowed_key_freetext() -> No
 def test_privacy_choke_tracks_providers_registered_after_import(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    privacy = importlib.import_module("operator_privacy_v3")
-    registry = importlib.import_module("provider_registry")
+    privacy = importlib.import_module("wsp_core.operator_privacy_v3")
+    registry = importlib.import_module("wsp_core.provider_registry")
 
     monkeypatch.setitem(
         registry.PROVIDER_SPECS,
@@ -374,7 +376,7 @@ def test_privacy_choke_tracks_providers_registered_after_import(
 
 
 def test_completed_receipt_rejects_missing_candidate_and_outcome_drift() -> None:
-    contract = importlib.import_module("contract_v3")
+    contract = importlib.import_module("wsp_core.contract_v3")
     good = contract.complete_routing_receipt_v3(
         base_receipt(["serper", "linkup"], "serper"),
         [attempt("attempt_serper", "serper", AttemptOutcome.SUCCESS)],
@@ -434,7 +436,7 @@ def test_completed_receipt_rejects_missing_candidate_and_outcome_drift() -> None
 
 
 def test_journal_roundtrip_is_owned_bounded_and_newest_first(tmp_path: Path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     journal = journal_module.OperatorReceiptJournal(
         tmp_path,
         max_records=2,
@@ -463,7 +465,7 @@ def test_journal_roundtrip_is_owned_bounded_and_newest_first(tmp_path: Path) -> 
 
 
 def test_journal_rejects_freetext_before_creating_file(tmp_path: Path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     journal = journal_module.OperatorReceiptJournal(tmp_path)
     unsafe = dict(fixture("receipts.json")["receipts"][0])
     unsafe["status"] = "provider returned private prose"
@@ -473,7 +475,7 @@ def test_journal_rejects_freetext_before_creating_file(tmp_path: Path) -> None:
 
 
 def test_journal_preserves_unowned_collision_byte_identical(tmp_path: Path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     journal = journal_module.OperatorReceiptJournal(tmp_path)
     journal.path.parent.mkdir(parents=True, exist_ok=True)
     original = b'{"foreign":true}\n'
@@ -484,7 +486,7 @@ def test_journal_preserves_unowned_collision_byte_identical(tmp_path: Path) -> N
 
 
 def test_journal_refuses_symlinked_data_and_lock_files(tmp_path: Path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     record = fixture("receipts.json")["receipts"][0]
 
     data_journal = journal_module.OperatorReceiptJournal(tmp_path / "data")
@@ -505,7 +507,7 @@ def test_journal_refuses_symlinked_data_and_lock_files(tmp_path: Path) -> None:
 
 
 def test_journal_refuses_symlinked_ancestors(tmp_path: Path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     record = fixture("receipts.json")["receipts"][0]
 
     real_root = tmp_path / "real-root"
@@ -527,7 +529,7 @@ def test_journal_refuses_symlinked_ancestors(tmp_path: Path) -> None:
 def test_failed_retention_rewrite_leaves_previous_journal_unchanged(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     journal = journal_module.OperatorReceiptJournal(tmp_path)
     first = fixture("receipts.json")["receipts"][0]
     second = dict(first, execution_id="exec_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
@@ -543,7 +545,7 @@ def test_failed_retention_rewrite_leaves_previous_journal_unchanged(
 
 
 def test_journal_ttl_prunes_only_owned_records(tmp_path: Path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     journal = journal_module.OperatorReceiptJournal(
         tmp_path,
         ttl_seconds=100,
@@ -561,7 +563,7 @@ def test_journal_ttl_prunes_only_owned_records(tmp_path: Path) -> None:
 
 
 def test_concurrent_journal_appends_do_not_lose_owned_records(tmp_path: Path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     source = fixture("receipts.json")["receipts"][0]
     fixture_now = float(source["timestamp"]) + 1.0
 
@@ -592,7 +594,7 @@ def test_concurrent_journal_appends_do_not_lose_owned_records(tmp_path: Path) ->
 def test_cross_process_journal_appends_do_not_lose_owned_records(
     tmp_path: Path,
 ) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
     source = fixture("receipts.json")["receipts"][0]
     fixture_now = float(source["timestamp"]) + 1.0
     work = [(str(tmp_path), index, source) for index in range(12)]
@@ -614,7 +616,7 @@ def test_cross_process_journal_appends_do_not_lose_owned_records(
 
 
 def test_reason_enum_exactly_matches_task1_contract() -> None:
-    contract = importlib.import_module("contract_v3")
+    contract = importlib.import_module("wsp_core.contract_v3")
     assert {item.value for item in contract.CandidateReasonCode} == REASON_CODES
 
 
@@ -669,7 +671,7 @@ def test_orchestrator_journals_direct_origin_and_cache_hit_separately(
     )
     assert third.response.status is ResponseStatus.OK
 
-    receipts_module = importlib.import_module("operator_receipts_v3")
+    receipts_module = importlib.import_module("wsp_core.operator_receipts_v3")
 
     def explode_append(_journal: Any, _record: dict[str, Any]) -> bool:
         raise RuntimeError("injected unexpected journal failure")
@@ -707,8 +709,8 @@ def test_orchestrator_journals_direct_origin_and_cache_hit_separately(
 
 
 def test_shadow_interface_stub_receipt_survives_privacy_and_journals(tmp_path) -> None:
-    journal_module = importlib.import_module("operator_receipts_v3")
-    privacy = importlib.import_module("operator_privacy_v3")
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    privacy = importlib.import_module("wsp_core.operator_privacy_v3")
     source = fixture("receipts.json")["receipts"][0]
     record = {
         "schema_version": source["schema_version"],
@@ -736,3 +738,245 @@ def test_shadow_interface_stub_receipt_survives_privacy_and_journals(tmp_path) -
     assert journal.append(record) is True
     loaded = journal.load(limit=10)
     assert loaded and loaded[0]["routing_receipt"]["shadow_observation"]["policy_id"] == "shadow-interface"
+
+
+def test_append_is_constant_time_below_the_limits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    journal = journal_module.OperatorReceiptJournal(tmp_path, max_records=50)
+    record = fixture("receipts.json")["receipts"][0]
+    assert journal.append(dict(record, timestamp=time.time())) is True
+
+    def no_rewrite(*_args: Any) -> None:
+        raise AssertionError("append below the limits must not rewrite the journal")
+
+    monkeypatch.setattr(journal, "_rewrite", no_rewrite)
+    for _ in range(20):
+        assert journal.append(dict(record, timestamp=time.time())) is True
+    assert len(journal.path.read_text().splitlines()) == 21
+
+
+def test_full_journal_compacts_with_headroom(tmp_path: Path) -> None:
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    journal = journal_module.OperatorReceiptJournal(tmp_path, max_records=20)
+    record = fixture("receipts.json")["receipts"][0]
+    for _ in range(21):
+        assert journal.append(dict(record, timestamp=time.time())) is True
+    lines = journal.path.read_text().splitlines()
+    assert len(lines) == 18  # trimmed to 90 % so the next appends stay O(1)
+    assert len(journal.load(limit=100)) == 18
+
+
+# --- interrupted appends must not kill the journal --------------------------
+
+
+def _journal_at(tmp_path: Path) -> Any:
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    return journal_module.OperatorReceiptJournal(
+        tmp_path, max_records=50, now=lambda: 1_783_890_400.0
+    )
+
+
+def _numbered(index: int) -> dict[str, Any]:
+    source = fixture("receipts.json")["receipts"][0]
+    return dict(
+        source,
+        execution_id=f"exec_{index:032x}",
+        timestamp=float(source["timestamp"]) + index,
+    )
+
+
+def _loaded_ids(journal: Any) -> list[str]:
+    return sorted(item["execution_id"] for item in journal.load(limit=100))
+
+
+def _expected_ids(*indexes: int) -> list[str]:
+    return sorted(f"exec_{index:032x}" for index in indexes)
+
+
+def _assert_clean_file(journal: Any, count: int) -> None:
+    raw = journal.path.read_bytes()
+    assert raw.endswith(b"\n")
+    assert len(raw.splitlines()) == count
+    for line in raw.splitlines():
+        json.loads(line)
+
+
+def _fail_journal_writes(
+    monkeypatch: pytest.MonkeyPatch, journal: Any, behaviour: Any
+) -> list[int]:
+    """Route writes to the journal file through ``behaviour(real_write, fd, data, call)``."""
+    real_write = os.write
+    calls: list[int] = []
+
+    def fake_write(fd: int, data: Any) -> int:
+        target = os.fstat(fd)
+        stored = journal.path.stat()
+        if (target.st_dev, target.st_ino) != (stored.st_dev, stored.st_ino):
+            return real_write(fd, data)
+        calls.append(len(data))
+        return behaviour(real_write, fd, data, len(calls))
+
+    monkeypatch.setattr(os, "write", fake_write)
+    return calls
+
+
+def _half_then_disk_full(real_write: Any, fd: int, data: Any, call: int) -> int:
+    if call == 1:
+        return real_write(fd, data[: len(data) // 2])
+    raise OSError(errno.ENOSPC, "No space left on device")
+
+
+def test_short_fast_append_is_completed_not_left_torn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal = _journal_at(tmp_path)
+    assert journal.append(_numbered(1)) is True
+
+    def half_once(real_write: Any, fd: int, data: Any, call: int) -> int:
+        return real_write(fd, data[: len(data) // 2] if call == 1 else data)
+
+    with monkeypatch.context() as patch:
+        calls = _fail_journal_writes(patch, journal, half_once)
+        assert journal.append(_numbered(2)) is True
+        assert journal.append(_numbered(3)) is True
+
+    assert len(calls) == 3  # the short write plus its remainder, then the next line
+    assert _loaded_ids(journal) == _expected_ids(1, 2, 3)
+    _assert_clean_file(journal, 3)
+
+
+def test_failed_fast_append_is_rolled_back_and_later_appends_succeed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal = _journal_at(tmp_path)
+    assert journal.append(_numbered(1)) is True
+    before = journal.path.read_bytes()
+    seen: list[bytes] = []
+    real_try = journal._try_fast_append
+
+    def observed(line: str, record: dict[str, Any], directory_descriptor: int) -> bool:
+        stored = real_try(line, record, directory_descriptor)
+        seen.append(journal.path.read_bytes())
+        return stored
+
+    with monkeypatch.context() as patch:
+        _fail_journal_writes(patch, journal, _half_then_disk_full)
+        patch.setattr(journal, "_try_fast_append", observed)
+        # The fast path gives up and cuts the half line off; the full rewrite takes over.
+        assert journal.append(_numbered(2)) is True
+    assert seen == [before]
+
+    assert journal.append(_numbered(3)) is True
+    assert _loaded_ids(journal) == _expected_ids(1, 2, 3)
+    _assert_clean_file(journal, 3)
+
+
+def test_write_without_progress_is_rolled_back_not_reported_as_stored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal = _journal_at(tmp_path)
+    assert journal.append(_numbered(1)) is True
+    with monkeypatch.context() as patch:
+        _fail_journal_writes(patch, journal, lambda *_args: 0)
+        assert journal.append(_numbered(2)) is True  # the full rewrite stored it
+
+    assert _loaded_ids(journal) == _expected_ids(1, 2)
+    _assert_clean_file(journal, 2)
+
+
+def test_torn_line_is_healed_even_when_the_rollback_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal = _journal_at(tmp_path)
+    assert journal.append(_numbered(1)) is True
+
+    def no_truncate(_fd: int, _length: int) -> None:
+        raise OSError(errno.EROFS, "cannot truncate")
+
+    with monkeypatch.context() as patch:
+        _fail_journal_writes(patch, journal, _half_then_disk_full)
+        patch.setattr(os, "ftruncate", no_truncate)
+        assert journal.append(_numbered(2)) is True
+
+    assert journal.append(_numbered(3)) is True
+    assert _loaded_ids(journal) == _expected_ids(1, 2, 3)
+    _assert_clean_file(journal, 3)
+
+
+def _torn_variants() -> list[Any]:
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    line = journal_module.encode_journal_record(_numbered(2)).encode("utf-8")
+    prefix = journal_module._LINE_PREFIX.encode("utf-8")
+    return [
+        pytest.param(line[: len(line) // 2], id="half-line"),
+        pytest.param(line[:-1], id="all-but-the-closing-brace"),
+        pytest.param(prefix, id="prefix-only"),
+        pytest.param(prefix[:7], id="inside-the-prefix"),
+        pytest.param(prefix + b'{"warning_codes":["\xc3', id="cut-inside-a-character"),
+    ]
+
+
+@pytest.mark.parametrize("torn", _torn_variants())
+def test_torn_trailing_line_is_dropped_by_load_and_healed_by_append(
+    tmp_path: Path, torn: bytes
+) -> None:
+    journal = _journal_at(tmp_path)
+    assert journal.append(_numbered(1)) is True
+    with journal.path.open("ab") as handle:
+        handle.write(torn)
+
+    assert _loaded_ids(journal) == _expected_ids(1)
+    assert journal.append(_numbered(3)) is True
+    assert _loaded_ids(journal) == _expected_ids(1, 3)
+    _assert_clean_file(journal, 2)
+    assert journal.append(_numbered(4)) is True
+    assert _loaded_ids(journal) == _expected_ids(1, 3, 4)
+
+
+def test_journal_that_starts_with_a_torn_line_recovers(tmp_path: Path) -> None:
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    journal = _journal_at(tmp_path)
+    journal.path.parent.mkdir(parents=True, exist_ok=True)
+    journal.path.write_bytes(journal_module._LINE_PREFIX.encode("utf-8") + b'{"sta')
+
+    assert journal.load() == []
+    assert journal.append(_numbered(1)) is True
+    assert _loaded_ids(journal) == _expected_ids(1)
+    _assert_clean_file(journal, 1)
+
+
+def test_every_journal_line_starts_with_the_prefix_that_marks_a_torn_line() -> None:
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    for index in range(3):
+        line = journal_module.encode_journal_record(_numbered(index))
+        assert line.startswith(journal_module._LINE_PREFIX)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        pytest.param(b'{"foreign":true}', id="foreign-json-without-newline"),
+        pytest.param(b"hello", id="foreign-text-without-newline"),
+        pytest.param(b'{"journal_schema_version":1,"owner":"someone-else"', id="foreign-owner"),
+    ],
+)
+def test_foreign_unterminated_content_is_still_never_overwritten(
+    tmp_path: Path, content: bytes
+) -> None:
+    journal = _journal_at(tmp_path)
+    journal.path.parent.mkdir(parents=True, exist_ok=True)
+    journal.path.write_bytes(content)
+
+    assert journal.append(_numbered(1)) is False
+    assert journal.load() == []
+    assert journal.path.read_bytes() == content
+
+
+def test_garbage_after_owned_lines_is_not_healed(tmp_path: Path) -> None:
+    journal = _journal_at(tmp_path)
+    assert journal.append(_numbered(1)) is True
+    damaged = journal.path.read_bytes() + b"garbage"
+    journal.path.write_bytes(damaged)
+
+    assert journal.append(_numbered(2)) is False
+    assert journal.path.read_bytes() == damaged

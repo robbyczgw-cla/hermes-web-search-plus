@@ -1,10 +1,10 @@
 """Public search requests must remain data, never command-line options."""
+from wsp_core import extract
 import pytest
 
-import extract
-import search
-from config import _deepcopy_default_config
-from contract_v3 import RequestV3
+from wsp_core import search, providers
+from wsp_core.config import _deepcopy_default_config
+from wsp_core.contract_v3 import RequestV3
 
 
 @pytest.fixture
@@ -31,7 +31,7 @@ def test_public_search_preserves_query(query, runtime_config, monkeypatch):
             'images': [], 'answer': '', 'metadata': {},
         }
 
-    monkeypatch.setattr(search, 'search_serper', provider)
+    monkeypatch.setattr(providers, 'search_serper', provider)
     result = search.run_search_request(query=query, provider='serper', count=1)
     assert seen == [query]
     assert result['query'] == query

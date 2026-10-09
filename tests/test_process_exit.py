@@ -19,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # threads were joined at exit again, these tests would fail loudly.
 _RESEARCH_SCRIPT = """
 import json, time
-from research import run_research_mode
+from wsp_core.research import run_research_mode
 
 def execute(provider):
     if provider == "slow":
@@ -49,7 +49,7 @@ print(json.dumps({
 
 _LINKUP_SCRIPT = """
 import json, time
-import providers
+from wsp_core import providers
 
 def fake_make_request(url, headers, body, timeout=30):
     if body["url"] == "https://slow.test/page":

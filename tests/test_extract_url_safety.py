@@ -1,8 +1,8 @@
+from wsp_core import extract
 from unittest import mock
 
 import pytest
 
-import extract
 
 
 @pytest.mark.parametrize(
@@ -39,7 +39,7 @@ def test_extract_urls_reject_private_internal_targets(url):
 
 def test_extract_urls_reject_hostname_that_resolves_to_private_ip():
     with mock.patch(
-        "extract.socket.getaddrinfo",
+        "wsp_core.extract.socket.getaddrinfo",
         return_value=[(None, None, None, None, ("192.168.1.20", 443))],
     ):
         with pytest.raises(extract.ExtractUrlSecurityError):
@@ -48,7 +48,7 @@ def test_extract_urls_reject_hostname_that_resolves_to_private_ip():
 
 def test_extract_urls_reject_hostname_if_any_dns_answer_is_private():
     with mock.patch(
-        "extract.socket.getaddrinfo",
+        "wsp_core.extract.socket.getaddrinfo",
         return_value=[
             (None, None, None, None, ("93.184.216.34", 443)),
             (None, None, None, None, ("127.0.0.1", 443)),
@@ -60,7 +60,7 @@ def test_extract_urls_reject_hostname_if_any_dns_answer_is_private():
 
 def test_extract_urls_allow_public_targets():
     with mock.patch(
-        "extract.socket.getaddrinfo",
+        "wsp_core.extract.socket.getaddrinfo",
         return_value=[(None, None, None, None, ("93.184.216.34", 443))],
     ):
         assert extract._validate_extract_urls(["https://example.com/page"], config={}) == ["https://example.com/page"]
@@ -72,7 +72,7 @@ def test_extract_private_url_escape_hatch_is_explicit():
 
 
 def test_extract_plus_rejects_private_url_before_provider_dispatch():
-    with mock.patch("extract.extract_firecrawl") as mock_extract:
+    with mock.patch("wsp_core.providers.extract_firecrawl") as mock_extract:
         result = extract.extract_plus(
             ["http://169.254.169.254/latest/meta-data/"],
             provider="firecrawl",
@@ -85,11 +85,11 @@ def test_extract_plus_rejects_private_url_before_provider_dispatch():
 
 
 def test_local_provider_endpoint_remains_allowed_for_public_target():
-    with mock.patch("extract._validate_extract_urls", return_value=["https://example.com/page"]), \
-         mock.patch("extract.get_api_key", return_value="fc-test-key"), \
-         mock.patch("extract.provider_in_cooldown", return_value=(False, 0)), \
-         mock.patch("extract.reset_provider_health"), \
-         mock.patch("extract.extract_firecrawl", return_value={"provider": "firecrawl", "results": []}) as mock_extract:
+    with mock.patch("wsp_core.extract._validate_extract_urls", return_value=["https://example.com/page"]), \
+         mock.patch("wsp_core.extract.get_api_key", return_value="fc-test-key"), \
+         mock.patch("wsp_core.provider_health.provider_in_cooldown", return_value=(False, 0)), \
+         mock.patch("wsp_core.provider_health.reset_provider_health"), \
+         mock.patch("wsp_core.providers.extract_firecrawl", return_value={"provider": "firecrawl", "results": []}) as mock_extract:
         result = extract.extract_plus(
             ["https://example.com/page"],
             provider="firecrawl",

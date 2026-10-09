@@ -29,7 +29,7 @@ def backend(monkeypatch):
         _provider_auto_allowed=lambda *args: True,
     )
     plugin = SimpleNamespace(
-        _force_subprocess=lambda: False, _load_search_module=lambda: engine,
+        _load_search_module=lambda: engine,
         _run_search=Mock(return_value={"provider": "fixture", "results": [
             {"url": "https://example.org", "title": "Source", "snippet": "Evidence"}]}),
         _run_extract=Mock(return_value={"results": [
@@ -80,11 +80,9 @@ def test_readiness_honors_disabled_and_auto_allow(backend):
     assert not backend.value.is_available()
 
 
-@pytest.mark.parametrize("failure", ["forced", "missing", "raises"])
+@pytest.mark.parametrize("failure", ["missing", "raises"])
 def test_no_subprocess_fallback(backend, failure):
-    if failure == "forced":
-        backend.plugin._force_subprocess = lambda: True
-    elif failure == "missing":
+    if failure == "missing":
         backend.plugin._load_search_module = lambda: None
     else:
         backend.plugin._load_search_module = Mock(side_effect=RuntimeError("private-data"))
@@ -95,12 +93,11 @@ def test_no_subprocess_fallback(backend, failure):
     backend.plugin._run_extract.assert_not_called()
 
 
-def test_search_mapping_limit_and_no_fallback_flag(backend):
+def test_search_mapping_and_limit(backend):
     result = backend.value.search("q", 35)
     assert result["success"]
     assert result["data"]["web"][0]["description"] == "Evidence"
     assert result["metadata"]["effective_limit"] == 20
-    assert backend.plugin._run_search.call_args.kwargs["inprocess_only"] is True
     assert backend.plugin._run_search.call_args.kwargs["count"] == 20
 
 
@@ -138,7 +135,6 @@ def test_extract_association_and_missing_failures(backend):
     assert result[0]["error"] and result[1]["error"]
     assert result[2]["content"] == "second"
     assert "foreign" not in str(result) and "secret-dummy" not in str(result)
-    assert backend.plugin._run_extract.call_args.kwargs["inprocess_only"] is True
 
 
 def test_extract_format_metadata(backend):

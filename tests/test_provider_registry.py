@@ -1,11 +1,12 @@
+from wsp_core import extract
 from pathlib import Path
 
-import provider_registry as registry
-import config
-import extract
-import search
-import __init__ as plugin
+from wsp_core import provider_registry as registry
+from wsp_core import config
+from wsp_core import search
+from plugin_loader import load_plugin
 
+plugin = load_plugin("wsp_plugin_test_provider_registry")
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -39,7 +40,16 @@ def test_provider_registry_is_the_complete_capability_source():
     assert registry.PROVIDER_SPECS["serper"].env_var == "SERPER_API_KEY"
     assert registry.PROVIDER_SPECS["tavily"].supports_extract is True
     assert registry.PROVIDER_SPECS["brave"].auto_allowed_by_default is True
-    assert registry.DEFAULT_PROVIDER_PRIORITY[6] == "brave"
+    # The first four follow the measured result quality.
+    assert registry.DEFAULT_PROVIDER_PRIORITY[:4] == ("brave", "serper", "exa", "tavily")
+    assert registry.DEFAULT_PROVIDER_PRIORITY == (
+        "brave", "serper", "exa", "tavily", "you", "firecrawl", "linkup", "parallel",
+        "serpbase", "querit", "searxng", "keenable",
+    )
+    assert registry.PRE_5_DEFAULT_PROVIDER_PRIORITY == (
+        "you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave", "parallel",
+        "serpbase", "querit", "searxng", "keenable",
+    )
     assert registry.DEFAULT_AUTO_ALLOW == {
         "serpbase": False,
         "querit": False,

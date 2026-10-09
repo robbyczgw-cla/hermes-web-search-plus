@@ -36,7 +36,7 @@ For another profile, use that profile's plugin path and `HERMES_HOME`, or pass `
 
 ## Behavior and limits
 
-- No CLI fallback: an unavailable in-process engine produces an error. `WSP_FORCE_SUBPROCESS` is incompatible with the native path; it continues to work for the existing Plus tools.
+- No CLI fallback: an unavailable in-process engine produces an error. Since 5.0 the Plus tools have no subprocess fallback either; `WSP_FORCE_SUBPROCESS` is ignored.
 - Native search uses WSP's 20-result cap. Hermes may bucket a smaller request before dispatch; the adapter reports the effective cap and Hermes slices the final rows.
 - Native tool schemas do not expose the full Plus feature set. Use Plus tools for per-call provider choice, research mode, locale/domain filters, spans, or detailed quality reports.
 - Extraction preserves requested URL association and reports missing or failed items individually. The native Hermes wrapper also applies its own content-size limits.

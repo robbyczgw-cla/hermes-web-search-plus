@@ -1,0 +1,1902 @@
+"""Provider implementations for Web Search Plus search and extraction backends."""
+
+from concurrent.futures import TimeoutError as FuturesTimeoutError
+from datetime import datetime, timedelta, timezone
+import json
+import re
+import socket
+import sys
+import threading
+import time
+from typing import Any, Dict, List, Optional
+from urllib.error import HTTPError, URLError
+from urllib.parse import quote, urlencode
+from urllib.request import Request
+
+from .daemon_tasks import DaemonTask
+from .http_client import (
+    DEFAULT_USER_AGENT,
+    ProviderRequestError,
+    TRANSIENT_HTTP_CODES,
+    _read_json_response,
+    make_get_request,
+    make_request,
+    urlopen,
+)
+from .quality import _title_from_url
+from .diversity_v3 import MULTI_LABEL_SUFFIXES
+from .urls import (
+    SITE_OPERATOR_LIMIT,
+    domain_filter_host,
+    domain_filter_tokens,
+    domain_filters,
+    strip_tracking_params,
+    wildcard_domain_entries,
+)
+from .request_gate_v3 import validate_outbound_body, validate_provider_mode
+from .config import normalize_parallel_search_mode
+
+
+# Extra scheduling headroom added on top of the per-request HTTP timeout when
+# bounding a concurrent extraction batch.
+_BATCH_TIMEOUT_GRACE_SECONDS = 5
+
+
+# =============================================================================
+# Unified freshness filter
+# =============================================================================
+
+FRESHNESS_VALUES = ("day", "week", "month", "year")
+
+# Native recency formats per provider, derived from the request bodies the
+# provider functions in this module already send. Providers absent from this
+# table have no relative-recency parameter in their current API calls.
+PROVIDER_FRESHNESS_FORMATS: Dict[str, Dict[str, str]] = {
+    # search_serper: body["tbs"]
+    "serper": {"day": "qdr:d", "week": "qdr:w", "month": "qdr:m", "year": "qdr:y"},
+    # search_brave: params["freshness"]
+    "brave": {"day": "pd", "week": "pw", "month": "pm", "year": "py"},
+    # search_querit: filters["timeRange"]["date"]
+    "querit": {"day": "d1", "week": "w1", "month": "m1", "year": "y1"},
+    # search_firecrawl: body["tbs"]
+    "firecrawl": {"day": "qdr:d", "week": "qdr:w", "month": "qdr:m", "year": "qdr:y"},
+    # search_keenable: body["published_after"]
+    "keenable": {"day": "1d", "week": "7d", "month": "1mo", "year": "1y"},
+    # search_you: params["freshness"] (native values match the unified ones)
+    "you": {"day": "day", "week": "week", "month": "month", "year": "year"},
+    # search_searxng: params["time_range"]
+    "searxng": {"day": "day", "week": "week", "month": "month", "year": "year"},
+    # search_exa: accepts the unified value and converts it to absolute
+    # startPublishedDate/endPublishedDate bounds inside the provider function.
+    "exa": {"hour": "hour", "day": "day", "week": "week", "month": "month", "year": "year"},
+    # search_tavily: body["time_range"] uses the unified values natively.
+    "tavily": {"day": "day", "week": "week", "month": "month", "year": "year"},
+}
+
+_EXA_FRESHNESS_DELTAS = {
+    "hour": timedelta(hours=1),
+    "day": timedelta(days=1),
+    "week": timedelta(days=7),
+    "month": timedelta(days=30),
+    "year": timedelta(days=365),
+}
+
+
+def exa_date_bounds(
+    freshness: Optional[str],
+    *,
+    now: Optional[datetime] = None,
+) -> tuple[Optional[str], Optional[str]]:
+    """Convert unified freshness into Exa's absolute publication-date bounds."""
+    if not freshness:
+        return None, None
+    delta = _EXA_FRESHNESS_DELTAS.get(freshness)
+    if delta is None:
+        return None, None
+    end = now or datetime.now(timezone.utc)
+    start = end - delta
+    return (
+        start.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        end.isoformat(timespec="seconds").replace("+00:00", "Z"),
+    )
+
+
+def normalize_freshness(value: Optional[str]) -> Optional[str]:
+    """Return the canonical lowercase freshness value, or None when unset.
+
+    Raises ValueError for values outside day|week|month|year so callers can
+    surface the standard error dict instead of silently dropping the filter.
+    """
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return None
+    if normalized not in FRESHNESS_VALUES:
+        raise ValueError(
+            "Invalid freshness value: {!r}. Valid values: {}".format(value, ", ".join(FRESHNESS_VALUES))
+        )
+    return normalized
+
+
+def _sdk_provider_supports_freshness(provider: str) -> bool:
+    """Return a discovered provider's declared native freshness support.
+
+    The registry import stays lazy because provider discovery imports this
+    module during normal plugin startup. Built-ins continue to use the explicit
+    native-value table above; SDK providers use canonical WSP freshness values.
+    """
+    try:
+        from .provider_registry import PROVIDER_SPECS
+
+        spec = PROVIDER_SPECS.get(provider)
+    except (ImportError, AttributeError):
+        return False
+    return bool(
+        spec is not None
+        and spec.execute_search is not None
+        and spec.supports_freshness
+    )
+
+
+def provider_supports_freshness(provider: str) -> bool:
+    """Return whether a provider's current API call can apply a freshness filter."""
+    return provider in PROVIDER_FRESHNESS_FORMATS or _sdk_provider_supports_freshness(provider)
+
+
+def map_freshness_for_provider(provider: str, freshness: Optional[str]) -> Optional[str]:
+    """Translate the unified freshness value into the provider's native format."""
+    if not freshness:
+        return None
+    native = PROVIDER_FRESHNESS_FORMATS.get(provider, {}).get(freshness)
+    if native is not None:
+        return native
+    if freshness in FRESHNESS_VALUES and _sdk_provider_supports_freshness(provider):
+        return freshness
+    return None
+
+
+def effective_recency(
+    time_range: Optional[str] = None,
+    freshness: Optional[str] = None,
+) -> Optional[str]:
+    """Return the recency value adapters actually send.
+
+    ``time_range`` wins when both are set, matching provider dispatch.
+    """
+    return time_range or freshness
+
+
+def freshness_metadata(
+    provider: str,
+    requested: str,
+    *,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    applied_published_dates: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """Describe native recency; Exa receipts must use already-resolved wire dates.
+
+    An empty date dict means no filter was sent, not permission to read the clock.
+    The date kwargs remain a compatibility seam for callers with resolved dates.
+    """
+    if provider == "exa":
+        dates = dict(applied_published_dates) if applied_published_dates is not None else {
+            key: value for key, value in (
+                ("startPublishedDate", start_date), ("endPublishedDate", end_date)
+            ) if value
+        }
+        return {
+            "requested": requested,
+            "applied": bool(dates),
+            "provider": provider,
+            "native_value": dates,
+            **({} if dates else {"reason": "no publication date bounds reported by provider"}),
+        }
+    native = map_freshness_for_provider(provider, requested)
+    if native is not None:
+        return {"requested": requested, "applied": True, "provider": provider, "native_value": native}
+    return {
+        "requested": requested,
+        "applied": False,
+        "provider": provider,
+        "reason": "provider {} does not support freshness".format(provider),
+    }
+
+
+# =============================================================================
+# Unified search type (web vs. news vertical)
+# =============================================================================
+
+SEARCH_TYPE_VALUES = ("search", "news")
+
+# Providers whose API natively serves a Google-tab-style result vertical.
+# Maps provider -> {generic value -> native value}, mirroring
+# PROVIDER_FRESHNESS_FORMATS. Providers absent from this table always run
+# their normal web search and report search_type.applied=false in metadata.
+PROVIDER_SEARCH_TYPES: Dict[str, Dict[str, str]] = {
+    # search_serper: endpoint path https://google.serper.dev/<type>
+    "serper": {"search": "search", "news": "news"},
+}
+
+
+def normalize_search_type(value: Optional[str]) -> Optional[str]:
+    """Return the canonical lowercase search_type value, or None when unset.
+
+    Raises ValueError for values outside search|news so callers can surface
+    the standard error dict instead of silently running the wrong vertical.
+    """
+    if value is None:
+        return None
+    normalized = str(value).strip().lower()
+    if not normalized:
+        return None
+    if normalized not in SEARCH_TYPE_VALUES:
+        raise ValueError(
+            "Invalid search_type value: {!r}. Valid values: {}".format(value, ", ".join(SEARCH_TYPE_VALUES))
+        )
+    return normalized
+
+
+def provider_supports_search_type(provider: str, search_type: str) -> bool:
+    """Return whether a provider's current API call can serve the requested vertical."""
+    return search_type in PROVIDER_SEARCH_TYPES.get(provider, {})
+
+
+def search_type_metadata(provider: str, requested: str) -> Dict[str, Any]:
+    """Describe whether a provider applied the requested search type."""
+    native = PROVIDER_SEARCH_TYPES.get(provider, {}).get(requested)
+    if native is not None:
+        return {"requested": requested, "applied": True, "provider": provider, "native_value": native}
+    return {
+        "requested": requested,
+        "applied": False,
+        "provider": provider,
+        "reason": "provider {} does not support search_type {}".format(provider, requested),
+    }
+
+
+def search_serper(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    country: str = "us",
+    language: Optional[str] = "en",
+    search_type: str = "search",
+    time_range: Optional[str] = None,
+    include_images: bool = False,
+) -> dict:
+    """Search using Serper (Google Search API).
+
+    ``language=None`` omits ``hl`` so Serper applies its own default.
+    """
+    endpoint = f"https://google.serper.dev/{search_type}"
+
+    body = {
+        "q": query,
+        "gl": country,
+        "hl": language,
+        "num": max_results,
+        "autocorrect": True,
+    }
+    if not language:
+        del body["hl"]
+
+    if time_range and time_range != "none":
+        tbs_map = {
+            "hour": "qdr:h",
+            "day": "qdr:d",
+            "week": "qdr:w",
+            "month": "qdr:m",
+            "year": "qdr:y",
+        }
+        if time_range in tbs_map:
+            body["tbs"] = tbs_map[time_range]
+
+    headers = {
+        "X-API-KEY": api_key,
+        "Content-Type": "application/json",
+    }
+
+    data = make_request(endpoint, headers, body)
+
+    # /news answers carry results under "news" (title/link/snippet/date/source/
+    # imageUrl/position) instead of "organic"; reading only "organic" used to
+    # silently return zero results for serper.type="news".
+    raw_items = data.get("news", []) if search_type == "news" else data.get("organic", [])
+    results = []
+    for i, item in enumerate(raw_items[:max_results]):
+        result = {
+            "title": item.get("title", ""),
+            "url": item.get("link", ""),
+            "snippet": item.get("snippet", ""),
+            "score": round(1.0 - i * 0.1, 2),
+            "date": item.get("date"),
+        }
+        if search_type == "news":
+            if item.get("source") is not None:
+                result["source"] = item.get("source")
+            if item.get("imageUrl"):
+                result["thumbnail"] = item.get("imageUrl")
+            if item.get("position") is not None:
+                result["position"] = item.get("position")
+        results.append(result)
+
+    images = []
+    if include_images:
+        try:
+            image_body = {"q": query, "gl": country, "hl": language, "num": 5}
+            if not language:
+                del image_body["hl"]
+            img_data = make_request("https://google.serper.dev/images", headers, image_body)
+            images = [img.get("imageUrl", "") for img in img_data.get("images", [])[:5] if img.get("imageUrl")]
+        except Exception:
+            pass
+
+    return {
+        "provider": "serper",
+        "query": query,
+        "results": results,
+        "images": images,
+        "metadata": {},
+        "knowledge_graph": data.get("knowledgeGraph"),
+        "related_searches": [r.get("query") for r in data.get("relatedSearches", [])]
+    }
+
+def _serpbase_related_search_query(item: Any) -> Optional[str]:
+    if isinstance(item, dict):
+        return item.get("query") or item.get("title")
+    if isinstance(item, str):
+        return item
+    return None
+
+def search_serpbase(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    country: str = "us",
+    language: Optional[str] = "en",
+    page: int = 1,
+    api_url: str = "https://api.serpbase.dev/google/search",
+    timeout: int = 30,
+) -> dict:
+    """Search using SerpBase's Google Search endpoint.
+
+    SerpBase returns HTTP 200 for some business failures, so `status == 0` is
+    required before parsing results. ``language=None`` omits ``hl``.
+    """
+    body = {
+        "q": query,
+        "hl": language,
+        "gl": country,
+        "page": page,
+    }
+    if not language:
+        del body["hl"]
+    headers = {
+        "X-API-Key": api_key,
+        "Content-Type": "application/json",
+    }
+
+    data = make_request(api_url, headers, body, timeout=timeout)
+    status = data.get("status", 0)
+    if status != 0:
+        code = status if isinstance(status, int) and not isinstance(status, bool) else "unknown"
+        transient = code in {1029, 1502, 1503, 1504}
+        raise ProviderRequestError(f"SerpBase request failed (provider status {code})", transient=transient)
+
+    results = []
+    for i, item in enumerate(data.get("organic", [])[:max_results]):
+        results.append({
+            "title": item.get("title", ""),
+            "url": strip_tracking_params(item.get("link", "") or item.get("url", "")),
+            "snippet": item.get("snippet", ""),
+            "score": round(1.0 - i * 0.1, 2),
+            "rank": item.get("rank") or item.get("position") or i + 1,
+            "display_link": item.get("display_link") or item.get("displayed_link"),
+        })
+
+    related_searches = [
+        value for value in (_serpbase_related_search_query(item) for item in data.get("related_searches", [])) if value
+    ]
+    return {
+        "provider": "serpbase",
+        "query": query,
+        "results": results,
+        "images": [],
+        "metadata": {
+            "session_id": data.get("session_id"),
+        },
+        "knowledge_graph": data.get("knowledge_graph"),
+        "related_searches": related_searches,
+        "session_id": data.get("session_id"),
+    }
+
+# Brave's search_lang is an enum; a value outside it fails the request.
+_BRAVE_SEARCH_LANGS = frozenset(
+    "ar eu bn bg ca zh-hans zh-hant hr cs da nl en en-gb et fi fr gl de el gu he hi hu "
+    "is it ja jp kn ko lv lt ms ml mr nb pl pt-br pt-pt pa ro ru sr sk sl es sv ta te "
+    "th tr uk vi".split()
+)
+
+
+def _brave_search_lang(language: Optional[str], country: str) -> Optional[str]:
+    """Brave's code for an ISO 639-1 language, or None to leave search_lang out."""
+    if not language:
+        return None
+    code = language.lower()
+    region = (country or "").lower()
+    if code == "pt":
+        return "pt-br" if region == "br" else "pt-pt"
+    if code == "zh":
+        return "zh-hant" if region in ("tw", "hk", "mo") else "zh-hans"
+    return code if code in _BRAVE_SEARCH_LANGS else None
+
+
+_BRAVE_RATE_HEADERS = (
+    "X-RateLimit-Policy",
+    "X-RateLimit-Remaining",
+    "X-RateLimit-Reset",
+    "Retry-After",
+)
+# Longest wait for a short (per-second) Brave window. Longer resets, such as a
+# spent monthly quota, fail fast so the hedged fallback can take over.
+BRAVE_MAX_RATE_WAIT_SECONDS = 2.0
+
+
+def _split_header_numbers(value: Optional[str]) -> List[Optional[float]]:
+    numbers: List[Optional[float]] = []
+    for part in (value or "").split(","):
+        try:
+            numbers.append(float(part.strip()))
+        except ValueError:
+            numbers.append(None)
+    return numbers
+
+
+def brave_min_interval(headers: Dict[str, str]) -> Optional[float]:
+    """Seconds between calls implied by the tightest X-RateLimit-Policy window.
+
+    Brave sends e.g. ``1;w=1, 2000;w=2678400`` (1 call per second, 2000 per
+    month). Only windows up to one minute are used for pacing.
+    """
+    best: Optional[float] = None
+    for part in (headers.get("X-RateLimit-Policy") or "").split(","):
+        fields = [field.strip() for field in part.split(";")]
+        try:
+            limit = float(fields[0])
+            window = next(
+                float(field[2:]) for field in fields[1:] if field.startswith("w=")
+            )
+        except (ValueError, StopIteration, IndexError):
+            continue
+        if limit <= 0 or window <= 0 or window > 60:
+            continue
+        interval = window / limit
+        best = interval if best is None else max(best, interval)
+    return best
+
+
+def brave_retry_wait(headers: Dict[str, str]) -> Optional[float]:
+    """Seconds until the exhausted Brave window resets, or None if unknown."""
+    retry_after = _split_header_numbers(headers.get("Retry-After"))
+    if retry_after and retry_after[0] is not None:
+        return max(0.0, retry_after[0])
+    remaining = _split_header_numbers(headers.get("X-RateLimit-Remaining"))
+    reset = _split_header_numbers(headers.get("X-RateLimit-Reset"))
+    waits = [
+        r for rem, r in zip(remaining, reset)
+        if rem is not None and rem <= 0 and r is not None
+    ]
+    return max(waits) if waits else None
+
+
+class _CallPacer:
+    """Process-wide spacing between calls to one rate-limited provider.
+
+    The interval is learned from the provider's rate-limit headers, so plans
+    without a per-second limit are never slowed down.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._last_start = None
+        self._next_slot = 0.0
+        self.interval = 0.0
+
+    def wait_turn(self, max_wait: float) -> None:
+        with self._lock:
+            now = time.monotonic()
+            start = max(now, self._next_slot)
+            if start - now > max_wait:
+                start = now
+            self._last_start = start
+            self._next_slot = start + self.interval
+        if start > now:
+            time.sleep(start - now)
+
+    def learn(self, interval: Optional[float]) -> None:
+        if interval is None:
+            return
+        with self._lock:
+            self.interval = min(interval, BRAVE_MAX_RATE_WAIT_SECONDS)
+            if self._last_start is not None:
+                self._next_slot = max(self._next_slot, self._last_start + self.interval)
+
+
+_BRAVE_PACER = _CallPacer()
+
+
+def _brave_get(url: str, headers: Dict[str, str]) -> dict:
+    """GET a Brave endpoint, paced to its per-second limit, one retry on 429."""
+    for attempt in range(2):
+        _BRAVE_PACER.wait_turn(BRAVE_MAX_RATE_WAIT_SECONDS)
+        seen: Dict[str, str] = {}
+        try:
+            data = make_get_request(
+                url,
+                dict(headers),
+                capture_headers=_BRAVE_RATE_HEADERS,
+                response_headers=seen,
+            )
+        except ProviderRequestError as exc:
+            _BRAVE_PACER.learn(brave_min_interval(seen))
+            wait = brave_retry_wait(seen)
+            if (
+                attempt == 0
+                and getattr(exc, "status_code", None) == 429
+                and wait is not None
+                and wait <= BRAVE_MAX_RATE_WAIT_SECONDS
+            ):
+                time.sleep(wait)
+                continue
+            raise
+        _BRAVE_PACER.learn(brave_min_interval(seen))
+        return data
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def search_brave(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    country: str = "US",
+    language: Optional[str] = "en",
+    time_range: Optional[str] = None,
+    safesearch: str = "moderate",
+) -> dict:
+    """Search using Brave Search API. ``language=None`` omits ``search_lang``."""
+    freshness_map = {
+        "hour": "pd",
+        "day": "pd",
+        "week": "pw",
+        "month": "pm",
+        "year": "py",
+    }
+    search_lang = _brave_search_lang(language, country)
+    params = {
+        "q": query,
+        "count": max_results,
+        "country": country.upper(),
+        "search_lang": search_lang,
+        "safesearch": safesearch,
+        "spellcheck": 1,
+    }
+    if not search_lang:
+        del params["search_lang"]
+    if time_range and time_range in freshness_map:
+        params["freshness"] = freshness_map[time_range]
+
+    url = f"https://api.search.brave.com/res/v1/web/search?{urlencode(params)}"
+    headers = {
+        "X-Subscription-Token": api_key,
+        "Accept": "application/json",
+        "Accept-Encoding": "gzip",
+    }
+
+    data = _brave_get(url, headers)
+
+    web_results = (data.get("web") or {}).get("results", [])[:max_results]
+    results = []
+    for i, item in enumerate(web_results):
+        snippet_parts = []
+        description = item.get("description") or item.get("snippet") or ""
+        if description:
+            snippet_parts.append(description)
+        extra_snippets = item.get("extra_snippets") or []
+        if extra_snippets:
+            snippet_parts.extend(extra_snippets[:1])
+        result = {
+            "title": item.get("title", ""),
+            "url": item.get("url", ""),
+            "snippet": " ... ".join(part for part in snippet_parts if part),
+            "score": round(1.0 - i * 0.1, 2),
+            "age": item.get("age"),
+        }
+        # ISO datetime next to the free-text "age"; absent keys stay absent.
+        if item.get("page_age"):
+            result["page_age"] = item["page_age"]
+        results.append(result)
+
+    return {
+        "provider": "brave",
+        "query": query,
+        "results": results,
+        "images": [],
+        "metadata": {},
+        "mixed": data.get("mixed"),
+    }
+
+# Providers whose own domain field takes hostnames and "*.example.com" but no
+# bare public suffix. Live, Tavily answered "*.gov" and "gov" with HTTP 400 and
+# ".gov" with no results; the site: providers and Exa filter ".gov" fine.
+DOMAIN_SUFFIX_FILTER_UNSUPPORTED = frozenset({"tavily"})
+
+
+def public_suffix_entries(*values: Any) -> List[str]:
+    """Domain-filter entries that name a public suffix (".gov", "*.ac.uk"), not a domain."""
+    found: List[str] = []
+    for value in values:
+        for token in domain_filter_tokens(value):
+            if not token.strip().startswith((".", "*.")):
+                continue
+            suffix = domain_filter_host(token)
+            if suffix and ("." not in suffix or suffix in MULTI_LABEL_SUFFIXES):
+                found.append(token.strip())
+    return found
+
+
+def domain_suffix_unsupported_message(provider: str) -> str:
+    return (
+        f"{provider.capitalize()} cannot filter by a domain suffix such as .gov or *.ac.uk. "
+        "Use hostnames such as cisa.gov, or Brave, Serper, Exa or Firecrawl for suffix filters."
+    )
+
+
+def search_tavily(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    depth: str = "basic",
+    topic: str = "general",
+    include_domains: Optional[List[str]] = None,
+    exclude_domains: Optional[List[str]] = None,
+    include_images: bool = False,
+    include_raw_content: bool = False,
+    time_range: Optional[str] = None,
+) -> dict:
+    """Search using Tavily (AI Research Search)."""
+    endpoint = "https://api.tavily.com/search"
+
+    body = {
+        "api_key": api_key,
+        "query": query,
+        "max_results": max_results,
+        "search_depth": depth,
+        "topic": topic,
+        "include_images": include_images,
+        "include_answer": False,
+        "include_raw_content": include_raw_content,
+    }
+
+    # Same fail-closed check as the site: providers. Tavily's own fields take
+    # hostnames and "*.example.com"; a public suffix is refused, never sent.
+    domain_filters(include_domains, exclude_domains)
+    if public_suffix_entries(include_domains, exclude_domains):
+        raise ValueError(domain_suffix_unsupported_message("tavily"))
+    exclude = wildcard_domain_entries(exclude_domains)
+    include = [entry for entry in wildcard_domain_entries(include_domains) if entry not in exclude]
+    if include:
+        body["include_domains"] = include
+    if exclude:
+        body["exclude_domains"] = exclude
+    if time_range:
+        body["time_range"] = time_range
+
+    headers = {"Content-Type": "application/json"}
+    validate_outbound_body("tavily", body)
+
+    data = make_request(endpoint, headers, body)
+
+    results = []
+    for item in data.get("results", [])[:max_results]:
+        result = {
+            "title": item.get("title", ""),
+            "url": item.get("url", ""),
+            "snippet": item.get("content", ""),
+            "score": round(item.get("score", 0.0), 3),
+        }
+        if include_raw_content and item.get("raw_content"):
+            result["raw_content"] = item["raw_content"]
+        if item.get("published_date"):  # sent for topic="news"
+            result["published_date"] = item["published_date"]
+        results.append(result)
+
+    return {
+        "provider": "tavily",
+        "query": query,
+        "results": results,
+        "images": data.get("images", []),
+        "metadata": {},
+    }
+
+def _map_querit_time_range(time_range: Optional[str]) -> Optional[str]:
+    """Map generic time ranges to Querit's compact date filter format."""
+    if not time_range:
+        return None
+    return {
+        "day": "d1",
+        "week": "w1",
+        "month": "m1",
+        "year": "y1",
+    }.get(time_range, time_range)
+
+def search_querit(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    language: Optional[str] = "en",
+    country: str = "us",
+    time_range: Optional[str] = None,
+    include_domains: Optional[List[str]] = None,
+    exclude_domains: Optional[List[str]] = None,
+    base_url: str = "https://api.querit.ai",
+    base_path: str = "/v1/search",
+    timeout: int = 30,
+) -> dict:
+    """Search using Querit.
+
+    Mirrors the Querit Python SDK payload shape:
+      - query
+      - count
+      - optional filters: languages, geo, sites, timeRange
+    """
+    endpoint = base_url.rstrip("/") + base_path
+
+    filters: Dict[str, Any] = {}
+    if language:
+        filters["languages"] = {"include": [language.lower()]}
+    if country:
+        filters["geo"] = {"countries": {"include": [country.upper()]}}
+    if include_domains or exclude_domains:
+        sites: Dict[str, List[str]] = {}
+        if include_domains:
+            sites["include"] = include_domains
+        if exclude_domains:
+            sites["exclude"] = exclude_domains
+        filters["sites"] = sites
+
+    querit_time_range = _map_querit_time_range(time_range)
+    if querit_time_range:
+        filters["timeRange"] = {"date": querit_time_range}
+
+    body: Dict[str, Any] = {
+        "query": query,
+        "count": max_results,
+    }
+    if filters:
+        body["filters"] = filters
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    data = make_request(endpoint, headers, body, timeout=timeout)
+
+    error_code = data.get("error_code")
+    error_msg = data.get("error_msg")
+    if error_msg or (error_code not in (None, 0, 200)):
+        code = error_code if isinstance(error_code, int) and not isinstance(error_code, bool) else "unknown"
+        raise ProviderRequestError(f"Querit request failed (provider error code {code})")
+
+    raw_results = ((data.get("results") or {}).get("result")) or []
+    results = []
+    for i, item in enumerate(raw_results[:max_results]):
+        snippet = item.get("snippet") or item.get("page_age") or ""
+        result = {
+            "title": item.get("title") or _title_from_url(item.get("url", "")),
+            "url": item.get("url", ""),
+            "snippet": snippet,
+            "score": round(1.0 - i * 0.05, 3),
+        }
+        if item.get("page_time") is not None:
+            result["page_time"] = item["page_time"]
+        if item.get("page_age"):
+            result["date"] = item["page_age"]
+        if item.get("language") is not None:
+            result["language"] = item["language"]
+        results.append(result)
+
+    return {
+        "provider": "querit",
+        "query": query,
+        "results": results,
+        "images": [],
+        "metadata": {
+            "search_id": data.get("search_id"),
+            "time_range": querit_time_range,
+        }
+    }
+
+def search_linkup(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    depth: str = "standard",
+    output_type: str = "searchResults",
+    include_domains: Optional[List[str]] = None,
+    exclude_domains: Optional[List[str]] = None,
+    api_url: str = "https://api.linkup.so/v1/search",
+    timeout: int = 30,
+) -> dict:
+    """Search using Linkup's source-grounded web search API."""
+    body: Dict[str, Any] = {
+        "q": query,
+        "depth": depth,
+        "outputType": output_type,
+    }
+    if include_domains:
+        body["includeDomains"] = include_domains[:50]
+    if exclude_domains:
+        body["excludeDomains"] = exclude_domains[:50]
+
+    validate_outbound_body("linkup", body)
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    data = make_request(api_url, headers, body, timeout=timeout)
+    if data.get("error"):
+        raise ProviderRequestError("Linkup request failed (provider reported an error)")
+
+    raw_results = data.get("results") or data.get("sources") or []
+    results = []
+    for i, item in enumerate(raw_results[:max_results]):
+        snippet = item.get("content") or item.get("snippet") or item.get("description") or ""
+        result = {
+            "title": item.get("name") or item.get("title") or _title_from_url(item.get("url", "")),
+            "url": item.get("url", ""),
+            "snippet": snippet,
+            "score": round(1.0 - i * 0.05, 3),
+        }
+        if item.get("type") is not None:
+            result["type"] = item["type"]
+        if item.get("favicon") is not None:
+            result["favicon"] = item["favicon"]
+        results.append(result)
+
+    return {
+        "provider": "linkup",
+        "query": query,
+        "results": results,
+        "images": data.get("images", []),
+        "metadata": {
+            "depth": depth,
+            "output_type": output_type,
+        },
+    }
+
+def _map_firecrawl_time_range(time_range: Optional[str]) -> Optional[str]:
+    """Map generic time ranges to Firecrawl/Google tbs values."""
+    if not time_range:
+        return None
+    return {
+        "hour": "qdr:h",
+        "day": "qdr:d",
+        "week": "qdr:w",
+        "month": "qdr:m",
+        "year": "qdr:y",
+    }.get(time_range, time_range)
+
+def search_firecrawl(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    country: str = "US",
+    time_range: Optional[str] = None,
+    sources: Optional[List[str]] = None,
+    include_domains: Optional[List[str]] = None,
+    exclude_domains: Optional[List[str]] = None,
+    scrape_markdown: bool = False,
+    ignore_invalid_urls: bool = False,
+    api_url: str = "https://api.firecrawl.dev/v2/search",
+    timeout_ms: int = 30000,
+) -> dict:
+    """Search using Firecrawl's v2 search endpoint."""
+    selected_sources = sources or ["web"]
+    body: Dict[str, Any] = {
+        "query": query,
+        "limit": max_results,
+        "sources": selected_sources,
+        "timeout": timeout_ms,
+        "ignoreInvalidURLs": ignore_invalid_urls,
+    }
+
+    if country:
+        body["country"] = country.upper()
+
+    tbs = _map_firecrawl_time_range(time_range)
+    if tbs:
+        body["tbs"] = tbs
+
+    include, exclude = domain_filters(include_domains, exclude_domains)
+    if include:
+        # OR, as for the other site: providers: "site:a site:b" means both at once
+        # and returns nothing (seen live with docs.rs and tokio.rs).
+        body["query"] += " " + " OR ".join(f"site:{domain}" for domain in include[:SITE_OPERATOR_LIMIT])
+    if exclude:
+        body["query"] += " " + " ".join(f"-site:{domain}" for domain in exclude[:SITE_OPERATOR_LIMIT])
+
+    if scrape_markdown:
+        body["scrapeOptions"] = {"formats": ["markdown"]}
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    data = make_request(api_url, headers, body, timeout=max(1, int(timeout_ms / 1000)))
+    if data.get("success") is False:
+        raise ProviderRequestError("Firecrawl request failed (provider reported an error)")
+
+    response_data = data.get("data") or {}
+    raw_web = response_data.get("web") or []
+    results = []
+    for i, item in enumerate(raw_web[:max_results]):
+        snippet = item.get("description") or item.get("snippet") or ""
+        result = {
+            "title": item.get("title") or _title_from_url(item.get("url", "")),
+            "url": item.get("url", ""),
+            "snippet": snippet,
+            "score": round(1.0 - i * 0.05, 3),
+        }
+        if item.get("position") is not None:
+            result["position"] = item.get("position")
+        if item.get("category") is not None:
+            result["category"] = item.get("category")
+        if item.get("markdown"):
+            result["raw_content"] = item["markdown"]
+            if not result["snippet"]:
+                result["snippet"] = item["markdown"][:500]
+        metadata = item.get("metadata") or {}
+        if metadata.get("statusCode") is not None:
+            result["status_code"] = metadata.get("statusCode")
+        if metadata.get("error"):
+            result["error"] = "Provider could not fetch this result"
+        results.append(result)
+
+    images = []
+    for image in response_data.get("images") or []:
+        image_url = image.get("imageUrl")
+        if image_url:
+            images.append(image_url)
+
+    return {
+        "provider": "firecrawl",
+        "query": query,
+        "results": results,
+        "images": images,
+        "warning": "Provider returned a warning" if data.get("warning") else None,
+        "credits_used": data.get("creditsUsed"),
+        "metadata": {
+            "id": data.get("id"),
+            "sources": selected_sources,
+            "tbs": tbs,
+        },
+    }
+
+def _normalize_extract_result(
+    provider: str,
+    url: str,
+    title: str = "",
+    content: str = "",
+    raw_content: Optional[str] = None,
+    **extra: Any,
+) -> Dict[str, Any]:
+    result = {
+        "url": url,
+        "title": title or _title_from_url(url),
+        "content": content or "",
+        "raw_content": raw_content if raw_content is not None else (content or ""),
+        "provider": provider,
+    }
+    for key, value in extra.items():
+        if value is not None:
+            result[key] = value
+    return result
+
+def extract_firecrawl(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://api.firecrawl.dev/v2/scrape",
+    timeout: int = 60,
+) -> dict:
+    """Extract URL content using Firecrawl scrape."""
+    formats = ["markdown"] if output_format != "html" else ["html"]
+    if include_raw_html and "html" not in formats:
+        formats.append("html")
+
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    results: List[Dict[str, Any]] = []
+    for url in urls:
+        body: Dict[str, Any] = {"url": url, "formats": formats}
+        if render_js:
+            body["waitFor"] = 1000
+        data = make_request(api_url, headers, body, timeout=timeout)
+        if data.get("success") is False:
+            results.append(_normalize_extract_result("firecrawl", url, error="Firecrawl scrape failed"))
+            continue
+        payload = data.get("data") if isinstance(data.get("data"), dict) else data
+        metadata = payload.get("metadata") or {}
+        final_url = metadata.get("sourceURL") or metadata.get("url") or url
+        title = metadata.get("title") or ""
+        markdown = payload.get("markdown") or ""
+        html = payload.get("html") or payload.get("rawHtml") or ""
+        content = html if output_format == "html" else markdown or html
+        images = None
+        if include_images:
+            md_images = []
+            seen_image_urls = set()
+            for alt, image_url in re.findall(r"!\[([^\]]*)\]\(([^)]+)\)", markdown):
+                if image_url not in seen_image_urls:
+                    md_images.append({"alt": alt, "url": image_url})
+                    seen_image_urls.add(image_url)
+            og_image = metadata.get("ogImage") or metadata.get("og:image")
+            if og_image and og_image not in seen_image_urls:
+                md_images.insert(0, {"alt": "og:image", "url": og_image})
+            images = md_images or None
+        results.append(_normalize_extract_result(
+            "firecrawl",
+            final_url,
+            title=title,
+            content=content,
+            raw_content=content,
+            raw_html=html if html else None,
+            images=images,
+            metadata=metadata,
+        ))
+    return {"provider": "firecrawl", "results": results}
+
+def extract_linkup(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://api.linkup.so/v1/fetch",
+    timeout: int = 30,
+) -> dict:
+    """Extract URL content using Linkup fetch."""
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+    def fetch_one(url: str) -> Dict[str, Any]:
+        body = {
+            "url": url,
+            "extractImages": include_images,
+            "includeRawHtml": include_raw_html or output_format == "html",
+            "renderJs": render_js,
+        }
+        data = make_request(api_url, headers, body, timeout=timeout)
+        if data.get("error"):
+            return _normalize_extract_result("linkup", url, error="Linkup fetch failed")
+        markdown = data.get("markdown") or ""
+        raw_html = data.get("rawHtml") or data.get("raw_html") or ""
+        content = raw_html if output_format == "html" else markdown or raw_html
+        return _normalize_extract_result(
+            "linkup",
+            url,
+            content=content,
+            raw_content=content,
+            raw_html=raw_html if raw_html else None,
+            images=data.get("images") if include_images else None,
+        )
+
+    if len(urls) <= 1:
+        return {"provider": "linkup", "results": [fetch_one(url) for url in urls]}
+
+    workers = min(len(urls), 5)
+    # Bound the total wait so one hung fetch cannot stall the whole batch beyond
+    # the per-request HTTP timeout window (plus a small scheduling grace).
+    # Daemon tasks (instead of a ThreadPoolExecutor) keep overdue fetches from
+    # blocking interpreter exit in the CLI/subprocess path.
+    overall_timeout = timeout * ((len(urls) + workers - 1) // workers) + _BATCH_TIMEOUT_GRACE_SECONDS
+    gate = threading.Semaphore(workers)
+
+    def fetch_gated(url: str) -> Dict[str, Any]:
+        with gate:
+            return fetch_one(url)
+
+    tasks = [DaemonTask(fetch_gated, url) for url in urls]
+    deadline = time.monotonic() + overall_timeout
+    results = []
+    for url, task in zip(urls, tasks):
+        try:
+            results.append(task.result(timeout=max(0.0, deadline - time.monotonic())))
+        except FuturesTimeoutError:
+            # Keep partial results; the overdue fetch finishes in the background
+            # bounded by the HTTP timeout without blocking caller or process exit.
+            results.append(_normalize_extract_result(
+                "linkup", url, error=f"Extraction timed out after {overall_timeout}s",
+            ))
+    return {"provider": "linkup", "results": results}
+
+def extract_tavily(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://api.tavily.com/extract",
+    timeout: int = 30,
+) -> dict:
+    """Extract URL content using Tavily extract."""
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    body = {"urls": urls, "include_images": include_images}
+    data = make_request(api_url, headers, body, timeout=timeout)
+    results: List[Dict[str, Any]] = []
+    for item in data.get("results", []):
+        url = item.get("url", "")
+        content = item.get("raw_content") or item.get("content") or ""
+        results.append(_normalize_extract_result(
+            "tavily",
+            url,
+            title=item.get("title", ""),
+            content=content,
+            raw_content=content,
+            images=item.get("images") if include_images else None,
+        ))
+    for failed in data.get("failed_results", []) or []:
+        failed_url = failed.get("url", "")
+        results.append(_normalize_extract_result("tavily", failed_url, error="Tavily extract failed"))
+    return {"provider": "tavily", "results": results}
+
+def extract_exa(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://api.exa.ai/contents",
+    timeout: int = 30,
+) -> dict:
+    """Extract URL content using Exa Contents API."""
+    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
+    body: Dict[str, Any] = {"urls": urls, "text": True}
+    data = make_request(api_url, headers, body, timeout=timeout)
+    results: List[Dict[str, Any]] = []
+    for item in data.get("results", []):
+        url = item.get("url") or item.get("id") or ""
+        content = item.get("text") or item.get("summary") or ""
+        results.append(_normalize_extract_result(
+            "exa",
+            url,
+            title=item.get("title", ""),
+            content=content,
+            raw_content=content,
+            summary=item.get("summary"),
+            highlights=item.get("highlights"),
+            published_date=item.get("publishedDate"),
+            author=item.get("author"),
+            image=item.get("image") if include_images else None,
+            favicon=item.get("favicon"),
+        ))
+    return {
+        "provider": "exa",
+        "results": results,
+        "request_id": data.get("requestId"),
+        "cost_dollars": data.get("costDollars"),
+        "statuses": data.get("statuses"),
+    }
+
+def extract_you(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://ydc-index.io/v1/contents",
+    timeout: int = 30,
+) -> dict:
+    """Extract URL content using You.com Contents API."""
+    formats = ["html" if output_format == "html" else "markdown"]
+    if include_raw_html and "html" not in formats:
+        formats.append("html")
+    if "metadata" not in formats:
+        formats.append("metadata")
+    headers = {"X-API-Key": api_key, "Content-Type": "application/json"}
+    body = {"urls": urls, "formats": formats, "crawl_timeout": max(1, min(timeout, 60))}
+    data = make_request(api_url, headers, body, timeout=timeout)
+    raw_items = data if isinstance(data, list) else data.get("results", []) or data.get("data", [])
+    results: List[Dict[str, Any]] = []
+    for item in raw_items:
+        url = item.get("url", "")
+        markdown = item.get("markdown") or ""
+        html = item.get("html") or ""
+        content = html if output_format == "html" else markdown or html
+        results.append(_normalize_extract_result(
+            "you",
+            url,
+            title=item.get("title", ""),
+            content=content,
+            raw_content=content,
+            raw_html=html if html else None,
+            metadata=item.get("metadata"),
+        ))
+    return {"provider": "you", "results": results}
+
+def extract_parallel(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://api.parallel.ai/v1/extract",
+    timeout: int = 60,
+    client_model: Optional[str] = None,
+    max_chars_total: int = 120000,
+    max_chars_per_result: int = 60000,
+) -> dict:
+    """Extract URL content using Parallel Extract.
+
+    Parallel returns excerpts by default; request full_content explicitly with a
+    peer-level character budget so long pages are not unfairly truncated versus
+    other extraction providers. HTML/raw-image options are accepted for tool
+    compatibility but ignored when unsupported upstream.
+    """
+    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
+    body: Dict[str, Any] = {
+        "urls": urls,
+        "max_chars_total": max_chars_total,
+        "advanced_settings": {
+            "full_content": {"max_chars_per_result": max_chars_per_result}
+        },
+    }
+    if client_model:
+        body["client_model"] = client_model
+
+    data = make_request(api_url, headers, body, timeout=timeout)
+    results: List[Dict[str, Any]] = []
+    for item in data.get("results", []) or []:
+        url = item.get("url") or ""
+        excerpts = item.get("excerpts") or []
+        excerpt_text = "\n\n".join(
+            (ex.get("text") or ex.get("content") or "") if isinstance(ex, dict) else str(ex)
+            for ex in excerpts
+        ).strip()
+        content = item.get("full_content") or item.get("markdown") or item.get("content") or excerpt_text
+        results.append(_normalize_extract_result(
+            "parallel",
+            url,
+            title=item.get("title", ""),
+            content=content,
+            raw_content=content,
+            excerpts=excerpts or None,
+            metadata={k: v for k, v in item.items() if k not in {"url", "title", "full_content", "markdown", "content", "excerpts"}},
+        ))
+    for failed in data.get("errors", []) or []:
+        failed_url = failed.get("url", "") if isinstance(failed, dict) else ""
+        results.append(_normalize_extract_result("parallel", failed_url, error="Parallel extract failed"))
+    return {
+        "provider": "parallel",
+        "results": results,
+        "metadata": {
+            "search_id": data.get("search_id"),
+            "session_id": data.get("session_id"),
+        },
+    }
+
+def search_exa(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    search_type: str = "neural",
+    exa_depth: str = "normal",
+    category: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    similar_url: Optional[str] = None,
+    include_domains: Optional[List[str]] = None,
+    exclude_domains: Optional[List[str]] = None,
+    text_verbosity: str = "standard",
+    freshness: Optional[str] = None,
+) -> dict:
+    """Search Exa's source-result endpoint; synthesis modes are charter-banned."""
+    if exa_depth in {"deep", "deep-reasoning"}:
+        raise ValueError("exa deep modes are not source-only")
+    validate_provider_mode("exa", "search")
+
+    freshness_start, freshness_end = exa_date_bounds(freshness)
+    start_date = start_date or freshness_start
+    end_date = end_date or freshness_end
+
+    if similar_url:
+        # findSimilar does not support deep search types
+        endpoint = "https://api.exa.ai/findSimilar"
+        body: Dict[str, Any] = {
+            "url": similar_url,
+            "numResults": max_results,
+            "contents": {
+                "text": {"maxCharacters": 2000, "verbosity": text_verbosity},
+                "highlights": {"numSentences": 3, "highlightsPerUrl": 2},
+            },
+        }
+    else:
+        endpoint = "https://api.exa.ai/search"
+        body = {
+            "query": query,
+            "numResults": max_results,
+            "type": search_type,
+            "contents": {
+                "text": {"maxCharacters": 2000, "verbosity": text_verbosity},
+                "highlights": {"numSentences": 3, "highlightsPerUrl": 2},
+            },
+        }
+
+    if category:
+        body["category"] = category
+    if start_date:
+        body["startPublishedDate"] = start_date
+    if end_date:
+        body["endPublishedDate"] = end_date
+    if include_domains:
+        body["includeDomains"] = include_domains
+    if exclude_domains:
+        body["excludeDomains"] = exclude_domains
+
+    headers = {
+        "x-api-key": api_key,
+        "Content-Type": "application/json",
+    }
+
+    validate_outbound_body("exa", body)
+    data = make_request(endpoint, headers, body, timeout=30)
+
+    results = []
+
+    # Standard source-result parsing
+    for item in data.get("results", [])[:max_results]:
+        text_content = item.get("text", "") or ""
+        highlights = [
+            highlight
+            for highlight in (item.get("highlights") or [])
+            if isinstance(highlight, str) and highlight.strip()
+        ]
+        if highlights:
+            snippet = " ... ".join(highlights[:2])
+        elif text_content:
+            snippet = text_content[:800]
+        else:
+            snippet = ""
+
+        results.append({
+            "title": item.get("title", ""),
+            "url": item.get("url", ""),
+            "snippet": snippet,
+            "score": round(item.get("score", 0.0), 3),
+            "published_date": item.get("publishedDate"),
+            "author": item.get("author"),
+        })
+
+    applied_published_dates = {}
+    if start_date:
+        applied_published_dates["startPublishedDate"] = start_date
+    if end_date:
+        applied_published_dates["endPublishedDate"] = end_date
+    return {
+        "provider": "exa",
+        "query": query if not similar_url else f"Similar to: {similar_url}",
+        "results": results,
+        "images": [],
+        "metadata": {"applied_published_dates": applied_published_dates},
+    }
+
+def search_parallel(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    include_domains: Optional[List[str]] = None,
+    exclude_domains: Optional[List[str]] = None,
+    api_url: str = "https://api.parallel.ai/v1/search",
+    timeout: int = 45,
+    client_model: Optional[str] = None,
+    mode: Optional[str] = None,
+) -> dict:
+    """Search using Parallel's web search API.
+
+    Parallel returns source URLs plus long LLM-ready excerpts. Requested count
+    and domain filters go in ``advanced_settings``; results are still trimmed
+    locally as a safety cap. ``mode`` defaults to ``fast``; set turbo, basic,
+    or advanced to override.
+    """
+    normalized_mode = normalize_parallel_search_mode(mode) or "fast"
+    advanced_settings: Dict[str, Any] = {"max_results": max_results}
+    source_policy: Dict[str, Any] = {}
+    if include_domains:
+        source_policy["include_domains"] = include_domains
+    if exclude_domains:
+        source_policy["exclude_domains"] = exclude_domains
+    if source_policy:
+        advanced_settings["source_policy"] = source_policy
+    body: Dict[str, Any] = {
+        "objective": query,
+        "search_queries": [query],
+        "advanced_settings": advanced_settings,
+    }
+    if client_model:
+        body["client_model"] = client_model
+    if normalized_mode:
+        body["mode"] = normalized_mode
+
+    headers = {"x-api-key": api_key, "Content-Type": "application/json"}
+    data = make_request(api_url, headers, body, timeout=timeout)
+
+    raw_results = data.get("results") or []
+    results = []
+    for i, item in enumerate(raw_results[:max_results]):
+        excerpts = item.get("excerpts") or []
+        snippet_parts = []
+        for excerpt in excerpts:
+            if isinstance(excerpt, dict):
+                snippet_parts.append(excerpt.get("text") or excerpt.get("content") or "")
+            elif isinstance(excerpt, str):
+                snippet_parts.append(excerpt)
+        snippet = "\n\n".join(part for part in snippet_parts if part).strip()
+        results.append({
+            "title": item.get("title") or _title_from_url(item.get("url", "")),
+            "url": item.get("url", ""),
+            "snippet": snippet,
+            "score": round(1.0 - i * 0.05, 3),
+            "publish_date": item.get("publish_date"),
+            "excerpts": excerpts,
+        })
+
+    return {
+        "provider": "parallel",
+        "query": query,
+        "results": results,
+        "images": [],
+        "metadata": {
+            "search_id": data.get("search_id"),
+            "session_id": data.get("session_id"),
+            "result_count_raw": len(raw_results),
+            "mode": normalized_mode,
+        },
+    }
+
+
+def search_you(
+    query: str,
+    api_key: str,
+    max_results: int = 5,
+    country: str = "US",
+    language: Optional[str] = "en",
+    freshness: Optional[str] = None,
+    safesearch: str = "moderate",
+    include_news: bool = True,
+    livecrawl: Optional[str] = None,
+) -> dict:
+    """Search using You.com (LLM-Ready Web & News Search).
+
+    You.com excels at:
+    - RAG applications with pre-extracted snippets
+    - Combined web + news results in one call
+    - Real-time information with automatic news classification
+    - Clean, structured JSON optimized for AI consumption
+
+    Args:
+        query: Search query
+        api_key: You.com API key
+        max_results: Maximum results to return (default 5, max 100)
+        country: ISO 3166-2 country code (e.g., US, GB, DE)
+        language: BCP 47 language code (e.g., en, de, fr); None omits the parameter
+        freshness: Filter by recency: day, week, month, year, or YYYY-MM-DDtoYYYY-MM-DD
+        safesearch: Content filter: off, moderate (default), strict
+        include_news: Include news results when relevant (default True)
+        livecrawl: Fetch full page content: "web", "news", or "all"
+    """
+    endpoint = "https://ydc-index.io/v1/search"
+
+    # Build query parameters
+    params = {
+        "query": query,
+        "count": max_results,
+        "safesearch": safesearch,
+    }
+
+    if country:
+        params["country"] = country.upper()
+    if language:
+        params["language"] = language.upper()
+    if freshness:
+        params["freshness"] = freshness
+    if livecrawl:
+        params["livecrawl"] = livecrawl
+        params["livecrawl_formats"] = "markdown"
+
+    # Build URL with query params (URL-encode values)
+    query_string = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
+    url = f"{endpoint}?{query_string}"
+
+    headers = {
+        "X-API-KEY": api_key,
+        "Accept": "application/json",
+        "User-Agent": DEFAULT_USER_AGENT,
+    }
+
+    # Make GET request (You.com uses GET, not POST)
+    req = Request(url, headers=headers, method="GET")
+
+    try:
+        with urlopen(req, timeout=30) as response:
+            data = _read_json_response(response)
+    except HTTPError as e:
+        error_messages = {
+            401: "Invalid or expired API key. Get one at https://api.you.com",
+            403: "Access forbidden. Check your API key permissions.",
+            429: "Rate limit exceeded. Please wait and try again.",
+            500: "You.com server error. Try again later.",
+            503: "You.com service unavailable."
+        }
+        friendly_msg = error_messages.get(e.code, "API error")
+        raise ProviderRequestError(f"{friendly_msg} (HTTP {e.code})", status_code=e.code, transient=e.code in TRANSIENT_HTTP_CODES)
+    except URLError as e:
+        reason = str(getattr(e, "reason", e))
+        is_timeout = isinstance(getattr(e, "reason", None), socket.timeout) or "timed out" in reason.lower()
+        raise ProviderRequestError(f"Network error: {reason}. Check your internet connection.", transient=is_timeout)
+    except (TimeoutError, socket.timeout):
+        raise ProviderRequestError("You.com request timed out after 30s.", transient=True)
+
+    # Parse results
+    results_data = data.get("results", {})
+    web_results = results_data.get("web", [])
+    news_results = results_data.get("news", []) if include_news else []
+    metadata = data.get("metadata", {})
+
+    # Normalize web results
+    results = []
+    for i, item in enumerate(web_results[:max_results]):
+        snippets = item.get("snippets", [])
+        snippet = snippets[0] if snippets else item.get("description", "")
+
+        result = {
+            "title": item.get("title", ""),
+            "url": item.get("url", ""),
+            "snippet": snippet,
+            "score": round(1.0 - i * 0.05, 3),  # Assign descending score
+            "date": item.get("page_age"),
+            "source": "web",
+        }
+
+        # Include additional snippets if available (great for RAG)
+        if len(snippets) > 1:
+            result["additional_snippets"] = snippets[1:3]
+
+        # Include thumbnail and favicon for UI display
+        if item.get("thumbnail_url"):
+            result["thumbnail"] = item["thumbnail_url"]
+        if item.get("favicon_url"):
+            result["favicon"] = item["favicon_url"]
+
+        # Include live-crawled content if available
+        if item.get("contents"):
+            result["raw_content"] = item["contents"].get("markdown") or item["contents"].get("html", "")
+
+        results.append(result)
+
+    # Add news results (if any)
+    news = []
+    for item in news_results[:5]:
+        news.append({
+            "title": item.get("title", ""),
+            "url": item.get("url", ""),
+            "snippet": item.get("description", ""),
+            "date": item.get("page_age"),
+            "thumbnail": item.get("thumbnail_url"),
+            "source": "news",
+        })
+
+    return {
+        "provider": "you",
+        "query": query,
+        "results": results,
+        "news": news,
+        "images": [],
+        "metadata": {
+            "search_uuid": metadata.get("search_uuid"),
+            "latency": metadata.get("latency"),
+        }
+    }
+
+def search_searxng(
+    query: str,
+    instance_url: str,
+    max_results: int = 5,
+    categories: Optional[List[str]] = None,
+    engines: Optional[List[str]] = None,
+    language: Optional[str] = "en",
+    time_range: Optional[str] = None,
+    safesearch: int = 0,
+) -> dict:
+    """Search using SearXNG (self-hosted privacy-first meta-search).
+
+    SearXNG excels at:
+    - Privacy-preserving search (no tracking, no profiling)
+    - Multi-source aggregation (70+ upstream engines)
+    - $0 API cost (self-hosted)
+    - Diverse perspectives from multiple search engines
+
+    Args:
+        query: Search query
+        instance_url: URL of your SearXNG instance (required)
+        max_results: Maximum results to return (default 5)
+        categories: Search categories (general, images, news, videos, etc.)
+        engines: Specific engines to use (google, bing, duckduckgo, etc.)
+        language: Language code (e.g., en, de, fr); None omits the parameter
+        time_range: Filter by recency: day, week, month, year
+        safesearch: Content filter: 0=off, 1=moderate, 2=strict
+
+    Note:
+        Requires a self-hosted SearXNG instance with JSON format enabled.
+        See: https://docs.searxng.org/admin/installation.html
+    """
+    # Build URL with query parameters
+    params = {
+        "q": query,
+        "format": "json",
+        "language": language,
+        "safesearch": str(safesearch),
+    }
+    if not language:
+        del params["language"]
+
+    if categories:
+        params["categories"] = ",".join(categories)
+    if engines:
+        params["engines"] = ",".join(engines)
+    if time_range:
+        params["time_range"] = time_range
+
+    # Build URL — instance_url comes from operator-controlled config/env only
+    # (validated by _validate_searxng_url), not from agent/LLM input
+    base_url = instance_url.rstrip("/")
+    query_string = "&".join(f"{k}={quote(str(v))}" for k, v in params.items())
+    url = f"{base_url}/search?{query_string}"
+
+    headers = {
+        "User-Agent": DEFAULT_USER_AGENT,
+        "Accept": "application/json",
+    }
+
+    # Make GET request
+    req = Request(url, headers=headers, method="GET")
+
+    try:
+        with urlopen(req, timeout=30) as response:
+            data = _read_json_response(response)
+    except HTTPError as e:
+        error_messages = {
+            403: "JSON API disabled on this SearXNG instance. Enable 'json' in search.formats in settings.yml",
+            404: "SearXNG instance not found. Check your instance URL.",
+            500: "SearXNG server error. Check instance health.",
+            503: "SearXNG service unavailable."
+        }
+        friendly_msg = error_messages.get(e.code, "SearXNG error")
+        raise ProviderRequestError(f"{friendly_msg} (HTTP {e.code})", status_code=e.code, transient=e.code in TRANSIENT_HTTP_CODES)
+    except URLError as e:
+        reason = str(getattr(e, "reason", e))
+        is_timeout = isinstance(getattr(e, "reason", None), socket.timeout) or "timed out" in reason.lower()
+        raise ProviderRequestError(f"Cannot reach SearXNG instance at {instance_url}. Error: {reason}", transient=is_timeout)
+    except (TimeoutError, socket.timeout):
+        raise ProviderRequestError("SearXNG request timed out after 30s. Check instance health.", transient=True)
+
+    # Parse results
+    raw_results = data.get("results", [])
+
+    # Normalize results to unified format
+    results = []
+    engines_used = set()
+    for i, item in enumerate(raw_results[:max_results]):
+        engine = item.get("engine", "unknown")
+        engines_used.add(engine)
+
+        results.append({
+            "title": item.get("title", ""),
+            "url": item.get("url", ""),
+            "snippet": item.get("content", ""),
+            "score": round(item.get("score", 1.0 - i * 0.05), 3),
+            "engine": engine,
+            "category": item.get("category", "general"),
+            "date": item.get("publishedDate"),
+        })
+
+    return {
+        "provider": "searxng",
+        "query": query,
+        "results": results,
+        "images": [],
+        "suggestions": data.get("suggestions", []),
+        "corrections": data.get("corrections", []),
+        "metadata": {
+            "number_of_results": data.get("number_of_results"),
+            "engines_used": list(engines_used),
+            "instance_url": instance_url,
+        }
+    }
+
+
+_KEENABLE_TIME_RANGE = {"hour": "1h", "day": "1d", "week": "7d", "month": "1mo", "year": "1y"}
+
+
+_KEENABLE_PUBLIC_WARNED = False
+
+
+def _warn_keenable_public_once() -> None:
+    global _KEENABLE_PUBLIC_WARNED
+    if _KEENABLE_PUBLIC_WARNED:
+        return
+    _KEENABLE_PUBLIC_WARNED = True
+    print(json.dumps({
+        "warning": (
+            "Keenable keyless public endpoint in use: queries and fetched URLs are sent "
+            "to an unauthenticated shared service (https://keenable.ai) with no SLA. "
+            "Set KEENABLE_API_KEY for the authenticated endpoint."
+        )
+    }), file=sys.stderr)
+
+
+def _keenable_endpoint(api_url: str, api_key: Optional[str], public: bool) -> tuple:
+    """Return (endpoint, headers). A present key always uses the authenticated route;
+    with no key, the keyless /public route is used when public is enabled."""
+    headers = {"X-Keenable-Title": "hermes-web-search-plus"}
+    if api_key:
+        headers["X-API-Key"] = api_key
+        return api_url, headers
+    if public:
+        _warn_keenable_public_once()
+        return f"{api_url}/public", headers
+    raise ValueError("Keenable requires an API key or an enabled public endpoint")
+
+
+def search_keenable(
+    query: str,
+    api_key: Optional[str] = None,
+    max_results: int = 5,
+    time_range: Optional[str] = None,
+    include_domains: Optional[List[str]] = None,
+    public: bool = False,
+    api_url: str = "https://api.keenable.ai/v1/search",
+    timeout: int = 30,
+) -> dict:
+    """Search using Keenable's independent web index.
+
+    Uses the authenticated endpoint when api_key is set; with no key, public=True
+    selects the keyless /public endpoint.
+    """
+    body: Dict[str, Any] = {"query": query}
+    if time_range and time_range in _KEENABLE_TIME_RANGE:
+        body["published_after"] = _KEENABLE_TIME_RANGE[time_range]
+    if include_domains:
+        body["site"] = include_domains[0]
+
+    url, headers = _keenable_endpoint(api_url, api_key, public)
+    headers["Content-Type"] = "application/json"
+
+    data = make_request(url, headers, body, timeout=timeout)
+    results = []
+    for i, item in enumerate(data.get("results", [])[:max_results]):
+        item_url = item.get("url", "")
+        results.append({
+            "title": item.get("title") or _title_from_url(item_url),
+            "url": item_url,
+            "snippet": item.get("snippet") or item.get("description", ""),
+            "score": round(1.0 - i * 0.05, 3),
+            "date": item.get("published_at"),
+            "acquired_at": item.get("acquired_at"),
+        })
+
+    return {
+        "provider": "keenable",
+        "query": query,
+        "results": results,
+        "images": [],
+        "metadata": {"number_of_results": data.get("number_of_results")},
+    }
+
+
+def extract_keenable(
+    urls: List[str],
+    api_key: Optional[str] = None,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    public: bool = False,
+    api_url: str = "https://api.keenable.ai/v1/fetch",
+    timeout: int = 30,
+) -> dict:
+    """Extract page content via Keenable's fetch endpoint (clean markdown).
+
+    Uses the authenticated endpoint when api_key is set; with no key, public=True
+    selects the keyless /public endpoint.
+    """
+    base_url, headers = _keenable_endpoint(api_url, api_key, public)
+
+    results: List[Dict[str, Any]] = []
+    for url in urls:
+        try:
+            endpoint = f"{base_url}?url={quote(url, safe='')}"
+            data = make_get_request(endpoint, headers, timeout=timeout)
+            content = data.get("content") or ""
+            results.append(_normalize_extract_result(
+                "keenable",
+                data.get("url") or url,
+                title=data.get("title", ""),
+                content=content,
+                raw_content=content,
+                author=data.get("author"),
+                description=data.get("description"),
+            ))
+        except Exception as e:
+            results.append(_normalize_extract_result("keenable", url, error=str(e)))
+    return {"provider": "keenable", "results": results}
+
+
+def extract_serper(
+    urls: List[str],
+    api_key: str,
+    output_format: str = "markdown",
+    include_images: bool = False,
+    include_raw_html: bool = False,
+    render_js: bool = False,
+    api_url: str = "https://scrape.serper.dev",
+    timeout: int = 30,
+) -> dict:
+    """Extract page content via Serper's webpage scraper.
+
+    Request/response shape verified against Serper API clients: POST
+    ``{"url": ..., "includeMarkdown": true}`` with the X-API-KEY header;
+    the answer carries ``text`` plus optional ``markdown``, ``metadata``,
+    ``jsonld`` and ``credits``. The endpoint accepts one URL per call, so
+    multi-URL requests loop with per-URL error items (extract_keenable
+    pattern). The scraper returns no raw HTML; html/raw-html/render-js
+    options are accepted for tool compatibility but have no upstream effect.
+    The endpoint is operator-overridable via config ``serper.scrape_url``.
+    """
+    headers = {"X-API-KEY": api_key, "Content-Type": "application/json"}
+    results: List[Dict[str, Any]] = []
+    for url in urls:
+        try:
+            data = make_request(api_url, headers, {"url": url, "includeMarkdown": True}, timeout=timeout)
+            if data.get("error"):
+                results.append(_normalize_extract_result("serper", url, error="Serper scrape failed"))
+                continue
+            # Field names are parsed tolerantly in case Serper renames them.
+            markdown = data.get("markdown") or ""
+            text = data.get("text") or data.get("content") or ""
+            content = markdown or text
+            metadata = data.get("metadata") if isinstance(data.get("metadata"), dict) else {}
+            title = metadata.get("title") or data.get("title") or ""
+            results.append(_normalize_extract_result(
+                "serper",
+                url,
+                title=title,
+                content=content,
+                raw_content=content,
+                metadata=metadata or None,
+                jsonld=data.get("jsonld"),
+                credits=data.get("credits"),
+            ))
+        except Exception as e:
+            results.append(_normalize_extract_result("serper", url, error=str(e)))
+    return {"provider": "serper", "results": results}

@@ -20,13 +20,13 @@ Turn it back off with:
 python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase off
 ```
 
-## Which provider gets picked by Routing v2 when multiple providers are configured?
+## Which provider gets picked when multiple providers are configured?
 
-If Routing v2 is enabled, the query analyzer scores providers by query signals such as current-info intent, product/local intent, research language, direct-answer intent, semantic-discovery intent, privacy intent, language/script hints, and class-specific benchmark rules. The router then filters out unavailable, disabled, or `auto_allow=false` providers and chooses the best eligible provider. Ties are deterministic per query.
+Automatic routing assigns the query one of eight intents (academic, community, docs, general, local, news, security, shopping) and tries Brave first, except Exa for academic and docs queries and Serper for security and shopping queries. Providers without a key, in `disabled_providers`, or with `auto_allow=false` are skipped; the rest of the chain follows `auto_routing.provider_priority`. The router does not score providers per query.
 
-The default auto-search pool is conservative: You.com, Serper, Exa, Firecrawl, Tavily, Linkup, Brave, and Parallel when a key is configured. SerpBase and Querit default to explicit/guarded use. Native Perplexity and Kilo Perplexity are not registered in 3.0 because their legacy answer endpoints do not provide a verified source-only mode.
+The default priority is Brave, Serper, Exa, Tavily, You.com, Firecrawl, Linkup, Parallel, then SerpBase, Querit, SearXNG and Keenable. SerpBase and Querit default to explicit/guarded use. To use your own order for every query, run `setup.py config set-order exa,serper,brave` (`set-order auto` switches back).
 
-For the exact flow, see [Architecture](ARCHITECTURE.md#routing-engine).
+For the exact flow, see [Routing](ROUTING.md) and [Architecture](ARCHITECTURE.md#routing-engine).
 
 ## Which search or extraction provider order should I use?
 
@@ -38,7 +38,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py bench
 python3 search.py --bench
 ```
 
-The bench never changes your config — it prints the recommended **search** priority plus the exact `config set-priority` command to apply it. Bench runs call providers directly, so they do not trigger cooldowns or feed adaptive routing statistics, but they do spend a few real API calls per provider.
+The bench never changes your config — it prints the recommended **search** priority plus the exact `config set-priority` command to apply it. With the default `auto_routing.order: measured`, that priority only orders the fallback chain; to make the bench order the first choice for every query, apply the same list with `config set-order`. Bench runs call providers directly, so they do not trigger cooldowns or feed the latency statistics that time the fallback, but they do spend a few real API calls per provider.
 
 Extraction has a separate order because search quality and extraction quality are different jobs. Configure it independently:
 
@@ -190,6 +190,6 @@ web_search_plus(query="best bookshelf speakers under 1000", quality_report=True)
 python3 search.py --query "best bookshelf speakers under 1000" --provider auto --quality-report --compact
 ```
 
-Look for selected provider, provider scores, skipped providers, cooldown skips, and `auto_allow_excluded`.
+Look for the selected provider, the intent and its signals, skipped providers, cooldown skips, and `auto_allow_excluded`.
 
-For `--explain-routing` and a generated reference of every routing class with its signals and provider preferences, see [Routing v2 Reference](ROUTING.md).
+For `--explain-routing` and a generated reference of every intent with its signals and first provider, see [Routing Reference](ROUTING.md).

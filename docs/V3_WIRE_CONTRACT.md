@@ -2,9 +2,11 @@
 
 This is the normative 3.0 contract for field names, enum namespaces, projection and cache rules, and golden fixtures. Any contract change requires an explicit amendment and fixture update.
 
+> **5.0 note.** Shadow routing was removed in 5.0. The `shadow` value of `policy_mode` and `mode` is still accepted on the wire and runs as `classic`, and `routing_receipt.shadow_observation` is always null. The field names below are unchanged so 3.x/4.x consumers keep validating.
+
 Canonical artifacts:
 
-- `contract_v3.py` — Python DTOs and enum namespace
+- `wsp_core/contract_v3.py` — Python DTOs and enum namespace
 - `schemas/v3/request.schema.json` — self-contained Draft 2020-12 RequestV3 schema
 - `schemas/v3/response.schema.json` — self-contained Draft 2020-12 ResponseV3 schema
 - `scripts/gen_contract_v3_schemas.py` — schema generator sourcing enum values from the DTO module

@@ -17,7 +17,7 @@ import sys
 
 import pytest
 
-POSIX_ONLY_LOCK_MODULES = ("extract_bench_v3", "operator_receipts_v3")
+POSIX_ONLY_LOCK_MODULES = ("wsp_core.extract_bench_v3", "wsp_core.operator_receipts_v3")
 
 
 @pytest.fixture
@@ -32,6 +32,12 @@ def without_fcntl(monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", windows_import)
     for name in POSIX_ONLY_LOCK_MODULES:
+        # Importing a submodule also rebinds it on its package; restore both the
+        # sys.modules entry and the package attribute (``from . import x`` reads
+        # the attribute first).
+        package_name, _, attribute = name.rpartition(".")
+        package = importlib.import_module(package_name)
+        monkeypatch.setattr(package, attribute, getattr(package, attribute, None), raising=False)
         monkeypatch.delitem(sys.modules, name, raising=False)
     yield
     # Never leave a fcntl-less copy behind for the rest of the session: the next import of these

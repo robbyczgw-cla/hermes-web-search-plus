@@ -7,9 +7,9 @@ from urllib.request import Request
 
 import pytest
 
-import provider_registry
-import providers
-from http_client import ProviderRequestError
+from wsp_core import provider_registry
+from wsp_core import providers
+from wsp_core.http_client import ProviderRequestError
 
 
 class FakeResponse:

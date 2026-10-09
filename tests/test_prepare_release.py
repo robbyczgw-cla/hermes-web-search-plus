@@ -19,19 +19,20 @@ OLD = "1.2.3"
 
 def _make_fake_repo(root: Path, version: str = OLD) -> None:
     (root / "tests").mkdir(parents=True)
+    (root / "wsp_core").mkdir(parents=True, exist_ok=True)
     (root / "plugin.yaml").write_text(f'name: web-search-plus\nversion: "{version}"\n', encoding="utf-8")
     (root / "__init__.py").write_text(
         f'"""web-search-plus — Hermes Plugin v{version}"""\n__version__ = "{version}"\n',
         encoding="utf-8",
     )
-    (root / "search.py").write_text(f'"""\nVersion: {version}\n"""\n', encoding="utf-8")
-    (root / "http_client.py").write_text(
+    (root / "wsp_core" / "search.py").write_text(f'"""\nVersion: {version}\n"""\n', encoding="utf-8")
+    (root / "wsp_core" / "http_client.py").write_text(
         f'DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/{version}"\n', encoding="utf-8"
     )
-    (root / "operator_console_v3.py").write_text(
+    (root / "wsp_core" / "operator_console_v3.py").write_text(
         f'def build_overview(plugin_version: str = "{version}"): ...\n', encoding="utf-8"
     )
-    (root / "ui.py").write_text(
+    (root / "wsp_core" / "ui.py").write_text(
         f'def create_server(plugin_version: str = "{version}"): ...\n', encoding="utf-8"
     )
     (root / "tests" / "test_release_metadata.py").write_text(
@@ -67,10 +68,10 @@ def test_write_updates_every_surface(tmp_path):
     init_py = (tmp_path / "__init__.py").read_text(encoding="utf-8")
     assert '__version__ = "2.0.0"' in init_py
     assert "Hermes Plugin v2.0.0" in init_py
-    assert "Version: 2.0.0" in (tmp_path / "search.py").read_text(encoding="utf-8")
-    assert 'ClawdBot-WebSearchPlus/2.0.0"' in (tmp_path / "http_client.py").read_text(encoding="utf-8")
-    assert 'plugin_version: str = "2.0.0"' in (tmp_path / "operator_console_v3.py").read_text(encoding="utf-8")
-    assert 'plugin_version: str = "2.0.0"' in (tmp_path / "ui.py").read_text(encoding="utf-8")
+    assert "Version: 2.0.0" in (tmp_path / "wsp_core" / "search.py").read_text(encoding="utf-8")
+    assert 'ClawdBot-WebSearchPlus/2.0.0"' in (tmp_path / "wsp_core" / "http_client.py").read_text(encoding="utf-8")
+    assert 'plugin_version: str = "2.0.0"' in (tmp_path / "wsp_core" / "operator_console_v3.py").read_text(encoding="utf-8")
+    assert 'plugin_version: str = "2.0.0"' in (tmp_path / "wsp_core" / "ui.py").read_text(encoding="utf-8")
     assert 'EXPECTED_VERSION = "2.0.0"' in (tmp_path / "tests" / "test_release_metadata.py").read_text(encoding="utf-8")
     assert OLD not in (tmp_path / "plugin.yaml").read_text(encoding="utf-8")
 
@@ -84,7 +85,7 @@ def test_write_updates_every_surface(tmp_path):
 def test_missing_surface_fails_loudly(tmp_path):
     _make_fake_repo(tmp_path)
     # Simulate surface drift: someone renamed the User-Agent constant.
-    (tmp_path / "http_client.py").write_text('UA = "something-else"\n', encoding="utf-8")
+    (tmp_path / "wsp_core" / "http_client.py").write_text('UA = "something-else"\n', encoding="utf-8")
 
     with pytest.raises(SystemExit) as exc_info:
         _run(tmp_path, "2.0.0", "--date", "2026-07-04", "--write")

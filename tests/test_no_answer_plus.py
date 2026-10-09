@@ -1,17 +1,13 @@
 from __future__ import annotations
 
-import importlib.util
+import subprocess
 import sys
 import types
 from pathlib import Path
 
-
+from plugin_loader import load_plugin
 PLUGIN_PATH = Path(__file__).resolve().parents[1] / "__init__.py"
-spec = importlib.util.spec_from_file_location("wsp_plugin_no_answer_under_test", PLUGIN_PATH)
-assert spec is not None
-wsp = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-spec.loader.exec_module(wsp)
+wsp = load_plugin("wsp_plugin_no_answer_under_test")
 
 
 class FakeCtx:
@@ -66,7 +62,7 @@ def test_search_runs_in_process_without_subprocess(monkeypatch):
     def explode(*args, **kwargs):
         raise AssertionError("subprocess fallback should not be used on the in-process path")
 
-    monkeypatch.setattr(wsp.subprocess, "run", explode)
+    monkeypatch.setattr(subprocess, "run", explode)
 
     result = wsp._run_search("graz weather", mode="research", research_time_budget=120)
 
@@ -75,26 +71,25 @@ def test_search_runs_in_process_without_subprocess(monkeypatch):
     assert captured["mode"] == "research"
 
 
-def test_research_mode_subprocess_fallback_passes_budget(monkeypatch):
+def test_research_time_budget_widens_the_wall_clock_bound(monkeypatch):
     seen = {}
 
-    def fake_run(cmd, capture_output, text, timeout, env):
-        seen["cmd"] = cmd
+    class FakeSearch:
+        @staticmethod
+        def run_search_request(**kwargs):
+            seen["budget"] = kwargs["research_time_budget"]
+            return {"results": []}
+
+    def fake_call_with_timeout(fn, timeout):
         seen["timeout"] = timeout
+        return fn()
 
-        class Result:
-            returncode = 0
-            stdout = '{"results": []}'
-            stderr = ""
-
-        return Result()
-
-    monkeypatch.setenv("WSP_FORCE_SUBPROCESS", "1")
-    monkeypatch.setattr(wsp.subprocess, "run", fake_run)
+    monkeypatch.setattr(wsp, "_load_search_module", lambda: FakeSearch)
+    monkeypatch.setattr(wsp, "_call_with_timeout", fake_call_with_timeout)
 
     wsp._run_search("deep query", mode="research", research_time_budget=120)
 
-    assert "--research-time-budget" in seen["cmd"]
+    assert seen["budget"] == 120
     assert seen["timeout"] > 120
 
 
@@ -110,6 +105,6 @@ def test_load_search_module_ignores_unrelated_global_search_module(monkeypatch):
 
     assert loaded is not None
     assert loaded is not fake_search
-    assert Path(loaded.__file__).resolve() == PLUGIN_PATH.with_name("search.py").resolve()
+    assert Path(loaded.__file__).resolve() == (PLUGIN_PATH.parent / "wsp_core" / "search.py").resolve()
     assert hasattr(loaded, "run_search_request")
     assert sys.modules["search"] is fake_search

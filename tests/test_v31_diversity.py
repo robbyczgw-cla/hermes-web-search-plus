@@ -1,24 +1,25 @@
 from __future__ import annotations
+from wsp_core import providers
 
 import json
 from copy import deepcopy
 
 import pytest
 
-import operator_privacy_v3 as privacy
-import search
-from config import DEFAULT_CONFIG, _validate_runtime_config
-from contract_v3 import Capability
-from diversity_v3 import (
+from wsp_core import operator_privacy_v3 as privacy
+from wsp_core import search
+from wsp_core.config import DEFAULT_CONFIG, _validate_runtime_config
+from wsp_core.contract_v3 import Capability
+from wsp_core.diversity_v3 import (
     canonical_url,
     registrable_domain,
     rerank_duplicate_candidates,
     score_diversity,
     snippet_similarity,
 )
-from operator_receipts_v3 import receipt_record_from_response
-from quality import deduplicate_results_across_providers
-from research import run_research_mode
+from wsp_core.operator_receipts_v3 import receipt_record_from_response
+from wsp_core import research
+from wsp_core.research import run_research_mode
 
 
 def _result(
@@ -215,7 +216,7 @@ def test_quality_report_contains_diversity_and_operator_receipt_stays_safe(
             _result("two", "https://two.example/b", "orchid maple quartz lantern river summit", "tavily"),
         ],
     )
-    monkeypatch.setattr(search, "search_tavily", lambda **_kwargs: payload)
+    monkeypatch.setattr(providers, "search_tavily", lambda **_kwargs: payload)
     request = search.legacy_request_to_v3(
         Capability.SEARCH,
         {
@@ -238,9 +239,9 @@ def test_quality_report_contains_diversity_and_operator_receipt_stays_safe(
     assert "diversity" not in json.dumps(operator_payload, sort_keys=True)
 
 
-def test_default_research_merge_matches_existing_deduplication_behavior() -> None:
+def test_default_research_merge_is_reciprocal_rank_fusion() -> None:
     sources = _fixture_research_sources()
-    expected, expected_dedup_count = deduplicate_results_across_providers(
+    expected, expected_dedup_count = research.fuse_results(
         [("alpha", sources["alpha"]), ("beta", sources["beta"])], 4
     )
 
@@ -290,7 +291,7 @@ def test_v3_research_config_keeps_default_merge_and_opt_in_reranks(
         "confidence": 0.9,
         "confidence_level": "high",
         "reason": "diversity fixture",
-        "routing_policy": "routing-v2",
+        "routing_policy": "routing-v3",
         "top_signals": [],
         "scores": {"tavily": 1.0, "linkup": 0.9},
         "auto_allow_excluded": [],
@@ -307,8 +308,8 @@ def test_v3_research_config_keeps_default_merge_and_opt_in_reranks(
         "results": [{**item, "provider": "linkup"} for item in sources["beta"]["results"]],
     }
     monkeypatch.setattr(search, "auto_route_provider", lambda *_args: routing)
-    monkeypatch.setattr(search, "search_tavily", lambda **_kwargs: tavily_payload)
-    monkeypatch.setattr(search, "search_linkup", lambda **_kwargs: linkup_payload)
+    monkeypatch.setattr(providers, "search_tavily", lambda **_kwargs: tavily_payload)
+    monkeypatch.setattr(providers, "search_linkup", lambda **_kwargs: linkup_payload)
     monkeypatch.setattr(
         search, "extract_plus", lambda **_kwargs: {"provider": None, "results": []}
     )

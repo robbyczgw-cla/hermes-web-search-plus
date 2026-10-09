@@ -32,10 +32,11 @@ Create a branch from the current `main` and add a regression test before changin
 
 ## Repository map
 
-- `search.py`, `extract.py`, and `__init__.py` expose the public plugin paths.
-- `runtime_v3.py`, `orchestrator_v3.py`, and `contract_v3.py` implement the native v3 evidence flow and wire contract.
-- `provider_registry.py`, `provider_dispatch.py`, and `provider_adapter_protocol.py` define built-in provider metadata and adapter conformance.
-- `wsp_sdk/` and `providers.d/` are the stable, additive provider-extension surface.
+- `__init__.py` (Hermes tools and setup), `setup.py` and `search.py` (command lines) are the host entry points at the root.
+- `wsp_core/` is the engine. Its modules import each other relatively; keep it free of Hermes-specific code so other hosts can reuse it unchanged.
+- `wsp_core/runtime_v3.py`, `orchestrator_v3.py`, and `contract_v3.py` implement the native v3 evidence flow and wire contract.
+- `wsp_core/provider_registry.py`, `provider_dispatch.py`, and `provider_adapter_protocol.py` define built-in provider metadata and adapter conformance.
+- `wsp_sdk/` and `providers.d/` are the stable, additive provider-extension surface (`wsp_sdk` is implemented in `wsp_core/sdk/`).
 - `tests/` contains unit, contract, registry, routing, cache, privacy, and schema-boundary coverage.
 - `scripts/` owns generated provider docs, routing docs, and v3 schemas.
 

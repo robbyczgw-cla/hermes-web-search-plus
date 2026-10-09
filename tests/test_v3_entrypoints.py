@@ -4,10 +4,11 @@ from unittest import mock
 
 import jsonschema
 import pytest
-import search
-from compat_v3 import legacy_request_to_v3
-from contract_v3 import Capability, ResponseV3
-from http_client import ProviderRequestError
+from wsp_core import providers
+from wsp_core import search
+from wsp_core.compat_v3 import legacy_request_to_v3
+from wsp_core.contract_v3 import Capability, ResponseV3
+from wsp_core.http_client import ProviderRequestError
 
 
 CONFIG = {
@@ -63,10 +64,11 @@ def _extract_payload():
     }
 
 
-def test_v3_execution_can_read_but_never_writes_legacy_cache(monkeypatch):
+def test_v3_execution_neither_reads_nor_writes_legacy_cache(monkeypatch):
     dummy_key = "test-key-123456789012345678901234"
     monkeypatch.setenv("YOU_API_KEY", dummy_key)
-    monkeypatch.setattr(search, "cache_get", lambda **_kwargs: None)
+    cache_get = mock.Mock(return_value=None)
+    monkeypatch.setattr(search, "cache_get", cache_get)
     cache_put = mock.Mock()
     monkeypatch.setattr(search, "cache_put", cache_put)
     monkeypatch.setattr(search, "provider_in_cooldown", lambda _provider: (False, 0))
@@ -74,7 +76,7 @@ def test_v3_execution_can_read_but_never_writes_legacy_cache(monkeypatch):
         search, "execute_provider_with_retry", lambda _provider, fn: fn()
     )
     monkeypatch.setattr(
-        search,
+        providers,
         "search_you",
         lambda **_kwargs: _search_payload("you"),
     )
@@ -88,6 +90,7 @@ def test_v3_execution_can_read_but_never_writes_legacy_cache(monkeypatch):
     )
 
     assert result["results"]
+    cache_get.assert_not_called()
     cache_put.assert_not_called()
 
 
@@ -110,8 +113,8 @@ def test_engine_owned_provider_call_bypasses_all_legacy_retry_and_health(monkeyp
     monkeypatch.setattr(search, "execute_provider_with_retry", forbidden)
     monkeypatch.setattr(search, "mark_provider_failure", forbidden)
     monkeypatch.setattr(search, "reset_provider_health", forbidden)
-    # Adaptive routing samples are not legacy health: the engine owns retry
-    # and circuit state, but every real provider call still trains the router.
+    # Latency samples are not legacy health: the engine owns retry and
+    # circuit state, but every real provider call still records its latency.
     outcomes = []
     monkeypatch.setattr(
         search,
@@ -119,7 +122,7 @@ def test_engine_owned_provider_call_bypasses_all_legacy_retry_and_health(monkeyp
         lambda provider, **kwargs: outcomes.append((provider, kwargs["error"])),
     )
     monkeypatch.setattr(
-        search,
+        providers,
         "search_you",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             ProviderRequestError("upstream", status_code=503, transient=True)
@@ -138,15 +141,15 @@ def test_engine_owned_extract_call_bypasses_legacy_retry_and_health(monkeypatch)
         "extract": {"allow_private_urls": True},
     }
 
+    import wsp_core.provider_health as health
+
     def forbidden(*_args, **_kwargs):
         raise AssertionError("legacy extract health/retry seam was called")
 
-    monkeypatch.setattr(search._extract, "provider_in_cooldown", forbidden)
-    monkeypatch.setattr(search._extract, "execute_provider_with_retry", forbidden)
-    monkeypatch.setattr(search._extract, "mark_provider_failure", forbidden)
-    monkeypatch.setattr(search._extract, "reset_provider_health", forbidden)
+    for name in ("provider_in_cooldown", "execute_provider_with_retry", "mark_provider_failure", "reset_provider_health"):
+        monkeypatch.setattr(health, name, forbidden)
     monkeypatch.setattr(
-        search._extract,
+        providers,
         "extract_linkup",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             ProviderRequestError("upstream", status_code=503, transient=True)
@@ -158,7 +161,6 @@ def test_engine_owned_extract_call_bypasses_legacy_retry_and_health(monkeypatch)
             ["https://example.com/a"],
             provider="linkup",
             config=config,
-            engine_owned_attempt=True,
         )
 
 
@@ -166,7 +168,7 @@ def test_extract_adapter_emits_engine_attempt_receipt(tmp_path, monkeypatch):
     calls = []
 
     def fake_core(**kwargs):
-        calls.append((kwargs["provider"], kwargs["engine_owned_attempt"]))
+        calls.append((kwargs["provider"], True))
         return _extract_payload()
 
     monkeypatch.setattr(search._extract, "_extract_plus_core", fake_core)
@@ -321,7 +323,7 @@ def test_search_preserves_policy_filtered_provider_result_as_observation(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr(
-        search,
+        providers,
         "search_serper",
         lambda **_kwargs: {
             "provider": "serper",
@@ -647,5 +649,4 @@ def test_cli_help_does_not_advertise_answer_providers():
     help_text = search.build_parser(CONFIG).format_help()
 
     assert "Direct Answer" not in help_text
-    assert "Perplexity" not in help_text
     assert "synthesized up-to-date answers" not in help_text

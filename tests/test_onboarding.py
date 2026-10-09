@@ -1,6 +1,6 @@
 from __future__ import annotations
+from wsp_core import providers
 
-import importlib.util
 import json
 import os
 import subprocess
@@ -9,18 +9,11 @@ from pathlib import Path
 
 import pytest
 
+from plugin_loader import load_plugin
 
-PLUGIN_PATH = Path(__file__).resolve().parents[1] / "__init__.py"
-spec = importlib.util.spec_from_file_location("wsp_plugin_onboarding_under_test", PLUGIN_PATH)
-wsp = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-spec.loader.exec_module(wsp)
+from wsp_core import search
 
-SEARCH_PATH = Path(__file__).resolve().parents[1] / "search.py"
-search_spec = importlib.util.spec_from_file_location("wsp_search_onboarding_under_test", SEARCH_PATH)
-search = importlib.util.module_from_spec(search_spec)
-assert search_spec.loader is not None
-search_spec.loader.exec_module(search)
+wsp = load_plugin("wsp_plugin_onboarding_under_test")
 
 
 class FakeCtx:
@@ -129,7 +122,8 @@ def test_setup_guidance_points_unconfigured_users_to_one_simple_path():
     assert "extraction-capable" in text
     assert "Recommended starter" in text
     assert "SERPER_API_KEY" in text
-    assert "YOU_API_KEY" in text
+    assert "BRAVE_API_KEY" in text
+    assert "EXA_API_KEY" in text
     assert "LINKUP_API_KEY" in text
     assert "python3 ~/.hermes/plugins/web-search-plus/setup.py setup" in text
     assert "hermes web-search-plus setup" not in text
@@ -198,7 +192,7 @@ def test_setup_command_treats_eof_as_blank_input(monkeypatch, capsys):
 
     out = capsys.readouterr().out
     assert "Setup plan:" in out
-    for item in wsp._get_provider_catalog():
+    for item in wsp._providers_for_preset("starter"):
         assert item["display_name"] in out
     assert "No keys entered; nothing changed." in out
 
@@ -220,23 +214,54 @@ def test_setup_presets_choose_expected_providers():
     extract = {item["provider"] for item in wsp._providers_for_preset("extract")}
     all_providers = {item["provider"] for item in wsp._providers_for_preset("all")}
 
-    assert starter == {"you", "serper", "linkup"}
-    assert lean == {"you", "linkup"}
+    assert starter == {"brave", "serper", "exa", "linkup"}
+    assert lean == {"brave", "linkup"}
     assert extract == {"linkup", "firecrawl", "tavily"}
     assert all_providers == {item["provider"] for item in wsp._get_provider_catalog()}
 
 
-def test_bare_setup_defaults_to_all_supported_providers(monkeypatch, capsys):
+def test_bare_setup_defaults_to_the_starter_providers(monkeypatch, capsys):
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["setup", "--dry-run"])
 
     args.func(args)
 
-    out = capsys.readouterr().out
-    assert "Setup plan:" in out
+    plan = capsys.readouterr().out.split("Setup plan:", 1)[1]
+    for item in wsp._providers_for_preset("starter"):
+        assert item["display_name"] in plan
+    assert "TinyFish" not in plan and "Octen" not in plan
+
+
+def test_setup_preset_all_still_walks_every_provider(monkeypatch, capsys):
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "--preset", "all", "--dry-run"])
+
+    args.func(args)
+
+    plan = capsys.readouterr().out.split("Setup plan:", 1)[1]
     for item in wsp._get_provider_catalog():
-        assert item["display_name"] in out
+        assert item["display_name"] in plan
+
+
+def test_starter_preset_matches_the_router_first_providers():
+    from wsp_core.provider_registry import SETUP_PRESETS
+    from wsp_core.routing import INTENT_FIRST_PROVIDER, MEASURED_PROVIDER_ORDER
+
+    router_first = set(INTENT_FIRST_PROVIDER.values()) | {MEASURED_PROVIDER_ORDER[0]}
+    assert router_first <= set(SETUP_PRESETS["starter"])
+    recommended = {item["provider"] for item in wsp._get_provider_catalog() if item.get("recommended")}
+    assert recommended == set(SETUP_PRESETS["starter"])
+
+
+def test_status_dashboard_names_intents_that_fall_back(monkeypatch):
+    status = wsp._provider_config_status(env={"BRAVE_API_KEY": "k1", "SERPER_API_KEY": "k2"})
+    text = wsp._render_status_dashboard(status, color=False)
+    assert "Routing falls back:" in text
+    assert "academic, docs would use Exa (EXA_API_KEY missing)" in text
+    full = wsp._provider_config_status(env={"BRAVE_API_KEY": "a", "SERPER_API_KEY": "b", "EXA_API_KEY": "c"})
+    assert "Routing falls back" not in wsp._render_status_dashboard(full, color=False)
 
 
 def test_setup_dry_run_prints_plan_without_prompting(monkeypatch, capsys):
@@ -249,7 +274,7 @@ def test_setup_dry_run_prints_plan_without_prompting(monkeypatch, capsys):
 
     out = capsys.readouterr().out
     assert "Setup plan:" in out
-    assert "You.com" in out
+    assert "Brave Search" in out
     assert "Linkup" in out
     assert "Dry run only" in out
 
@@ -265,9 +290,10 @@ def test_setup_dry_run_uses_target_env_path_for_dashboard(tmp_path, monkeypatch,
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "Providers: 1/17 configured" in out
+    assert "Providers: 1/15 configured" in out
     assert "Active: You.com" in out
-    assert "Brave Search" not in out.split("Setup plan:", 1)[0]
+    # The live BRAVE_API_KEY must not count; the dashboard reports it missing.
+    assert "would use Brave Search (BRAVE_API_KEY missing)" in out.split("Setup plan:", 1)[0]
 
 
 def test_status_uses_target_env_path_for_dashboard(tmp_path, monkeypatch, capsys):
@@ -281,9 +307,9 @@ def test_status_uses_target_env_path_for_dashboard(tmp_path, monkeypatch, capsys
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "Providers: 1/17 configured" in out
+    assert "Providers: 1/15 configured" in out
     assert "Active: Linkup" in out
-    assert "Brave Search" not in out
+    assert "Active: Linkup, Brave" not in out and "Brave Search, " not in out
 
 
 def test_register_exposes_core_independent_session_onboarding_surfaces():
@@ -314,6 +340,22 @@ def test_tool_check_functions_treat_missing_or_empty_keys_as_unconfigured(monkey
     monkeypatch.setenv("LINKUP_API_KEY", "linkup-test")
     assert ctx.tools["web_extract_plus"]["check_fn"]() is True
 
+
+@pytest.mark.parametrize("removed_key", ["PERPLEXITY_API_KEY", "KILOCODE_API_KEY"])
+def test_removed_provider_keys_do_not_configure_search_tool_or_setup_status(monkeypatch, removed_key):
+    for key in wsp._PROVIDER_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    for key in wsp._EXTRACT_PROVIDER_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv(removed_key, "legacy-key")
+    ctx = FakeCtx()
+
+    wsp.register(ctx)
+
+    assert ctx.tools["web_search_plus"]["check_fn"]() is False
+    status = wsp._provider_config_status(env={removed_key: "legacy-key"})
+    assert status["search_configured"] is False
+    assert status["configured_search_count"] == 0
 
 
 def test_config_show_json_uses_config_path_without_secrets(tmp_path, capsys):
@@ -402,13 +444,12 @@ def test_config_set_auto_allow_updates_provider_gate(tmp_path):
 def test_default_behavior_config_blocks_low_trust_auto_providers():
     config = wsp._default_behavior_config()
 
-    assert config["auto_routing"]["provider_priority"][:7] == ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave"]
+    assert config["auto_routing"]["provider_priority"][:7] == ["brave", "serper", "exa", "tavily", "you", "firecrawl", "linkup"]
     assert config["auto_routing"]["extract_provider_priority"] == list(wsp.EXTRACT_PROVIDER_IDS)
     assert config["auto_routing"]["auto_allow"]["serpbase"] is False
     assert config["auto_routing"]["auto_allow"]["querit"] is False
     assert config["auto_routing"]["auto_allow"].get("brave", True) is True
     assert config["auto_routing"]["auto_allow"].get("parallel", True) is True
-
 
 
 def test_setup_dry_run_can_auto_deny_provider(tmp_path, capsys):
@@ -505,7 +546,6 @@ def test_search_auto_route_errors_cleanly_when_auto_disabled_without_default():
     assert routing["provider"] is None
     assert routing["reason"] == "auto_routing_disabled_no_default_provider"
     assert routing["confidence_level"] == "low"
-
 
 
 def test_config_set_threshold_rejects_out_of_range_without_writing(tmp_path):
@@ -627,40 +667,74 @@ def test_no_secret_leaks_across_status_and_config_commands(tmp_path, capsys):
     assert secret not in captured.err
 
 
-
-def test_config_routing_provider_alias_maps_kilo_perplexity_to_distinct_provider(tmp_path):
+def test_removed_provider_config_migrates_without_quarantine(tmp_path, monkeypatch):
     config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({
+        "version": 1,
+        "default_provider": "perplexity",
+        "perplexity": {"api_key": "legacy"},
+        "kilo-perplexity": {"model": "legacy"},
+        "auto_routing": {
+            "enabled": False,
+            "fallback_provider": "kilo_perplexity",
+            "provider_priority": ["perplexity", "brave"],
+            "extract_provider_priority": ["kilo-perplexity", "exa"],
+            "disabled_providers": ["kilo_perplexity"],
+            "auto_allow": {"perplexity": True, "kilo-perplexity": False, "brave": True},
+        },
+    }))
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
+
+    config = search.load_config()
+
+    assert config["default_provider"] is None
+    assert config["auto_routing"]["fallback_provider"] == "serper"
+    assert "perplexity" not in config["auto_routing"]["provider_priority"]
+    assert "kilo-perplexity" not in config["auto_routing"]["extract_provider_priority"]
+    assert config["auto_routing"]["disabled_providers"] == []
+    assert "perplexity" not in config["auto_routing"]["auto_allow"]
+    assert "kilo-perplexity" not in config["auto_routing"]["auto_allow"]
+    assert "perplexity" not in config and "kilo-perplexity" not in config
+    assert not list(tmp_path.glob("config.json.broken-*"))
+
+
+def test_setup_config_show_migrates_removed_providers_without_quarantine(tmp_path, capsys):
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({
+        "version": 1,
+        "default_provider": "kilo_perplexity",
+        "auto_routing": {
+            "fallback_provider": "perplexity",
+            "provider_priority": ["perplexity", "brave"],
+            "extract_provider_priority": ["kilo-perplexity", "exa"],
+            "disabled_providers": ["perplexity"],
+            "auto_allow": {"kilo-perplexity": True, "brave": True},
+        },
+    }))
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
-    args = parser.parse_args(["config", "set-default", "kilo-perplexity", "--config-path", str(config_path)])
+    args = parser.parse_args(["config", "show", "--json", "--config-path", str(config_path)])
 
     args.func(args)
 
-    data = json.loads(config_path.read_text())
-    assert data["default_provider"] == "kilo-perplexity"
+    shown = json.loads(capsys.readouterr().out)
+    assert not list(tmp_path.glob("config.json.broken-*"))
+    assert shown["default_provider"] is None
+    assert shown["auto_routing"]["fallback_provider"] == "serper"
+    assert shown["auto_routing"]["provider_priority"][0] == "brave"
+    assert shown["auto_routing"]["extract_provider_priority"][0] == "exa"
+    assert shown["auto_routing"]["disabled_providers"] == []
+    assert "kilo-perplexity" not in shown["auto_routing"]["auto_allow"]
 
 
-def test_config_routing_provider_alias_maps_kilo_underscore_perplexity_to_distinct_provider(tmp_path):
+def test_config_priority_rejects_unknown_provider(tmp_path):
     config_path = tmp_path / "config.json"
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
-    args = parser.parse_args(["config", "set-default", "kilo_perplexity", "--config-path", str(config_path)])
+    args = parser.parse_args(["config", "set-priority", "tavily,google", "--config-path", str(config_path), "--dry-run"])
 
-    args.func(args)
-
-    data = json.loads(config_path.read_text())
-    assert data["default_provider"] == "kilo-perplexity"
-
-
-def test_config_priority_rejects_non_routing_catalog_provider(tmp_path):
-    config_path = tmp_path / "config.json"
-    parser = wsp.argparse.ArgumentParser()
-    wsp._web_search_plus_cli_setup(parser)
-    args = parser.parse_args(["config", "set-priority", "tavily,kilo-perplexity", "--config-path", str(config_path), "--dry-run"])
-
-    # Alias is valid, so the dry-run should produce canonical search.py provider names.
-    args.func(args)
-
+    with pytest.raises(SystemExit):
+        args.func(args)
 
 
 def test_invalid_semantic_config_is_moved_aside_and_defaults_are_used(tmp_path, capsys):
@@ -709,8 +783,8 @@ def test_fixed_provider_mode_does_not_add_fallback_providers(monkeypatch, tmp_pa
     def should_not_fallback(**_kwargs):
         raise AssertionError("fixed-provider mode must not call fallback providers")
 
-    monkeypatch.setattr(search, "search_brave", fail_brave)
-    monkeypatch.setattr(search, "search_tavily", should_not_fallback)
+    monkeypatch.setattr(providers, "search_brave", fail_brave)
+    monkeypatch.setattr(providers, "search_tavily", should_not_fallback)
     monkeypatch.setattr(search, "mark_provider_failure", lambda provider, error, retry_after=None: {"cooldown_seconds": 60})
 
     try:
@@ -724,7 +798,6 @@ def test_fixed_provider_mode_does_not_add_fallback_providers(monkeypatch, tmp_pa
     data = json.loads(err)
     assert data["provider"] == "brave"
     assert [item["provider"] for item in data["provider_errors"]] == ["brave"]
-
 
 
 def test_search_load_config_quarantines_invalid_default_provider(tmp_path, monkeypatch):
@@ -763,30 +836,6 @@ def test_search_load_config_keeps_multiple_quarantines_in_same_second(tmp_path, 
     broken_files = sorted(p.name for p in tmp_path.glob("config.json.broken-*"))
     assert len(broken_files) == 2
     assert broken_files[0] != broken_files[1]
-
-
-def test_search_load_config_normalizes_kilo_perplexity_alias(tmp_path, monkeypatch):
-    config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "default_provider": "kilo-perplexity", "auto_routing": {"enabled": false, "provider_priority": ["kilo-perplexity"]}}\n')
-    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
-
-    config = search.load_config()
-
-    assert config["default_provider"] == "kilo-perplexity"
-    assert config["auto_routing"]["provider_priority"] == ["kilo-perplexity"]
-    assert not list(tmp_path.glob("config.json.broken-*"))
-
-
-def test_search_load_config_normalizes_kilo_underscore_perplexity_alias(tmp_path, monkeypatch):
-    config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "default_provider": "kilo_perplexity", "auto_routing": {"enabled": false, "provider_priority": ["kilo_perplexity"], "fallback_provider": "kilo_perplexity"}}\n')
-    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
-
-    config = search.load_config()
-
-    assert config["default_provider"] == "kilo-perplexity"
-    assert config["auto_routing"]["provider_priority"] == ["kilo-perplexity"]
-    assert config["auto_routing"]["fallback_provider"] == "kilo-perplexity"
 
 
 def _isolate_keyless_env(monkeypatch, config_path):
@@ -863,6 +912,169 @@ def test_setup_skips_keyless_prompt_when_already_opted_in(tmp_path, monkeypatch,
     assert "No keys entered; nothing changed." in capsys.readouterr().out
 
 
+class _Stdin:
+    def __init__(self, tty: bool):
+        self._tty = tty
+
+    def isatty(self) -> bool:
+        return self._tty
+
+
+def _run_starter_setup(tmp_path, monkeypatch, *, tty: bool, answer: str, config_text: str | None = None):
+    """Run `setup --no-jev` with blank key prompts; return the Keenable offer prompts shown."""
+    env_path = tmp_path / ".env"
+    config_path = tmp_path / "config.json"
+    if config_text is not None:
+        config_path.write_text(config_text)
+    _isolate_keyless_env(monkeypatch, config_path)
+    monkeypatch.setattr(wsp.sys, "stdin", _Stdin(tty))
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "--no-jev", "--env-path", str(env_path), "--config-path", str(config_path)])
+    prompts = []
+    monkeypatch.setattr(wsp.getpass, "getpass", lambda _prompt: "")
+    monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or (answer(prompt) if callable(answer) else answer))
+
+    args.func(args)
+
+    return env_path, config_path, prompts
+
+
+def _allow_public_written(config_path) -> bool:
+    return config_path.exists() and "allow_public" in config_path.read_text()
+
+
+@pytest.mark.parametrize("answer", ["y", "Yes"])
+def test_starter_setup_without_any_key_opts_in_to_keyless_start_on_yes(tmp_path, monkeypatch, capsys, answer):
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer=answer)
+
+    out = capsys.readouterr().out
+    assert any("Start without a key using Keenable" in prompt and "[y/N]" in prompt for prompt in prompts)
+    assert "Enabled keyless public search for Keenable" in out
+    assert json.loads(config_path.read_text())["keenable"]["allow_public"] is True
+    assert not env_path.exists()
+
+
+@pytest.mark.parametrize("answer", ["", "n", "no", "maybe", "  "])
+def test_starter_setup_without_any_key_declines_keyless_start_unless_told_yes(tmp_path, monkeypatch, capsys, answer):
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer=answer)
+
+    assert any("Start without a key using Keenable" in prompt for prompt in prompts)
+    assert "No keys entered; nothing changed." in capsys.readouterr().out
+    assert not _allow_public_written(config_path)
+    assert not env_path.exists()
+
+
+def test_keyless_offer_says_what_is_sent_before_it_asks(tmp_path, monkeypatch, capsys):
+    shown_before_prompt = []
+
+    def answer(prompt):
+        shown_before_prompt.append(capsys.readouterr().out)
+        return ""
+
+    _run_starter_setup(tmp_path, monkeypatch, tty=True, answer=answer)
+
+    offer = [text for text in shown_before_prompt if "unauthenticated public service" in text]
+    assert len(offer) == 1
+    assert "queries and fetched URLs" in offer[0]
+    assert "Keenable" in offer[0]
+
+
+def test_starter_setup_without_a_terminal_never_opts_in_to_keyless(tmp_path, monkeypatch, capsys):
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=False, answer="y")
+
+    out = capsys.readouterr().out
+    assert not any("Keenable" in prompt for prompt in prompts)
+    assert "--keyless-public" in out
+    assert "unauthenticated public service" in out
+    assert "No keys entered; nothing changed." in out
+    assert not _allow_public_written(config_path)
+    assert not env_path.exists()
+
+
+def test_piped_blank_lines_do_not_opt_in_to_keyless(tmp_path):
+    script = Path(__file__).resolve().parents[1] / "setup.py"
+    env_path = tmp_path / ".env"
+    config_path = tmp_path / "config.json"
+    clean_env = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": str(tmp_path),
+        "HERMES_HOME": str(tmp_path / "hermes"),
+        "WEB_SEARCH_PLUS_CONFIG": str(config_path),
+    }
+
+    result = subprocess.run(
+        [sys.executable, str(script), "setup", "--no-jev", "--env-path", str(env_path), "--config-path", str(config_path)],
+        input="\n" * 40,
+        env=clean_env,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "--keyless-public" in result.stdout
+    assert "No keys entered; nothing changed." in result.stdout
+    assert not _allow_public_written(config_path)
+
+
+def test_starter_setup_with_a_search_key_in_the_process_environment_does_not_offer_keyless(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("BRAVE_API_KEY", "brave-env-key-123456")
+
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer="y")
+
+    assert not any("Keenable" in prompt for prompt in prompts)
+    assert "Start without a key" not in capsys.readouterr().out
+    assert not _allow_public_written(config_path)
+
+
+@pytest.mark.parametrize(
+    "config_text",
+    [
+        '{"version": 1, "keenable": {"api_key": "keenable-config-key-123456"}}\n',
+        '{"version": 1, "searxng": {"base_url": "https://search.example"}}\n',
+        '{"version": 1, "keenable": {"allow_public": true}}\n',
+    ],
+    ids=["keenable-key", "searxng-url", "keyless-already-on"],
+)
+def test_starter_setup_with_a_search_provider_in_the_config_does_not_offer_keyless(tmp_path, monkeypatch, config_text):
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer="y", config_text=config_text)
+
+    assert not any("Keenable" in prompt for prompt in prompts)
+
+
+def test_starter_setup_with_a_search_key_in_the_env_file_does_not_offer_keyless(tmp_path, monkeypatch):
+    (tmp_path / ".env").write_text("EXA_API_KEY=exa-file-key-123456\n")
+
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer="y")
+
+    assert not any("Keenable" in prompt for prompt in prompts)
+    assert not _allow_public_written(config_path)
+
+
+def test_starter_setup_with_a_search_key_does_not_offer_keyless(tmp_path, monkeypatch, capsys):
+    env_path = tmp_path / ".env"
+    config_path = tmp_path / "config.json"
+    _isolate_keyless_env(monkeypatch, config_path)
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "--no-jev", "--env-path", str(env_path), "--config-path", str(config_path)])
+    monkeypatch.setattr(wsp.getpass, "getpass", lambda prompt: "fake-brave-key" if "BRAVE_API_KEY" in prompt else "")
+    monkeypatch.setattr("builtins.input", lambda prompt: (_ for _ in ()).throw(AssertionError(prompt)))
+
+    args.func(args)
+
+    out = capsys.readouterr().out
+    assert "fake-brave-key" not in out
+    assert "BRAVE_API_KEY" in env_path.read_text()
+    assert not config_path.exists() or "allow_public" not in config_path.read_text()
+
+
+def test_empty_dashboard_points_to_keyless_and_donsetch():
+    text = wsp._render_setup_guidance(env={}, fancy=True)
+    assert "--keyless-public" in text
+    assert "DonSeTch" in text and "explicit calls only" in text
+
+
 def test_routing_rewrite_preserves_non_routing_provider_sections(tmp_path):
     config_path = tmp_path / "config.json"
     config_path.write_text('{"version": 1, "keenable": {"allow_public": true, "search_url": "https://custom"}, "searxng": {"instance_url": "https://x"}}\n')
@@ -935,17 +1147,6 @@ def test_fastpath_cli_outputs_json_without_core_patch_dependency(tmp_path, capsy
     assert data["ok"] is True
     assert data["recommended_hermes_config"] == {"agent.disabled_toolsets": ["web"]}
     assert "never_defer" not in json.dumps(data)
-
-
-def test_native_inprocess_only_never_falls_back(tmp_path, monkeypatch):
-    monkeypatch.setattr(wsp, "_load_search_module", lambda: None)
-    monkeypatch.setattr(wsp, "_force_subprocess", lambda: False)
-    def forbidden(*args, **kwargs):
-        raise AssertionError("native must not launch a subprocess")
-    monkeypatch.setattr(wsp, "_run_search_subprocess", forbidden)
-    monkeypatch.setattr(wsp, "_run_extract_subprocess", forbidden)
-    assert wsp._run_search("query", inprocess_only=True)["error"]
-    assert wsp._run_extract(["https://example.org"], inprocess_only=True)["error"]
 
 
 def test_fastpath_config_path_respects_profile_home(tmp_path, monkeypatch):

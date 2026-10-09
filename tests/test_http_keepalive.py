@@ -20,8 +20,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import http_client  # noqa: E402
-from http_client import ProviderRequestError, make_get_request, make_request  # noqa: E402
+from wsp_core import http_client  # noqa: E402
+from wsp_core.http_client import ProviderRequestError, make_get_request, make_request  # noqa: E402
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -70,9 +70,16 @@ class _Handler(BaseHTTPRequestHandler):
     do_POST = _handle
 
 
+class _Server(ThreadingHTTPServer):
+    # socketserver's default listen backlog is 5. Sixteen concurrent fresh
+    # connections overflow it, and macOS answers the overflow with RST
+    # (Linux usually queues the SYNs), which made the concurrency test flaky.
+    request_queue_size = 64
+
+
 @pytest.fixture()
 def server():
-    srv = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+    srv = _Server(("127.0.0.1", 0), _Handler)
     srv.daemon_threads = True
     srv.lock = threading.Lock()
     srv.peers = set()
@@ -185,15 +192,21 @@ def test_concurrent_threads_get_their_own_responses(server):
         except Exception as exc:  # pragma: no cover - reported below
             errors.append(repr(exc))
 
-    threads = [threading.Thread(target=worker, args=(n,)) for n in range(16)]
+    thread_count, rounds = 16, 10
+    threads = [threading.Thread(target=worker, args=(n,)) for n in range(thread_count)]
     for t in threads:
         t.start()
     for t in threads:
         t.join(30)
     assert not errors
     assert len(results) == 160 and all(results.values())
-    # Pool bounds idle connections; total TCP connections stay far below 160.
-    assert len(srv.peers) <= 16
+    # The pool keeps at most _KEEPALIVE_MAX_IDLE_PER_HOST idle sockets, so with
+    # more concurrent threads than that, each later round may open up to
+    # (threads - idle cap) fresh connections. That is the guaranteed bound;
+    # how many actually reopen depends on thread timing.
+    idle_cap = http_client._KEEPALIVE_MAX_IDLE_PER_HOST
+    bound = thread_count + (rounds - 1) * max(0, thread_count - idle_cap)
+    assert len(srv.peers) <= bound < thread_count * rounds
 
 
 def test_proxy_env_falls_back_to_urllib(server, monkeypatch):

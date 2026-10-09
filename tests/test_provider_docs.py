@@ -4,7 +4,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
-import provider_registry as registry
+from wsp_core import provider_registry as registry
 
 
 GENERATOR_PATH = Path(__file__).resolve().parents[1] / "scripts" / "gen_provider_docs.py"

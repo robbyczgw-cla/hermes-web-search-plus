@@ -4,25 +4,25 @@ Locks down the guarantees the bench feature makes: ranking follows the
 success/latency/quality score, a failing provider never aborts the run (it
 just ranks last), the recommendation is advisory (config_key + apply hint,
 never a config write), and bench traffic never touches provider_health
-cooldowns or provider_stats adaptive-routing memory. All providers are mocked;
+cooldowns or provider_stats latency memory. All providers are mocked;
 no network.
 """
 
 from __future__ import annotations
+from wsp_core import providers
 
 import argparse
-import importlib.util
 import json
+import shutil
 import sys
 import types
-from pathlib import Path
 
-import bench
-import provider_health
-import provider_stats
-import search
+from wsp_core import bench
+from wsp_core import provider_health
+from wsp_core import provider_stats
+from wsp_core import search
 
-
+from plugin_loader import load_plugin
 PROVIDER_ENV_VARS = [
     "SERPER_API_KEY",
     "SERPBASE_API_KEY",
@@ -33,8 +33,6 @@ PROVIDER_ENV_VARS = [
     "EXA_API_KEY",
     "YOU_API_KEY",
     "PARALLEL_API_KEY",
-    "PERPLEXITY_API_KEY",
-    "KILOCODE_API_KEY",
     "FIRECRAWL_API_KEY",
     "KEENABLE_API_KEY",
     "KEENABLE_ALLOW_PUBLIC",
@@ -83,8 +81,8 @@ def test_bench_ranks_higher_quality_provider_first(monkeypatch):
     _clear_provider_env(monkeypatch)
     monkeypatch.setenv("YOU_API_KEY", "you-test-key")
     monkeypatch.setenv("SERPER_API_KEY", "serper-test-key")
-    monkeypatch.setattr(search, "search_you", lambda **kw: _payload("you", _rich_results()))
-    monkeypatch.setattr(search, "search_serper", lambda **kw: _payload("serper", _thin_duplicate_results()))
+    monkeypatch.setattr(providers, "search_you", lambda **kw: _payload("you", _rich_results()))
+    monkeypatch.setattr(providers, "search_serper", lambda **kw: _payload("serper", _thin_duplicate_results()))
 
     report = search.run_provider_bench({"auto_routing": {}})
 
@@ -109,12 +107,12 @@ def test_bench_survives_provider_errors_and_ranks_failures_last(monkeypatch):
     _clear_provider_env(monkeypatch)
     monkeypatch.setenv("YOU_API_KEY", "you-test-key")
     monkeypatch.setenv("SERPER_API_KEY", "serper-test-key")
-    monkeypatch.setattr(search, "search_you", lambda **kw: _payload("you", _rich_results()))
+    monkeypatch.setattr(providers, "search_you", lambda **kw: _payload("you", _rich_results()))
 
     def broken_serper(**kwargs):
         raise search.ProviderRequestError("HTTP 500: upstream exploded", status_code=500, transient=True)
 
-    monkeypatch.setattr(search, "search_serper", broken_serper)
+    monkeypatch.setattr(providers, "search_serper", broken_serper)
 
     report = search.run_provider_bench({"auto_routing": {}})
 
@@ -144,12 +142,12 @@ def test_bench_never_touches_provider_health_or_stats(monkeypatch, tmp_path):
         (search, "record_provider_outcome"),
     ):
         monkeypatch.setattr(module, name, lambda *a, _name=name, **k: calls.append(_name))
-    monkeypatch.setattr(search, "search_you", lambda **kw: _payload("you", _rich_results()))
+    monkeypatch.setattr(providers, "search_you", lambda **kw: _payload("you", _rich_results()))
 
     def broken_serper(**kwargs):
         raise search.ProviderRequestError("HTTP 429: slow down", status_code=429, retry_after=60)
 
-    monkeypatch.setattr(search, "search_serper", broken_serper)
+    monkeypatch.setattr(providers, "search_serper", broken_serper)
 
     report = search.run_provider_bench({"auto_routing": {}})
 
@@ -163,8 +161,8 @@ def test_bench_recommendation_is_advisory_with_apply_hint(monkeypatch):
     _clear_provider_env(monkeypatch)
     monkeypatch.setenv("YOU_API_KEY", "you-test-key")
     monkeypatch.setenv("SERPER_API_KEY", "serper-test-key")
-    monkeypatch.setattr(search, "search_you", lambda **kw: _payload("you", _rich_results()))
-    monkeypatch.setattr(search, "search_serper", lambda **kw: _payload("serper", _thin_duplicate_results()))
+    monkeypatch.setattr(providers, "search_you", lambda **kw: _payload("you", _rich_results()))
+    monkeypatch.setattr(providers, "search_serper", lambda **kw: _payload("serper", _thin_duplicate_results()))
 
     report = search.run_provider_bench({"auto_routing": {"provider_priority": ["serper", "you"]}})
 
@@ -186,7 +184,7 @@ def test_bench_skips_disabled_and_unknown_providers(monkeypatch):
     _clear_provider_env(monkeypatch)
     monkeypatch.setenv("YOU_API_KEY", "you-test-key")
     monkeypatch.setenv("SERPER_API_KEY", "serper-test-key")
-    monkeypatch.setattr(search, "search_you", lambda **kw: _payload("you", _rich_results()))
+    monkeypatch.setattr(providers, "search_you", lambda **kw: _payload("you", _rich_results()))
 
     report = search.run_provider_bench({"auto_routing": {"disabled_providers": ["serper"]}})
     assert [row["provider"] for row in report["providers"]] == ["you"]
@@ -200,7 +198,7 @@ def test_bench_skips_disabled_and_unknown_providers(monkeypatch):
 
 def test_bench_excludes_guarded_donsetch_until_auto_allow_opt_in(monkeypatch):
     _clear_provider_env(monkeypatch)
-    monkeypatch.setenv("DONSETCH_BIN", "/bin/true")
+    monkeypatch.setenv("DONSETCH_BIN", shutil.which("true") or "/bin/true")
 
     assert bench.bench_eligible_providers({"auto_routing": {}}) == []
     assert bench.bench_eligible_providers(
@@ -211,7 +209,7 @@ def test_bench_excludes_guarded_donsetch_until_auto_allow_opt_in(monkeypatch):
 def test_bench_time_budget_skips_remaining_providers(monkeypatch):
     _clear_provider_env(monkeypatch)
     monkeypatch.setenv("YOU_API_KEY", "you-test-key")
-    monkeypatch.setattr(search, "search_you", lambda **kw: _payload("you", _rich_results()))
+    monkeypatch.setattr(providers, "search_you", lambda **kw: _payload("you", _rich_results()))
 
     report = search.run_provider_bench({"auto_routing": {}}, timeout_budget=0)
 
@@ -240,7 +238,7 @@ def test_cli_bench_flag_emits_json_report(monkeypatch, tmp_path, capsys):
     config_path.write_text(json.dumps({"version": 1}))
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     monkeypatch.setenv("YOU_API_KEY", "you-test-key")
-    monkeypatch.setattr(search, "search_you", lambda **kw: _payload("you", _rich_results()))
+    monkeypatch.setattr(providers, "search_you", lambda **kw: _payload("you", _rich_results()))
     monkeypatch.setattr(sys, "argv", ["search.py", "--bench", "--json"])
 
     search.main()
@@ -256,7 +254,7 @@ def test_cli_bench_command_prints_human_readable_table(monkeypatch, tmp_path, ca
     config_path.write_text(json.dumps({"version": 1}))
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     monkeypatch.setenv("YOU_API_KEY", "you-test-key")
-    monkeypatch.setattr(search, "search_you", lambda **kw: _payload("you", _rich_results()))
+    monkeypatch.setattr(providers, "search_you", lambda **kw: _payload("you", _rich_results()))
     monkeypatch.setattr(sys, "argv", ["search.py", "bench"])
 
     search.main()
@@ -268,11 +266,7 @@ def test_cli_bench_command_prints_human_readable_table(monkeypatch, tmp_path, ca
 
 
 def test_setup_cli_bench_dispatches_through_in_process_engine(monkeypatch, capsys):
-    plugin_path = Path(__file__).resolve().parents[1] / "__init__.py"
-    spec = importlib.util.spec_from_file_location("wsp_plugin_bench_under_test", plugin_path)
-    wsp = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(wsp)
+    wsp = load_plugin("wsp_plugin_bench_under_test")
 
     stub_engine = types.SimpleNamespace(
         load_config=lambda: {"auto_routing": {}},

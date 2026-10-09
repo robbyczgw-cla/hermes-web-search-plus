@@ -1,22 +1,18 @@
-import importlib.util
-from pathlib import Path
+from wsp_core import config as config_module
+from wsp_core import quality
 from unittest import mock
 
-SEARCH_PATH = Path(__file__).resolve().parents[1] / "search.py"
-search_spec = importlib.util.spec_from_file_location("wsp_search_routing_vnext_under_test", SEARCH_PATH)
-search = importlib.util.module_from_spec(search_spec)
-assert search_spec.loader is not None
-search_spec.loader.exec_module(search)
+from wsp_core import search, routing as routing_module
 
 
 def _route(query):
-    config = search._deepcopy_default_config()
-    with mock.patch.object(search, "get_api_key", return_value="test-key"):
-        return search.QueryAnalyzer(config).route(query)
+    config = config_module._deepcopy_default_config()
+    with mock.patch.object(routing_module, "get_api_key", return_value="test-key"):
+        return search.auto_route_provider(query, config)
 
 
 def test_default_auto_allow_blocks_explicit_only_providers():
-    config = search._deepcopy_default_config()
+    config = config_module._deepcopy_default_config()
 
     auto_allow = config["auto_routing"]["auto_allow"]
 
@@ -31,12 +27,11 @@ def test_default_auto_allow_blocks_explicit_only_providers():
     }
 
 
-
 def test_legacy_auto_allow_config_inherits_new_guarded_provider_defaults():
-    config = search._deepcopy_default_config()
+    config = config_module._deepcopy_default_config()
     config["auto_routing"]["auto_allow"] = {"serpbase": False, "querit": False}
 
-    validated = search._validate_runtime_config(config)
+    validated = config_module._validate_runtime_config(config)
 
     assert validated["auto_routing"]["auto_allow"].get("brave", True) is True
     assert validated["auto_routing"]["auto_allow"].get("parallel", True) is True
@@ -47,117 +42,54 @@ def test_legacy_auto_allow_config_inherits_new_guarded_provider_defaults():
     }
 
 
-
-def test_briefing_synthesis_overrides_docs_keywords():
-    routing = _route("was sind die Unterschiede zwischen Python und Node.js")
-
-    assert routing["analysis_summary"]["routing_class"] == "briefing_synthesis"
-    assert "answer_mode_recommended" not in routing
-
-
-def test_official_vendor_release_routes_to_you_before_generic_serp():
-    routing = _route("latest official Mistral AI model release announcement")
-
-    assert routing["analysis_summary"]["routing_class"] == "official_vendor_release"
-    assert routing["provider"] == "you"
-
-
 def test_official_docs_routes_to_exa():
     routing = _route("Claude Code hooks official docs")
 
-    assert routing["analysis_summary"]["routing_class"] == "official_docs"
+    assert routing["analysis_summary"]["routing_class"] == "docs"
     assert routing["provider"] == "exa"
-
-
-def test_finance_earnings_official_prefers_linkup_when_auto_allowed():
-    config = search._deepcopy_default_config()
-    config["auto_routing"]["auto_allow"]["linkup"] = True
-    with mock.patch.object(search, "get_api_key", return_value="test-key"):
-        routing = search.QueryAnalyzer(config).route("NVIDIA Q1 FY2027 earnings official investor relations guidance")
-
-    assert routing["analysis_summary"]["routing_class"] == "finance_earnings_official"
-    assert routing["provider"] == "linkup"
-
-
-def test_policy_pdf_prefers_source_grounding_provider_when_available():
-    routing = _route("EU AI Act General-Purpose AI Code of Practice official PDF")
-
-    assert routing["analysis_summary"]["routing_class"] == "policy_pdf"
-    assert routing["provider"] == "linkup"
 
 
 def test_community_forum_reviews_demotes_exa():
     routing = _route("best IEM under 300 euro erfahrungen forum measurements")
 
-    assert routing["analysis_summary"]["routing_class"] == "community_forum"
-    assert routing["provider"] in {"firecrawl", "serper", "you", "tavily"}
+    assert routing["analysis_summary"]["routing_class"] == "community"
+    assert routing["provider"] == "brave"
     assert routing["provider"] != "exa"
 
 
-def test_shopping_geo_signals_win_over_generic_review_terms():
+def test_review_terms_alone_do_not_make_a_shopping_query():
+    # A model number and "review" are weak cues; shopping needs a substantial
+    # one before a query leaves the Brave default for Serper.
     routing = _route("Sony WH-1000XM5 review Geizhals Österreich")
 
-    assert routing["analysis_summary"]["routing_class"] == "shopping_reviews_local"
-    assert routing["provider"] == "serper"
+    assert routing["analysis_summary"]["routing_class"] == "general"
+    assert routing["provider"] == "brave"
 
 
-def test_generic_library_docs_stay_docs_api_not_official_docs():
-    routing = _route("pydantic BaseModel docs")
-
-    assert routing["analysis_summary"]["routing_class"] == "docs_api"
-
-
-def test_plain_pdf_conversion_is_not_policy_pdf():
+def test_plain_pdf_conversion_query_stays_general():
     routing = _route("convert pdf to docx offline tool")
 
-    assert routing["analysis_summary"]["routing_class"] != "policy_pdf"
-
-
-def test_result_reranker_promotes_canonical_vendor_and_demotes_aggregators():
-    results = [
-        {"title": "Mistral AI Now Summit teaser", "url": "https://youtube.com/watch?v=abc"},
-        {"title": "Mistral 3 guide", "url": "https://aizolo.com/blog/mistral-ai-models-2026/"},
-        {"title": "Introducing Mistral 3", "url": "https://mistral.ai/news/mistral-3"},
-    ]
-
-    reranked, metadata = search.rerank_results_for_intent(
-        "latest official Mistral AI model release announcement",
-        "official_vendor_release",
-        results,
-    )
-
-    assert reranked[0]["url"] == "https://mistral.ai/news/mistral-3"
-    assert metadata["reranked"] is True
-
-
-def test_result_reranker_promotes_policy_authority_over_mirrors():
-    results = [
-        {"title": "AI RMF mirror", "url": "https://ai.universityofcalifornia.edu/_files/riskmanagementgenerativeai.pdf"},
-        {"title": "NIST AI RMF", "url": "https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf"},
-    ]
-
-    reranked, _ = search.rerank_results_for_intent("NIST AI RMF official PDF", "policy_pdf", results)
-
-    assert reranked[0]["url"].startswith("https://nvlpubs.nist.gov/")
+    assert routing["analysis_summary"]["routing_class"] == "general"
+    assert routing["provider"] == "brave"
 
 
 def test_quality_report_exposes_authority_signals_for_canonical_classes():
     report = search.build_quality_report(
-        query="NIST AI RMF official PDF",
+        query="CVE-2024-1 advisory",
         result={
             "results": [
-                {"title": "NIST AI RMF", "url": "https://nvlpubs.nist.gov/nistpubs/ai/NIST.AI.600-1.pdf"},
-                {"title": "AI RMF mirror", "url": "https://researchgate.net/publication/ai-rmf"},
+                {"title": "CVE-2024-1 Detail", "url": "https://nvd.nist.gov/vuln/detail/CVE-2024-1"},
+                {"title": "CVE write-up", "url": "https://medium.com/example/cve-2024-1"},
             ],
             "metadata": {"dedup_count": 0},
         },
         routing_info={
-            "provider": "linkup",
+            "provider": "brave",
             "confidence_level": "high",
-            "analysis_summary": {"routing_class": "policy_pdf", "language_hint": "en"},
+            "analysis_summary": {"routing_class": "security", "language_hint": "en"},
         },
-        providers_considered=["linkup"],
-        eligible_providers=["linkup"],
+        providers_considered=["brave"],
+        eligible_providers=["brave"],
         cooldown_skips=[],
         errors=[],
     )
@@ -165,8 +97,9 @@ def test_quality_report_exposes_authority_signals_for_canonical_classes():
     signals = report["authority_signals"]
     assert signals["rules_applied"] is True
     assert signals["canonical_top_result"] is True
-    assert "nvlpubs.nist.gov" in signals["canonical_domain_hits"]
-    assert "researchgate.net" in signals["demoted_domain_hits"]
+    assert "nvd.nist.gov" in signals["canonical_domain_hits"]
+    assert "medium.com" in signals["demoted_domain_hits"]
+    assert "adaptive_adjustments" not in report
 
 
 def test_security_advisory_authority_signals_match_github_advisory_paths():
@@ -174,8 +107,8 @@ def test_security_advisory_authority_signals_match_github_advisory_paths():
         "https://github.com/advisories/GHSA-test",
         "https://github.com/owner/repo/security/advisories/GHSA-test",
     ):
-        signals = search.build_authority_signals(
-            "security_advisory",
+        signals = quality.build_authority_signals(
+            "security",
             [{"url": url}],
         )
 
@@ -189,51 +122,39 @@ def test_security_advisory_reranker_promotes_github_advisories_over_mirrors():
         {"title": "GitHub Advisory", "url": "https://github.com/advisories/GHSA-test"},
     ]
 
-    reranked, metadata = search.rerank_results_for_intent("GHSA-test", "security_advisory", results)
+    reranked, metadata = search.rerank_results_for_intent("GHSA-test", "security", results)
 
     assert reranked[0]["url"] == "https://github.com/advisories/GHSA-test"
     assert metadata["reranked"] is True
 
 
 def test_domain_rule_does_not_substring_match_middle_of_domain():
-    assert search._domain_matches_rule("docs.python.org", "docs.") is True
-    assert search._domain_matches_rule("notdocs.com", "docs.") is False
-    assert search._domain_matches_rule("mirror.com", "ir.") is False
+    assert quality._domain_matches_rule("docs.python.org", "docs.") is True
+    assert quality._domain_matches_rule("notdocs.com", "docs.") is False
+    assert quality._domain_matches_rule("mirror.com", "ir.") is False
 
 
 def test_domain_rule_rejects_lookalike_registrations():
     # A look-alike domain must not inherit the boost of the real one.
-    assert search._domain_matches_rule("openai.com.evil.example", "openai.com") is False
-    assert search._domain_matches_rule("github.community-fake.xyz", "github.com") is False
-    assert search._domain_matches_rule("openai.com", "openai.com") is True
-    assert search._domain_matches_rule("platform.openai.com", "openai.com") is True
+    assert quality._domain_matches_rule("openai.com.evil.example", "openai.com") is False
+    assert quality._domain_matches_rule("github.community-fake.xyz", "github.com") is False
+    assert quality._domain_matches_rule("openai.com", "openai.com") is True
+    assert quality._domain_matches_rule("platform.openai.com", "openai.com") is True
 
 
-def test_reddit_company_finance_query_is_not_community_query():
-    routing = _route("Reddit IPO earnings revenue investor relations")
-
-    assert routing["analysis_summary"]["routing_class"] == "finance_earnings_official"
-
-
-def test_plain_database_table_query_is_not_sports_current():
-    routing = _route("postgres table partitioning performance documentation")
-
-    assert routing["analysis_summary"]["routing_class"] != "sports_current"
-
-
-def test_multilingual_current_japanese_routes_to_you_not_brave_or_serper():
+def test_japanese_query_uses_the_default_first_provider():
     routing = _route("東京 AI ニュース 今日 2026 企業 発表")
 
-    assert routing["provider"] == "you"
-    assert routing["routing_policy"] == "routing-v2"
+    assert routing["provider"] == "brave"
+    assert routing["routing_policy"] == "routing-v3"
     assert routing["analysis_summary"]["language_hint"] == "ja"
     assert "brave" not in routing["auto_allow_excluded"]
 
 
-def test_multilingual_arabic_routes_to_you_and_blocks_querit():
+def test_arabic_query_uses_the_default_first_provider_and_blocks_querit():
     routing = _route("أخبار الذكاء الاصطناعي اليوم 2026 السعودية تنظيم")
 
-    assert routing["provider"] == "you"
+    assert routing["provider"] == "brave"
     assert routing["analysis_summary"]["language_hint"] == "ar"
     assert "querit" in routing["auto_allow_excluded"]
 
@@ -242,28 +163,30 @@ def test_arxiv_academic_routes_to_exa():
     routing = _route("arXiv 2024 LLM scaling laws inference compute paper")
 
     assert routing["provider"] == "exa"
-    assert routing["analysis_summary"]["routing_class"] == "academic_arxiv"
+    assert routing["analysis_summary"]["routing_class"] == "academic"
 
 
 def test_reddit_site_query_routes_away_from_exa():
     routing = _route("site:reddit.com r/hometheater Denon X4800H user impressions HDMI issues")
 
-    assert routing["provider"] in {"serper", "firecrawl", "tavily"}
+    assert routing["provider"] == "brave"
     assert routing["provider"] != "exa"
-    assert routing["analysis_summary"]["routing_class"] == "reddit_community"
+    assert routing["analysis_summary"]["routing_class"] == "community"
 
 
-def test_cve_security_does_not_route_to_firecrawl():
+def test_cve_security_routes_to_serper():
     routing = _route("latest OpenSSH CVE 2026 mitigation advisory official")
 
-    assert routing["provider"] in {"serper", "exa", "linkup"}
-    assert routing["provider"] != "firecrawl"
-    assert routing["analysis_summary"]["routing_class"] == "security_advisory"
+    assert routing["provider"] == "serper"
+    assert routing["analysis_summary"]["routing_class"] == "security"
 
 
-def test_synthesis_query_routes_to_you_without_auto_selecting_kilo():
-    routing = _route("Was sind die wichtigsten Unterschiede zwischen Exa Tavily und You.com für Agenten Suche")
+def test_synthesis_queries_have_no_answer_mode_recommendation():
+    for query in (
+        "was sind die Unterschiede zwischen Python und Node.js",
+        "Was sind die wichtigsten Unterschiede zwischen Exa Tavily und You.com für Agenten Suche",
+    ):
+        routing = _route(query)
 
-    assert routing["provider"] == "you"
-    assert "answer_mode_recommended" not in routing
-    assert "kilo-perplexity" not in routing["scores"]
+        assert routing["provider"] == "brave"
+        assert "answer_mode_recommended" not in routing

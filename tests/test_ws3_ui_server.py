@@ -15,7 +15,7 @@ import pytest
 
 TOKEN = "task-4-test-token"
 ROOT = Path(__file__).resolve().parents[1]
-STATIC_ROOT = ROOT / "web" / "v3" / "console"
+STATIC_ROOT = ROOT / "wsp_core" / "web" / "v3" / "console"
 
 
 class FakeSnapshots:
@@ -40,18 +40,6 @@ class FakeSnapshots:
             "availability": {"search": "not_collected", "extract": "not_collected"},
         }
 
-    def build_shadow_evaluation(self, _store: Any) -> dict[str, Any]:
-        self.calls.append(("shadow-evaluation", None))
-        return {
-            "schema_version": 1,
-            "policy_id": "shadow-quality",
-            "policy_revision": "3.1",
-            "window": 2592000,
-            "total_evaluations": 0,
-            "agreement_rate": 0.0,
-            "divergences": [],
-        }
-
     @staticmethod
     def serialize_endpoint_payload(
         payload: dict[str, Any], **_kwargs: Any
@@ -61,7 +49,7 @@ class FakeSnapshots:
 
 @contextmanager
 def running_server(tmp_path: Path) -> Iterator[tuple[Any, FakeSnapshots]]:
-    ui = importlib.import_module("ui")
+    ui = importlib.import_module("wsp_core.ui")
     backend = FakeSnapshots()
     server = ui.create_server(
         host="127.0.0.1",
@@ -107,7 +95,7 @@ def request(
 
 
 def test_server_default_state_path_matches_engine_layout(tmp_path: Path) -> None:
-    ui = importlib.import_module("ui")
+    ui = importlib.import_module("wsp_core.ui")
     server = ui.create_server(
         port=0,
         token=TOKEN,
@@ -121,7 +109,7 @@ def test_server_default_state_path_matches_engine_layout(tmp_path: Path) -> None
 
 
 def test_cli_generates_bootstrap_url_and_closes_server(monkeypatch, capsys) -> None:
-    ui = importlib.import_module("ui")
+    ui = importlib.import_module("wsp_core.ui")
     calls: dict[str, Any] = {}
 
     class FakeServer:
@@ -153,7 +141,7 @@ def test_cli_generates_bootstrap_url_and_closes_server(monkeypatch, capsys) -> N
 
 
 def test_server_requires_literal_loopback_and_strong_startup_token(tmp_path: Path) -> None:
-    ui = importlib.import_module("ui")
+    ui = importlib.import_module("wsp_core.ui")
     for host in ("0.0.0.0", "::", "localhost", "192.168.1.20", "100.100.100.100"):
         with pytest.raises(ValueError, match="127.0.0.1"):
             ui.create_server(host=host, port=0, token=TOKEN, cache_root=tmp_path)
@@ -213,16 +201,14 @@ def test_server_exposes_only_read_only_get_head_json_routes(tmp_path: Path) -> N
         assert head_headers["content-length"] == get_headers["content-length"]
         assert int(head_headers["content-length"]) == len(get_body)
 
-        status, _, body = request(server, "GET", "/api/v3/shadow-evaluation")
-        assert status == 200
-        assert json.loads(body)["policy_revision"] == "3.1"
+        status, _, _ = request(server, "GET", "/api/v3/shadow-evaluation")
+        assert status == 404
 
         assert backend.calls == [
             ("overview", None),
             ("receipts", 100),
             ("benchmark-history", 2),
             ("benchmark-history", 2),
-            ("shadow-evaluation", None),
         ]
 
         status, _, _ = request(server, "GET", "/api/v3/missing")
@@ -230,7 +216,7 @@ def test_server_exposes_only_read_only_get_head_json_routes(tmp_path: Path) -> N
         status, _, _ = request(server, "GET", "/api/v3/receipts?unknown=1")
         assert status == 400
         status, _, _ = request(server, "GET", "/api/v3/shadow-evaluation?window=1")
-        assert status == 400
+        assert status == 404
 
 
 @pytest.mark.parametrize(
@@ -361,7 +347,7 @@ def test_static_routes_remain_get_head_only(tmp_path: Path) -> None:
 
 
 def test_static_root_and_assets_refuse_symlinks(tmp_path: Path) -> None:
-    ui = importlib.import_module("ui")
+    ui = importlib.import_module("wsp_core.ui")
     linked_root = tmp_path / "linked-root"
     linked_root.symlink_to(STATIC_ROOT, target_is_directory=True)
     with pytest.raises(ValueError, match="static"):

@@ -255,7 +255,6 @@ Outbound requests MUST NOT contain chat messages, system-answer instructions, or
 - Tavily: `include_answer=false`
 - Linkup: `outputType="searchResults"` only
 - Exa: never `deep` or `deep-reasoning`
-- Perplexity/Kilo: fail before network I/O unless a registry-verified source-only endpoint exists
 
 ## 10. Cache origin and legacy sanitization
 
@@ -278,6 +277,8 @@ Legacy v2 files remain read-only and byte-identical. Sanitization drops banned f
 ```
 
 If no source-only observation survives, the entry is rejected and MUST NOT be served.
+
+Since 5.0, a v3 search no longer reads legacy v2 cache files at all, so this sanitization path and its warning no longer occur. The warning code stays in the published contract.
 
 ## 11. Scope boundary
 

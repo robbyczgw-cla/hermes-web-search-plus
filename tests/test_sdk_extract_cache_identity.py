@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from extract import _extract_provider_endpoint_config
-from provider_registry import PROVIDER_SPECS
+from wsp_core.extract import _extract_provider_endpoint_config
+from wsp_core.provider_registry import PROVIDER_SPECS
 from wsp_sdk import ProviderSpec
 
 

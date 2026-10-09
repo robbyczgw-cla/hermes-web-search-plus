@@ -5,14 +5,13 @@ browser-based fetcher. Every URL whose host could be read differently by the
 two parsers is rejected before any provider or fallback runs.
 """
 from __future__ import annotations
+from wsp_core import extract
 
 import socket
 from unittest import mock
 
 import pytest
 
-import extract
-import search
 
 
 def _resolver(*addresses):
@@ -153,8 +152,8 @@ def test_normal_public_urls_still_pass(monkeypatch, url):
 
 
 def test_rejected_url_never_reaches_a_provider(monkeypatch, no_dns):
-    with mock.patch("search.extract_firecrawl") as provider:
-        result = search.extract_plus(
+    with mock.patch("wsp_core.providers.extract_firecrawl") as provider:
+        result = extract.extract_plus(
             ["http://127.0.0.1\\@example.com/collect"],
             provider="firecrawl",
             config={"auto_routing": {"disabled_providers": []}},
@@ -229,9 +228,9 @@ def test_idn_host_that_maps_to_a_private_ip_literal_is_rejected(no_dns):
 def test_idn_url_reaches_provider_only_as_punycode(monkeypatch):
     monkeypatch.setenv("FIRECRAWL_API_KEY", "fc-test-fake-key")
     monkeypatch.setattr(extract.socket, "getaddrinfo", _resolver("93.184.216.34"))
-    with mock.patch("search.extract_firecrawl") as provider:
+    with mock.patch("wsp_core.providers.extract_firecrawl") as provider:
         provider.return_value = {"provider": "firecrawl", "results": []}
-        search.extract_plus(["https://m\u00fcller.de/"], provider="firecrawl", config={"extract": {}})
+        extract.extract_plus(["https://m\u00fcller.de/"], provider="firecrawl", config={"extract": {}})
     urls = provider.call_args[0][0]
     assert urls == ["https://xn--mller-kva.de/"]
 

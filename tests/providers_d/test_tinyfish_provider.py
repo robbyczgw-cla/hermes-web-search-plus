@@ -10,10 +10,10 @@ from urllib.request import Request
 
 import pytest
 
-import provider_registry
-import providers
-from http_client import ProviderRequestError
-from provider_adapter_protocol import validate_adapter_result
+from wsp_core import provider_registry
+from wsp_core import providers
+from wsp_core.http_client import ProviderRequestError
+from wsp_core.provider_adapter_protocol import validate_adapter_result
 
 
 class FakeResponse:

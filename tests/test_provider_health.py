@@ -5,8 +5,8 @@ from unittest import mock
 
 import pytest
 
-import provider_health
-from http_client import ProviderRequestError
+from wsp_core import provider_health
+from wsp_core.http_client import ProviderRequestError
 
 
 @pytest.fixture()

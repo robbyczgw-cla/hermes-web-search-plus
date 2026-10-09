@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate docs/PROVIDERS.md from the provider registry.
 
-Every provider fact in the output comes from provider_registry.py and the
+Every provider fact in the output comes from wsp_core/provider_registry.py and the
 plugin onboarding catalog in __init__.py, so the reference cannot drift from
 the single source of truth by hand-editing. Run without arguments to rewrite
 the file; run with --check (used by tests/CI) to exit non-zero on drift.
@@ -19,8 +19,9 @@ DOC_PATH = ROOT / "docs" / "PROVIDERS.md"
 REGENERATE_COMMAND = "python scripts/gen_provider_docs.py"
 
 
-def _load_module(name: str, path: Path) -> Any:
-    spec = importlib.util.spec_from_file_location(name, path)
+def _load_module(name: str, path: Path, package_dir: Path | None = None) -> Any:
+    locations = [str(package_dir)] if package_dir is not None else None
+    spec = importlib.util.spec_from_file_location(name, path, submodule_search_locations=locations)
     if spec is None or spec.loader is None:
         raise ImportError(f"Cannot load module {name} from {path}")
     module = importlib.util.module_from_spec(spec)
@@ -30,16 +31,16 @@ def _load_module(name: str, path: Path) -> Any:
 
 
 def _load_registry_and_catalog() -> Tuple[Any, List[Dict[str, Any]]]:
-    """Load provider_registry.py and the plugin catalog from __init__.py.
+    """Load the provider registry and the plugin catalog from __init__.py.
 
-    __init__.py is a Hermes plugin, so it is loaded via spec_from_file_location
-    (like tests/test_onboarding.py) instead of a package import. Its fallback
-    `from provider_registry import ...` path needs the plugin root on sys.path.
+    __init__.py is a Hermes plugin package, so it is loaded the way Hermes
+    loads it: as a package rooted at the plugin directory.
     """
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
-    registry = _load_module("wsp_provider_registry_docgen", ROOT / "provider_registry.py")
-    plugin = _load_module("wsp_plugin_docgen", ROOT / "__init__.py")
+    from wsp_core import provider_registry as registry
+
+    plugin = _load_module("wsp_plugin_docgen", ROOT / "__init__.py", package_dir=ROOT)
     return registry, plugin._get_provider_catalog()
 
 
@@ -72,7 +73,7 @@ def render_provider_docs() -> str:
         "",
         "<!-- Generated file. Do not edit by hand. -->",
         "",
-        "This reference is generated from `provider_registry.py`, discovered `providers.d` modules,",
+        "This reference is generated from `wsp_core/provider_registry.py`, discovered `providers.d` modules,",
         f"and the plugin provider catalog; regenerate it with `{REGENERATE_COMMAND}` after changing provider metadata.",
         "",
         "## Provider matrix",

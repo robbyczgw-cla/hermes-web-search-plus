@@ -46,7 +46,7 @@ python3 search.py --extract-urls https://example.com --provider auto
 Also verify the local Operator Console if you use it:
 
 ```bash
-python3 ui.py --port 8765
+python3 -m wsp_core.ui --port 8765
 ```
 
 ## Roll back the imported state
@@ -65,7 +65,7 @@ See [Backup and Restore](V3_BACKUP_RESTORE.md) for storage ownership and failure
 
 - `web_search_plus` and `web_extract_plus` remain the only public tools.
 - WSP 3.0 is source-only. Answer synthesis, claim generation, and verification judgments are not part of the plugin.
-- Native Perplexity and Kilo Perplexity answer endpoints are no longer registered as search providers because they do not expose a verified source-only mode.
+- Perplexity and Kilo-Perplexity providers have been removed. Legacy config entries for these IDs are silently ignored or reset to the normal default, so this removal does not require a config edit.
 - Classic Routing v2 remains authoritative. New policy observation cannot affect provider execution in 3.0.
 - Legacy cache entries may be read through the compatibility path, but banned synthesis fields are dropped and valid source results are re-normalized.
 

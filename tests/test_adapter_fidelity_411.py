@@ -1,10 +1,10 @@
 """4.1.1 adapter fidelity: keep provider evidence and requested filters."""
+from wsp_core import providers
 
 from datetime import datetime
 from unittest import mock
 
-import providers
-import search
+from wsp_core import search
 
 
 def test_exa_snippet_prefers_highlights_over_leading_text():
@@ -120,7 +120,7 @@ def test_tavily_dispatch_applies_freshness():
             with mock.patch.object(search, "cache_put", lambda **kw: None):
                 with mock.patch.object(search, "reset_provider_health", lambda p: None):
                     with mock.patch.dict("os.environ", {"TAVILY_API_KEY": "tavily-test-key"}):
-                        with mock.patch.object(search, "search_tavily", fake_tavily):
+                        with mock.patch.object(providers, "search_tavily", fake_tavily):
                             result = search.run_search_request(
                                 query="latest tavily changelog",
                                 provider="tavily",
@@ -155,7 +155,7 @@ def _run_tavily_search(**kwargs):
             with mock.patch.object(search, "cache_put", lambda **kw: None):
                 with mock.patch.object(search, "reset_provider_health", lambda p: None):
                     with mock.patch.dict("os.environ", {"TAVILY_API_KEY": "tavily-test-key"}):
-                        with mock.patch.object(search, "search_tavily", fake_tavily):
+                        with mock.patch.object(providers, "search_tavily", fake_tavily):
                             result = search.run_search_request(
                                 query="latest tavily changelog",
                                 provider="tavily",
@@ -187,25 +187,26 @@ def test_tavily_time_range_only_reports_applied_metadata():
 
 
 def _run_exa_search(**kwargs):
+    wire_response = {"results": [{"url": "https://example.test/a", "title": "A", "text": "s"}]}
+    provider_search_exa = providers.search_exa
     seen = {}
 
     def fake_exa(**call):
         seen.update(call)
-        wire_response = {"results": [{"url": "https://example.test/a", "title": "A", "text": "s"}]}
         with mock.patch.object(providers, "make_request", return_value=wire_response) as http:
-            result = providers.search_exa(**call)
+            provider_result = provider_search_exa(**call)
         body = http.call_args.args[2]
-        assert result["metadata"]["applied_published_dates"] == {
+        assert provider_result["metadata"]["applied_published_dates"] == {
             key: body[key] for key in ("startPublishedDate", "endPublishedDate") if key in body
         }
-        return result
+        return provider_result
 
     with mock.patch.object(search, "provider_in_cooldown", lambda p: (False, 0)):
         with mock.patch.object(search, "cache_get", lambda **kw: None):
             with mock.patch.object(search, "cache_put", lambda **kw: None):
                 with mock.patch.object(search, "reset_provider_health", lambda p: None):
                     with mock.patch.dict("os.environ", {"EXA_API_KEY": "exa-test-key"}):
-                        with mock.patch.object(search, "search_exa", fake_exa):
+                        with mock.patch.object(providers, "search_exa", fake_exa):
                             result = search.run_search_request(
                                 query="latest exa changelog",
                                 provider="exa",
@@ -291,7 +292,7 @@ def test_exa_metadata_keeps_sent_bounds_when_clock_would_move():
                             "exa_date_bounds",
                             return_value=("2099-01-01T00:00:00Z", "2099-01-08T00:00:00Z"),
                         ):
-                            with mock.patch.object(search, "search_exa", fake_exa):
+                            with mock.patch.object(providers, "search_exa", fake_exa):
                                 result = search.run_search_request(
                                     query="latest exa changelog",
                                     provider="exa",

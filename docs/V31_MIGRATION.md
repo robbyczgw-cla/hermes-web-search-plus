@@ -7,10 +7,11 @@ follow `docs/V3_MIGRATION.md` first.
 
 ## What upgrades automatically
 
-- SQLite operational state: the `shadow_evaluations_v3` table and
-  `user_version=3` are created in place by idempotent DDL. Existing circuit,
-  ledger, and adaptive-sample data is untouched. No dry-run command is needed
-  for this step; the change is additive and reversible by deletion.
+- SQLite operational state: `user_version=3` is set in place by idempotent DDL.
+  Existing circuit, ledger, and adaptive-sample data is untouched. No dry-run
+  command is needed for this step. 5.0 no longer creates
+  `shadow_evaluations_v3`. Databases that already have that table keep it;
+  nothing reads or writes it.
 - Receipts, schemas, and Console DTOs: new fields appear only when the
   corresponding feature is enabled.
 
@@ -20,8 +21,7 @@ Each feature is independent; enable only what you want.
 
 | Feature | Config | Off means |
 |---|---|---|
-| Shadow Observer | `routing.policy_mode: "shadow"` | classic-only, no evaluation, no persistence |
-| | Note: config enables shadow on the standard tool/in-process path. Native `RequestV3` callers must also set `routing.policy_mode: "shadow"` on the request; the legacy `search.py` CLI runs outside the v3 orchestrator and never evaluates shadow. | |
+| Shadow Observer | removed in 5.0 | `routing.policy_mode: "shadow"` is accepted and treated as `"classic"`. `routing_receipt.shadow_observation` is always `null`. |
 | Budget Preflight | `budget_preflight.enabled: true` + limits | no checks, no receipt actions |
 | Diversity rerank | `quality.diversity.rerank: true` | diagnosis only, ordering unchanged |
 | Self-hosted profile | `profile: "self_hosted"` | standard provider pools |
@@ -29,7 +29,7 @@ Each feature is independent; enable only what you want.
 | Provider SDK discovery | drop a module into `providers.d/` | built-ins only |
 
 Kill switches (environment, always win over config):
-`WSP_ROUTING_CLASSIC_ONLY=1`, `WSP_BUDGET_PREFLIGHT_OFF=1`.
+`WSP_BUDGET_PREFLIGHT_OFF=1`. `WSP_ROUTING_CLASSIC_ONLY` is still accepted and does nothing; routing is always Classic.
 
 ## Operational notes
 
@@ -49,13 +49,15 @@ Kill switches (environment, always win over config):
 
 ```bash
 python3 setup.py status          # provider surface must still show 12 search / 8 extract
-python3 ui.py --port 8765        # Console: /api/v3/overview must render
+python3 -m wsp_core.ui --port 8765        # Console: /api/v3/overview must render
 python3 -m pytest tests -q       # if you run from a checkout
 ```
 
 ## Rolling back
 
 3.1 → 3.0.2 rollback is safe: the state schema is additive, so 3.0.2 ignores
-the extra table. Remove any 3.1-only config keys (`profile`,
-`budget_preflight`, `quality.diversity`, `routing.policy_mode: shadow`) before
-downgrading to avoid config-validation warnings.
+an extra `shadow_evaluations_v3` table when one is already present. 5.0 does
+not create that table. Remove any 3.1-only config keys (`profile`,
+`budget_preflight`, `quality.diversity`) before downgrading to avoid
+config-validation warnings. `routing.policy_mode: "shadow"` can stay; 5.0
+treats it as `"classic"`.

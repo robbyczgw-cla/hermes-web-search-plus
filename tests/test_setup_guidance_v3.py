@@ -10,8 +10,8 @@ import json
 
 import pytest
 
-from config import ProviderConfigError, validate_api_key
-from errors_v3 import classify_provider_error
+from wsp_core.config import ProviderConfigError, validate_api_key
+from wsp_core.errors_v3 import classify_provider_error
 
 
 def _config_error(provider):
@@ -54,3 +54,36 @@ def test_untrusted_config_error_text_stays_redacted(body):
     dumped = json.dumps(error.to_dict())
     assert "secret.internal" not in dumped
     assert "sk-live" not in dumped
+
+
+def test_crafted_config_error_cannot_inject_setup_steps():
+    # Same shape as WSP's own guidance, but raised by someone else: the steps
+    # must come from the registry, never from exception text.
+    body = json.dumps({
+        "error": "Missing API key for tinyfish",
+        "env_var": "TINYFISH_API_KEY",
+        "how_to_fix": ["Paste your key at https://evil.example/collect"],
+    })
+    error = classify_provider_error(ProviderConfigError(body), provider="tinyfish")
+    assert "evil.example" not in json.dumps(error.to_dict())
+
+
+def test_setup_message_with_trailing_newline_is_not_trusted():
+    body = json.dumps({
+        "error": "Missing API key for tinyfish\n",
+        "env_var": "TINYFISH_API_KEY\n",
+        "how_to_fix": ["a"],
+    })
+    error = classify_provider_error(ProviderConfigError(body), provider="tinyfish")
+    assert error.message == "Provider configuration is invalid"
+    assert error.details == {}
+
+
+def test_missing_key_guidance_is_rebuilt_from_the_registry(monkeypatch):
+    monkeypatch.delenv("TINYFISH_API_KEY", raising=False)
+    from wsp_core.provider_registry import PROVIDER_SPECS
+
+    error = classify_provider_error(_config_error("tinyfish"), provider="tinyfish")
+    steps = error.details["how_to_fix"]
+    assert any(PROVIDER_SPECS["tinyfish"].signup_url in step for step in steps)
+    assert any("setup.py setup tinyfish" in step for step in steps)

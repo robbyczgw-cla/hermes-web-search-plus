@@ -6,11 +6,12 @@ still resolve per-provider config, auto-routing/caching must work, and the expli
 provider error path must return a structured dict (never sys.exit) so the in-process
 caller is not killed.
 """
+from wsp_core import providers
 
 import unittest
 from unittest import mock
 
-import search
+from wsp_core import search
 
 
 def _canned(provider):
@@ -46,7 +47,7 @@ class InProcessSearchTests(unittest.TestCase):
                 seen.update(kwargs)
                 return _canned("querit")
 
-            stack.enter_context(mock.patch.object(search, "search_querit", fake_querit))
+            stack.enter_context(mock.patch.object(providers, "search_querit", fake_querit))
             result = search.run_search_request(query="multilingual realtime news", provider="querit", count=3)
 
         self.assertEqual(result["provider"], "querit")
@@ -70,7 +71,7 @@ class InProcessSearchTests(unittest.TestCase):
             self._isolate(stack)
             stack.enter_context(mock.patch.dict("os.environ", {"YOU_API_KEY": "you-test-key"}))
             stack.enter_context(mock.patch.object(search, "auto_route_provider", lambda q, c: routing))
-            stack.enter_context(mock.patch.object(search, "search_you", lambda **kw: _canned("you")))
+            stack.enter_context(mock.patch.object(providers, "search_you", lambda **kw: _canned("you")))
             result = search.run_search_request(query="graz weather today", provider="auto", count=3)
 
         self.assertTrue(result["routing"]["auto_routed"])

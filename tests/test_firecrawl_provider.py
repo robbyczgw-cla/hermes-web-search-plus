@@ -2,8 +2,8 @@ import os
 import unittest
 from unittest import mock
 
-import search
-from search import get_api_key, validate_api_key
+from wsp_core import providers
+from wsp_core.search import get_api_key, validate_api_key
 
 
 class FirecrawlProviderTests(unittest.TestCase):
@@ -30,8 +30,8 @@ class FirecrawlProviderTests(unittest.TestCase):
             },
             "creditsUsed": 1,
         }
-        with mock.patch("search.make_request", return_value=fake_response) as mock_request:
-            result = search.search_firecrawl(
+        with mock.patch("wsp_core.providers.make_request", return_value=fake_response) as mock_request:
+            result = providers.search_firecrawl(
                 query="example query",
                 api_key="fc-test-key-12345",
                 max_results=5,
@@ -66,8 +66,8 @@ class FirecrawlProviderTests(unittest.TestCase):
                 ]
             },
         }
-        with mock.patch("search.make_request", return_value=fake_response) as mock_request:
-            result = search.search_firecrawl(
+        with mock.patch("wsp_core.providers.make_request", return_value=fake_response) as mock_request:
+            result = providers.search_firecrawl(
                 query="local backend",
                 api_key="fc-test-key-12345",
                 api_url="http://127.0.0.1:8080/v2/search",
@@ -87,8 +87,8 @@ class FirecrawlProviderTests(unittest.TestCase):
                 "metadata": {"title": "Local backend page"},
             },
         }
-        with mock.patch("search.make_request", return_value=fake_response) as mock_request:
-            result = search.extract_firecrawl(
+        with mock.patch("wsp_core.providers.make_request", return_value=fake_response) as mock_request:
+            result = providers.extract_firecrawl(
                 urls=["https://example.com"],
                 api_key="fc-test-key-12345",
                 api_url="http://127.0.0.1:8080/v2/scrape",

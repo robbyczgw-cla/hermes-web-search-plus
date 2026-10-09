@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import subprocess
@@ -8,11 +7,9 @@ import sys
 from pathlib import Path
 
 
+from wsp_core import search
+
 SEARCH_PATH = Path(__file__).resolve().parents[1] / "search.py"
-search_spec = importlib.util.spec_from_file_location("wsp_search_doctor_under_test", SEARCH_PATH)
-search = importlib.util.module_from_spec(search_spec)
-assert search_spec.loader is not None
-search_spec.loader.exec_module(search)
 
 
 PROVIDER_ENV_VARS = [
@@ -25,8 +22,6 @@ PROVIDER_ENV_VARS = [
     "EXA_API_KEY",
     "YOU_API_KEY",
     "PARALLEL_API_KEY",
-    "PERPLEXITY_API_KEY",
-    "KILOCODE_API_KEY",
     "FIRECRAWL_API_KEY",
     "SEARXNG_INSTANCE_URL",
 ]

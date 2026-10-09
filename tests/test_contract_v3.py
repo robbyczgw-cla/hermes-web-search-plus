@@ -3,7 +3,7 @@ import unicodedata
 import unittest
 from pathlib import Path
 
-from contract_v3 import (
+from wsp_core.contract_v3 import (
     AttemptOutcome,
     CacheDisposition,
     Capability,

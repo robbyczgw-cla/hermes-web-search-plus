@@ -1,6 +1,6 @@
 """Cross-provider dedup must keep query parameters that identify the page."""
 
-from quality import deduplicate_results_across_providers, normalize_result_url
+from wsp_core.quality import deduplicate_results_across_providers, normalize_result_url
 
 
 def test_identifying_query_parameters_stay_distinct():

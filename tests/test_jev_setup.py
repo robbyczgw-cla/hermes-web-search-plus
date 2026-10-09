@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 
-from jev_setup import JEV_DECISIONS, apply_jev_config, parse_decisions, persist_key_file, status_payload
+from wsp_core.jev_setup import JEV_DECISIONS, apply_jev_config, parse_decisions, persist_key_file, status_payload
 
+from plugin_loader import load_plugin
 PLUGIN_PATH = Path(__file__).resolve().parents[1] / "__init__.py"
-spec = importlib.util.spec_from_file_location("wsp_plugin_jev_setup_under_test", PLUGIN_PATH)
-wsp = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-spec.loader.exec_module(wsp)
+wsp = load_plugin("wsp_plugin_jev_setup_under_test")
 
 
 def test_parse_decisions_default_is_three():
@@ -135,7 +132,7 @@ def test_status_reports_jev_enabled_after_config_reload(tmp_path, capsys):
 
 
 def test_apply_profile_effects_keeps_jev_block():
-    from config import apply_profile_effects
+    from wsp_core.config import apply_profile_effects
 
     kept = apply_profile_effects(
         {

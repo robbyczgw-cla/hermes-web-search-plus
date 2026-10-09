@@ -4,7 +4,7 @@ import unittest
 from unittest import mock
 import zlib
 
-import search
+from wsp_core import http_client
 
 
 class FakeResponse:
@@ -30,7 +30,7 @@ class HttpContentEncodingTests(unittest.TestCase):
         body = {"web": {"results": []}}
         compressed = gzip.compress(json.dumps(body).encode("utf-8"))
 
-        result = search._read_json_response(
+        result = http_client._read_json_response(
             FakeResponse(compressed, {"Content-Encoding": "gzip"})
         )
 
@@ -40,7 +40,7 @@ class HttpContentEncodingTests(unittest.TestCase):
         body = {"ok": True}
         compressed = gzip.compress(json.dumps(body).encode("utf-8"))
 
-        result = search._read_json_response(FakeResponse(compressed, {}))
+        result = http_client._read_json_response(FakeResponse(compressed, {}))
 
         self.assertEqual(result, body)
 
@@ -48,7 +48,7 @@ class HttpContentEncodingTests(unittest.TestCase):
         body = {"ok": "deflate"}
         compressed = zlib.compress(json.dumps(body).encode("utf-8"))
 
-        result = search._read_json_response(
+        result = http_client._read_json_response(
             FakeResponse(compressed, {"Content-Encoding": "deflate"})
         )
 
@@ -59,10 +59,10 @@ class HttpContentEncodingTests(unittest.TestCase):
         compressed = gzip.compress(json.dumps(body).encode("utf-8"))
 
         with mock.patch(
-            "http_client.urlopen",
+            "wsp_core.http_client.urlopen",
             return_value=FakeResponse(compressed, {"Content-Encoding": "gzip"}),
         ):
-            result = search.make_get_request(
+            result = http_client.make_get_request(
                 "https://api.search.brave.com/res/v1/web/search?q=test",
                 {"Accept": "application/json", "X-Subscription-Token": "test"},
             )
@@ -74,10 +74,10 @@ class HttpContentEncodingTests(unittest.TestCase):
         compressed = gzip.compress(json.dumps(body).encode("utf-8"))
 
         with mock.patch(
-            "http_client.urlopen",
+            "wsp_core.http_client.urlopen",
             return_value=FakeResponse(compressed, {"Content-Encoding": "gzip"}),
         ):
-            result = search.make_request(
+            result = http_client.make_request(
                 "https://example.test/search",
                 {"Accept": "application/json"},
                 {"q": "test"},

@@ -2,7 +2,7 @@
 
 <!-- Generated file. Do not edit by hand. -->
 
-This reference is generated from `provider_registry.py`, discovered `providers.d` modules,
+This reference is generated from `wsp_core/provider_registry.py`, discovered `providers.d` modules,
 and the plugin provider catalog; regenerate it with `python scripts/gen_provider_docs.py` after changing provider metadata.
 
 ## Provider matrix
@@ -11,16 +11,14 @@ and the plugin provider catalog; regenerate it with `python scripts/gen_provider
 |---|---:|---:|---|---|---|---|---|
 | Serper | ✅ | ✅ | `SERPER_API_KEY` | — | yes (priority 2) | 2,500 one-time credits | https://serper.dev/api-key |
 | SerpBase | ✅ | — | `SERPBASE_API_KEY` | — | explicit-only (`auto_allow=false`) | 100 free searches, paid packs available | https://www.serpbase.dev |
-| Brave Search | ✅ | — | `BRAVE_API_KEY` | — | yes (priority 7) | $5 free monthly credits | https://api.search.brave.com/app/keys |
-| Tavily | ✅ | ✅ | `TAVILY_API_KEY` | — | yes (priority 5) | 1,000 free searches/month | https://tavily.com |
+| Brave Search | ✅ | — | `BRAVE_API_KEY` | — | yes (priority 1) | $5 free monthly credits | https://api.search.brave.com/app/keys |
+| Tavily | ✅ | ✅ | `TAVILY_API_KEY` | — | yes (priority 4) | 1,000 free searches/month | https://tavily.com |
 | Querit | ✅ | — | `QUERIT_API_KEY` | — | explicit-only (`auto_allow=false`) | 1,000 free searches/month | https://www.querit.ai |
-| Linkup | ✅ | ✅ | `LINKUP_API_KEY` | — | yes (priority 6) | €5 free monthly credits (~5,000 standard extracts) | https://www.linkup.so |
+| Linkup | ✅ | ✅ | `LINKUP_API_KEY` | — | yes (priority 7) | €5 free monthly credits (~5,000 standard extracts) | https://www.linkup.so |
 | Exa | ✅ | ✅ | `EXA_API_KEY` | — | yes (priority 3) | 1,000 free searches/month | https://dashboard.exa.ai/api-keys |
-| Firecrawl | ✅ | ✅ | `FIRECRAWL_API_KEY` | — | yes (priority 4) | 500 one-time credits | https://www.firecrawl.dev/app/api-keys |
+| Firecrawl | ✅ | ✅ | `FIRECRAWL_API_KEY` | — | yes (priority 6) | 500 one-time credits | https://www.firecrawl.dev/app/api-keys |
 | Parallel | ✅ | ✅ | `PARALLEL_API_KEY` | — | yes (priority 8) | API key required | https://platform.parallel.ai |
-| Perplexity | — | — | `PERPLEXITY_API_KEY` | — | — | API key required | https://www.perplexity.ai/settings/api |
-| Kilo Code Perplexity bridge | — | — | `KILOCODE_API_KEY` | — | — | Depends on Kilo account | https://kilo.ai |
-| You.com | ✅ | ✅ | `YOU_API_KEY` | — | yes (priority 1) | Limited/API key required | https://api.you.com |
+| You.com | ✅ | ✅ | `YOU_API_KEY` | — | yes (priority 5) | Limited/API key required | https://api.you.com |
 | SearXNG | ✅ | — | `SEARXNG_INSTANCE_URL` | — | yes (priority 11) | Free if self-hosted | https://docs.searxng.org/admin/installation.html |
 | Keenable | ✅ | ✅ | `KEENABLE_API_KEY` | yes (`KEENABLE_ALLOW_PUBLIC` opt-in) | yes (priority 12) | Keyless public tier; optional key for higher limits | https://keenable.ai |
 | DonSeTch (local MCP) | ✅ | ✅ | `DONSETCH_BIN` | — | explicit-only (`auto_allow=false`) | Free local binary; no API key | https://github.com/dondai44423/donsetch |
@@ -45,11 +43,13 @@ Cheap Google-like SERP fallback; WSP exposes search only, explicit/fallback-only
 
 ### Brave Search
 
-Independent general web index in the Routing v2 default pool.
+*Recommended starter provider.*
+
+Independent general web index; first provider for most automatic searches.
 
 ### Tavily
 
-Research/tutorial provider in the Routing v2 default pool.
+Research/tutorial provider in the default fallback chain.
 
 ### Querit
 
@@ -63,6 +63,8 @@ Best starter for cheap clean extraction and citation-grounded retrieval.
 
 ### Exa
 
+*Recommended starter provider.*
+
 Semantic discovery, alternatives, docs, academic and long-form discovery.
 
 ### Firecrawl
@@ -73,19 +75,9 @@ Robust scraping/extraction fallback, especially for JS-heavy pages.
 
 LLM-ready web search and fast URL extraction with long source excerpts.
 
-### Perplexity
-
-Rejected legacy answer endpoint; no source-only mode is registered.
-
-### Kilo Code Perplexity bridge
-
-Rejected legacy answer bridge; no source-only mode is registered.
-
 ### You.com
 
-*Recommended starter provider.*
-
-Fast Routing v2 core provider for current, multilingual, and LLM-ready search.
+Fast provider for current, multilingual, and LLM-ready search.
 
 ### SearXNG
 

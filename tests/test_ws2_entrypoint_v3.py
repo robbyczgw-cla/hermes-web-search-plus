@@ -1,4 +1,5 @@
 from __future__ import annotations
+from wsp_core import extract
 
 import json
 from pathlib import Path
@@ -6,11 +7,10 @@ from types import SimpleNamespace
 
 import jsonschema
 
-import extract
-from bounded_context_v3 import apply_bounded_context, prepare_extract_request
-from cache_v3 import cache_material_from_response, response_payload_from_cache_material
-from contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
-from runtime_v3 import observations_from_legacy, project_results_from_observations
+from wsp_core.bounded_context_v3 import apply_bounded_context, prepare_extract_request
+from wsp_core.cache_v3 import cache_material_from_response, response_payload_from_cache_material
+from wsp_core.contract_v3 import Capability, RequestV3, ResponseStatus, ResponseV3
+from wsp_core.runtime_v3 import observations_from_legacy, project_results_from_observations
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -93,7 +93,7 @@ def test_bounded_response_is_schema_valid_and_round_trips(tmp_path: Path) -> Non
     )
     plan = prepare_extract_request(request, {})
     response = response_for_urls(request.input["urls"], length=800)
-    from bounded_context_v3 import FullTextStore
+    from wsp_core.bounded_context_v3 import FullTextStore
 
     bounded = apply_bounded_context(
         response, request, plan, store=FullTextStore(tmp_path)
@@ -135,7 +135,7 @@ def test_schema_rejects_invalid_budget_and_dishonest_storage(tmp_path: Path) -> 
 
     request = RequestV3.extract(["https://a.example/doc"], max_context_chars=1000)
     plan = prepare_extract_request(request, {})
-    from bounded_context_v3 import FullTextStore
+    from wsp_core.bounded_context_v3 import FullTextStore
 
     wire = apply_bounded_context(
         response_for_urls(request.input["urls"], length=1500),
@@ -158,7 +158,7 @@ def test_schema_rejects_invalid_budget_and_dishonest_storage(tmp_path: Path) -> 
 def test_evidence_cache_preserves_bounded_context_metadata(tmp_path: Path) -> None:
     request = RequestV3.extract(["https://a.example/one"], max_context_chars=1000)
     plan = prepare_extract_request(request, {})
-    from bounded_context_v3 import FullTextStore
+    from wsp_core.bounded_context_v3 import FullTextStore
 
     bounded = apply_bounded_context(
         response_for_urls(request.input["urls"], length=1500),

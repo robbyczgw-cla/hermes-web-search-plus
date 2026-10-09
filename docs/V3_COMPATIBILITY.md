@@ -13,25 +13,22 @@ Existing tool calls are projected into native `RequestV3` execution and returned
 
 WSP 3.0 registers 12 source-only search providers and 8 extraction providers. The generated [Provider Reference](PROVIDERS.md) is authoritative.
 
-Native Perplexity and Kilo Perplexity are retained only as rejected registry records with `no_verified_source_only_endpoint`; they are not valid tool or CLI provider choices. This is an intentional charter correction, not a temporary outage.
+Perplexity and Kilo-Perplexity are removed provider IDs. Config migration silently ignores them in legacy routing lists and settings; other unknown provider IDs remain errors.
 
 ## Routing
 
-Classic Routing v2 remains authoritative in 3.0.
+Classic Routing v2 remains authoritative.
 
 - Config default: `routing.policy_mode = "classic"`
-- Emergency override: `WSP_ROUTING_CLASSIC_ONLY=1`
-- The environment override wins over config.
-- Unknown policy values fail closed to Classic.
-- Shadow metadata, when present, is observational and must report `affected_execution=false`.
-
-A full persisted shadow observer is deferred to 3.1.
+- `routing.policy_mode: "shadow"` is still accepted and is treated as `"classic"`. It does not quarantine the config file.
+- `WSP_ROUTING_CLASSIC_ONLY` is still accepted and is a no-op. Routing is always Classic.
+- Unknown policy values are rejected.
+- Shadow routing was removed in 5.0. `routing_receipt.shadow_observation` stays on every response and is always `null`. Readers still accept an older shadow object in cached responses.
 
 ## Cache
 
 - v3 response entries are marker-owned and use the frozen 3.0 contract.
-- Valid legacy cache entries can be read as `source_contract_version="2.x"`.
-- Legacy answer/synthesis fields are discarded rather than promoted into v3 results.
+- Since 5.0 a v3 search does not read the pre-v3 JSON search cache (`<cache dir>/<key>.json`, written by 2.x and by `python search.py`), so 5.0 never reports `source_contract_version="2.x"`; the schema still allows the value. Those files are not deleted: `python search.py` still reads and writes them, and `--cache-stats` and `--clear-cache` still count and remove them.
 - Cache clear and retention operations target only marker-owned entries; foreign or shared state files are preserved.
 - Long extracted text remains page-on-demand under marker-owned `web/v3` storage.
 
