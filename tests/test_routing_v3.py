@@ -49,7 +49,7 @@ QUERY = {
 }
 FIRST_WITH_CORE = {
     "academic": "exa",
-    "community": "serper",
+    "community": "brave",
     "docs": "exa",
     "general": "brave",
     "local": "brave",
@@ -85,7 +85,6 @@ def _plan(query, config):
 def test_the_table_is_what_the_benchmarks_measured():
     assert routing.INTENT_FIRST_PROVIDER == {
         "academic": "exa",
-        "community": "serper",
         "docs": "exa",
         "security": "serper",
         "shopping": "serper",
@@ -370,6 +369,22 @@ def test_the_plugin_merge_keeps_a_custom_priority():
     assert merged[:3] == ["linkup", "you", "serper"]
 
 
+def test_the_plugin_merge_keeps_the_4x_default_as_a_custom_order(tmp_path, monkeypatch):
+    # Same rule as the runtime: a list the user chose with order "custom" is theirs,
+    # even when it happens to equal what 4.x wrote by default.
+    legacy = list(PRE_5_DEFAULT_PROVIDER_PRIORITY)
+    user = {"auto_routing": {"order": "custom", "provider_priority": legacy}}
+
+    merged = plugin._merge_behavior_config(user)["auto_routing"]["provider_priority"]
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps(user), encoding="utf-8")
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(path))
+    runtime = load_config()["auto_routing"]["provider_priority"]
+
+    assert merged[:12] == legacy
+    assert runtime[:12] == legacy
+
+
 def test_the_migrated_default_drives_the_first_provider_like_a_fresh_install(tmp_path, monkeypatch):
     _write_config(tmp_path, monkeypatch, PRE_5_DEFAULT_PROVIDER_PRIORITY)
     migrated = load_config()
@@ -564,7 +579,6 @@ def test_explain_routing_output_shape():
     assert explanation["intent"]["signals"]
     assert explanation["first_provider_rules"] == {
         "academic": "exa",
-        "community": "serper",
         "docs": "exa",
         "security": "serper",
         "shopping": "serper",

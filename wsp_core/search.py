@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 4.3.5
+Version: 5.0.0
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
 Brave Search, SerpBase, Querit, Parallel, SearXNG, Keenable.
 Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com, Keenable, Serper.
@@ -25,12 +25,13 @@ from __future__ import annotations
 
 
 import argparse
+import copy
 import json
 import os
 import queue
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 from typing import List, Dict, Any, Optional, Tuple
@@ -108,6 +109,7 @@ from .orchestrator_v3 import (
 )
 from .runtime_v3 import response_from_legacy
 from .state_store_v3 import SQLiteStateStore
+from .urls import domain_filter_tokens, domain_filters
 from . import providers as _providers
 from . import extract as _extract
 from .routing import (
@@ -851,6 +853,15 @@ def main():
     
     if not args.query and not args.similar_url:
         parser.error("--query is required (unless using --similar-url with Exa)")
+    try:
+        domain_filters(args.include_domains, args.exclude_domains)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if (
+        str(args.provider or "").lower() in _providers.DOMAIN_SUFFIX_FILTER_UNSUPPORTED
+        and _providers.public_suffix_entries(args.include_domains, args.exclude_domains)
+    ):
+        parser.error(_providers.domain_suffix_unsupported_message(str(args.provider).lower()))
     
     # Handle --explain-routing
     if args.explain_routing:
@@ -912,7 +923,7 @@ def _apply_result_quality_pipeline(
     except (TypeError, ValueError):
         max_per_domain = 2
     if max_per_domain > 0:
-        reranked, demoted = rerank_domain_diversity(results, max_per_domain=max_per_domain)
+        reranked, demoted = rerank_domain_diversity(results, max_per_domain=max_per_domain, query=query)
         if demoted:
             result["results"] = reranked
             result.setdefault("metadata", {})["domain_diversity_demoted"] = demoted
@@ -1226,8 +1237,9 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
     def execute_with_retry(prov: str) -> Dict[str, Any]:
         # The v3 AttemptEngine owns retries and circuit state, so an
         # engine-owned call runs once here and the engine retries around it.
-        # Adaptive routing samples are a separate signal and are recorded on
-        # both paths; otherwise v3 traffic never trains the router.
+        # Latency samples (provider_stats) are a separate signal and are
+        # recorded on both paths; the hedged fallback reads them to time the
+        # next attempt.
         started = time.monotonic()
         try:
             if engine_owned_attempt:
@@ -1458,11 +1470,17 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         )
         routing_class = ranking_routing.get("analysis_summary", {}).get("routing_class", "general")
         if not cache_hit and isinstance(result.get("results"), list):
-            reranked, rerank_metadata = rerank_results_for_intent(args.query or "", routing_class, result.get("results", []))
+            reranked, rerank_metadata = rerank_results_for_intent(
+                args.query or "", routing_class, result.get("results", []),
+                window=getattr(args, "_v3_requested_results", None),
+            )
             result["results"] = reranked
             if rerank_metadata.get("reranked"):
                 result.setdefault("metadata", {})["intent_rerank"] = rerank_metadata
             _apply_result_quality_pipeline(result, config, query=args.query or "", include_domains=args.include_domains)
+        requested_results = getattr(args, "_v3_requested_results", None)
+        if requested_results and isinstance(result.get("results"), list):
+            result["results"] = result["results"][:requested_results]
 
         result["routing"] = routing_info
 
@@ -1593,6 +1611,11 @@ def _plan_search_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
             max_providers=3,
         )
     return ProviderPlan(tuple(candidates), selected, routing_metadata=dict(routed))
+
+
+# Spare results requested per search attempt so filtering can refill the top N.
+SEARCH_OVERFETCH_EXTRA = 5
+SEARCH_OVERFETCH_CAP = 20
 
 
 def _search_args_from_v3(request: RequestV3, config: Dict[str, Any]):
@@ -1866,6 +1889,11 @@ def _execute_search_v3(
             args.allow_fallback = False
             args.no_cache = True
             args._v3_engine_owned_attempt = True
+            # Ask for a few spare results: spam removal and the per-domain cap
+            # then refill the list instead of leaving duplicates in the top N.
+            requested = int(args.max_results or 5)
+            args._v3_requested_results = requested
+            args.max_results = min(SEARCH_OVERFETCH_CAP, requested + SEARCH_OVERFETCH_EXTRA)
             if str(request.routing.get("provider") or "auto") == "auto":
                 # Rank and report with the auto-routing decision, not the
                 # fixed-provider routing of this attempt.
@@ -1910,7 +1938,7 @@ def _execute_search_v3(
                     "error": (
                         receipt.error.message
                         if receipt.error is not None
-                        else receipt.skip_reason.value
+                        else _SKIP_REASON_TEXT.get(receipt.skip_reason, receipt.skip_reason.value)
                         if receipt.skip_reason is not None
                         else "provider attempt failed"
                     ),
@@ -1921,6 +1949,8 @@ def _execute_search_v3(
         add_provider_setup_guidance(payload, "search", list(plan.candidate_order), config,
                                     requested_provider=str(request.routing.get("provider") or "auto"))
     else:
+        if race.superseded:
+            payload["_v3_superseded_providers"] = list(race.superseded)
         routing = payload.setdefault("routing", {})
         requested = str(request.routing.get("provider") or "auto")
         if requested == "auto":
@@ -1932,6 +1962,9 @@ def _execute_search_v3(
             routing["fallback_used"] = True
             routing["original_provider"] = plan.selected_provider
             routing["provider"] = successful_provider
+            # No value says "slower than usual and lost the race". For that
+            # case selected_failed is the closest: the receipt rules tie it to
+            # a cancelled or failed prior attempt, which is what is recorded.
             routing["fallback_reason"] = (
                 "insufficient_results"
                 if plan.selected_provider in race.empty_providers
@@ -1974,12 +2007,32 @@ def _last_resort_probe(engine, store, provider, contexts, operation_for, race):
     return _Race(provider, payload, receipts, empty)
 
 
+# Why a provider was not called, as the search error lists it. The first
+# failure names its cause ("Out of credits: ..."); while the resulting block
+# lasts, these keep it readable instead of a bare "quota_blocked". WSP's own
+# fixed text, never the provider's.
+_SKIP_REASON_TEXT = {
+    SkipReason.QUOTA_BLOCKED: (
+        "Out of credits or quota at its last call; skipped for up to an hour. "
+        "Top up the account or remove its key"
+    ),
+    SkipReason.AUTH_BLOCKED: "Authentication failed at its last call; skipped for a few minutes. Check its API key",
+    SkipReason.RATE_LIMITED: "Rate limit reached at its last call; skipped until it resets",
+    SkipReason.CIRCUIT_OPEN: "Failed several times in a row; skipped for about a minute",
+    SkipReason.BUDGET_BLOCKED: "Call budget for this request or day is used up",
+    SkipReason.DEADLINE_EXCEEDED: "Not tried: the request ran out of time",
+}
+
+
 @dataclass
 class _Race:
     provider: Optional[str]
     payload: Optional[Dict[str, Any]]
     receipts: List[Any]
     empty_providers: List[str]
+    # Still running when another provider's non-empty answer won; cancelled by
+    # that win, not by the request's time budget.
+    superseded: List[str] = field(default_factory=list)
 
 
 def _positive_float(value: Any, default: float) -> float:
@@ -2062,11 +2115,14 @@ def _race_providers(engine, candidates, contexts, operation_for, hedge_delay, de
     if winner is None and empty_providers:
         winner = empty_providers[0]  # every answer was empty: report the truthful empty result
     receipts = []
+    superseded = []
     for provider in candidates:
         execution = finished.get(provider)
         if execution is not None:
             receipts.append(execution.receipt)
         elif provider in tasks:
+            if not deadline_hit:
+                superseded.append(provider)
             _task, started_wall, started_monotonic = tasks[provider]
             receipts.append(engine.cancel_started(
                 contexts[provider],
@@ -2077,7 +2133,7 @@ def _race_providers(engine, candidates, contexts, operation_for, hedge_delay, de
             reason = SkipReason.DEADLINE_EXCEEDED if deadline_hit else SkipReason.POLICY_EXCLUDED
             receipts.append(engine.skip(contexts[provider], reason).receipt)
     payload = finished[winner].payload if winner is not None else None
-    return _Race(winner, payload, receipts, empty_providers)
+    return _Race(winner, payload, receipts, empty_providers, superseded)
 
 
 def _search_cache_vary(
@@ -2093,6 +2149,22 @@ def _search_cache_vary(
     return {"language": AUTO_LANGUAGE} if is_auto_language(locale.get("language")) else {}
 
 
+def _search_cache_write_eligible(
+    _request: RequestV3,
+    _plan: ProviderPlan,
+    response: ResponseV3,
+    _legacy_payload: Dict[str, Any],
+    _config: Dict[str, Any],
+) -> bool:
+    """Cache only answers that have results.
+
+    When every candidate answers with nothing, the cause is often transient. A
+    cached empty answer would keep repeats from reaching a provider for the
+    whole TTL, which defeats the empty-answer fallback.
+    """
+    return bool(response.results)
+
+
 def _search_adapter() -> CapabilityAdapter:
     return CapabilityAdapter(
         capability=Capability.SEARCH,
@@ -2100,6 +2172,7 @@ def _search_adapter() -> CapabilityAdapter:
         execute=_execute_search_v3,
         normalize=response_from_legacy,
         cache_vary=_search_cache_vary,
+        cache_write_eligible=_search_cache_write_eligible,
     )
 
 
@@ -2141,12 +2214,28 @@ def run_search_request(
     """
     if not query and not (include_domains or exclude_domains):
         return {"error": "query is required", "provider": provider, "query": query, "results": []}
+    requested = str(provider or "auto").strip().lower()
+    suffix_filters = _providers.public_suffix_entries(include_domains, exclude_domains)
     try:
         freshness = _providers.normalize_freshness(freshness)
         search_type = _providers.normalize_search_type(search_type)
+        domain_filters(include_domains, exclude_domains)  # raises when include_domains has no usable domain
+        if suffix_filters and requested in _providers.DOMAIN_SUFFIX_FILTER_UNSUPPORTED:
+            raise ValueError(_providers.domain_suffix_unsupported_message(requested))
     except ValueError as exc:
         return {"error": str(exc), "provider": provider, "query": query, "results": []}
+    # One list of entries whatever the caller sent ("a.com, b.com" or a bare string).
+    include_domains = domain_filter_tokens(include_domains) or None
+    exclude_domains = domain_filter_tokens(exclude_domains) or None
     config = apply_profile_effects(config) if config is not None else load_config()
+    if suffix_filters:
+        # A suffix filter (".gov") must not route to a provider that cannot apply
+        # it, neither first nor as fallback or research member.
+        config = copy.deepcopy(config)
+        auto = config.setdefault("auto_routing", {})
+        auto["disabled_providers"] = sorted(
+            set(auto.get("disabled_providers") or []) | _providers.DOMAIN_SUFFIX_FILTER_UNSUPPORTED
+        )
     language, config = apply_auto_language(language, config)
     policy_mode = str((config.get("routing") or {}).get("policy_mode", "classic"))
     request = legacy_request_to_v3(

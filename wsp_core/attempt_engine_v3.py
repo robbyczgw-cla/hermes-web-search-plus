@@ -247,6 +247,7 @@ class AttemptEngine:
                 before = decision.circuit_state
             if decision.allowed and decision.blocking_error_class is not None:
                 encountered.add(decision.blocking_error_class)
+            encountered.update(decision.failing_error_classes)
             if not decision.allowed:
                 return self._skipped(
                     context,

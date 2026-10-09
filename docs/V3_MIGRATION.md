@@ -46,7 +46,7 @@ python3 search.py --extract-urls https://example.com --provider auto
 Also verify the local Operator Console if you use it:
 
 ```bash
-python3 ui.py --port 8765
+python3 -m wsp_core.ui --port 8765
 ```
 
 ## Roll back the imported state

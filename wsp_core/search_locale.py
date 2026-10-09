@@ -24,6 +24,10 @@ from .routing import detect_query_language
 
 FALLBACK_COUNTRY = "us"
 FALLBACK_LANGUAGE = "en"
+# Search country for a detected query language when nothing else set one.
+LANGUAGE_HOME_COUNTRY: Dict[str, str] = {
+    "de": "de", "fr": "fr", "es": "es", "it": "it", "nl": "nl", "ja": "jp",
+}
 
 # Language value (flag or defaults.locale.language) that enables query language
 # detection. Not a language code: it is never sent to a provider.
@@ -188,7 +192,15 @@ def resolve_locale(
     elif default_language and not auto_language:
         language, language_source = _normalize(default_language), "config"
     elif not auto_language:
-        language, language_source = FALLBACK_LANGUAGE, "fallback"
+        # Nothing configured: a confidently detected query language beats the
+        # English fallback, so a French query is not searched as English.
+        inferred = detect_query_language(query or "").inferred
+        if inferred:
+            language, language_source = inferred, "inferred"
+            if country_source == "fallback" and inferred in LANGUAGE_HOME_COUNTRY:
+                country, country_source = LANGUAGE_HOME_COUNTRY[inferred], "hint"
+        else:
+            language, language_source = FALLBACK_LANGUAGE, "fallback"
     else:
         language, language_source = detect_query_language(query or "").inferred, "inferred"
         if not language:

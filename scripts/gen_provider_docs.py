@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate docs/PROVIDERS.md from the provider registry.
 
-Every provider fact in the output comes from provider_registry.py and the
+Every provider fact in the output comes from wsp_core/provider_registry.py and the
 plugin onboarding catalog in __init__.py, so the reference cannot drift from
 the single source of truth by hand-editing. Run without arguments to rewrite
 the file; run with --check (used by tests/CI) to exit non-zero on drift.

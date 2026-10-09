@@ -25,6 +25,12 @@ JOURNAL_SCHEMA_VERSION = 1
 DEFAULT_TTL_SECONDS = 604800
 DEFAULT_MAX_RECORDS = 1000
 DEFAULT_MAX_BYTES = 8 * 1024 * 1024
+# Every journal line starts with this (the keys are written sorted), so a line
+# cut short by an interrupted append is still recognisable as ours.
+_LINE_PREFIX = (
+    f'{{"journal_schema_version":{JOURNAL_SCHEMA_VERSION},'
+    f'"owner":{json.dumps(JOURNAL_OWNER)},"payload":'
+)
 
 
 def receipt_record_from_response(
@@ -198,6 +204,28 @@ class OperatorReceiptJournal:
             return None
         return payload
 
+    @staticmethod
+    def _without_torn_tail(raw: bytes) -> bytes:
+        """Drop an unfinished last line left behind by an interrupted append.
+
+        Only a fragment of one of our own lines qualifies. A complete last line
+        without its newline, or anything that is not ours, stays and goes
+        through the normal ownership checks.
+        """
+        if not raw or raw.endswith(b"\n"):
+            return raw
+        head, newline, tail = raw.rpartition(b"\n")
+        text = tail.decode("utf-8", "replace")
+        if not (text.startswith(_LINE_PREFIX) or _LINE_PREFIX.startswith(text)):
+            return raw
+        try:
+            json.loads(text)
+        except ValueError:
+            return head + newline
+        except RecursionError:
+            pass
+        return raw
+
     def _read_all_owned(
         self, directory_descriptor: int
     ) -> list[dict[str, Any]] | None:
@@ -227,9 +255,10 @@ class OperatorReceiptJournal:
                 != (path_stat.st_dev, path_stat.st_ino)
             ):
                 return None
-            with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
+            with os.fdopen(descriptor, "rb") as handle:
                 descriptor = -1
-                lines = handle.read().splitlines()
+                raw = handle.read()
+            lines = self._without_torn_tail(raw).decode("utf-8").splitlines()
         except (OSError, UnicodeError):
             return None
         finally:
@@ -365,8 +394,23 @@ class OperatorReceiptJournal:
                     or float(stamp) < cutoff
                 ):
                     return False
-            os.write(descriptor, encoded)
-            os.fsync(descriptor)
+            try:
+                written = 0
+                while written < len(encoded):
+                    count = os.write(descriptor, encoded[written:])
+                    if count <= 0:
+                        raise OSError("journal write made no progress")
+                    written += count
+                os.fsync(descriptor)
+            except OSError:
+                # A short write (disk full, quota) must not leave half a line
+                # behind: cut the file back and let the full rewrite try. If
+                # even that fails, the next read drops the torn last line.
+                try:
+                    os.ftruncate(descriptor, len(data))
+                except OSError:
+                    pass
+                return False
             return True
         finally:
             os.close(descriptor)

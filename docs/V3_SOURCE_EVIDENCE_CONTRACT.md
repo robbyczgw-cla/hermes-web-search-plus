@@ -278,6 +278,8 @@ Legacy v2 files remain read-only and byte-identical. Sanitization drops banned f
 
 If no source-only observation survives, the entry is rejected and MUST NOT be served.
 
+Since 5.0, a v3 search no longer reads legacy v2 cache files at all, so this sanitization path and its warning no longer occur. The warning code stays in the published contract.
+
 ## 11. Scope boundary
 
 **3.0:** this amendment, Charter Purge, canonical request/response, lossless observations, complete attempts including skips/retries, typed errors, provenance, non-destructive dedup clusters, search cache v3 plus legacy sanitize, routing-v2 receipt, shadow-only policy interface, two-level kill switch, minimal SQLite circuit/adaptive store, internal adapter protocol, exact mechanical segments.

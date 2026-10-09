@@ -24,7 +24,15 @@ from .http_client import (
     urlopen,
 )
 from .quality import _title_from_url
-from .urls import strip_tracking_params
+from .diversity_v3 import MULTI_LABEL_SUFFIXES
+from .urls import (
+    SITE_OPERATOR_LIMIT,
+    domain_filter_host,
+    domain_filter_tokens,
+    domain_filters,
+    strip_tracking_params,
+    wildcard_domain_entries,
+)
 from .request_gate_v3 import validate_outbound_body, validate_provider_mode
 from .config import normalize_parallel_search_mode
 
@@ -619,6 +627,32 @@ def search_brave(
         "mixed": data.get("mixed"),
     }
 
+# Providers whose own domain field takes hostnames and "*.example.com" but no
+# bare public suffix. Live, Tavily answered "*.gov" and "gov" with HTTP 400 and
+# ".gov" with no results; the site: providers and Exa filter ".gov" fine.
+DOMAIN_SUFFIX_FILTER_UNSUPPORTED = frozenset({"tavily"})
+
+
+def public_suffix_entries(*values: Any) -> List[str]:
+    """Domain-filter entries that name a public suffix (".gov", "*.ac.uk"), not a domain."""
+    found: List[str] = []
+    for value in values:
+        for token in domain_filter_tokens(value):
+            if not token.strip().startswith((".", "*.")):
+                continue
+            suffix = domain_filter_host(token)
+            if suffix and ("." not in suffix or suffix in MULTI_LABEL_SUFFIXES):
+                found.append(token.strip())
+    return found
+
+
+def domain_suffix_unsupported_message(provider: str) -> str:
+    return (
+        f"{provider.capitalize()} cannot filter by a domain suffix such as .gov or *.ac.uk. "
+        "Use hostnames such as cisa.gov, or Brave, Serper, Exa or Firecrawl for suffix filters."
+    )
+
+
 def search_tavily(
     query: str,
     api_key: str,
@@ -645,10 +679,17 @@ def search_tavily(
         "include_raw_content": include_raw_content,
     }
 
-    if include_domains:
-        body["include_domains"] = include_domains
-    if exclude_domains:
-        body["exclude_domains"] = exclude_domains
+    # Same fail-closed check as the site: providers. Tavily's own fields take
+    # hostnames and "*.example.com"; a public suffix is refused, never sent.
+    domain_filters(include_domains, exclude_domains)
+    if public_suffix_entries(include_domains, exclude_domains):
+        raise ValueError(domain_suffix_unsupported_message("tavily"))
+    exclude = wildcard_domain_entries(exclude_domains)
+    include = [entry for entry in wildcard_domain_entries(include_domains) if entry not in exclude]
+    if include:
+        body["include_domains"] = include
+    if exclude:
+        body["exclude_domains"] = exclude
     if time_range:
         body["time_range"] = time_range
 
@@ -880,10 +921,13 @@ def search_firecrawl(
     if tbs:
         body["tbs"] = tbs
 
-    if include_domains:
-        body["query"] += " " + " ".join(f"site:{domain}" for domain in include_domains)
-    if exclude_domains:
-        body["query"] += " " + " ".join(f"-site:{domain}" for domain in exclude_domains)
+    include, exclude = domain_filters(include_domains, exclude_domains)
+    if include:
+        # OR, as for the other site: providers: "site:a site:b" means both at once
+        # and returns nothing (seen live with docs.rs and tokio.rs).
+        body["query"] += " " + " OR ".join(f"site:{domain}" for domain in include[:SITE_OPERATOR_LIMIT])
+    if exclude:
+        body["query"] += " " + " ".join(f"-site:{domain}" for domain in exclude[:SITE_OPERATOR_LIMIT])
 
     if scrape_markdown:
         body["scrapeOptions"] = {"formats": ["markdown"]}
