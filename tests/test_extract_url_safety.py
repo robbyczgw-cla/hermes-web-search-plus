@@ -87,8 +87,8 @@ def test_extract_plus_rejects_private_url_before_provider_dispatch():
 def test_local_provider_endpoint_remains_allowed_for_public_target():
     with mock.patch("wsp_core.extract._validate_extract_urls", return_value=["https://example.com/page"]), \
          mock.patch("wsp_core.extract.get_api_key", return_value="fc-test-key"), \
-         mock.patch("wsp_core.extract.provider_in_cooldown", return_value=(False, 0)), \
-         mock.patch("wsp_core.extract.reset_provider_health"), \
+         mock.patch("wsp_core.provider_health.provider_in_cooldown", return_value=(False, 0)), \
+         mock.patch("wsp_core.provider_health.reset_provider_health"), \
          mock.patch("wsp_core.providers.extract_firecrawl", return_value={"provider": "firecrawl", "results": []}) as mock_extract:
         result = extract.extract_plus(
             ["https://example.com/page"],

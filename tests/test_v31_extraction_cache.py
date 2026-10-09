@@ -406,9 +406,9 @@ def test_transient_provider_health_changes_do_not_vary_cache_identity(
 
     first = extract.run_extract_request_v3(request, config=config)
     # Simulate the live incident: a candidate enters cooldown between calls.
-    monkeypatch.setattr(
-        extract, "provider_in_cooldown", lambda _p: (True, 120.0)
-    )
+    import wsp_core.provider_health as health
+
+    monkeypatch.setattr(health, "provider_in_cooldown", lambda _p: (True, 120.0))
     second = extract.run_extract_request_v3(
         legacy_request_to_v3(
             Capability.EXTRACT,

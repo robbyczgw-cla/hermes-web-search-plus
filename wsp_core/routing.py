@@ -142,6 +142,35 @@ class QueryLanguage(NamedTuple):
     inferred: Optional[str]
 
 
+# Words that alone identify a language: none is an English word, and none is
+# shared by two of the listed languages. They only count when the query has
+# no English stopword and no other language matched, so "Bundestag
+# Abstimmung heute Ergebnis" is German while "Avis car rental" stays unknown.
+LANGUAGE_STRONG_WORDS: Dict[str, frozenset] = {
+    "de": frozenset({
+        "heute", "öffnungszeiten", "warum", "welche", "günstig", "nähe",
+        "erfahrungen", "aktuelle", "aktuell", "neueste", "unterschied", "wie",
+        "wetter", "rezept", "vergleich", "empfehlung", "meinungen", "warnung",
+        "schwachstelle", "sicherheitslücke",
+    }),
+    "fr": frozenset({
+        "aujourd", "horaires", "près", "dernières", "météo", "demain",
+        "vulnérabilité", "meilleur", "étude",
+    }),
+    "es": frozenset({"dónde", "cómo", "qué", "horarios", "últimas", "noticias", "opiniones", "revisión"}),
+    "it": frozenset({"oggi", "orari", "notizie", "migliore", "opinioni"}),
+    "pt": frozenset({"notícias", "hoje", "você"}),
+    "nl": frozenset({"vandaag", "openingstijden", "werkt"}),
+}
+
+
+def _strong_word_language(words: set) -> Optional[str]:
+    if words & LANGUAGE_INFERENCE_STOPWORDS["en"]:
+        return None
+    matches = {language for language, strong in LANGUAGE_STRONG_WORDS.items() if words & strong}
+    return matches.pop() if len(matches) == 1 else None
+
+
 def _stopword_language(lowered: str) -> Optional[str]:
     """Latin-script inference: stopword and character signals, single winner."""
     words = set(re.findall(r"\w+", lowered))
@@ -152,13 +181,14 @@ def _stopword_language(lowered: str) -> Optional[str]:
         if count:
             counts[language] = count
     if not counts:
-        return None
+        return _strong_word_language(words)
     ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     best_language, best_count = ranked[0]
-    if best_count < LANGUAGE_INFERENCE_MIN_MATCHES:
-        return None
     if len(ranked) > 1 and ranked[1][1] == best_count:
         return None
+    if best_count < LANGUAGE_INFERENCE_MIN_MATCHES:
+        strong = _strong_word_language(words)
+        return strong if strong == best_language else None
     return best_language
 
 
@@ -219,11 +249,16 @@ def infer_query_language(query: Optional[str]) -> Optional[str]:
 # Measured on the recorded evaluation set: Brave gave
 # the best results overall (nDCG@5 0.696; Serper 0.642, Exa 0.638, Tavily
 # 0.552), Exa led on academic and documentation queries and Serper on shopping,
-# in every leave-one-out fold. Finer intent-to-provider tables did not survive
-# leave-one-out, so these three are the only exceptions to the measured order.
+# in every leave-one-out fold. Security goes to Serper after a live A/B of the
+# 26 security queries with authority domains: authority hit@5 22/26 on v4.3.5,
+# 16/26 with Brave first, 23/26 with Serper first, at fewer output tokens.
+# Community stays on Brave: on all 36 community queries Brave, Serper and
+# Firecrawl each hit the authority domain 15/15, with Brave at p50 640 ms /
+# p90 733 ms against Serper's 1067 / 1686 ms.
 INTENT_FIRST_PROVIDER: Dict[str, str] = {
     "academic": "exa",
     "docs": "exa",
+    "security": "serper",
     "shopping": "serper",
 }
 MEASURED_PROVIDER_ORDER: Tuple[str, ...] = ("brave", "serper", "exa", "tavily")
@@ -269,7 +304,12 @@ def route_query(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
     disabled = set(auto_config.get("disabled_providers", []))
     intent = classify_intent(query)
     priority = list(auto_config.get("provider_priority", list(DEFAULT_PROVIDER_PRIORITY)))
-    preferred = [INTENT_FIRST_PROVIDER.get(intent.intent), *MEASURED_PROVIDER_ORDER, *priority]
+    custom_order = auto_config.get("order") == "custom"
+    if custom_order:
+        # The user's own order: provider_priority decides, no per-intent rule.
+        preferred = list(priority)
+    else:
+        preferred = [INTENT_FIRST_PROVIDER.get(intent.intent), *MEASURED_PROVIDER_ORDER, *priority]
     first = next(
         (p for p in preferred if p and _auto_eligible(p, config, auto_config, disabled)), None
     )
@@ -298,7 +338,7 @@ def route_query(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
     routing = {
         "confidence": confidence,
         "confidence_level": "high" if confidence >= 0.7 else "medium" if confidence >= 0.4 else "low",
-        "reason": f"intent_{intent.intent}" if intent.signals else "no_signals_matched",
+        "reason": "custom_order" if custom_order else (f"intent_{intent.intent}" if intent.signals else "no_signals_matched"),
         "routing_policy": ROUTING_POLICY,
         "exa_depth": "normal",
         "scores": {},

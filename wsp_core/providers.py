@@ -24,7 +24,15 @@ from .http_client import (
     urlopen,
 )
 from .quality import _title_from_url
-from .urls import strip_tracking_params
+from .diversity_v3 import MULTI_LABEL_SUFFIXES
+from .urls import (
+    SITE_OPERATOR_LIMIT,
+    domain_filter_host,
+    domain_filter_tokens,
+    domain_filters,
+    strip_tracking_params,
+    wildcard_domain_entries,
+)
 from .request_gate_v3 import validate_outbound_body, validate_provider_mode
 from .config import normalize_parallel_search_mode
 
@@ -425,6 +433,129 @@ def _brave_search_lang(language: Optional[str], country: str) -> Optional[str]:
     return code if code in _BRAVE_SEARCH_LANGS else None
 
 
+_BRAVE_RATE_HEADERS = (
+    "X-RateLimit-Policy",
+    "X-RateLimit-Remaining",
+    "X-RateLimit-Reset",
+    "Retry-After",
+)
+# Longest wait for a short (per-second) Brave window. Longer resets, such as a
+# spent monthly quota, fail fast so the hedged fallback can take over.
+BRAVE_MAX_RATE_WAIT_SECONDS = 2.0
+
+
+def _split_header_numbers(value: Optional[str]) -> List[Optional[float]]:
+    numbers: List[Optional[float]] = []
+    for part in (value or "").split(","):
+        try:
+            numbers.append(float(part.strip()))
+        except ValueError:
+            numbers.append(None)
+    return numbers
+
+
+def brave_min_interval(headers: Dict[str, str]) -> Optional[float]:
+    """Seconds between calls implied by the tightest X-RateLimit-Policy window.
+
+    Brave sends e.g. ``1;w=1, 2000;w=2678400`` (1 call per second, 2000 per
+    month). Only windows up to one minute are used for pacing.
+    """
+    best: Optional[float] = None
+    for part in (headers.get("X-RateLimit-Policy") or "").split(","):
+        fields = [field.strip() for field in part.split(";")]
+        try:
+            limit = float(fields[0])
+            window = next(
+                float(field[2:]) for field in fields[1:] if field.startswith("w=")
+            )
+        except (ValueError, StopIteration, IndexError):
+            continue
+        if limit <= 0 or window <= 0 or window > 60:
+            continue
+        interval = window / limit
+        best = interval if best is None else max(best, interval)
+    return best
+
+
+def brave_retry_wait(headers: Dict[str, str]) -> Optional[float]:
+    """Seconds until the exhausted Brave window resets, or None if unknown."""
+    retry_after = _split_header_numbers(headers.get("Retry-After"))
+    if retry_after and retry_after[0] is not None:
+        return max(0.0, retry_after[0])
+    remaining = _split_header_numbers(headers.get("X-RateLimit-Remaining"))
+    reset = _split_header_numbers(headers.get("X-RateLimit-Reset"))
+    waits = [
+        r for rem, r in zip(remaining, reset)
+        if rem is not None and rem <= 0 and r is not None
+    ]
+    return max(waits) if waits else None
+
+
+class _CallPacer:
+    """Process-wide spacing between calls to one rate-limited provider.
+
+    The interval is learned from the provider's rate-limit headers, so plans
+    without a per-second limit are never slowed down.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._last_start = None
+        self._next_slot = 0.0
+        self.interval = 0.0
+
+    def wait_turn(self, max_wait: float) -> None:
+        with self._lock:
+            now = time.monotonic()
+            start = max(now, self._next_slot)
+            if start - now > max_wait:
+                start = now
+            self._last_start = start
+            self._next_slot = start + self.interval
+        if start > now:
+            time.sleep(start - now)
+
+    def learn(self, interval: Optional[float]) -> None:
+        if interval is None:
+            return
+        with self._lock:
+            self.interval = min(interval, BRAVE_MAX_RATE_WAIT_SECONDS)
+            if self._last_start is not None:
+                self._next_slot = max(self._next_slot, self._last_start + self.interval)
+
+
+_BRAVE_PACER = _CallPacer()
+
+
+def _brave_get(url: str, headers: Dict[str, str]) -> dict:
+    """GET a Brave endpoint, paced to its per-second limit, one retry on 429."""
+    for attempt in range(2):
+        _BRAVE_PACER.wait_turn(BRAVE_MAX_RATE_WAIT_SECONDS)
+        seen: Dict[str, str] = {}
+        try:
+            data = make_get_request(
+                url,
+                dict(headers),
+                capture_headers=_BRAVE_RATE_HEADERS,
+                response_headers=seen,
+            )
+        except ProviderRequestError as exc:
+            _BRAVE_PACER.learn(brave_min_interval(seen))
+            wait = brave_retry_wait(seen)
+            if (
+                attempt == 0
+                and getattr(exc, "status_code", None) == 429
+                and wait is not None
+                and wait <= BRAVE_MAX_RATE_WAIT_SECONDS
+            ):
+                time.sleep(wait)
+                continue
+            raise
+        _BRAVE_PACER.learn(brave_min_interval(seen))
+        return data
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
 def search_brave(
     query: str,
     api_key: str,
@@ -463,7 +594,7 @@ def search_brave(
         "Accept-Encoding": "gzip",
     }
 
-    data = make_get_request(url, headers)
+    data = _brave_get(url, headers)
 
     web_results = (data.get("web") or {}).get("results", [])[:max_results]
     results = []
@@ -474,7 +605,7 @@ def search_brave(
             snippet_parts.append(description)
         extra_snippets = item.get("extra_snippets") or []
         if extra_snippets:
-            snippet_parts.extend(extra_snippets[:2])
+            snippet_parts.extend(extra_snippets[:1])
         result = {
             "title": item.get("title", ""),
             "url": item.get("url", ""),
@@ -495,6 +626,32 @@ def search_brave(
         "metadata": {},
         "mixed": data.get("mixed"),
     }
+
+# Providers whose own domain field takes hostnames and "*.example.com" but no
+# bare public suffix. Live, Tavily answered "*.gov" and "gov" with HTTP 400 and
+# ".gov" with no results; the site: providers and Exa filter ".gov" fine.
+DOMAIN_SUFFIX_FILTER_UNSUPPORTED = frozenset({"tavily"})
+
+
+def public_suffix_entries(*values: Any) -> List[str]:
+    """Domain-filter entries that name a public suffix (".gov", "*.ac.uk"), not a domain."""
+    found: List[str] = []
+    for value in values:
+        for token in domain_filter_tokens(value):
+            if not token.strip().startswith((".", "*.")):
+                continue
+            suffix = domain_filter_host(token)
+            if suffix and ("." not in suffix or suffix in MULTI_LABEL_SUFFIXES):
+                found.append(token.strip())
+    return found
+
+
+def domain_suffix_unsupported_message(provider: str) -> str:
+    return (
+        f"{provider.capitalize()} cannot filter by a domain suffix such as .gov or *.ac.uk. "
+        "Use hostnames such as cisa.gov, or Brave, Serper, Exa or Firecrawl for suffix filters."
+    )
+
 
 def search_tavily(
     query: str,
@@ -522,10 +679,17 @@ def search_tavily(
         "include_raw_content": include_raw_content,
     }
 
-    if include_domains:
-        body["include_domains"] = include_domains
-    if exclude_domains:
-        body["exclude_domains"] = exclude_domains
+    # Same fail-closed check as the site: providers. Tavily's own fields take
+    # hostnames and "*.example.com"; a public suffix is refused, never sent.
+    domain_filters(include_domains, exclude_domains)
+    if public_suffix_entries(include_domains, exclude_domains):
+        raise ValueError(domain_suffix_unsupported_message("tavily"))
+    exclude = wildcard_domain_entries(exclude_domains)
+    include = [entry for entry in wildcard_domain_entries(include_domains) if entry not in exclude]
+    if include:
+        body["include_domains"] = include
+    if exclude:
+        body["exclude_domains"] = exclude
     if time_range:
         body["time_range"] = time_range
 
@@ -757,10 +921,13 @@ def search_firecrawl(
     if tbs:
         body["tbs"] = tbs
 
-    if include_domains:
-        body["query"] += " " + " ".join(f"site:{domain}" for domain in include_domains)
-    if exclude_domains:
-        body["query"] += " " + " ".join(f"-site:{domain}" for domain in exclude_domains)
+    include, exclude = domain_filters(include_domains, exclude_domains)
+    if include:
+        # OR, as for the other site: providers: "site:a site:b" means both at once
+        # and returns nothing (seen live with docs.rs and tokio.rs).
+        body["query"] += " " + " OR ".join(f"site:{domain}" for domain in include[:SITE_OPERATOR_LIMIT])
+    if exclude:
+        body["query"] += " " + " ".join(f"-site:{domain}" for domain in exclude[:SITE_OPERATOR_LIMIT])
 
     if scrape_markdown:
         body["scrapeOptions"] = {"formats": ["markdown"]}

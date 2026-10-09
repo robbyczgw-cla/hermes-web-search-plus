@@ -129,7 +129,6 @@ def _attempts(
     return attempts
 
 
-PROJECTION_REQUIRED_PROVIDERS = frozenset({"parallel", "you"})
 _SNIPPET_SEPARATOR = "\n\n"
 _MAX_AGGREGATED_SNIPPET_CHARS = 600
 _AUTHORITATIVE_SOURCE_TYPES = frozenset({"docs", "paper", "repo", "reference"})
@@ -316,6 +315,7 @@ def _observation(
         or item.get("publish_date")
         or item.get("publishedDate")
         or item.get("page_age")
+        or item.get("age")
     )
     published_at = None
     if isinstance(raw_date, str):
@@ -449,21 +449,6 @@ def _source_diversity(observations: List[Dict[str, Any]], results: List[Dict[str
     }
 
 
-def render_response_v3(response: ResponseV3) -> str:
-    """Render source projections only; this formatter has no answer concept."""
-    lines = []
-    for result in response.results:
-        title = (result.get("title") or {}).get("text") or "Untitled source"
-        url = (result.get("url") or {}).get("observed") or ""
-        snippet = (result.get("snippet") or result.get("text") or {}).get("text") or ""
-        lines.append(title)
-        if url:
-            lines.append(url)
-        if snippet:
-            lines.append(snippet)
-    return "\n".join(lines)
-
-
 def response_from_legacy(
     request: RequestV3,
     plan: ProviderPlan,
@@ -558,8 +543,13 @@ def response_from_legacy(
     else:
         status = ResponseStatus.OK
 
+    # A hedge loser is cancelled because another attempt won, not by a budget.
+    superseded = set(payload.get("_v3_superseded_providers") or ())
     budget_limited = payload.get("_v3_budget_limited") is True or any(
-        attempt.outcome is AttemptOutcome.CANCELLED
+        (
+            attempt.outcome is AttemptOutcome.CANCELLED
+            and attempt.provider not in superseded
+        )
         or attempt.skip_reason
         in {SkipReason.BUDGET_BLOCKED, SkipReason.DEADLINE_EXCEEDED}
         for attempt in provider_attempts

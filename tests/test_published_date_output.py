@@ -129,7 +129,7 @@ def test_brave_page_age_is_kept_and_wins_over_age():
         {"title": "Neither", "url": "https://a.test/3", "description": "d"},
     ]}}
     with mock.patch.object(providers, "make_get_request", return_value=response):
-        result = providers.search_brave(query="q", api_key="brave-test-key-123456")
+        result = providers.search_brave(query="q", api_key="brave-test-key-1234567")
 
     first, second, third = result["results"]
     assert first["age"] == "October 9, 2025"  # the existing key is kept
@@ -204,6 +204,38 @@ def test_a_search_through_the_tool_path_prints_the_date(monkeypatch):
     assert "1. Old review [published 2024-01-05]" in plugin._format_results(data)
 
 
+def test_a_cache_hit_prints_the_same_published_date(monkeypatch):
+    monkeypatch.setenv("SERPER_API_KEY", "serper-test-key-123456")
+    response = {"organic": [
+        {"title": "Old review", "link": "https://a.test/review", "snippet": "s", "date": "Jan 5, 2024"},
+        {"title": "No date", "link": "https://a.test/plain", "snippet": "s"},
+    ]}
+    with mock.patch.object(providers, "make_request", return_value=response) as request:
+        first = plugin._run_search("cached dated review", provider="serper")
+        second = plugin._run_search("cached dated review", provider="serper")
+
+    assert request.call_count == 1  # the repeat came from the v3 cache
+    assert second.get("cached") is True and not first.get("cached")
+    live, hit = plugin._format_results(first), plugin._format_results(second)
+    assert _title_lines(live) == ["1. Old review [published 2024-01-05]", "2. No date"]
+    assert _title_lines(hit) == _title_lines(live)
+
+
+def test_a_cache_hit_keeps_a_brave_age_without_page_age(monkeypatch):
+    monkeypatch.setenv("BRAVE_API_KEY", "brave-test-key-1234567")
+    response = {"web": {"results": [
+        {"title": "Age only", "url": "https://a.test/1", "description": "d", "age": "October 9, 2025"},
+    ]}}
+    with mock.patch.object(providers, "make_get_request", return_value=response) as request:
+        first = plugin._run_search("cached brave age", provider="brave")
+        second = plugin._run_search("cached brave age", provider="brave")
+
+    assert request.call_count == 1
+    assert second.get("cached") is True
+    assert _title_lines(plugin._format_results(first)) == ["1. Age only [published 2025-10-09]"]
+    assert _title_lines(plugin._format_results(second)) == ["1. Age only [published 2025-10-09]"]
+
+
 # --- v3 observations -------------------------------------------------------
 
 
@@ -215,13 +247,15 @@ def _published_at(item):
     return observations[0]["published_at"]
 
 
-@pytest.mark.parametrize("key", ["published_at", "published_date", "date", "publish_date", "publishedDate", "page_age"])
+@pytest.mark.parametrize(
+    "key", ["published_at", "published_date", "date", "publish_date", "publishedDate", "page_age", "age"]
+)
 def test_v3_observation_reads_every_date_key(key):
     assert _published_at({key: "2026-01-05T10:00:00Z"}) == {"raw": "2026-01-05T10:00:00Z", "normalized": "2026-01-05T10:00:00Z"}
 
 
 def test_v3_observation_keeps_the_existing_keys_first():
-    order = ["published_at", "published_date", "date", "publish_date", "publishedDate", "page_age"]
+    order = ["published_at", "published_date", "date", "publish_date", "publishedDate", "page_age", "age"]
     item = {key: str(i) for i, key in enumerate(order)}
     for i, key in enumerate(order):
         assert _published_at(item)["raw"] == str(i)

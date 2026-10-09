@@ -84,6 +84,8 @@ def _safe_provider_error_code(exc: Exception) -> str:
     if isinstance(exc, (TimeoutError,)):
         return "timeout"
     if isinstance(exc, ProviderRequestError):
+        if getattr(exc, "out_of_credit", False):
+            return "provider_error"
         status = exc.status_code
         if status in {401, 403}:
             return "auth_error"

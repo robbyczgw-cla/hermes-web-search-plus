@@ -40,7 +40,7 @@ def sent(monkeypatch):
         record["url"], record["body"] = url, body
         raise _Sent
 
-    def fake_get(url, headers, timeout=30):
+    def fake_get(url, headers, timeout=30, **_kwargs):
         record["url"] = url
         raise _Sent
 
@@ -97,9 +97,21 @@ def _wire(provider, code):
 
 
 @pytest.mark.parametrize("provider", LANGUAGE_PROVIDERS)
-@pytest.mark.parametrize("query", [GERMAN, ENGLISH, UNCLEAR])
-def test_without_auto_every_query_keeps_sending_en(provider, query, sent):
+@pytest.mark.parametrize("query", [ENGLISH, UNCLEAR])
+def test_without_auto_unclear_and_english_queries_send_en(provider, query, sent):
     assert _request(provider, query, _config(), sent) == ("sent", _wire(provider, "en"))
+
+
+@pytest.mark.parametrize("provider", LANGUAGE_PROVIDERS)
+def test_without_any_language_setting_a_confident_detection_beats_the_en_fallback(provider, sent):
+    # Nothing configured: a clearly German query is not searched as English.
+    assert _request(provider, GERMAN, _config(), sent) == ("sent", _wire(provider, "de"))
+
+
+@pytest.mark.parametrize("provider", LANGUAGE_PROVIDERS)
+def test_a_configured_default_language_still_beats_detection(provider, sent):
+    config = _config("en")
+    assert _request(provider, GERMAN, config, sent) == ("sent", _wire(provider, "en"))
 
 
 @pytest.mark.parametrize("provider", LANGUAGE_PROVIDERS)

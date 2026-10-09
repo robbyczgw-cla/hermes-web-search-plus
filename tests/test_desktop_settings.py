@@ -152,6 +152,14 @@ def _schema_secret_fields(text: str) -> dict[str, str]:
     return fields
 
 
+def _schema_setting_fields(text: str) -> set[str]:
+    return {
+        line.split(":", 1)[0].strip()
+        for line in _yaml_block(text, "config_schema:")
+        if line.strip() and "type: secret" not in line
+    }
+
+
 def test_manifest_declares_desktop_form_fields():
     text = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
     secrets = _schema_secret_fields(text)
@@ -160,8 +168,8 @@ def test_manifest_declares_desktop_form_fields():
     assert set(secrets.values()) == _optional_env_names(text) - _DESKTOP_EXCLUDED_ENV
     assert _DESKTOP_EXCLUDED_ENV.isdisjoint(secrets.values())
     assert set(_DESKTOP_SETTING_KEYS).isdisjoint(secrets)
-    for key in ("country", "language", "max_results", "auto_routing", "searxng_url"):
-        assert key in _DESKTOP_SETTING_KEYS
+    # A form field the loader does not read is a setting that silently does nothing.
+    assert _schema_setting_fields(text) == set(_DESKTOP_SETTING_KEYS)
     schema = "\n".join(_yaml_block(text, "config_schema:"))
     for key in ("serpbase_api_key", "querit_api_key", "monid_api_key", "tinyfish_api_key"):
         assert f"{key}:" in schema
@@ -299,11 +307,11 @@ def test_desktop_overlay_without_pyyaml(tmp_path, monkeypatch):
     assert "not-a-setting" not in dumped
 
 
-def _load_desktop_yaml(tmp_path, monkeypatch, text: str, *, block_yaml: bool):
+def _load_desktop_yaml(tmp_path, monkeypatch, text: str, *, block_yaml: bool, auto_routing=None):
     path = _write_plugin_config(tmp_path, {
         "version": 1,
         "defaults": {"locale": {"country": "fr", "language": "fr"}, "max_results": 5},
-        "auto_routing": {"enabled": True, "provider_priority": ["serper"]},
+        "auto_routing": auto_routing or {"enabled": True, "provider_priority": ["serper"]},
         "searxng": {"base_url": "https://old.example"},
     })
     (tmp_path / "config.yaml").write_text(text, encoding="utf-8")
@@ -369,6 +377,91 @@ def test_pyyaml_and_fallback_apply_the_same_overlay(tmp_path, monkeypatch):
             monkeypatch.setattr(builtins, "__import__", real_import)
 
 
+def _settings_yaml(**settings) -> str:
+    lines = ["plugins:", "  entries:", "    web-search-plus:", "      settings:"]
+    lines.extend(f"        {key}: {value}" for key, value in settings.items())
+    return "\n".join(lines) + "\n"
+
+
+def _stored_by_set_order(tmp_path, typed: str) -> dict:
+    """What ``setup.py config set-order <typed>`` writes to config.json."""
+    import argparse
+
+    wsp = load_plugin("wsp_plugin_desktop_order_cli")
+    path = tmp_path / "cli" / "config.json"
+    path.parent.mkdir(exist_ok=True)
+    parser = argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["config", "set-order", typed, "--config-path", str(path)])
+    args.func(args)
+    return json.loads(path.read_text(encoding="utf-8"))["auto_routing"]
+
+
+_BOTH_PARSERS = pytest.mark.parametrize("block_yaml", [False, True], ids=["pyyaml", "fallback"])
+_CUSTOM_BRAVE_EXA = {"enabled": True, "order": "custom", "provider_priority": ["brave", "exa"]}
+
+
+@_BOTH_PARSERS
+def test_provider_order_field_sets_custom_order(tmp_path, monkeypatch, block_yaml):
+    text = _settings_yaml(provider_order="exa,serper,brave", max_results=7)
+
+    loaded = _load_desktop_yaml(tmp_path, monkeypatch, text, block_yaml=block_yaml)
+
+    assert loaded["defaults"]["max_results"] == 7
+    assert loaded["auto_routing"]["order"] == "custom"
+    assert loaded["auto_routing"]["provider_priority"][:3] == ["exa", "serper", "brave"]
+
+
+@_BOTH_PARSERS
+@pytest.mark.parametrize("typed", ["exa,serper,brave", "Exa, SERPER ,brave", "exa,serper,exa,brave,Serper", "exa", "brave"])
+def test_provider_order_field_stores_what_set_order_stores(tmp_path, monkeypatch, block_yaml, typed):
+    expected = _stored_by_set_order(tmp_path, typed)
+    text = _settings_yaml(provider_order=f'"{typed}"')
+
+    loaded = _load_desktop_yaml(tmp_path, monkeypatch, text, block_yaml=block_yaml)
+
+    assert expected["order"] == "custom"
+    assert loaded["auto_routing"]["order"] == "custom"
+    assert loaded["auto_routing"]["provider_priority"] == expected["provider_priority"]
+    assert len(set(expected["provider_priority"])) == len(expected["provider_priority"])
+
+
+@_BOTH_PARSERS
+def test_provider_order_field_drops_unknown_and_removed_names(tmp_path, monkeypatch, block_yaml):
+    expected = _stored_by_set_order(tmp_path, "exa,serper")["provider_priority"]
+    text = _settings_yaml(provider_order="Exa, bogus, exa, perplexity, serper")
+
+    loaded = _load_desktop_yaml(tmp_path, monkeypatch, text, block_yaml=block_yaml)
+
+    priority = loaded["auto_routing"]["provider_priority"]
+    assert loaded["auto_routing"]["order"] == "custom"
+    assert priority[:2] == ["exa", "serper"]
+    assert "bogus" not in priority and "perplexity" not in priority
+    assert priority == expected
+
+
+@_BOTH_PARSERS
+@pytest.mark.parametrize("typed", ["bogus", "perplexity, nope", '""', '"  "'])
+def test_provider_order_field_without_a_provider_changes_nothing(tmp_path, monkeypatch, block_yaml, typed):
+    text = _settings_yaml(provider_order=typed)
+
+    loaded = _load_desktop_yaml(tmp_path, monkeypatch, text, block_yaml=block_yaml, auto_routing=_CUSTOM_BRAVE_EXA)
+
+    assert loaded["auto_routing"]["order"] == "custom"
+    assert loaded["auto_routing"]["provider_priority"][:2] == ["brave", "exa"]
+
+
+@_BOTH_PARSERS
+@pytest.mark.parametrize("word", ["auto", "Automatic", "measured"])
+def test_provider_order_auto_returns_to_measured_and_keeps_priority(tmp_path, monkeypatch, block_yaml, word):
+    text = _settings_yaml(provider_order=word)
+
+    loaded = _load_desktop_yaml(tmp_path, monkeypatch, text, block_yaml=block_yaml, auto_routing=_CUSTOM_BRAVE_EXA)
+
+    assert loaded["auto_routing"]["order"] == "measured"
+    assert loaded["auto_routing"]["provider_priority"][:2] == ["brave", "exa"]
+
+
 def _registered_search_handler():
     plugin = load_plugin("wsp_plugin_desktop_settings_handler")
 
@@ -410,3 +503,56 @@ def test_explicit_tool_count_beats_configured_max_results(monkeypatch):
 def test_bad_configured_max_results_falls_back_safely(monkeypatch, bad):
     count = _handler_count(monkeypatch, {"query": "q"}, bad)
     assert count == (20 if bad == 999 else 5)
+
+
+def _status(tmp_path, home: Path, *extra: str) -> str:
+    import argparse
+    import contextlib
+    import io
+
+    wsp = load_plugin("wsp_plugin_desktop_status")
+    env_file = tmp_path / "empty.env"
+    env_file.write_text("", encoding="utf-8")
+    parser = argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args([
+        "status", "--plain", "--env-path", str(env_file),
+        "--config-path", str(home / "plugins" / "config.json"), *extra,
+    ])
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        args.func(args)
+    return out.getvalue()
+
+
+@_BOTH_PARSERS
+def test_status_shows_the_order_from_the_desktop_field(tmp_path, monkeypatch, block_yaml):
+    # Searches use the Desktop overlay; status must not show config.json alone.
+    if block_yaml:
+        real_import = builtins.__import__
+
+        def no_yaml(name, *args, **kwargs):
+            if name == "yaml":
+                raise ImportError("blocked")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", no_yaml)
+    home = tmp_path / "home"
+    path = _write_plugin_config(home, {"auto_routing": {"order": "measured"}})
+    (home / "config.yaml").write_text(_settings_yaml(provider_order="exa,serper,brave"), encoding="utf-8")
+
+    text = _status(tmp_path, home)
+    payload = json.loads(_status(tmp_path, home, "--json"))
+
+    assert "order: custom" in text
+    assert "from Hermes Desktop settings: provider_order" in text
+    assert payload["routing"]["auto_routing"]["order"] == "custom"
+    assert payload["routing"]["auto_routing"]["provider_priority"][:3] == ["exa", "serper", "brave"]
+    assert json.loads(path.read_text(encoding="utf-8")) == {"auto_routing": {"order": "measured"}}
+
+
+def test_status_without_desktop_settings_names_no_desktop_source(tmp_path):
+    home = tmp_path / "home"
+    _write_plugin_config(home, {})
+
+    assert "from Hermes Desktop settings" not in _status(tmp_path, home)

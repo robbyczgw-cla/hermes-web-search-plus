@@ -343,68 +343,32 @@ def complete_routing_receipt_v3(
     selected_seen = False
     for position, provider in enumerate(order, 1):
         provider_attempt = attempts_by_provider.get(provider)
+        outcome = provider_attempt.outcome if provider_attempt else None
+        attempt_id = provider_attempt.attempt_id if provider_attempt else None
         if provider == selected:
+            decision = CandidateDecision.SELECTED
             reason = (
                 CandidateReasonCode.CLASSIC_SELECTED
                 if position == 1
                 else CandidateReasonCode.FALLBACK_SELECTED
             )
-            decisions.append(
-                _candidate_decision(
-                    provider,
-                    position,
-                    CandidateDecision.SELECTED,
-                    reason,
-                    provider_attempt.attempt_id if provider_attempt else None,
-                )
-            )
             selected_seen = True
-        elif provider_attempt and provider_attempt.outcome is AttemptOutcome.SKIPPED:
-            reason = (
-                _SKIP_REASON_TO_CANDIDATE_REASON.get(
-                    provider_attempt.skip_reason,
-                    CandidateReasonCode.PROVIDER_UNAVAILABLE,
-                )
-                if provider_attempt.skip_reason is not None
-                else CandidateReasonCode.PROVIDER_UNAVAILABLE
+        elif outcome is AttemptOutcome.SKIPPED:
+            decision = CandidateDecision.SKIPPED
+            reason = _SKIP_REASON_TO_CANDIDATE_REASON.get(
+                provider_attempt.skip_reason,
+                CandidateReasonCode.PROVIDER_UNAVAILABLE,
             )
-            decisions.append(
-                _candidate_decision(
-                    provider,
-                    position,
-                    CandidateDecision.SKIPPED,
-                    reason,
-                    provider_attempt.attempt_id,
-                )
-            )
-        elif provider_attempt and provider_attempt.outcome in {
-            AttemptOutcome.FAILED,
-            AttemptOutcome.CANCELLED,
-        }:
-            decisions.append(
-                _candidate_decision(
-                    provider,
-                    position,
-                    CandidateDecision.ATTEMPTED_FAILED,
-                    CandidateReasonCode.ATTEMPT_FAILED,
-                    provider_attempt.attempt_id,
-                )
-            )
-        elif provider_attempt and provider_attempt.outcome in {
-            AttemptOutcome.SUCCESS,
-            AttemptOutcome.PARTIAL,
-        }:
-            decisions.append(
-                _candidate_decision(
-                    provider,
-                    position,
-                    CandidateDecision.ATTEMPTED_NO_SELECTION,
-                    CandidateReasonCode.INSUFFICIENT_RESULTS,
-                    provider_attempt.attempt_id,
-                )
-            )
+        elif outcome in {AttemptOutcome.FAILED, AttemptOutcome.CANCELLED}:
+            decision = CandidateDecision.ATTEMPTED_FAILED
+            reason = CandidateReasonCode.ATTEMPT_FAILED
+        elif outcome in {AttemptOutcome.SUCCESS, AttemptOutcome.PARTIAL}:
+            decision = CandidateDecision.ATTEMPTED_NO_SELECTION
+            reason = CandidateReasonCode.INSUFFICIENT_RESULTS
             selected_seen = True
         else:
+            decision = CandidateDecision.NOT_ATTEMPTED
+            attempt_id = None
             reason = (
                 CandidateReasonCode.BUDGET_DENIED
                 if preflight_aborted
@@ -412,15 +376,7 @@ def complete_routing_receipt_v3(
                 if selected_seen
                 else CandidateReasonCode.PROVIDER_UNAVAILABLE
             )
-            decisions.append(
-                _candidate_decision(
-                    provider,
-                    position,
-                    CandidateDecision.NOT_ATTEMPTED,
-                    reason,
-                    None,
-                )
-            )
+        decisions.append(_candidate_decision(provider, position, decision, reason, attempt_id))
     if selected in order and order.index(selected) > 0:
         prior_decisions = decisions[: order.index(selected)]
         if any(

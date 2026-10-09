@@ -441,7 +441,7 @@ class LocaleRequestPassThroughTests(unittest.TestCase):
             self._isolate(stack)
             stack.enter_context(mock.patch.dict("os.environ", {"BRAVE_API_KEY": "brave-test-key"}))
 
-            def fake_get(url, headers, timeout=30):
+            def fake_get(url, headers, timeout=30, **_kwargs):
                 captured["url"] = url
                 return {"web": {"results": [{"title": "T", "url": "https://example.test/a", "description": "s"}]}}
 

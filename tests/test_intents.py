@@ -230,6 +230,12 @@ def test_module_source_has_no_hard_coded_years():
 
 # One query per cue. The cue must fire on it; a new cue needs a new entry.
 CUE_EXAMPLES = {
+    "tech_anchor": "numpy broadcasting rules",
+    "lang_code_term": "Swift async let concurrency",
+    "ml_topic": "graph neural networks survey",
+    "study_design": "longitudinal cohort of adolescents",
+    "topic_review": "equilibrium climate sensitivity estimates review",
+    "et_al": "BERT pretraining Devlin et al",
     "preprint_repo": "arxiv transformer survey",
     "doi": "find paper by doi 10.1145/3292500.3330701",
     "peer_review": "peer-reviewed sources only",

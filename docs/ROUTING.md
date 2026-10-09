@@ -9,8 +9,8 @@ works in routing policy `routing-v3`. It is generated from `wsp_core/routing.py`
 `wsp_core/provider_registry.py`, and a test fails when it drifts from them.
 
 In short: the first provider is `brave`, with these exceptions: `exa` for `academic` and
-`docs`; `serper` for `shopping`. Everything after the first provider follows
-`provider_priority`.
+`docs`; `serper` for `security` and `shopping`. Everything after the first provider
+follows `provider_priority`.
 
 Contents:
 
@@ -50,7 +50,7 @@ With all four measured providers configured and allowed, the result is:
 | `general` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
 | `local` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
 | `news` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
-| `security` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
+| `security` | `serper` | intent rule | `brave`, `exa`, `tavily`, then `provider_priority` |
 | `shopping` | `serper` | intent rule | `brave`, `exa`, `tavily`, then `provider_priority` |
 
 The measured order is `brave`, `serper`, `exa`, `tavily`. If the first provider in a row
@@ -64,7 +64,10 @@ Two consequences:
   starts with `tavily` still leaves `brave` first while `brave` is eligible. To keep a
   provider from being chosen first, put it in `disabled_providers` or set its
   `auto_allow` entry to `false`. To use one provider for every search, turn automatic
-  routing off and set `default_provider` (see [Configuration](#configuration)).
+  routing off and set `default_provider` (see [Configuration](#configuration)). To use
+  your own order for every query instead of the per-intent table, run `setup.py config
+  set-order exa,serper,brave` (or pick "your own order" in `setup.py setup`); `set-order
+  auto` returns to this table.
 
 ## The measured order
 
@@ -81,8 +84,8 @@ How it was measured:
   fitted to. Tested with leave-one-out (each query's provider chosen from the other
   queries of its intent), it fell below always using the first provider of the measured
   order. Only these choices were the same in every fold: `exa` for `academic` and
-  `docs`; `serper` for `shopping`. They are the intent rules in the table above. Nothing
-  finer is used.
+  `docs`; `serper` for `security` and `shopping`. They are the intent rules in the table
+  above. Nothing finer is used.
 
 What the order does not show:
 
@@ -133,7 +136,8 @@ appended in default order, so a short list does not remove providers from the ch
 4.x setups wrote this list into `config.json`: `you`, `serper`, `exa`, `firecrawl`,
 `tavily`, `linkup`, `brave`, `parallel`, `serpbase`, `querit`, `searxng`, `keenable`. A
 `provider_priority` that starts with exactly this list is treated as never customized.
-When the config is loaded it is replaced by the current default. Providers that come
+When the config is loaded it is replaced by the current default, unless
+`auto_routing.order` is `custom` (then it is your chosen order). Providers that come
 after the old list are kept, after the entries of the new default. Any other list is
 used as written.
 
@@ -170,11 +174,11 @@ measured providers are configured:
 
 | Query | Intent | First provider | Cues that fired |
 |---|---|---|---|
-| randomized controlled trial of intermittent fasting | `academic` | `exa` | `trial_design` |
+| randomized controlled trial of intermittent fasting | `academic` | `exa` | `trial_design`, `study_design` |
 | how to read a file in python | `docs` | `exa` | `how_to_lang`, `lang_clear` |
 | best headphones under 300 euros | `shopping` | `serper` | `best_under`, `under_amount`, `currency_amount`, ... |
 | Kopfhörer Preisvergleich | `shopping` | `serper` | `price_compare`, `category` |
-| CVE-2024-3094 remote code execution | `security` | `brave` | `cve_id`, `cve`, `vuln_class` |
+| CVE-2024-3094 remote code execution | `security` | `serper` | `cve_id`, `cve`, `vuln_class` |
 | restaurants near me open now | `local` | `brave` | `near_me`, `hours`, `poi` |
 | Wetter Wien morgen | `local` | `brave` | `weather` |
 | is it worth switching to Linux reddit | `community` | `brave` | `platform`, `worth_it` |
@@ -197,10 +201,10 @@ Cue families, strongest first:
 - **3.5:** `literature_review`, `trial_design`, `research_paper` / `paper` (3.0),
   `journal_of` / `journal` (2.5)
 - **3.0:** `scholar`, `patent`, `proceedings`, `impact_index`, `study_on` / `study`
-  (2.0), `survey_on` / `survey` (1.0)
+  (2.0), `survey_on` / `survey` (1.0), `topic_review`, `et_al`
 - **2.5:** `citation`, `thesis`, `math_proof`, `scientific`
-- **2.0:** `method_terms`
-- **1.5:** `abstract`, `dataset`
+- **2.0:** `method_terms`, `ml_topic`
+- **1.5:** `abstract`, `dataset`, `study_design`
 - **1.0:** `effects_of`, `research`
 
 ### `community`
@@ -237,11 +241,12 @@ Cue families, strongest first:
 - **3.5:** `error_phrase`, `code_syntax` / `code_include`, `git_cmd`, `docs_word` /
   `documentation_word` (2.5), `reference_tech`
 - **3.0:** `sdk`, `changelog`, `readme` / `cheat_sheet` (2.5), `pkg_cmd`, `code_call`,
-  `code_flag`, `code_backtick`, `error_class`
+  `code_flag`, `code_backtick`, `error_class`, `tech_anchor` / `lang_code_term` /
+  `lang_clear` (2.0) / `lang_symbols` (2.0) / `lang_tools` (2.0) / `lang_data` (1.5) /
+  `lang_ambiguous` (1.0)
 - **2.5:** `code_assign`, `error_code`
 - **2.0:** `code_snake`, `code_camel`, `api`, `cli`, `shell_cmd`, `file_ext`,
-  `code_dotted`, `breaking_changes`, `hex_literal`, `lang_clear` / `lang_symbols` /
-  `lang_tools` / `lang_data` (1.5) / `lang_ambiguous` (1.0)
+  `code_dotted`, `breaking_changes`, `hex_literal`
 - **1.5:** `tutorial` / `guide_words` (1.0), `manual`, `snippet` / `example` (1.0)
 - **1.0:** `install_setup`, `tech_terms` (grows to 2x with more matches),
   `trouble_words`, `library_words`, `reference_plain`, `release_notes_doc`,
@@ -297,7 +302,7 @@ Cue families, strongest first:
 Vulnerabilities and attacks: CVE ids, exploits, malware, security advisories, data
 breaches.
 
-- **First provider:** `brave` (measured order).
+- **First provider:** `serper` (intent rule).
 - **Threshold:** a score of at least 3.0.
 
 Cue families, strongest first:
@@ -355,8 +360,9 @@ slash (`github.com/advisories`) matches a URL path prefix.
 ### `security`
 
 - **Boost:** `nvd.nist.gov`, `cve.org`, `github.com`, `github.com/advisories`,
-  `security.`, `cert.europa.eu`, `kb.cert.org`
-- **Demote:** `youtube.com`, `medium.com`, `reddit.com`
+  `security.`, `cert.europa.eu`, `kb.cert.org`, `cisa.gov`, `bsi.bund.de`,
+  `cert.ssi.gouv.fr`, `ncsc.gov.uk`, `msrc.microsoft.com`, `owasp.org`, `first.org`
+- **Demote:** `youtube.com`, `medium.com`, `reddit.com`, `stackexchange.com`
 
 No reranking for `academic`, `community`, `general`, `local`, `news`, `shopping`.
 

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import errno
 import importlib
+import os
+import time
 import json
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -735,3 +738,245 @@ def test_shadow_interface_stub_receipt_survives_privacy_and_journals(tmp_path) -
     assert journal.append(record) is True
     loaded = journal.load(limit=10)
     assert loaded and loaded[0]["routing_receipt"]["shadow_observation"]["policy_id"] == "shadow-interface"
+
+
+def test_append_is_constant_time_below_the_limits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    journal = journal_module.OperatorReceiptJournal(tmp_path, max_records=50)
+    record = fixture("receipts.json")["receipts"][0]
+    assert journal.append(dict(record, timestamp=time.time())) is True
+
+    def no_rewrite(*_args: Any) -> None:
+        raise AssertionError("append below the limits must not rewrite the journal")
+
+    monkeypatch.setattr(journal, "_rewrite", no_rewrite)
+    for _ in range(20):
+        assert journal.append(dict(record, timestamp=time.time())) is True
+    assert len(journal.path.read_text().splitlines()) == 21
+
+
+def test_full_journal_compacts_with_headroom(tmp_path: Path) -> None:
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    journal = journal_module.OperatorReceiptJournal(tmp_path, max_records=20)
+    record = fixture("receipts.json")["receipts"][0]
+    for _ in range(21):
+        assert journal.append(dict(record, timestamp=time.time())) is True
+    lines = journal.path.read_text().splitlines()
+    assert len(lines) == 18  # trimmed to 90 % so the next appends stay O(1)
+    assert len(journal.load(limit=100)) == 18
+
+
+# --- interrupted appends must not kill the journal --------------------------
+
+
+def _journal_at(tmp_path: Path) -> Any:
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    return journal_module.OperatorReceiptJournal(
+        tmp_path, max_records=50, now=lambda: 1_783_890_400.0
+    )
+
+
+def _numbered(index: int) -> dict[str, Any]:
+    source = fixture("receipts.json")["receipts"][0]
+    return dict(
+        source,
+        execution_id=f"exec_{index:032x}",
+        timestamp=float(source["timestamp"]) + index,
+    )
+
+
+def _loaded_ids(journal: Any) -> list[str]:
+    return sorted(item["execution_id"] for item in journal.load(limit=100))
+
+
+def _expected_ids(*indexes: int) -> list[str]:
+    return sorted(f"exec_{index:032x}" for index in indexes)
+
+
+def _assert_clean_file(journal: Any, count: int) -> None:
+    raw = journal.path.read_bytes()
+    assert raw.endswith(b"\n")
+    assert len(raw.splitlines()) == count
+    for line in raw.splitlines():
+        json.loads(line)
+
+
+def _fail_journal_writes(
+    monkeypatch: pytest.MonkeyPatch, journal: Any, behaviour: Any
+) -> list[int]:
+    """Route writes to the journal file through ``behaviour(real_write, fd, data, call)``."""
+    real_write = os.write
+    calls: list[int] = []
+
+    def fake_write(fd: int, data: Any) -> int:
+        target = os.fstat(fd)
+        stored = journal.path.stat()
+        if (target.st_dev, target.st_ino) != (stored.st_dev, stored.st_ino):
+            return real_write(fd, data)
+        calls.append(len(data))
+        return behaviour(real_write, fd, data, len(calls))
+
+    monkeypatch.setattr(os, "write", fake_write)
+    return calls
+
+
+def _half_then_disk_full(real_write: Any, fd: int, data: Any, call: int) -> int:
+    if call == 1:
+        return real_write(fd, data[: len(data) // 2])
+    raise OSError(errno.ENOSPC, "No space left on device")
+
+
+def test_short_fast_append_is_completed_not_left_torn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal = _journal_at(tmp_path)
+    assert journal.append(_numbered(1)) is True
+
+    def half_once(real_write: Any, fd: int, data: Any, call: int) -> int:
+        return real_write(fd, data[: len(data) // 2] if call == 1 else data)
+
+    with monkeypatch.context() as patch:
+        calls = _fail_journal_writes(patch, journal, half_once)
+        assert journal.append(_numbered(2)) is True
+        assert journal.append(_numbered(3)) is True
+
+    assert len(calls) == 3  # the short write plus its remainder, then the next line
+    assert _loaded_ids(journal) == _expected_ids(1, 2, 3)
+    _assert_clean_file(journal, 3)
+
+
+def test_failed_fast_append_is_rolled_back_and_later_appends_succeed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal = _journal_at(tmp_path)
+    assert journal.append(_numbered(1)) is True
+    before = journal.path.read_bytes()
+    seen: list[bytes] = []
+    real_try = journal._try_fast_append
+
+    def observed(line: str, record: dict[str, Any], directory_descriptor: int) -> bool:
+        stored = real_try(line, record, directory_descriptor)
+        seen.append(journal.path.read_bytes())
+        return stored
+
+    with monkeypatch.context() as patch:
+        _fail_journal_writes(patch, journal, _half_then_disk_full)
+        patch.setattr(journal, "_try_fast_append", observed)
+        # The fast path gives up and cuts the half line off; the full rewrite takes over.
+        assert journal.append(_numbered(2)) is True
+    assert seen == [before]
+
+    assert journal.append(_numbered(3)) is True
+    assert _loaded_ids(journal) == _expected_ids(1, 2, 3)
+    _assert_clean_file(journal, 3)
+
+
+def test_write_without_progress_is_rolled_back_not_reported_as_stored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal = _journal_at(tmp_path)
+    assert journal.append(_numbered(1)) is True
+    with monkeypatch.context() as patch:
+        _fail_journal_writes(patch, journal, lambda *_args: 0)
+        assert journal.append(_numbered(2)) is True  # the full rewrite stored it
+
+    assert _loaded_ids(journal) == _expected_ids(1, 2)
+    _assert_clean_file(journal, 2)
+
+
+def test_torn_line_is_healed_even_when_the_rollback_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    journal = _journal_at(tmp_path)
+    assert journal.append(_numbered(1)) is True
+
+    def no_truncate(_fd: int, _length: int) -> None:
+        raise OSError(errno.EROFS, "cannot truncate")
+
+    with monkeypatch.context() as patch:
+        _fail_journal_writes(patch, journal, _half_then_disk_full)
+        patch.setattr(os, "ftruncate", no_truncate)
+        assert journal.append(_numbered(2)) is True
+
+    assert journal.append(_numbered(3)) is True
+    assert _loaded_ids(journal) == _expected_ids(1, 2, 3)
+    _assert_clean_file(journal, 3)
+
+
+def _torn_variants() -> list[Any]:
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    line = journal_module.encode_journal_record(_numbered(2)).encode("utf-8")
+    prefix = journal_module._LINE_PREFIX.encode("utf-8")
+    return [
+        pytest.param(line[: len(line) // 2], id="half-line"),
+        pytest.param(line[:-1], id="all-but-the-closing-brace"),
+        pytest.param(prefix, id="prefix-only"),
+        pytest.param(prefix[:7], id="inside-the-prefix"),
+        pytest.param(prefix + b'{"warning_codes":["\xc3', id="cut-inside-a-character"),
+    ]
+
+
+@pytest.mark.parametrize("torn", _torn_variants())
+def test_torn_trailing_line_is_dropped_by_load_and_healed_by_append(
+    tmp_path: Path, torn: bytes
+) -> None:
+    journal = _journal_at(tmp_path)
+    assert journal.append(_numbered(1)) is True
+    with journal.path.open("ab") as handle:
+        handle.write(torn)
+
+    assert _loaded_ids(journal) == _expected_ids(1)
+    assert journal.append(_numbered(3)) is True
+    assert _loaded_ids(journal) == _expected_ids(1, 3)
+    _assert_clean_file(journal, 2)
+    assert journal.append(_numbered(4)) is True
+    assert _loaded_ids(journal) == _expected_ids(1, 3, 4)
+
+
+def test_journal_that_starts_with_a_torn_line_recovers(tmp_path: Path) -> None:
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    journal = _journal_at(tmp_path)
+    journal.path.parent.mkdir(parents=True, exist_ok=True)
+    journal.path.write_bytes(journal_module._LINE_PREFIX.encode("utf-8") + b'{"sta')
+
+    assert journal.load() == []
+    assert journal.append(_numbered(1)) is True
+    assert _loaded_ids(journal) == _expected_ids(1)
+    _assert_clean_file(journal, 1)
+
+
+def test_every_journal_line_starts_with_the_prefix_that_marks_a_torn_line() -> None:
+    journal_module = importlib.import_module("wsp_core.operator_receipts_v3")
+    for index in range(3):
+        line = journal_module.encode_journal_record(_numbered(index))
+        assert line.startswith(journal_module._LINE_PREFIX)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        pytest.param(b'{"foreign":true}', id="foreign-json-without-newline"),
+        pytest.param(b"hello", id="foreign-text-without-newline"),
+        pytest.param(b'{"journal_schema_version":1,"owner":"someone-else"', id="foreign-owner"),
+    ],
+)
+def test_foreign_unterminated_content_is_still_never_overwritten(
+    tmp_path: Path, content: bytes
+) -> None:
+    journal = _journal_at(tmp_path)
+    journal.path.parent.mkdir(parents=True, exist_ok=True)
+    journal.path.write_bytes(content)
+
+    assert journal.append(_numbered(1)) is False
+    assert journal.load() == []
+    assert journal.path.read_bytes() == content
+
+
+def test_garbage_after_owned_lines_is_not_healed(tmp_path: Path) -> None:
+    journal = _journal_at(tmp_path)
+    assert journal.append(_numbered(1)) is True
+    damaged = journal.path.read_bytes() + b"garbage"
+    journal.path.write_bytes(damaged)
+
+    assert journal.append(_numbered(2)) is False
+    assert journal.path.read_bytes() == damaged

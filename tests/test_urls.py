@@ -64,3 +64,61 @@ def test_host_and_path_for_rule_matching():
 
 def test_stacked_host_aliases_collapse_to_one_identity():
     assert urls.url_key("https://www.m.example.com/a") == urls.url_key("https://m.example.com/a") == "example.com/a"
+
+
+@pytest.mark.parametrize("entry, host", [
+    ("docs.rs", "docs.rs"),
+    ("WWW.Docs.RS", "docs.rs"),
+    ("www.com", "www.com"),
+    ("a.b.example.co.uk", "a.b.example.co.uk"),
+    ("user:pw@docs.rs:8080/x", "docs.rs"),
+    ("docs.rs/tokio\n", "docs.rs"),
+    ("bücher.example", "xn--bcher-kva.example"),
+    ("straße.de", "strasse.de"),
+    ("xn--mnchen-3ya.de", "xn--mnchen-3ya.de"),
+])
+def test_a_domain_filter_entry_becomes_a_bare_ascii_host(entry, host):
+    assert urls.domain_filter_host(entry) == host
+
+
+@pytest.mark.parametrize("entry", [
+    "", " ", "com", "localhost", "1.2.3.4", "[::1]", "docs rs", "a..b.com", "-a.com", "a_b.com", "b.com;c.com",
+    "site:docs.rs", "--help", "a" * 64 + ".com", ("a" * 60 + ".") * 5 + "com", "https://", "docs.r", "docs.123",
+    "ａ＠b.com",
+])
+def test_anything_that_is_not_a_plain_domain_is_rejected(entry):
+    assert urls.domain_filter_host(entry) is None
+
+
+@pytest.mark.parametrize("entry, suffix", [
+    (".gov", "gov"),
+    ("*.edu", "edu"),
+    (".ac.uk", "ac.uk"),
+    ("*.GOV.UK", "gov.uk"),
+    (".рф", "xn--p1ai"),
+])
+def test_a_suffix_entry_stays_a_suffix(entry, suffix):
+    assert urls.domain_filter_host(entry) == suffix
+
+
+@pytest.mark.parametrize("entry", [".", "*.", "..gov", "*gov", ".-gov", ".gov.", ".site:gov", ".gov OR"])
+def test_a_malformed_suffix_entry_is_rejected(entry):
+    assert urls.domain_filter_host(entry) is None
+
+
+def test_wildcard_domain_entries_keep_hosts_and_star_suffixes():
+    assert urls.wildcard_domain_entries([".gov", "*.gov", "cisa.gov", "WWW.Docs.RS", "x OR y", ".рф"]) == [
+        "*.gov", "cisa.gov", "docs.rs", "*.xn--p1ai",
+    ]
+    assert urls.wildcard_domain_entries(None) == []
+
+
+def test_domain_filters_split_strings_and_lists_alike():
+    assert urls.domain_filter_tokens("a.com, b.com;c.com\nd.com") == ["a.com", "b.com;c.com", "d.com"]
+    assert urls.domain_filter_tokens(["a.com b.com", None, "", 5]) == ["a.com", "b.com", "5"]
+    assert urls.domain_filter_tokens(None) == [] and urls.domain_filter_tokens("  ") == []
+
+
+def test_domain_filters_keep_order_drop_duplicates_and_let_exclude_win():
+    assert urls.domain_filters("b.com a.com B.com", ["a.com", "x y", "c.com"]) == (["b.com"], ["a.com", "c.com"])
+    assert urls.domain_filters(None, "a.com") == ([], ["a.com"])
