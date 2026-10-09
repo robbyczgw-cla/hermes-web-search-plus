@@ -1761,6 +1761,9 @@ def _sanitize_extract_content(content: str) -> str:
 
 
 _MAX_TOOL_COUNT = 20
+# Search engines ignore or reject longer queries (Google ~2k, Brave 400
+# chars); a 50k-char query only bloats the echoed answer.
+_MAX_TOOL_QUERY_CHARS = 2000
 
 
 def _clean_tool_count(value: Any, fallback: int = 5) -> int:
@@ -1773,7 +1776,7 @@ def _clean_tool_count(value: Any, fallback: int = 5) -> int:
         return fallback
     try:
         number = int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return fallback
     return max(1, min(number, _MAX_TOOL_COUNT))
 
@@ -2037,7 +2040,12 @@ def register(ctx: Any) -> None:
             no_cache = bool(kwargs.get("no_cache", no_cache))
             cache_ttl = kwargs.get("cache_ttl", cache_ttl)
         if cache_ttl is not None:
-            cache_ttl = int(cache_ttl)
+            try:
+                cache_ttl = int(cache_ttl)
+            except (TypeError, ValueError, OverflowError):
+                cache_ttl = None
+        if isinstance(query, str) and len(query) > _MAX_TOOL_QUERY_CHARS:
+            query = query[:_MAX_TOOL_QUERY_CHARS]
         count = _clean_tool_count(count)
         provider, provider_error = _clean_tool_provider(provider)
         if provider_error:

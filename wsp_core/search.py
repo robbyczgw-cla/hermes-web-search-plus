@@ -99,7 +99,7 @@ from .research import run_research_mode
 from .attempt_engine_v3 import AttemptContext, AttemptEngine
 from .cache_v3 import ResponseCacheV3
 from .compat_v3 import legacy_request_to_v3, v3_response_to_legacy_search
-from .contract_v3 import Capability, RequestV3, ResponseV3, SkipReason
+from .contract_v3 import Capability, ErrorClass, RequestV3, ResponseV3, SkipReason
 from .orchestrator_v3 import (
     CapabilityAdapter,
     CapabilityExecution,
@@ -1922,6 +1922,10 @@ def _execute_search_v3(
         return min(delay, attempt_timeout) if attempt_timeout else delay
 
     race = _race_providers(engine, candidates, contexts, operation_for, hedge_delay, deadline)
+    if race.provider is None and candidates and all(
+        receipt.skip_reason in _OUTAGE_SKIPS for receipt in race.receipts
+    ):
+        race = _last_resort_probe(engine, store, candidates[0], contexts, operation_for, race)
     receipts = race.receipts
     payload = race.payload
     successful_provider = race.provider
@@ -1985,6 +1989,25 @@ def _execute_search_v3(
 
 
 _MAX_IN_FLIGHT = 2
+
+# Skips that mean "recently down", not "not allowed". When they exclude every
+# candidate, the top one still gets a probe, as 4.3.5 did: an answer from a
+# provider that may have recovered beats a guaranteed "All providers failed".
+_OUTAGE_SKIPS = frozenset({SkipReason.CIRCUIT_OPEN})
+
+
+def _last_resort_probe(engine, store, provider, contexts, operation_for, race):
+    context = contexts[provider]
+    now = int(time.time())
+    for error_class in (ErrorClass.TRANSIENT, ErrorClass.TIMEOUT):
+        store.record_success(context.circuit_key, error_class, now=now)
+    execution = engine.execute(context, operation_for(provider))
+    receipts = [execution.receipt if r.provider == provider else r for r in race.receipts]
+    payload = execution.payload
+    if payload is None:
+        return _Race(None, None, receipts, race.empty_providers)
+    empty = [] if payload.get("results") else [provider]
+    return _Race(provider, payload, receipts, empty)
 
 
 @dataclass
