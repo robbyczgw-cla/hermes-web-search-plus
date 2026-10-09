@@ -24,7 +24,7 @@ from .http_client import (
     urlopen,
 )
 from .quality import _title_from_url
-from .urls import SITE_OPERATOR_LIMIT, domain_filters, strip_tracking_params
+from .urls import SITE_OPERATOR_LIMIT, domain_filters, strip_tracking_params, wildcard_domain_entries
 from .request_gate_v3 import validate_outbound_body, validate_provider_mode
 from .config import normalize_parallel_search_mode
 
@@ -645,10 +645,15 @@ def search_tavily(
         "include_raw_content": include_raw_content,
     }
 
-    if include_domains:
-        body["include_domains"] = include_domains
-    if exclude_domains:
-        body["exclude_domains"] = exclude_domains
+    # Same fail-closed check as the site: providers; Tavily's own fields take
+    # hostnames and "*.gov"-style suffixes.
+    domain_filters(include_domains, exclude_domains)
+    exclude = wildcard_domain_entries(exclude_domains)
+    include = [entry for entry in wildcard_domain_entries(include_domains) if entry not in exclude]
+    if include:
+        body["include_domains"] = include
+    if exclude:
+        body["exclude_domains"] = exclude
     if time_range:
         body["time_range"] = time_range
 

@@ -249,3 +249,42 @@ def test_the_command_line_rejects_an_unusable_include_list(monkeypatch, capsys):
 
     assert exit_info.value.code == 2
     assert "Invalid include_domains value: 'x', 'OR', 'y'" in capsys.readouterr().err
+
+
+def _tavily_body(monkeypatch, **domains):
+    seen = {}
+
+    def fake_request(url, headers, body, timeout=30):
+        seen["body"] = body
+        return {"results": []}
+
+    monkeypatch.setattr(providers, "make_request", fake_request)
+    providers.search_tavily(query="q", api_key="k", **domains)
+    return seen["body"]
+
+
+def test_tavily_gets_a_suffix_as_a_wildcard(monkeypatch):
+    # Live: [".gov"] found nothing and ["gov"] was an HTTP 400; Tavily documents "*.com".
+    body = _tavily_body(monkeypatch, include_domains=[".gov", "*.ac.uk", "https://www.cisa.gov/x"], exclude_domains=".mil")
+    assert body["include_domains"] == ["*.gov", "*.ac.uk", "cisa.gov"]
+    assert body["exclude_domains"] == ["*.mil"]
+
+
+def test_tavily_skips_unusable_entries_and_lets_exclude_win(monkeypatch):
+    body = _tavily_body(monkeypatch, include_domains="docs.rs, x OR y, tokio.rs", exclude_domains=["tokio.rs", "--help"])
+    assert body["include_domains"] == ["docs.rs"]
+    assert body["exclude_domains"] == ["tokio.rs"]
+
+
+def test_tavily_without_domains_sends_no_domain_fields(monkeypatch):
+    body = _tavily_body(monkeypatch)
+    assert "include_domains" not in body and "exclude_domains" not in body
+
+
+def test_tavily_without_a_usable_include_does_not_search_unrestricted(monkeypatch):
+    def forbidden(*args, **kwargs):
+        raise AssertionError("the request must not be sent")
+
+    monkeypatch.setattr(providers, "make_request", forbidden)
+    with pytest.raises(ValueError, match="Invalid include_domains value"):
+        providers.search_tavily(query="q", api_key="k", include_domains=["OR", "site:evil.com"])

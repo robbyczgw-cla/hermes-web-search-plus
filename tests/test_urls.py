@@ -106,6 +106,13 @@ def test_a_malformed_suffix_entry_is_rejected(entry):
     assert urls.domain_filter_host(entry) is None
 
 
+def test_wildcard_domain_entries_keep_hosts_and_star_suffixes():
+    assert urls.wildcard_domain_entries([".gov", "*.gov", "cisa.gov", "WWW.Docs.RS", "x OR y", ".рф"]) == [
+        "*.gov", "cisa.gov", "docs.rs", "*.xn--p1ai",
+    ]
+    assert urls.wildcard_domain_entries(None) == []
+
+
 def test_domain_filters_split_strings_and_lists_alike():
     assert urls.domain_filter_tokens("a.com, b.com;c.com\nd.com") == ["a.com", "b.com;c.com", "d.com"]
     assert urls.domain_filter_tokens(["a.com b.com", None, "", 5]) == ["a.com", "b.com", "5"]

@@ -255,6 +255,25 @@ def _filter_suffix(suffix: str) -> Optional[str]:
     return suffix if _FILTER_SUFFIX.fullmatch(suffix) else None
 
 
+def wildcard_domain_entries(value: Any) -> List[str]:
+    """Domain-filter entries for an API field that takes ``*.gov`` suffixes (Tavily).
+
+    Hosts come out as from :func:`domain_filter_host`; a suffix entry (``.gov``,
+    ``*.gov``) becomes ``*.gov``, the form such a field documents. A bare
+    ``.gov`` matched nothing on Tavily and ``gov`` was rejected. Unusable entries
+    are skipped.
+    """
+    entries: List[str] = []
+    for token in domain_filter_tokens(value):
+        host = domain_filter_host(token)
+        if host is None:
+            continue
+        entry = f"*.{host}" if token.strip().startswith((".", "*.")) else host
+        if entry not in entries:
+            entries.append(entry)
+    return entries
+
+
 def _hosts(tokens: List[str]) -> List[str]:
     hosts: List[str] = []
     for token in tokens:
