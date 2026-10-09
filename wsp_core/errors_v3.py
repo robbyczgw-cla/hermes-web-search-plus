@@ -110,6 +110,9 @@ def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
         error_class = ErrorClass.CONFIG
     elif isinstance(error, (TimeoutError,)):
         error_class = ErrorClass.TIMEOUT
+    elif isinstance(error, ProviderRequestError) and getattr(error, "out_of_credit", False):
+        # Keeps the provider's real status in http_status (Linkup answers 429).
+        error_class = ErrorClass.QUOTA
     elif status in {401, 403}:
         error_class = ErrorClass.AUTH
     elif status in {402, 432}:
