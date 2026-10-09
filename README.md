@@ -19,7 +19,7 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v4.3.5**. Version history: [Changelog](CHANGELOG.md).
+Current release: **v5.0.0**. Version history: [Changelog](CHANGELOG.md).
 
 ### What's new in 5.0
 

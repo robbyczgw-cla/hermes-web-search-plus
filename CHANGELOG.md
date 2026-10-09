@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v5.0.0] — 2026-10-09
+
 ### Breaking changes
 
 - **Automatic routing picks providers by query type.** Brave goes first for general, news, local and community queries, Exa for docs and academic, Serper for security and shopping. In a 294-query test mix with every provider configured, Brave answered 62 % of automatic searches (4.3.5: 14 %), Exa 23 %, Serper 15 % (4.3.5: 27 %); You.com, Firecrawl, Tavily and Parallel are no longer picked first. With a Brave key, expect noticeably more Brave usage. To keep your own order instead, run `setup.py config set-order <providers>` or choose it in `setup.py setup`. `provider_priority` still orders the fallback chain; a config that still holds the 4.x default list gets the new order, unless you chose it as your own order (`order: custom`).
