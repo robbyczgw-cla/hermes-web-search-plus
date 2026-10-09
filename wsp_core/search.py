@@ -108,6 +108,7 @@ from .orchestrator_v3 import (
 )
 from .runtime_v3 import response_from_legacy
 from .state_store_v3 import SQLiteStateStore
+from .urls import domain_filter_tokens, domain_filters
 from . import providers as _providers
 from . import extract as _extract
 from .routing import (
@@ -851,6 +852,10 @@ def main():
     
     if not args.query and not args.similar_url:
         parser.error("--query is required (unless using --similar-url with Exa)")
+    try:
+        domain_filters(args.include_domains, args.exclude_domains)
+    except ValueError as exc:
+        parser.error(str(exc))
     
     # Handle --explain-routing
     if args.explain_routing:
@@ -2161,8 +2166,12 @@ def run_search_request(
     try:
         freshness = _providers.normalize_freshness(freshness)
         search_type = _providers.normalize_search_type(search_type)
+        domain_filters(include_domains, exclude_domains)  # raises when include_domains has no usable domain
     except ValueError as exc:
         return {"error": str(exc), "provider": provider, "query": query, "results": []}
+    # One list of entries whatever the caller sent ("a.com, b.com" or a bare string).
+    include_domains = domain_filter_tokens(include_domains) or None
+    exclude_domains = domain_filter_tokens(exclude_domains) or None
     config = apply_profile_effects(config) if config is not None else load_config()
     language, config = apply_auto_language(language, config)
     policy_mode = str((config.get("routing") or {}).get("policy_mode", "classic"))

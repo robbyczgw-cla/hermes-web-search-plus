@@ -24,7 +24,7 @@ from .http_client import (
     urlopen,
 )
 from .quality import _title_from_url
-from .urls import strip_tracking_params
+from .urls import SITE_OPERATOR_LIMIT, domain_filters, strip_tracking_params
 from .request_gate_v3 import validate_outbound_body, validate_provider_mode
 from .config import normalize_parallel_search_mode
 
@@ -880,10 +880,11 @@ def search_firecrawl(
     if tbs:
         body["tbs"] = tbs
 
-    if include_domains:
-        body["query"] += " " + " ".join(f"site:{domain}" for domain in include_domains)
-    if exclude_domains:
-        body["query"] += " " + " ".join(f"-site:{domain}" for domain in exclude_domains)
+    include, exclude = domain_filters(include_domains, exclude_domains)
+    if include:
+        body["query"] += " " + " ".join(f"site:{domain}" for domain in include[:SITE_OPERATOR_LIMIT])
+    if exclude:
+        body["query"] += " " + " ".join(f"-site:{domain}" for domain in exclude[:SITE_OPERATOR_LIMIT])
 
     if scrape_markdown:
         body["scrapeOptions"] = {"formats": ["markdown"]}
