@@ -49,6 +49,8 @@ from .wsp_core.cache import MAX_STORED_TEXT_CHARS, store_web_text
 from .wsp_core.config import (
     ORDER_AUTO_WORDS,
     REMOVED_PROVIDER_IDS,
+    _apply_desktop_settings,
+    _desktop_settings,
     _replace_pre_5_default_priority,
     apply_profile_effects,
     load_config,
@@ -1316,13 +1318,19 @@ def _web_search_plus_cli_command(args: Any) -> None:
             env = _read_env_file(Path(env_path))
         else:
             env = _effective_env(_read_env_file(_get_hermes_env_path()))
-        config = _load_behavior_config(Path(config_path)) if config_path else _load_behavior_config()
+        path = Path(config_path) if config_path else _get_plugin_config_path()
+        # Status shows what searches use: config.json plus the Hermes Desktop
+        # settings, which the engine lays over it at load time. Never written back.
+        desktop = _desktop_settings(path)
+        config = _apply_desktop_settings(json.loads(json.dumps(_load_behavior_config(path))), desktop)
         payload = _status_payload(env, config)
         if getattr(args, "json", False):
             print(json.dumps(payload, indent=2, sort_keys=True))
         else:
             print(_render_setup_guidance(env=env, fancy=not getattr(args, "plain", False), config=config))
             print("\n" + _routing_summary(config))
+            if desktop:
+                print("  from Hermes Desktop settings: " + ", ".join(sorted(desktop)))
             donsetch = payload.get("donsetch") or {}
             if donsetch.get("binary_configured") or donsetch.get("state") != "missing":
                 print(

@@ -503,3 +503,56 @@ def test_explicit_tool_count_beats_configured_max_results(monkeypatch):
 def test_bad_configured_max_results_falls_back_safely(monkeypatch, bad):
     count = _handler_count(monkeypatch, {"query": "q"}, bad)
     assert count == (20 if bad == 999 else 5)
+
+
+def _status(tmp_path, home: Path, *extra: str) -> str:
+    import argparse
+    import contextlib
+    import io
+
+    wsp = load_plugin("wsp_plugin_desktop_status")
+    env_file = tmp_path / "empty.env"
+    env_file.write_text("", encoding="utf-8")
+    parser = argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args([
+        "status", "--plain", "--env-path", str(env_file),
+        "--config-path", str(home / "plugins" / "config.json"), *extra,
+    ])
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        args.func(args)
+    return out.getvalue()
+
+
+@_BOTH_PARSERS
+def test_status_shows_the_order_from_the_desktop_field(tmp_path, monkeypatch, block_yaml):
+    # Searches use the Desktop overlay; status must not show config.json alone.
+    if block_yaml:
+        real_import = builtins.__import__
+
+        def no_yaml(name, *args, **kwargs):
+            if name == "yaml":
+                raise ImportError("blocked")
+            return real_import(name, *args, **kwargs)
+
+        monkeypatch.setattr(builtins, "__import__", no_yaml)
+    home = tmp_path / "home"
+    path = _write_plugin_config(home, {"auto_routing": {"order": "measured"}})
+    (home / "config.yaml").write_text(_settings_yaml(provider_order="exa,serper,brave"), encoding="utf-8")
+
+    text = _status(tmp_path, home)
+    payload = json.loads(_status(tmp_path, home, "--json"))
+
+    assert "order: custom" in text
+    assert "from Hermes Desktop settings: provider_order" in text
+    assert payload["routing"]["auto_routing"]["order"] == "custom"
+    assert payload["routing"]["auto_routing"]["provider_priority"][:3] == ["exa", "serper", "brave"]
+    assert json.loads(path.read_text(encoding="utf-8")) == {"auto_routing": {"order": "measured"}}
+
+
+def test_status_without_desktop_settings_names_no_desktop_source(tmp_path):
+    home = tmp_path / "home"
+    _write_plugin_config(home, {})
+
+    assert "from Hermes Desktop settings" not in _status(tmp_path, home)
