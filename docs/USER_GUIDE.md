@@ -67,11 +67,11 @@ python3 search.py --bench
 python3 search.py --bench --json   # structured report
 ```
 
-The bench runs a small fixed query suite (docs, vendor release, community, non-English) against every configured search-capable provider and reports success rate, median latency, result volume, and simple quality signals (duplicate-free URLs, snippet coverage). Providers are ranked by a weighted score — reliability first, then speed, then quality — and the recommended priority is printed together with the exact `config set-priority` command to apply it.
+The bench runs a small fixed query suite (docs, vendor release, community, non-English) against every configured search-capable provider and reports success rate, median latency, result volume, and simple quality signals (duplicate-free URLs, snippet coverage). Providers are ranked by a weighted score — reliability first, then speed, then quality — and the recommended priority is printed together with the exact `config set-priority` command to apply it. With the default `auto_routing.order: measured`, `provider_priority` only orders the fallback chain; to make the bench order the first choice for every query, apply the same list with `config set-order` instead.
 
 Two guarantees worth knowing:
 
-- Bench calls providers directly, so a bench run never triggers provider cooldowns and never feeds the adaptive routing statistics.
+- Bench calls providers directly, so a bench run never triggers provider cooldowns and never feeds the latency statistics that time the fallback.
 - Nothing is written to your config; applying the recommendation is always an explicit step.
 
 Note that the bench makes a few real API calls per provider, so it spends a small amount of quota on every configured provider.
@@ -91,10 +91,10 @@ python ~/.hermes/plugins/web-search-plus/setup.py setup you linkup --env-path ~/
 
 Presets:
 
-- `starter`: You.com + Serper + Linkup. Best Routing v2 first-run setup.
-- `lean`: You.com + Linkup. Small fast search plus extraction.
-- `search`: You.com + Serper + Exa + Firecrawl + Tavily + Linkup. Full default Routing v2 pool.
-- `extract`: Firecrawl + Linkup + Exa + Tavily. Extraction-heavy setup.
+- `starter`: Brave + Serper + Exa + Linkup. The providers automatic routing uses first; this is what `setup.py setup` asks for by default.
+- `lean`: Brave + Linkup. Small fast search plus extraction.
+- `search`: Brave + Serper + Exa + Tavily + Firecrawl + Linkup. The full default search pool.
+- `extract`: Linkup + Firecrawl + Tavily. Extraction-heavy setup.
 - `self-hosted`: SearXNG + keyless Keenable for automatic routing without a commercial API key. A separately installed DonSeTch sidecar can be layered on for explicit local search and extraction.
 - `all`: prompt for every supported provider.
 
@@ -166,7 +166,7 @@ The profile governs only automatic routing. An explicit `provider="serper"` (or 
 
 ### Migration note for v2.0.0
 
-Routing v2 changes the default `provider="auto"` behavior. Existing configs keep explicit user choices, but missing `auto_allow` entries inherit the guarded defaults: SerpBase and Querit stay explicit-only until you opt them into automatic routing; Brave joins the default auto-pool at priority 7 and Parallel at priority 8 when a key is configured. Removed Perplexity and Kilo-Perplexity IDs in older configs are ignored; other unknown provider IDs still invalidate the config.
+Routing v2 changes the default `provider="auto"` behavior. Existing configs keep explicit user choices, but missing `auto_allow` entries inherit the guarded defaults: SerpBase and Querit stay explicit-only until you opt them into automatic routing; Parallel joins the default auto-pool at priority 8 when a key is configured. (Since 5.0, Brave is first in the default priority; see [Routing](ROUTING.md).) Removed Perplexity and Kilo-Perplexity IDs in older configs are ignored; other unknown provider IDs still invalidate the config.
 
 ```bash
 python ~/.hermes/plugins/web-search-plus/setup.py config show --json
@@ -176,7 +176,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase
 
 ## Routing preferences
 
-For a generated class-by-class reference of what auto-routing prefers and demotes, see [Routing v2 Reference](ROUTING.md).
+For a generated reference of each intent, its first provider and the fallback chain, see [Routing Reference](ROUTING.md).
 
 Secrets and behavior are intentionally separate:
 
@@ -423,7 +423,7 @@ Parameters:
 
 Parameter semantics:
 
-- `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `parallel`, `searxng`, `serpbase`, `querit`, or `donsetch`. Brave joins the default auto-pool at priority 7; Parallel joins at priority 8 when a key is configured. SerpBase, Querit, and DonSeTch remain available for explicit calls but default to `auto_allow=false`.
+- `provider`: `auto`, or a concrete provider such as `you`, `serper`, `exa`, `firecrawl`, `tavily`, `linkup`, `brave`, `parallel`, `searxng`, `serpbase`, `querit`, or `donsetch`. Brave is first in the default auto-pool; Parallel joins at priority 8 when a key is configured. SerpBase, Querit, and DonSeTch remain available for explicit calls but default to `auto_allow=false`.
 - `count`: result count, from 1 to 20.
 - `time_range`: `day`, `week`, `month`, or `year` where supported.
 - `freshness`: unified recency filter with the values `day`, `week`, `month`, or `year` (case-insensitive; invalid values return a clear error). It is applied natively by Serper, Brave, Querit, Firecrawl, Keenable, You.com, SearXNG, Exa, Tavily, and TinyFish, each translated into that provider's own format (for example Brave `pw`, Serper `tbs=qdr:w`, Exa absolute UTC `startPublishedDate`/`endPublishedDate` bounds, Tavily `time_range`, or TinyFish publication-time filters). Providers without recency support (Linkup, Parallel, SerpBase) still run the search normally; result metadata reports `freshness.applied=false` instead of silently dropping the filter. In `mode="research"` the applied status is reported per provider.

@@ -7,7 +7,7 @@ The Operator Console is a local, read-only view of the v3 engine. It cannot run 
 From the plugin directory:
 
 ```bash
-python3 ui.py --port 8765
+python3 -m wsp_core.ui --port 8765
 ```
 
 The process prints a one-time bootstrap URL similar to:

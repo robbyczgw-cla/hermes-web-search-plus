@@ -1226,8 +1226,9 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
     def execute_with_retry(prov: str) -> Dict[str, Any]:
         # The v3 AttemptEngine owns retries and circuit state, so an
         # engine-owned call runs once here and the engine retries around it.
-        # Adaptive routing samples are a separate signal and are recorded on
-        # both paths; otherwise v3 traffic never trains the router.
+        # Latency samples (provider_stats) are a separate signal and are
+        # recorded on both paths; the hedged fallback reads them to time the
+        # next attempt.
         started = time.monotonic()
         try:
             if engine_owned_attempt:

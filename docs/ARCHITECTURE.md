@@ -46,7 +46,7 @@ Each provider adapter normalizes provider-specific request and response details 
 
 Provider capability classes:
 
-- Search-only: Brave, SearXNG, SerpBase, and Querit. Brave participates in the default auto-pool at priority 7; SerpBase and Querit default to `auto_allow=false` and are explicit/guarded unless users opt in.
+- Search-only: Brave, SearXNG, SerpBase, and Querit. Brave is first in the default auto-pool; SerpBase and Querit default to `auto_allow=false` and are explicit/guarded unless users opt in.
 - Search and extraction: You.com, Serper, Firecrawl, Tavily, Exa, Linkup, Parallel, Keenable, and the optional local DonSeTch MCP sidecar. Serper extraction uses its webpage scraper (`scrape.serper.dev`) and sits last in the default auto-extraction fallback chain. DonSeTch defaults to `auto_allow=false` for both capabilities and is explicit-only unless deliberately enabled.
 
 Provider pricing, freshness, ranking, localization, and vertical support are controlled by the providers. The plugin normalizes responses; it does not make providers equivalent.
@@ -64,9 +64,10 @@ Default routing config includes:
 {
   "auto_routing": {
     "enabled": true,
+    "order": "measured",
     "fallback_provider": "serper",
-    "provider_priority": ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "parallel", "brave", "serpbase", "querit", "searxng", "keenable"],
-    "extract_provider_priority": ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper"],
+    "provider_priority": ["brave", "serper", "exa", "tavily", "you", "firecrawl", "linkup", "parallel", "serpbase", "querit", "searxng", "keenable"],
+    "extract_provider_priority": ["tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper", "donsetch"],
     "disabled_providers": [],
     "auto_allow": {
       "serpbase": false,
@@ -88,20 +89,17 @@ Secrets and routing are separate so users can configure a provider key without a
 
 Routing is rule-based. It is not ML and it is not magic.
 
-High-level flow:
+High-level flow (routing policy `routing-v3`, details in [Routing](ROUTING.md)):
 
-1. Analyze query text for signals: current-info intent, product/local intent, research language, direct-answer intent, semantic-discovery intent, privacy intent, complexity, recency, language/script hints, and benchmark-derived query classes.
-2. Score known providers for those signals.
-3. Apply conservative Routing v2 boosts and penalties for classes such as multilingual current queries, AT/local shopping, GitHub/docs, package/API docs, arXiv/academic, Reddit/community, CVE/security, official/regulatory, finance/IR, weather/local factual, and briefing/synthesis.
-4. Remove providers that do not have a key or required local config.
-5. Remove providers listed in `disabled_providers`.
-6. Remove providers with `auto_allow=false` from automatic routing.
-7. Choose the highest-scoring remaining provider.
-8. Break ties deterministically using query text and `provider_priority`.
-9. Execute the provider call with retry/cooldown handling.
-10. Return quality diagnostics if requested.
+1. Assign the query one of eight intents from text cues (`wsp_core/intents.py`): academic, community, docs, general, local, news, security, shopping.
+2. Build the candidate order: the intent's first-provider rule if it has one (Exa for academic and docs, Serper for security and shopping), then the measured order (Brave, Serper, Exa, Tavily), then `provider_priority`. With `auto_routing.order: custom`, `provider_priority` alone is the order for every query.
+3. Remove providers that do not have a key or required local config.
+4. Remove providers listed in `disabled_providers`.
+5. Remove providers with `auto_allow=false` from automatic routing.
+6. Try the first remaining provider. In the tools, the next one starts when it fails, returns no results, or is slower than its usual latency; the first non-empty answer wins.
+7. Return quality diagnostics if requested.
 
-When no provider is eligible, the router reports `no_available_providers` and falls back to the configured fallback provider path. If that provider has no key, the call fails visibly instead of inventing results.
+The router does not score providers per query and calls no model. When no provider is eligible, the router reports `no_available_providers` and falls back to the configured fallback provider path. If that provider has no key, the call fails visibly instead of inventing results.
 
 ## Auto-allow gate
 

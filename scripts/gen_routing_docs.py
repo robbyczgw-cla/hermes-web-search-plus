@@ -2,9 +2,10 @@
 """Generate docs/ROUTING.md from the routing, intent, quality and cache constants.
 
 The reference is rendered deterministically from the real module constants:
-the first-provider table and measured order (routing.py), the intents and
-their cue tables (intents.py), the authority domains (quality.py), the cache
-caps (cache.py) and the default provider lists (provider_registry.py, config.py).
+the first-provider table and measured order (wsp_core/routing.py), the intents
+and their cue tables (wsp_core/intents.py), the authority domains
+(wsp_core/quality.py), the cache caps (wsp_core/cache.py) and the default
+provider lists (wsp_core/provider_registry.py, wsp_core/config.py).
 The document cannot drift from behavior without failing the --check mode used
 in CI/tests.
 

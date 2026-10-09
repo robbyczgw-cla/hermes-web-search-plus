@@ -705,7 +705,7 @@ def _routing_summary(config: Mapping[str, Any]) -> str:
         "  auto-allow false: " + (
             ", ".join(p for p, allowed in sorted((auto.get("auto_allow") or {}).items()) if allowed is False) or "none"
         ),
-        f"  confidence threshold: {auto.get('confidence_threshold', 0.3)}",
+        f"  confidence threshold: {auto.get('confidence_threshold', 0.3)} (no effect since 5.0)",
     ]
     effective_pool = [
         provider
@@ -1072,7 +1072,7 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     setup.add_argument("--auto-allow", help="Comma-separated providers allowed in auto-routing")
     setup.add_argument("--auto-deny", help="Comma-separated providers blocked from auto-routing but still usable explicitly")
     setup.add_argument("--fallback-provider", help="Fallback provider when no route is available")
-    setup.add_argument("--confidence-threshold", type=float, help="Auto-routing confidence threshold 0.0-1.0")
+    setup.add_argument("--confidence-threshold", type=float, help="Accepted for compatibility; no effect since 5.0")
     jev = setup.add_mutually_exclusive_group()
     jev.add_argument("--jev", action="store_true", help="Enable optional Jev during setup")
     jev.add_argument("--no-jev", action="store_true", help="Leave optional Jev disabled (default)")
@@ -1143,7 +1143,7 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     allow_auto.add_argument("mode", choices=["on", "off", "true", "false", "yes", "no"])
     allow_auto.add_argument("--config-path")
     allow_auto.add_argument("--dry-run", action="store_true")
-    threshold = config_subs.add_parser("set-threshold", help="Set routing confidence threshold")
+    threshold = config_subs.add_parser("set-threshold", help="Set the 4.x routing confidence threshold (no effect since 5.0)")
     threshold.add_argument("value", type=float)
     threshold.add_argument("--config-path")
     threshold.add_argument("--dry-run", action="store_true")
@@ -2016,15 +2016,11 @@ def register(ctx: Any) -> None:
     schema = {
         "name": "web_search_plus",
         "description": (
-            "Multi-provider web search with intelligent auto-routing. "
-            "Automatically selects the best provider based on query intent: "
-            "Serper for shopping/news/facts, Tavily for research/analysis, "
-            "Exa for semantic discovery, "
-            "Brave for general web search, "
-            "Linkup for source-backed grounding/citations, "
-            "Firecrawl for web search plus optional scrape-ready results, "
-            "You.com for real-time snippets, SearXNG for privacy-focused/self-hosted search, "
-            "and SerpBase/Querit only when explicitly enabled or forced. "
+            "Multi-provider web search with automatic routing by query type: "
+            "Brave first for general, news, local and community queries, "
+            "Exa for docs and academic queries, Serper for security and shopping queries; "
+            "if a provider fails, is slow or returns nothing, the next configured one is tried. "
+            "SerpBase/Querit only when explicitly enabled or forced. "
             "All providers are constrained to source-result/source-text modes. "
             "Override with provider param if needed."
         ),
@@ -2038,7 +2034,7 @@ def register(ctx: Any) -> None:
                 "provider": {
                     "type": "string",
                     "enum": ["auto", *SEARCH_PROVIDER_IDS],
-                    "description": "Search provider. Use 'auto' for intelligent routing (default). Brave and Serper share generic web-search intents and ties are distributed deterministically per query.",
+                    "description": "Search provider. Use 'auto' for routing by query type (default).",
                     "default": "auto",
                 },
                 "depth": {
