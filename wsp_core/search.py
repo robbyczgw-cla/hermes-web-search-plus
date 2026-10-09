@@ -30,7 +30,7 @@ import os
 import queue
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 from typing import List, Dict, Any, Optional, Tuple
@@ -1943,6 +1943,8 @@ def _execute_search_v3(
         add_provider_setup_guidance(payload, "search", list(plan.candidate_order), config,
                                     requested_provider=str(request.routing.get("provider") or "auto"))
     else:
+        if race.superseded:
+            payload["_v3_superseded_providers"] = list(race.superseded)
         routing = payload.setdefault("routing", {})
         requested = str(request.routing.get("provider") or "auto")
         if requested == "auto":
@@ -1954,6 +1956,9 @@ def _execute_search_v3(
             routing["fallback_used"] = True
             routing["original_provider"] = plan.selected_provider
             routing["provider"] = successful_provider
+            # No value says "slower than usual and lost the race". For that
+            # case selected_failed is the closest: the receipt rules tie it to
+            # a cancelled or failed prior attempt, which is what is recorded.
             routing["fallback_reason"] = (
                 "insufficient_results"
                 if plan.selected_provider in race.empty_providers
@@ -2002,6 +2007,9 @@ class _Race:
     payload: Optional[Dict[str, Any]]
     receipts: List[Any]
     empty_providers: List[str]
+    # Still running when another provider's non-empty answer won; cancelled by
+    # that win, not by the request's time budget.
+    superseded: List[str] = field(default_factory=list)
 
 
 def _positive_float(value: Any, default: float) -> float:
@@ -2084,11 +2092,14 @@ def _race_providers(engine, candidates, contexts, operation_for, hedge_delay, de
     if winner is None and empty_providers:
         winner = empty_providers[0]  # every answer was empty: report the truthful empty result
     receipts = []
+    superseded = []
     for provider in candidates:
         execution = finished.get(provider)
         if execution is not None:
             receipts.append(execution.receipt)
         elif provider in tasks:
+            if not deadline_hit:
+                superseded.append(provider)
             _task, started_wall, started_monotonic = tasks[provider]
             receipts.append(engine.cancel_started(
                 contexts[provider],
@@ -2099,7 +2110,7 @@ def _race_providers(engine, candidates, contexts, operation_for, hedge_delay, de
             reason = SkipReason.DEADLINE_EXCEEDED if deadline_hit else SkipReason.POLICY_EXCLUDED
             receipts.append(engine.skip(contexts[provider], reason).receipt)
     payload = finished[winner].payload if winner is not None else None
-    return _Race(winner, payload, receipts, empty_providers)
+    return _Race(winner, payload, receipts, empty_providers, superseded)
 
 
 def _search_cache_vary(
