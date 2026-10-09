@@ -912,7 +912,7 @@ def _apply_result_quality_pipeline(
     except (TypeError, ValueError):
         max_per_domain = 2
     if max_per_domain > 0:
-        reranked, demoted = rerank_domain_diversity(results, max_per_domain=max_per_domain)
+        reranked, demoted = rerank_domain_diversity(results, max_per_domain=max_per_domain, query=query)
         if demoted:
             result["results"] = reranked
             result.setdefault("metadata", {})["domain_diversity_demoted"] = demoted
@@ -1458,11 +1458,17 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         )
         routing_class = ranking_routing.get("analysis_summary", {}).get("routing_class", "general")
         if not cache_hit and isinstance(result.get("results"), list):
-            reranked, rerank_metadata = rerank_results_for_intent(args.query or "", routing_class, result.get("results", []))
+            reranked, rerank_metadata = rerank_results_for_intent(
+                args.query or "", routing_class, result.get("results", []),
+                window=getattr(args, "_v3_requested_results", None),
+            )
             result["results"] = reranked
             if rerank_metadata.get("reranked"):
                 result.setdefault("metadata", {})["intent_rerank"] = rerank_metadata
             _apply_result_quality_pipeline(result, config, query=args.query or "", include_domains=args.include_domains)
+        requested_results = getattr(args, "_v3_requested_results", None)
+        if requested_results and isinstance(result.get("results"), list):
+            result["results"] = result["results"][:requested_results]
 
         result["routing"] = routing_info
 
@@ -1593,6 +1599,11 @@ def _plan_search_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
             max_providers=3,
         )
     return ProviderPlan(tuple(candidates), selected, routing_metadata=dict(routed))
+
+
+# Spare results requested per search attempt so filtering can refill the top N.
+SEARCH_OVERFETCH_EXTRA = 5
+SEARCH_OVERFETCH_CAP = 20
 
 
 def _search_args_from_v3(request: RequestV3, config: Dict[str, Any]):
@@ -1866,6 +1877,11 @@ def _execute_search_v3(
             args.allow_fallback = False
             args.no_cache = True
             args._v3_engine_owned_attempt = True
+            # Ask for a few spare results: spam removal and the per-domain cap
+            # then refill the list instead of leaving duplicates in the top N.
+            requested = int(args.max_results or 5)
+            args._v3_requested_results = requested
+            args.max_results = min(SEARCH_OVERFETCH_CAP, requested + SEARCH_OVERFETCH_EXTRA)
             if str(request.routing.get("provider") or "auto") == "auto":
                 # Rank and report with the auto-routing decision, not the
                 # fixed-provider routing of this attempt.

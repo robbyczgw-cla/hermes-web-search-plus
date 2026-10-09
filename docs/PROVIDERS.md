@@ -43,6 +43,8 @@ Cheap Google-like SERP fallback; WSP exposes search only, explicit/fallback-only
 
 ### Brave Search
 
+*Recommended starter provider.*
+
 Independent general web index; first provider for most automatic searches.
 
 ### Tavily
@@ -61,6 +63,8 @@ Best starter for cheap clean extraction and citation-grounded retrieval.
 
 ### Exa
 
+*Recommended starter provider.*
+
 Semantic discovery, alternatives, docs, academic and long-form discovery.
 
 ### Firecrawl
@@ -72,8 +76,6 @@ Robust scraping/extraction fallback, especially for JS-heavy pages.
 LLM-ready web search and fast URL extraction with long source excerpts.
 
 ### You.com
-
-*Recommended starter provider.*
 
 Fast provider for current, multilingual, and LLM-ready search.
 

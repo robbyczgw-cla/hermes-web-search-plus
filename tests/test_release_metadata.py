@@ -57,7 +57,9 @@ def test_current_release_surfaces_and_attribution():
     current_surfaces = "\n".join((readme, release_notes, user_guide, env_template))
 
     assert f"Current release: **v{EXPECTED_VERSION}**" in readme
-    assert "docs/RELEASE_NOTES_V400.md" in readme
+    # The README links the changelog and the Hound migration instead of every release note.
+    assert "docs/DONSETCH.md#migration-from-hound" in readme
+    assert "CHANGELOG.md#breaking-changes" in readme
     assert "DonSeTch 2.1.0" in release_notes
     assert "explicit-only" in release_notes
     assert "DONSETCH_BIN" in current_surfaces

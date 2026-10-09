@@ -19,87 +19,17 @@ It adds two Hermes tools:
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v4.3.5** — see the [release notes](docs/RELEASE_NOTES_V435.md) and [Changelog](CHANGELOG.md). The 4.0.0 DonSeTch migration notes remain in [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+Current release: **v4.3.5**. Version history: [Changelog](CHANGELOG.md).
 
-### What's new in 4.3.5
+### What's new in 5.0
 
-Dedup keeps page-identifying query parameters such as `?v=` and drops only tracking parameters, and missing-key hints survive the v3 error path. See the [4.3.5 release notes](docs/RELEASE_NOTES_V435.md).
+- **Faster.** Measured on 294 live queries, the median search takes 565 ms instead of 930 ms, and the slowest one 2.1 s instead of 22 s. When a provider hangs or answers empty, the next one starts after at most 2.5 s.
+- **Better results.** Two blind judges compared 4.3.5 and 5.0 answer by answer and preferred 5.0 in about two thirds of the queries, in all eight query types.
+- **Shorter answers.** Results are about 35 % shorter for the agent; the source a query asks for is found as often as before.
+- **Searches in the query's language.** A clearly German or French query is searched in German or French, unless you set a language yourself.
+- **Simpler setup.** `setup.py setup` asks for the four providers automatic routing uses most: Brave, Serper, Exa and Linkup.
 
-### Earlier: 4.3.4
-
-First run without keys: `setup.py status` no longer reports `ready` with zero providers, and search/extract failures name the setup command and the env vars to set. See the [4.3.4 release notes](docs/RELEASE_NOTES_V434.md).
-
-### Earlier: 4.3.3
-
-Extract now converts internationalized hostnames such as `müller.de` to punycode instead of rejecting them. See the [4.3.3 release notes](docs/RELEASE_NOTES_V433.md).
-
-### Earlier: 4.3.2
-
-Security hardening: stricter extract URL validation, same-origin-only redirects in the HTTP client, response size limits, no provider error text passed to the model, and an untrusted-web-data notice on results. Some failures are now stricter or less detailed; see the [4.3.2 release notes](docs/RELEASE_NOTES_V432.md).
-
-### Earlier: 4.3.1
-
-Faster searches: provider calls reuse keep-alive connections, so repeated searches skip TCP and TLS setup (live medians −6 % to −17 % per provider). No config changes. See the [4.3.1 release notes](docs/RELEASE_NOTES_V431.md).
-
-### What's new in 4.3.0
-
-Hermes Desktop can configure Web Search Plus from its plugin settings form: country, language, max results, auto-routing, SearXNG URL, and one API key field per provider. Keys go to `.env`, never to `config.json`.
-
-Adaptive routing learns again. Since the 3.0 engine, searches no longer recorded provider samples, so routing fell back to static priority. `provider_stats.json` writes are now locked across processes, and the agent tool honours `defaults.max_results` when `count` is omitted.
-
-See the [4.3.0 release notes](docs/RELEASE_NOTES_V430.md).
-
-### What's new in 4.2.1
-
-Search cache controls are now on the plugin API: `no_cache` and `cache_ttl`, matching the CLI. Recency queries cap cache TTL. Cached hits show age.
-
-The optional DonSeTch adapter is tested against **4.2.9**. Install it separately (`npm install -g donsetch@4.2.9`); it is not bundled. Other parsed versions, including 3.x, are `compatible_unverified`.
-
-See the [4.2.1 release notes](docs/RELEASE_NOTES_V421.md).
-
-### What's new in 4.2.0
-
-Optional **Jev** can confirm a `news` search type, score extract bodies, and fill language when WSP inferred none. It is not a search provider and stays **off** until you pass `setup --jev`.
-
-- Search-type overlay: keywords may propose `news`; Jev confirms only at confidence ≥ 0.95; otherwise the request stays `search`. Explicit `--search-type news` is unchanged.
-- Extract quality: Jev may keep a long page that looked like a bot wall, or reject chrome.
-- Language fill: only when WSP inferred none.
-
-Keep the key in `TYPESAFE_API_KEY_FILE` (mode 600), never in `config.json`. If you enable Jev, install `typesafe-sdk` separately — the plugin stays stdlib-only. See the [4.2.0 release notes](docs/RELEASE_NOTES_V420.md).
-
-Windows import no longer requires `fcntl`. Contributed by [@gzwahoo](https://github.com/gzwahoo) in [#129](https://github.com/robbyczgw-cla/hermes-web-search-plus/pull/129).
-
-### What's new in 4.1.1
-
-Exa search keeps requested highlights instead of replacing them with the start of the page. Parallel Search sends result count and domain filters through `advanced_settings`. Tavily Search applies the unified `freshness` filter as native `time_range`. See the [4.1.1 release notes](docs/RELEASE_NOTES_V411.md).
-
-### What's new in 4.1.0
-
-The opt-in `wsp` backend routes Hermes' native `web_search` and `web_extract` calls through the existing WSP engine in-process. Existing Plus tools remain available and installation does not select the new backend. See [Native Hermes backend](docs/NATIVE_BACKEND.md) for selection, mixed routing, and runtime limits.
-
-The DonSeTch adapter also supports the 3.6.1 compact MCP response format while retaining older structured responses. Search titles and snippets remain attached to their source URLs; fetch diagnostics are read from namespaced metadata.
-
-### What's new in 4.0.4
-
-Queries beginning with `-`, such as `-site:reddit.com`, now remain search text across the API and subprocess paths. This patch also consolidates budget and adapter checks while preserving existing interfaces. See the [4.0.4 release notes](docs/RELEASE_NOTES_V404.md).
-
-### What's new in 4.0.3
-
-The local DonSeTch adapter is now tested against 3.2.1. Install `donsetch@3.2.1`. Older 2.x binaries report `incompatible_major`.
-
-### What's new in 4.0.2
-
-Parallel Search can now take `parallel.mode` (`turbo`, `fast`, `basic`, `advanced`). The default is `fast`. Parallel now joins automatic routing when a key is configured.
-
-### What's new in 4.0.1
-
-DonSeTch now reuses one stdio MCP session for every URL in a single extract call, reaps the child on timeout or MCP failure, and reports binary readiness from `setup.py status`. Search and Extract stay explicit-only.
-
-### What's new in 4.0.0
-
-Web Search Plus now uses DonSeTch 2.1.0 as its optional local source provider for Search and Markdown Extract. DonSeTch runs as a separately installed stdio MCP process configured through `DONSETCH_BIN`; it is not bundled with this plugin. The Hound provider and `HOUND_MCP_URL` integration were removed, so this release includes a migration step for existing Hound users.
-
-For technical details, see the [Changelog](CHANGELOG.md), [provider guide](docs/PROVIDERS.md), and [4.0.0 Release Notes](docs/RELEASE_NOTES_V400.md).
+5.0 changes how automatic routing chooses providers, so most searches now use your Brave quota. Code that imports engine modules directly has to change its imports. Details: [Breaking changes in 5.0](CHANGELOG.md#breaking-changes).
 
 ---
 
@@ -107,12 +37,10 @@ For technical details, see the [Changelog](CHANGELOG.md), [provider guide](docs/
 
 - **One setup, many search services.** Pick one provider to start and add more only when you need them.
 - **Real sources.** Results point back to the pages they came from instead of hiding the web behind a generated answer.
-- **Fewer dead ends.** If one service is unavailable or returns nothing, Web Search Plus can try another.
+- **Fewer dead ends.** If one service is unavailable or returns nothing, Web Search Plus tries another.
 - **Search and page reading together.** Find useful pages, then turn them into clean text for your agent.
-- **Optional details when you need them.** Quality reports show which service worked and what happened along the way.
-- **Local options are available.** SearXNG, Keenable and the optional DonSeTch provider can reduce your dependence on paid APIs.
-
-Everything new since 3.0 is additive or opt-in, except the v4.0 provider migration described above. Full details: [4.0 Release Notes](docs/RELEASE_NOTES_V400.md) · [3.4 Release Notes](docs/RELEASE_NOTES_V34.md) · [3.3 Release Notes](docs/RELEASE_NOTES_V33.md) · [3.2 Release Notes](docs/RELEASE_NOTES_V32.md) · [3.1 Release Notes](docs/RELEASE_NOTES_V31.md) · [3.0 Release Notes](docs/RELEASE_NOTES_V3.md).
+- **Optional details when you need them.** Quality reports show which service answered and why.
+- **Local options.** SearXNG, Keenable and the optional DonSeTch provider reduce your dependence on paid APIs.
 
 ---
 
@@ -122,9 +50,9 @@ Everything new since 3.0 is additive or opt-in, except the v4.0 provider migrati
 # 1) Install and enable the plugin
 hermes plugins install robbyczgw-cla/hermes-web-search-plus --enable
 
-# 2) Inspect provider readiness and configure the providers you use
+# 2) Add provider keys (asks for Brave, Serper, Exa and Linkup; Enter skips one)
+python3 ~/.hermes/plugins/web-search-plus/setup.py setup
 python3 ~/.hermes/plugins/web-search-plus/setup.py status
-python3 ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter
 
 # 3) Reload Hermes so the tools are registered
 # CLI: exit and start `hermes` again, or use /reset in-session
@@ -135,7 +63,7 @@ cd ~/.hermes/plugins/web-search-plus
 python3 search.py --query "Hermes Agent latest release" --provider auto --quality-report
 ```
 
-Web Search Plus supports 15 search and 9 extraction providers — you do **not** need them all. One search-capable key or configured local endpoint enables `web_search_plus`; one extraction-capable key or endpoint enables `web_extract_plus`; more providers just make controlled routing more flexible. The setup helper stores keys in the active Hermes environment file — never commit them to the repository.
+Web Search Plus supports 15 search and 9 extraction providers; you do **not** need them all. One search key enables `web_search_plus`, one extraction key enables `web_extract_plus`. Automatic routing tries Brave first for most queries, Exa for docs and academic queries, and Serper for security and shopping; `setup.py status` shows which query types fall back because a key is missing. `setup.py setup --preset all` walks through every provider. The setup helper stores keys in the active Hermes environment file — never commit them to the repository.
 
 Optional Jev stays off unless you pass `--jev`:
 
@@ -145,10 +73,6 @@ python3 ~/.hermes/plugins/web-search-plus/setup.py setup --preset lean \
 ```
 
 Provider privacy is not uniform. Before sending sensitive queries or URLs, review the maintained [Provider Privacy & Terms guide](https://websearchplus.xyz/providers.html#privacy-terms), which distinguishes standard self-serve terms from enterprise-only ZDR or no-training options.
-
-### Upgrading to 4.0.0
-
-The core tools and existing keyed providers remain available, but the optional Hound integration was removed. If you used Hound, follow the [DonSeTch migration guide](docs/DONSETCH.md#migration-from-hound): install DonSeTch 4.2.9 separately, set `DONSETCH_BIN`, and change explicit `provider="hound"` calls to `provider="donsetch"`.
 
 ### Self-hosted / no-paid-key profile
 
@@ -227,8 +151,8 @@ Full parameters, freshness and locale behavior, provider selection, extraction c
 
 - **Installing or configuring providers** → [User Guide](docs/USER_GUIDE.md) · [DonSeTch local provider](docs/DONSETCH.md)
 - **Comparing provider privacy and terms** → [Provider Privacy & Terms](https://websearchplus.xyz/providers.html#privacy-terms)
-- **Upgrading to 4.0.0** → [DonSeTch migration](docs/DONSETCH.md#migration-from-hound)
-- **What changed** → [Changelog](CHANGELOG.md) · [4.0 Release Notes](docs/RELEASE_NOTES_V400.md)
+- **Upgrading** → [Breaking changes in 5.0](CHANGELOG.md#breaking-changes) · [DonSeTch migration from 4.0](docs/DONSETCH.md#migration-from-hound)
+- **What changed** → [Changelog](CHANGELOG.md)
 - **Troubleshooting** → [FAQ](docs/FAQ.md) · [Operator Console](docs/V3_OPERATOR_CONSOLE.md)
 - **Contributing or building a provider** → [Contributing](CONTRIBUTING.md) · [Provider SDK](docs/PROVIDER_SDK.md) · [Architecture](docs/ARCHITECTURE.md)
 
@@ -237,22 +161,15 @@ The full reference, including the normative v3 contracts for implementers and re
 ### Start & upgrade
 
 - [User Guide](docs/USER_GUIDE.md) — installation, first-run checks, tool usage, and troubleshooting
-- [3.4 Release Notes](docs/RELEASE_NOTES_V34.md) — optional Octen source search via Monid, access/billing, security, and compatibility
-- [3.3 Release Notes](docs/RELEASE_NOTES_V33.md) — heading-aware spans, provenance enrichment, Research quorum, compatibility, and attribution
-- [4.0 Release Notes](docs/RELEASE_NOTES_V400.md) — DonSeTch integration, Hound removal, migration, and limitations
+- [Changelog](CHANGELOG.md) — every release; older release notes are linked from there
 - [DonSeTch local provider](docs/DONSETCH.md) — separate installation, stdio configuration, migration, and operating boundaries
-- [3.1 Release Notes](docs/RELEASE_NOTES_V31.md) — 3.1 highlights and compatibility
-- [3.1 Migration](docs/V31_MIGRATION.md) — opt-in matrix, kill switches, verification, and rollback
 - [Provider SDK](docs/PROVIDER_SDK.md) — add a provider with one `providers.d` module
-- [3.0 Release Notes](docs/RELEASE_NOTES_V3.md) — highlights, provider changes, compatibility, and 3.1 deferrals
-- [3.0 Migration](docs/V3_MIGRATION.md) — dry run, apply, smoke tests, and rollback
-- [3.0 Compatibility](docs/V3_COMPATIBILITY.md) and [Backup & Restore](docs/V3_BACKUP_RESTORE.md) — stable surfaces and recovery behavior
 
 ### Configure & operate
 
 - [Provider Reference](docs/PROVIDERS.md) — generated capabilities, environment variables, defaults, and signup links
 - [Provider Privacy & Terms](https://websearchplus.xyz/providers.html#privacy-terms) — provider-specific training, retention, ZDR, and contract caveats
-- [Routing v2 Reference](docs/ROUTING.md) — generated routing classes, preferences, and demotions
+- [Routing Reference](docs/ROUTING.md) — generated: how the first provider is chosen per query type
 - [Operator Console](docs/V3_OPERATOR_CONSOLE.md) — local read-only visibility and troubleshooting
 - [Provider Benchmarks](docs/V3_BENCHMARKS.md) — search and extraction comparison with privacy and quota guidance
 - [FAQ](docs/FAQ.md) — provider selection, cache, cost, and common setup problems

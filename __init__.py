@@ -860,7 +860,7 @@ def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bo
         "web-search-plus is installed but no provider keys are configured.",
         "No single key is mandatory, but at least one search-capable provider is needed for web_search_plus.",
         "Add LINKUP_API_KEY or another extraction-capable provider for web_extract_plus.",
-        "Run `python3 ~/.hermes/plugins/web-search-plus/setup.py setup` to walk through every supported provider, or add `--preset starter` for the short path.",
+        "Run `python3 ~/.hermes/plugins/web-search-plus/setup.py setup` for the recommended providers, or add `--preset all` to walk through every supported provider.",
         "",
         "Recommended starter providers:",
     ]
@@ -871,6 +871,27 @@ def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bo
                 f"Free tier: {item['free_tier']}. Signup: {item['signup_url']}"
             )
     return "\n".join(lines)
+
+
+def _missing_router_first_providers(status: Dict[str, Any]) -> List[str]:
+    """Name the intents whose measured first provider has no key, e.g. docs without Exa."""
+    from .wsp_core.routing import INTENT_FIRST_PROVIDER, MEASURED_PROVIDER_ORDER
+
+    providers = status.get("providers", {})
+
+    def configured(name: str) -> bool:
+        return bool(providers.get(name, {}).get("configured"))
+
+    first_default = MEASURED_PROVIDER_ORDER[0]
+    wanted: Dict[str, List[str]] = {}
+    for intent in sorted(set(INTENT_FIRST_PROVIDER) | {"general"}):
+        provider = INTENT_FIRST_PROVIDER.get(intent, first_default)
+        if provider in providers and not configured(provider):
+            wanted.setdefault(provider, []).append(intent)
+    return [
+        f"{', '.join(intents)} would use {providers[p]['display_name']} ({providers[p]['env']} missing)"
+        for p, intents in wanted.items()
+    ]
 
 
 def _render_status_dashboard(status: Optional[Dict[str, Any]] = None, *, color: Optional[bool] = None) -> str:
@@ -900,10 +921,14 @@ def _render_status_dashboard(status: Optional[Dict[str, Any]] = None, *, color: 
     if status["search_configured"] and not status["extract_configured"]:
         lines.append("│ Tip: add Linkup for clean web_extract_plus markdown.")
     elif not status["search_configured"]:
-        lines.append("│ Starter: You + Serper + Linkup is the best first setup.")
+        lines.append("│ Starter: Brave + Serper + Exa + Linkup, the providers automatic routing tries first.")
+    if status["search_configured"]:
+        missing = _missing_router_first_providers(status)
+        if missing:
+            lines.append("│ Routing falls back: " + "; ".join(missing))
     lines.extend([
         "╰─ Next commands",
-        "   python3 ~/.hermes/plugins/web-search-plus/setup.py setup" + ("" if status["search_configured"] else " --preset starter"),
+        "   python3 ~/.hermes/plugins/web-search-plus/setup.py setup",
         "   python3 ~/.hermes/plugins/web-search-plus/setup.py list",
     ])
     if status["search_configured"]:
@@ -1010,9 +1035,9 @@ def _unconfigured_session_hint(
 def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     parser.description = "Configure web-search-plus provider keys with a tiny, secret-safe wizard."
     parser.epilog = (
-        "Default setup prompts every provider. Presets: starter=You+Serper+Linkup, lean=You+Linkup, "
-        "search=You+Serper+Exa+Firecrawl+Tavily+Linkup, extract=Linkup+Firecrawl+Tavily, "
-        "self-hosted=SearXNG+keyless Keenable."
+        "Default setup prompts the starter providers. Presets: starter=Brave+Serper+Exa+Linkup, "
+        "lean=Brave+Linkup, search=Brave+Serper+Exa+Tavily+Firecrawl+Linkup, "
+        "extract=Linkup+Firecrawl+Tavily, self-hosted=SearXNG+keyless Keenable, all=every provider."
     )
     subs = parser.add_subparsers(dest="web_search_plus_command")
     status = subs.add_parser("status", help="Show a setup dashboard without printing secrets")
@@ -1023,7 +1048,7 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
 
     setup = subs.add_parser("setup", help="Run the provider-key setup wizard")
     setup.add_argument("providers", nargs="*", help="Provider names to configure (overrides --preset)")
-    setup.add_argument("--preset", default="all", help="starter, lean, search, extract, self-hosted, or all (default: all)")
+    setup.add_argument("--preset", default="starter", help="starter, lean, search, extract, self-hosted, or all (default: starter)")
     setup.add_argument("--open", action="store_true", help="Open signup URLs in a browser before prompting")
     setup.add_argument("--env-path", help="Override Hermes .env path")
     setup.add_argument("--config-path", help="Override web-search-plus config.json path")
@@ -1285,7 +1310,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
     if command == "setup":
         selected = set(getattr(args, "providers", None) or [])
         selected = {_normalize_provider_name(p) for p in selected} if selected else set()
-        catalog = [item for item in _PROVIDER_CATALOG if item["provider"] in selected] if selected else _providers_for_preset(getattr(args, "preset", "all"))
+        catalog = [item for item in _PROVIDER_CATALOG if item["provider"] in selected] if selected else _providers_for_preset(getattr(args, "preset", "starter"))
         if not catalog:
             raise SystemExit("No matching providers. Run `python ~/.hermes/plugins/web-search-plus/setup.py list`.")
 

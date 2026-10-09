@@ -49,7 +49,7 @@ QUERY = {
 }
 FIRST_WITH_CORE = {
     "academic": "exa",
-    "community": "serper",
+    "community": "brave",
     "docs": "exa",
     "general": "brave",
     "local": "brave",
@@ -85,7 +85,6 @@ def _plan(query, config):
 def test_the_table_is_what_the_benchmarks_measured():
     assert routing.INTENT_FIRST_PROVIDER == {
         "academic": "exa",
-        "community": "serper",
         "docs": "exa",
         "security": "serper",
         "shopping": "serper",
@@ -564,7 +563,6 @@ def test_explain_routing_output_shape():
     assert explanation["intent"]["signals"]
     assert explanation["first_provider_rules"] == {
         "academic": "exa",
-        "community": "serper",
         "docs": "exa",
         "security": "serper",
         "shopping": "serper",

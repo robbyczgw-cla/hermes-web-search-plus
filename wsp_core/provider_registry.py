@@ -65,7 +65,7 @@ _BUILTIN_PROVIDER_SPECS = (
         provider="brave", env_var="BRAVE_API_KEY", display_name="Brave Search",
         description="Independent general web index; first provider for most automatic searches.",
         config_section="brave", supports_search=True, supports_extract=False,
-        capability_labels=("search", "news", "local"), auto_allowed_by_default=True,
+        capability_labels=("search", "news", "local"), auto_allowed_by_default=True, recommended=True,
         free_tier="$5 free monthly credits", signup_url="https://api.search.brave.com/app/keys",
     ),
     ProviderSpec(
@@ -94,7 +94,7 @@ _BUILTIN_PROVIDER_SPECS = (
         provider="exa", env_var="EXA_API_KEY", display_name="Exa",
         description="Semantic discovery, alternatives, docs, academic and long-form discovery.",
         config_section="exa", supports_search=True, supports_extract=True,
-        capability_labels=("search", "extract", "semantic"), auto_allowed_by_default=True,
+        capability_labels=("search", "extract", "semantic"), auto_allowed_by_default=True, recommended=True,
         free_tier="1,000 free searches/month", signup_url="https://dashboard.exa.ai/api-keys",
     ),
     ProviderSpec(
@@ -116,7 +116,7 @@ _BUILTIN_PROVIDER_SPECS = (
         description="Fast provider for current, multilingual, and LLM-ready search.",
         config_section="you", supports_search=True, supports_extract=True,
         capability_labels=("search", "extract"), auto_allowed_by_default=True,
-        recommended=True, free_tier="Limited/API key required", signup_url="https://api.you.com",
+        recommended=False, free_tier="Limited/API key required", signup_url="https://api.you.com",
     ),
     ProviderSpec(
         provider="searxng", env_var="SEARXNG_INSTANCE_URL", display_name="SearXNG",
@@ -369,9 +369,11 @@ def doctor_catalog() -> Dict[str, Dict[str, object]]:
 # missing-key guidance read this, so the recommended command and the env vars
 # it lists cannot drift apart.
 SETUP_PRESETS: Dict[str, tuple[str, ...]] = {
-    "starter": ("you", "serper", "linkup"),
-    "lean": ("you", "linkup"),
-    "search": ("you", "serper", "exa", "firecrawl", "tavily", "linkup"),
+    # The starter is the automatic router's first choices (Brave, Exa, Serper;
+    # see wsp_core/routing.py) plus Linkup for extraction. A test keeps them equal.
+    "starter": ("brave", "serper", "exa", "linkup"),
+    "lean": ("brave", "linkup"),
+    "search": ("brave", "serper", "exa", "tavily", "firecrawl", "linkup"),
     "extract": ("linkup", "firecrawl", "tavily"),
     "self-hosted": ("searxng", "keenable"),
 }

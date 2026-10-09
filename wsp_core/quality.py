@@ -69,8 +69,12 @@ CANONICAL_DOMAIN_RULES: Dict[str, Dict[str, List[str]]] = {
         "demote": ["medium.com", "dev.to", "reddit.com", "stackoverflow.com", "youtube.com"],
     },
     "security": {
-        "boost": ["nvd.nist.gov", "cve.org", "github.com", "github.com/advisories", "security.", "cert.europa.eu", "kb.cert.org"],
-        "demote": ["youtube.com", "medium.com", "reddit.com"],
+        "boost": [
+            "nvd.nist.gov", "cve.org", "github.com", "github.com/advisories", "security.",
+            "cert.europa.eu", "kb.cert.org", "cisa.gov", "bsi.bund.de", "cert.ssi.gouv.fr",
+            "ncsc.gov.uk", "msrc.microsoft.com", "owasp.org", "first.org",
+        ],
+        "demote": ["youtube.com", "medium.com", "reddit.com", "stackexchange.com"],
     },
 }
 
@@ -104,6 +108,10 @@ SPAM_MIRROR_DOMAINS: List[str] = [
     "i-harness.com",
     "fixmycodeerror.com",
     "stacklesson.com",
+    # Python documentation look-alikes
+    "domainunion.de",
+    "pythonlang.net",
+    "pythonlang.de",
     # GitHub issue/readme mirrors
     "githubmemory.com",
     "gitmemory.com",
@@ -175,6 +183,7 @@ def filter_spam_results(
 def rerank_domain_diversity(
     results: List[Dict[str, Any]],
     max_per_domain: int = 2,
+    query: str = "",
 ) -> Tuple[List[Dict[str, Any]], int]:
     """Stable rerank that stops one domain from crowding out the result list.
 
@@ -185,13 +194,16 @@ def rerank_domain_diversity(
     """
     if max_per_domain < 1 or len(results) < 3:
         return results, 0
+    # Official docs of the product the query names are not crowding: five
+    # react.dev pages answer "React useEffect cleanup" better than a mix.
+    query_terms = _query_terms(query)
     head: List[Dict[str, Any]] = []
     overflow: List[Dict[str, Any]] = []
     per_domain: Dict[str, int] = {}
     for item in results:
         domain = _result_domain(item.get("url", ""))
         count = per_domain.get(domain, 0)
-        if domain and count >= max_per_domain:
+        if domain and count >= max_per_domain and not _is_named_vendor_domain(item.get("url", ""), query_terms):
             overflow.append(item)
             continue
         per_domain[domain] = count + 1
@@ -208,27 +220,111 @@ def _url_matches_rule(url: str, rule: str) -> bool:
     return normalized == normalized_rule or normalized.startswith(f"{normalized_rule}/")
 
 
+# Host labels that never name a vendor on their own.
+_GENERIC_HOST_LABELS = frozenset({
+    "www", "docs", "doc", "developer", "developers", "dev", "api", "help", "support", "wiki",
+    "blog", "news", "learn", "security", "com", "org", "net", "io", "dev", "gov", "edu",
+    "co", "uk", "de", "app", "cloud", "github", "medium", "reddit", "youtube", "stackoverflow",
+})
+
+
+# Social profiles answer no docs, security, academic or news question; in those
+# classes a spare result from the overfetch replaces them in the top N.
+_SOCIAL_HOSTS = ("facebook.com", "instagram.com", "linkedin.com", "tiktok.com", "pinterest.com", "threads.net")
+_SOCIAL_SINK_CLASSES = frozenset({"docs", "security", "academic", "news"})
+# Classes where the source the query names ("Bundestag" -> bundestag.de) is the
+# primary answer; one such spare may take the last top-N slot.
+_VENDOR_PROMOTE_CLASSES = frozenset({"docs", "security", "news"})
+
+
+def _is_social(url: str) -> bool:
+    return any(_domain_matches_rule(_result_domain(url), host) for host in _SOCIAL_HOSTS)
+
+
+def _query_terms(query: str) -> set:
+    return {term for term in re.findall(r"[a-z0-9]+", (query or "").lower()) if len(term) >= 3}
+
+
+# Public suffixes a vendor's own site plausibly uses. Novelty TLDs
+# (.website, .wiki, ...) host look-alikes, so they never count as the vendor.
+_VENDOR_TLDS = frozenset({
+    "com", "org", "net", "io", "dev", "rs", "sh", "ai", "app", "gov", "eu",
+    "de", "at", "ch", "fr", "uk", "jp", "us", "info",
+})
+
+
+def _is_named_vendor_domain(url: str, query_terms: set) -> bool:
+    """True when the registrable domain of the result is named by the query.
+
+    Only the label left of the public suffix counts (``fastapi`` in
+    fastapi.tiangolo.com is a subdomain of tiangolo and does not; neither does
+    ``injection`` in injection.readthedocs.io). ``typescriptlang.org`` matches
+    "typescript" because the label starts with the query word.
+    """
+    domain = _result_domain(url)
+    if not domain or not query_terms:
+        return False
+    labels = [label for label in domain.split(".") if label]
+    if len(labels) < 2 or labels[-1] not in _VENDOR_TLDS:
+        return False
+    core = labels[-3] if len(labels) >= 3 and labels[-2] in {"co", "com", "gov", "org"} else labels[-2]
+    if core in _GENERIC_HOST_LABELS:
+        return False
+    return any(core == term or (len(term) >= 4 and core.startswith(term)) for term in query_terms)
+
+
 def rerank_results_for_intent(
     query: str,
     routing_class: str,
     results: List[Dict[str, Any]],
+    window: Optional[int] = None,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """Small authority reranker for classes where source authority beats snippet luck."""
+    """Small authority reranker for classes where source authority beats snippet luck.
+
+    ``window`` limits the rerank to the first N results; the rest keep their
+    order behind it. Spare results fetched only to refill filtered slots must
+    not jump ahead of the provider's own top N.
+    """
+    if window is not None and 0 < window < len(results):
+        head, rest = results[:window], results[window:]
+        if routing_class in _SOCIAL_SINK_CLASSES:
+            social = [item for item in head if _is_social(item.get("url", ""))]
+            spares = [item for item in rest if not _is_social(item.get("url", ""))]
+            if social and spares:
+                kept = [item for item in head if not _is_social(item.get("url", ""))]
+                refill = spares[: len(social)]
+                head = kept + refill
+                rest = [item for item in rest if item not in refill] + social
+        if routing_class in _VENDOR_PROMOTE_CLASSES:
+            terms = _query_terms(query)
+            if not any(_is_named_vendor_domain(item.get("url", ""), terms) for item in head):
+                vendor = next((item for item in rest if _is_named_vendor_domain(item.get("url", ""), terms)), None)
+                if vendor is not None:
+                    rest = [head[-1]] + [item for item in rest if item is not vendor]
+                    head = head[:-1] + [vendor]
+        head, meta = rerank_results_for_intent(query, routing_class, head)
+        return head + [item.copy() for item in rest], meta
     rules = CANONICAL_DOMAIN_RULES.get(routing_class, {})
     if not results or not rules:
         return results, {"reranked": False, "routing_class": routing_class}
 
     q = query.lower()
+    query_terms = _query_terms(query)
     scored: List[Tuple[float, int, Dict[str, Any]]] = []
     for idx, item in enumerate(results):
         url = item.get("url", "")
         title = (item.get("title") or "").lower()
         snippet = (item.get("snippet") or item.get("description") or "").lower()
         score = float(len(results) - idx) * 0.01
-        if any(_url_matches_rule(url, rule) for rule in rules.get("boost", [])):
+        if _is_named_vendor_domain(url, query_terms):
+            # The project or vendor the query names is the primary source and
+            # outranks generic hosts such as github.com or readthedocs.io:
+            # "nginx proxy_pass" -> nginx.org, "Ivanti CVE" -> ivanti.com.
+            score += 12.0
+        elif any(_url_matches_rule(url, rule) for rule in rules.get("boost", [])):
             score += 10.0
         if any(_url_matches_rule(url, rule) for rule in rules.get("demote", [])):
-            score -= 6.0
+            score -= 16.0 if score >= 10.0 else 6.0
         if "official" in q and ("official" in title or "official" in snippet):
             score += 1.0
         scored.append((score, idx, item))

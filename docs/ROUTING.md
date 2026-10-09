@@ -9,8 +9,8 @@ works in routing policy `routing-v3`. It is generated from `wsp_core/routing.py`
 `wsp_core/provider_registry.py`, and a test fails when it drifts from them.
 
 In short: the first provider is `brave`, with these exceptions: `exa` for `academic` and
-`docs`; `serper` for `community`, `security` and `shopping`. Everything after the first
-provider follows `provider_priority`.
+`docs`; `serper` for `security` and `shopping`. Everything after the first provider
+follows `provider_priority`.
 
 Contents:
 
@@ -45,7 +45,7 @@ With all four measured providers configured and allowed, the result is:
 | Intent | First provider | Rule | Next in line |
 |---|---|---|---|
 | `academic` | `exa` | intent rule | `brave`, `serper`, `tavily`, then `provider_priority` |
-| `community` | `serper` | intent rule | `brave`, `exa`, `tavily`, then `provider_priority` |
+| `community` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
 | `docs` | `exa` | intent rule | `brave`, `serper`, `tavily`, then `provider_priority` |
 | `general` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
 | `local` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
@@ -81,8 +81,8 @@ How it was measured:
   fitted to. Tested with leave-one-out (each query's provider chosen from the other
   queries of its intent), it fell below always using the first provider of the measured
   order. Only these choices were the same in every fold: `exa` for `academic` and
-  `docs`; `serper` for `community`, `security` and `shopping`. They are the intent rules
-  in the table above. Nothing finer is used.
+  `docs`; `serper` for `security` and `shopping`. They are the intent rules in the table
+  above. Nothing finer is used.
 
 What the order does not show:
 
@@ -177,7 +177,7 @@ measured providers are configured:
 | CVE-2024-3094 remote code execution | `security` | `serper` | `cve_id`, `cve`, `vuln_class` |
 | restaurants near me open now | `local` | `brave` | `near_me`, `hours`, `poi` |
 | Wetter Wien morgen | `local` | `brave` | `weather` |
-| is it worth switching to Linux reddit | `community` | `serper` | `platform`, `worth_it` |
+| is it worth switching to Linux reddit | `community` | `brave` | `platform`, `worth_it` |
 | what happened at the central bank today | `news` | `brave` | `what_happened`, `today` |
 | history of the Roman Empire | `general` | `brave` | none |
 
@@ -208,7 +208,7 @@ Cue families, strongest first:
 Opinions and discussions: forums, Reddit, Hacker News, "has anyone tried", experience
 reports, "is it worth it".
 
-- **First provider:** `serper` (intent rule).
+- **First provider:** `brave` (measured order).
 - **Threshold:** a score of at least 2.5.
 
 Cue families, strongest first:
@@ -356,8 +356,9 @@ slash (`github.com/advisories`) matches a URL path prefix.
 ### `security`
 
 - **Boost:** `nvd.nist.gov`, `cve.org`, `github.com`, `github.com/advisories`,
-  `security.`, `cert.europa.eu`, `kb.cert.org`
-- **Demote:** `youtube.com`, `medium.com`, `reddit.com`
+  `security.`, `cert.europa.eu`, `kb.cert.org`, `cisa.gov`, `bsi.bund.de`,
+  `cert.ssi.gouv.fr`, `ncsc.gov.uk`, `msrc.microsoft.com`, `owasp.org`, `first.org`
+- **Demote:** `youtube.com`, `medium.com`, `reddit.com`, `stackexchange.com`
 
 No reranking for `academic`, `community`, `general`, `local`, `news`, `shopping`.
 

@@ -122,7 +122,8 @@ def test_setup_guidance_points_unconfigured_users_to_one_simple_path():
     assert "extraction-capable" in text
     assert "Recommended starter" in text
     assert "SERPER_API_KEY" in text
-    assert "YOU_API_KEY" in text
+    assert "BRAVE_API_KEY" in text
+    assert "EXA_API_KEY" in text
     assert "LINKUP_API_KEY" in text
     assert "python3 ~/.hermes/plugins/web-search-plus/setup.py setup" in text
     assert "hermes web-search-plus setup" not in text
@@ -191,7 +192,7 @@ def test_setup_command_treats_eof_as_blank_input(monkeypatch, capsys):
 
     out = capsys.readouterr().out
     assert "Setup plan:" in out
-    for item in wsp._get_provider_catalog():
+    for item in wsp._providers_for_preset("starter"):
         assert item["display_name"] in out
     assert "No keys entered; nothing changed." in out
 
@@ -213,23 +214,54 @@ def test_setup_presets_choose_expected_providers():
     extract = {item["provider"] for item in wsp._providers_for_preset("extract")}
     all_providers = {item["provider"] for item in wsp._providers_for_preset("all")}
 
-    assert starter == {"you", "serper", "linkup"}
-    assert lean == {"you", "linkup"}
+    assert starter == {"brave", "serper", "exa", "linkup"}
+    assert lean == {"brave", "linkup"}
     assert extract == {"linkup", "firecrawl", "tavily"}
     assert all_providers == {item["provider"] for item in wsp._get_provider_catalog()}
 
 
-def test_bare_setup_defaults_to_all_supported_providers(monkeypatch, capsys):
+def test_bare_setup_defaults_to_the_starter_providers(monkeypatch, capsys):
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["setup", "--dry-run"])
 
     args.func(args)
 
-    out = capsys.readouterr().out
-    assert "Setup plan:" in out
+    plan = capsys.readouterr().out.split("Setup plan:", 1)[1]
+    for item in wsp._providers_for_preset("starter"):
+        assert item["display_name"] in plan
+    assert "TinyFish" not in plan and "Octen" not in plan
+
+
+def test_setup_preset_all_still_walks_every_provider(monkeypatch, capsys):
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "--preset", "all", "--dry-run"])
+
+    args.func(args)
+
+    plan = capsys.readouterr().out.split("Setup plan:", 1)[1]
     for item in wsp._get_provider_catalog():
-        assert item["display_name"] in out
+        assert item["display_name"] in plan
+
+
+def test_starter_preset_matches_the_router_first_providers():
+    from wsp_core.provider_registry import SETUP_PRESETS
+    from wsp_core.routing import INTENT_FIRST_PROVIDER, MEASURED_PROVIDER_ORDER
+
+    router_first = set(INTENT_FIRST_PROVIDER.values()) | {MEASURED_PROVIDER_ORDER[0]}
+    assert router_first <= set(SETUP_PRESETS["starter"])
+    recommended = {item["provider"] for item in wsp._get_provider_catalog() if item.get("recommended")}
+    assert recommended == set(SETUP_PRESETS["starter"])
+
+
+def test_status_dashboard_names_intents_that_fall_back(monkeypatch):
+    status = wsp._provider_config_status(env={"BRAVE_API_KEY": "k1", "SERPER_API_KEY": "k2"})
+    text = wsp._render_status_dashboard(status, color=False)
+    assert "Routing falls back:" in text
+    assert "academic, docs would use Exa (EXA_API_KEY missing)" in text
+    full = wsp._provider_config_status(env={"BRAVE_API_KEY": "a", "SERPER_API_KEY": "b", "EXA_API_KEY": "c"})
+    assert "Routing falls back" not in wsp._render_status_dashboard(full, color=False)
 
 
 def test_setup_dry_run_prints_plan_without_prompting(monkeypatch, capsys):
@@ -242,7 +274,7 @@ def test_setup_dry_run_prints_plan_without_prompting(monkeypatch, capsys):
 
     out = capsys.readouterr().out
     assert "Setup plan:" in out
-    assert "You.com" in out
+    assert "Brave Search" in out
     assert "Linkup" in out
     assert "Dry run only" in out
 
@@ -260,7 +292,8 @@ def test_setup_dry_run_uses_target_env_path_for_dashboard(tmp_path, monkeypatch,
     out = capsys.readouterr().out
     assert "Providers: 1/15 configured" in out
     assert "Active: You.com" in out
-    assert "Brave Search" not in out.split("Setup plan:", 1)[0]
+    # The live BRAVE_API_KEY must not count; the dashboard reports it missing.
+    assert "would use Brave Search (BRAVE_API_KEY missing)" in out.split("Setup plan:", 1)[0]
 
 
 def test_status_uses_target_env_path_for_dashboard(tmp_path, monkeypatch, capsys):
@@ -276,7 +309,7 @@ def test_status_uses_target_env_path_for_dashboard(tmp_path, monkeypatch, capsys
     out = capsys.readouterr().out
     assert "Providers: 1/15 configured" in out
     assert "Active: Linkup" in out
-    assert "Brave Search" not in out
+    assert "Active: Linkup, Brave" not in out and "Brave Search, " not in out
 
 
 def test_register_exposes_core_independent_session_onboarding_surfaces():

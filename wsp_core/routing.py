@@ -142,6 +142,35 @@ class QueryLanguage(NamedTuple):
     inferred: Optional[str]
 
 
+# Words that alone identify a language: none is an English word, and none is
+# shared by two of the listed languages. They only count when the query has
+# no English stopword and no other language matched, so "Bundestag
+# Abstimmung heute Ergebnis" is German while "Avis car rental" stays unknown.
+LANGUAGE_STRONG_WORDS: Dict[str, frozenset] = {
+    "de": frozenset({
+        "heute", "öffnungszeiten", "warum", "welche", "günstig", "nähe",
+        "erfahrungen", "aktuelle", "aktuell", "neueste", "unterschied", "wie",
+        "wetter", "rezept", "vergleich", "empfehlung", "meinungen", "warnung",
+        "schwachstelle", "sicherheitslücke",
+    }),
+    "fr": frozenset({
+        "aujourd", "horaires", "près", "dernières", "météo", "demain",
+        "vulnérabilité", "meilleur", "étude",
+    }),
+    "es": frozenset({"dónde", "cómo", "qué", "horarios", "últimas", "noticias", "opiniones", "revisión"}),
+    "it": frozenset({"oggi", "orari", "notizie", "migliore", "opinioni"}),
+    "pt": frozenset({"notícias", "hoje", "você"}),
+    "nl": frozenset({"vandaag", "openingstijden", "werkt"}),
+}
+
+
+def _strong_word_language(words: set) -> Optional[str]:
+    if words & LANGUAGE_INFERENCE_STOPWORDS["en"]:
+        return None
+    matches = {language for language, strong in LANGUAGE_STRONG_WORDS.items() if words & strong}
+    return matches.pop() if len(matches) == 1 else None
+
+
 def _stopword_language(lowered: str) -> Optional[str]:
     """Latin-script inference: stopword and character signals, single winner."""
     words = set(re.findall(r"\w+", lowered))
@@ -152,13 +181,14 @@ def _stopword_language(lowered: str) -> Optional[str]:
         if count:
             counts[language] = count
     if not counts:
-        return None
+        return _strong_word_language(words)
     ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     best_language, best_count = ranked[0]
-    if best_count < LANGUAGE_INFERENCE_MIN_MATCHES:
-        return None
     if len(ranked) > 1 and ranked[1][1] == best_count:
         return None
+    if best_count < LANGUAGE_INFERENCE_MIN_MATCHES:
+        strong = _strong_word_language(words)
+        return strong if strong == best_language else None
     return best_language
 
 
@@ -222,11 +252,11 @@ def infer_query_language(query: Optional[str]) -> Optional[str]:
 # in every leave-one-out fold. Security goes to Serper after a live A/B of the
 # 26 security queries with authority domains: authority hit@5 22/26 on v4.3.5,
 # 16/26 with Brave first, 23/26 with Serper first, at fewer output tokens.
-# Community goes to Serper for the same reason: on the 15 community queries
-# authority hit@5 stayed 15/15 in two live runs, at ~40% fewer tokens than Brave.
+# Community stays on Brave: on all 36 community queries Brave, Serper and
+# Firecrawl each hit the authority domain 15/15, with Brave at p50 640 ms /
+# p90 733 ms against Serper's 1067 / 1686 ms.
 INTENT_FIRST_PROVIDER: Dict[str, str] = {
     "academic": "exa",
-    "community": "serper",
     "docs": "exa",
     "security": "serper",
     "shopping": "serper",
