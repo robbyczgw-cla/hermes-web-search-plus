@@ -912,6 +912,49 @@ def test_setup_skips_keyless_prompt_when_already_opted_in(tmp_path, monkeypatch,
     assert "No keys entered; nothing changed." in capsys.readouterr().out
 
 
+def test_starter_setup_without_any_key_offers_keyless_start(tmp_path, monkeypatch, capsys):
+    env_path = tmp_path / ".env"
+    config_path = tmp_path / "config.json"
+    _isolate_keyless_env(monkeypatch, config_path)
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "--no-jev", "--env-path", str(env_path), "--config-path", str(config_path)])
+    prompts = []
+    monkeypatch.setattr(wsp.getpass, "getpass", lambda _prompt: "")
+    monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or "")
+
+    args.func(args)
+
+    assert any("Start without a key using Keenable" in prompt for prompt in prompts)
+    assert "Enabled keyless public search for Keenable" in capsys.readouterr().out
+    assert json.loads(config_path.read_text())["keenable"]["allow_public"] is True
+    assert not env_path.exists()
+
+
+def test_starter_setup_with_a_search_key_does_not_offer_keyless(tmp_path, monkeypatch, capsys):
+    env_path = tmp_path / ".env"
+    config_path = tmp_path / "config.json"
+    _isolate_keyless_env(monkeypatch, config_path)
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "--no-jev", "--env-path", str(env_path), "--config-path", str(config_path)])
+    monkeypatch.setattr(wsp.getpass, "getpass", lambda prompt: "fake-brave-key" if "BRAVE_API_KEY" in prompt else "")
+    monkeypatch.setattr("builtins.input", lambda prompt: (_ for _ in ()).throw(AssertionError(prompt)))
+
+    args.func(args)
+
+    out = capsys.readouterr().out
+    assert "fake-brave-key" not in out
+    assert "BRAVE_API_KEY" in env_path.read_text()
+    assert not config_path.exists() or "allow_public" not in config_path.read_text()
+
+
+def test_empty_dashboard_points_to_keyless_and_donsetch():
+    text = wsp._render_setup_guidance(env={}, fancy=True)
+    assert "--keyless-public" in text
+    assert "DonSeTch" in text and "explicit calls only" in text
+
+
 def test_routing_rewrite_preserves_non_routing_provider_sections(tmp_path):
     config_path = tmp_path / "config.json"
     config_path.write_text('{"version": 1, "keenable": {"allow_public": true, "search_url": "https://custom"}, "searxng": {"instance_url": "https://x"}}\n')

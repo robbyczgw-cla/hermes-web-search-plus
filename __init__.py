@@ -861,6 +861,7 @@ def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bo
         "No single key is mandatory, but at least one search-capable provider is needed for web_search_plus.",
         "Add LINKUP_API_KEY or another extraction-capable provider for web_extract_plus.",
         "Run `python3 ~/.hermes/plugins/web-search-plus/setup.py setup` for the recommended providers, or add `--preset all` to walk through every supported provider.",
+        "No key yet? `setup.py setup --keyless-public` starts with Keenable's free public tier.",
         "",
         "Recommended starter providers:",
     ]
@@ -922,6 +923,8 @@ def _render_status_dashboard(status: Optional[Dict[str, Any]] = None, *, color: 
         lines.append("│ Tip: add Linkup for clean web_extract_plus markdown.")
     elif not status["search_configured"]:
         lines.append("│ Starter: Brave + Serper + Exa + Linkup, the providers automatic routing tries first.")
+        lines.append("│ No key yet? `setup.py setup --keyless-public` starts with Keenable's free public tier.")
+        lines.append("│ Local and keyless: DonSeTch (separate install, explicit calls only), see docs/DONSETCH.md.")
     if status["search_configured"]:
         missing = _missing_router_first_providers(status)
         if missing:
@@ -1381,6 +1384,30 @@ def _web_search_plus_cli_command(args: Any) -> None:
                     answer = ""
             if answer in ("y", "yes"):
                 keyless_enable.append(item["provider"])
+        # Nothing searchable after the prompts: offer the keyless Keenable tier so
+        # the tools work right away. Keys added later take over automatically.
+        search_keys = {
+            item["env"] for item in _PROVIDER_CATALOG
+            if PROVIDER_SPECS[item["provider"]].supports_search
+        }
+        if (
+            not (set(values) & search_keys)
+            and "keenable" not in keyless_enable
+            and not _keyless_public_opted_in("keenable", config_path)
+            and not _provider_config_status(_read_env_file(env_path), config)["search_configured"]
+        ):
+            if force_keyless:
+                answer = "y"
+            else:
+                try:
+                    answer = input(
+                        "\nNo search key yet. Start without a key using Keenable's public tier? "
+                        "Keys you add later take over automatically. [Y/n]: "
+                    ).strip().lower()
+                except (EOFError, OSError):
+                    answer = "n"
+            if answer in ("", "y", "yes"):
+                keyless_enable.append("keenable")
         for provider in keyless_enable:
             config.setdefault(PROVIDER_SPECS[provider].config_section, {})["allow_public"] = True
         jev_wrote = False
