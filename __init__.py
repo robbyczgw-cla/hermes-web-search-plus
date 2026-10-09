@@ -56,7 +56,6 @@ from .wsp_core.dates import published_date
 from .wsp_core import jev_setup
 from .wsp_core.daemon_tasks import DaemonTask
 
-_PLUGIN_DIR = Path(__file__).resolve().parent
 
 _TOOLSET_NAME = "web-search-plus"
 _PROVIDER_ENV_KEYS = list(PROVIDER_ENV_KEYS)

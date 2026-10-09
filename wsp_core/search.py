@@ -96,7 +96,7 @@ from .search_locale import (
 )
 from .env_loader import load_env_files
 from .research import run_research_mode
-from .attempt_engine_v3 import AttemptContext, AttemptEngine
+from .attempt_engine_v3 import AttemptEngine, provider_attempt_context, request_deadline
 from .cache_v3 import ResponseCacheV3
 from .compat_v3 import legacy_request_to_v3, v3_response_to_legacy_search
 from .contract_v3 import Capability, ErrorClass, RequestV3, ResponseV3, SkipReason
@@ -1655,23 +1655,9 @@ def _execute_research_v3(
     daily_budget = _daily_preflight_budget(config)
 
     for provider in providers:
-        provider_config = config.get(provider) or {}
-        endpoint = str(
-            provider_config.get("endpoint")
-            or provider_config.get("base_url")
-            or provider_config.get("url")
-            or f"provider://{provider}/search"
-        )
-        credential = get_api_key(provider, config) or f"keyless:{provider}"
-        contexts[provider] = AttemptContext(
-            provider=provider,
-            capability=Capability.SEARCH,
-            endpoint=endpoint,
-            credential_fingerprint=store.fingerprint_credential(credential),
-            budget_scope=scope,
-            budget_window="request",
-            budget_limit_units=budget_limit,
-            **daily_budget,
+        contexts[provider] = provider_attempt_context(
+            store, provider, Capability.SEARCH, config.get(provider) or {}, get_api_key(provider, config),
+            budget_scope=scope, budget_limit_units=budget_limit, **daily_budget,
         )
 
     def execute_provider(provider: str) -> Dict[str, Any]:
@@ -1864,36 +1850,14 @@ def _execute_search_v3(
     hedge_floor = _positive_float(v3_config.get("hedge_min_delay_seconds"), 2.5)
     scope = request.request_id or plan.execution_id
     daily_budget = _daily_preflight_budget(config)
-    max_wall_time_ms = request.budget.get("max_wall_time_ms")
-    deadline = (
-        time.monotonic() + (max_wall_time_ms / 1000)
-        if isinstance(max_wall_time_ms, int)
-        and not isinstance(max_wall_time_ms, bool)
-        and max_wall_time_ms > 0
-        else None
-    )
-
-    contexts = {}
-    for provider in candidates:
-        provider_config = config.get(provider) or {}
-        endpoint = str(
-            provider_config.get("endpoint")
-            or provider_config.get("base_url")
-            or provider_config.get("url")
-            or f"provider://{provider}/search"
+    deadline = request_deadline(request.budget)
+    contexts = {
+        provider: provider_attempt_context(
+            store, provider, Capability.SEARCH, config.get(provider) or {}, get_api_key(provider, config),
+            budget_scope=scope, budget_limit_units=budget_limit, deadline_monotonic=deadline, **daily_budget,
         )
-        credential = get_api_key(provider, config) or f"keyless:{provider}"
-        contexts[provider] = AttemptContext(
-            provider=provider,
-            capability=Capability.SEARCH,
-            endpoint=endpoint,
-            credential_fingerprint=store.fingerprint_credential(credential),
-            budget_scope=scope,
-            budget_window="request",
-            budget_limit_units=budget_limit,
-            deadline_monotonic=deadline,
-            **daily_budget,
-        )
+        for provider in candidates
+    }
 
     def operation_for(current_provider: str):
         def operation():

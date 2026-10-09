@@ -141,13 +141,13 @@ def test_engine_owned_extract_call_bypasses_legacy_retry_and_health(monkeypatch)
         "extract": {"allow_private_urls": True},
     }
 
+    import wsp_core.provider_health as health
+
     def forbidden(*_args, **_kwargs):
         raise AssertionError("legacy extract health/retry seam was called")
 
-    monkeypatch.setattr(search._extract, "provider_in_cooldown", forbidden)
-    monkeypatch.setattr(search._extract, "execute_provider_with_retry", forbidden)
-    monkeypatch.setattr(search._extract, "mark_provider_failure", forbidden)
-    monkeypatch.setattr(search._extract, "reset_provider_health", forbidden)
+    for name in ("provider_in_cooldown", "execute_provider_with_retry", "mark_provider_failure", "reset_provider_health"):
+        monkeypatch.setattr(health, name, forbidden)
     monkeypatch.setattr(
         providers,
         "extract_linkup",
@@ -161,7 +161,6 @@ def test_engine_owned_extract_call_bypasses_legacy_retry_and_health(monkeypatch)
             ["https://example.com/a"],
             provider="linkup",
             config=config,
-            engine_owned_attempt=True,
         )
 
 
@@ -169,7 +168,7 @@ def test_extract_adapter_emits_engine_attempt_receipt(tmp_path, monkeypatch):
     calls = []
 
     def fake_core(**kwargs):
-        calls.append((kwargs["provider"], kwargs["engine_owned_attempt"]))
+        calls.append((kwargs["provider"], True))
         return _extract_payload()
 
     monkeypatch.setattr(search._extract, "_extract_plus_core", fake_core)

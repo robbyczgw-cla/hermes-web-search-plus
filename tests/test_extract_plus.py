@@ -354,8 +354,8 @@ class ExtractPlusCoreTests(unittest.TestCase):
             with mock.patch("wsp_core.providers.extract_firecrawl", side_effect=[transient, transient, transient]):
                 with mock.patch("wsp_core.providers.extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback"}]}):
                     with mock.patch("wsp_core.search.time.sleep"):
-                        with mock.patch("wsp_core.extract.mark_provider_failure", return_value={"cooldown_seconds": 60}) as mock_mark:
-                            with mock.patch("wsp_core.extract.reset_provider_health") as mock_reset:
+                        with mock.patch("wsp_core.provider_health.mark_provider_failure", return_value={"cooldown_seconds": 60}) as mock_mark:
+                            with mock.patch("wsp_core.provider_health.reset_provider_health") as mock_reset:
                                 result = extract.extract_plus(["https://example.com"], provider="firecrawl")
 
         self.assertEqual(result["provider"], "linkup")
@@ -365,7 +365,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
 
     def test_extract_plus_ignores_legacy_cooldown_state(self):
         with mock.patch.dict(os.environ, {"TAVILY_API_KEY": "tvly-test", "LINKUP_API_KEY": "linkup-test"}, clear=True):
-            with mock.patch("wsp_core.extract.provider_in_cooldown") as legacy_cooldown:
+            with mock.patch("wsp_core.provider_health.provider_in_cooldown") as legacy_cooldown:
                 with mock.patch("wsp_core.providers.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
                     with mock.patch("wsp_core.providers.extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback"}]}):
                         result = extract.extract_plus(["https://example.com"], provider="auto")
