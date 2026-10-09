@@ -1,7 +1,7 @@
 # Web Search Plus — Hermes Plugin
 
 <p align="center">
-  <img src="docs/assets/web-search-plus-v3-hero.jpg" alt="Web Search Plus: better web search and page reading for Hermes agents" width="100%">
+  <img src="docs/assets/web-search-plus-v5-hero.jpg" alt="Web Search Plus 5.0: one search, every source. Median search 565 ms instead of 930 ms on 294 live queries" width="100%">
 </p>
 
 <p align="center">
