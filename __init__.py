@@ -1435,6 +1435,20 @@ def _web_search_plus_cli_command(args: Any) -> None:
         # Two or more search providers: let the user keep automatic routing or
         # fix their own order. Asked only when there is a choice to make.
         custom_order_set = False
+        searxng_value = str(values.get("SEARXNG_INSTANCE_URL") or "")
+        if searxng_value and not env_now.get("SEARXNG_ALLOW_PRIVATE"):
+            from urllib.parse import urlparse as _urlparse
+            import ipaddress as _ip
+            host = (_urlparse(searxng_value).hostname or "").lower()
+            try:
+                private = _ip.ip_address(host).is_private or _ip.ip_address(host).is_loopback
+            except ValueError:
+                private = host in {"localhost"} or host.endswith((".local", ".lan", ".internal", ".fritz.box"))
+            if private:
+                print(
+                    "\nNote: your SearXNG URL points to a local/private address. WSP blocks those "
+                    "by default; add SEARXNG_ALLOW_PRIVATE=1 to your .env if this is your own instance."
+                )
         keyed_search = [
             item["provider"] for item in _PROVIDER_CATALOG
             if PROVIDER_SPECS[item["provider"]].supports_search
@@ -1731,7 +1745,14 @@ def _format_results(data: dict, *, now: Optional[datetime] = None) -> str:
     ``now`` is the clock for relative dates ("3 days ago"); tests pass a fixed one.
     """
     if "error" in data and not data.get("results"):
-        return f"Search error: {data['error']}"
+        lines = [f"Search error: {data['error']}"]
+        # Say why each provider failed (e.g. "linkup: Provider quota is
+        # exhausted"), so an empty account is not a mystery.
+        for item in (data.get("provider_errors") or [])[:6]:
+            if isinstance(item, dict) and item.get("provider"):
+                reason = " ".join(str(item.get("error") or "failed").split())[:160]
+                lines.append(f"- {item['provider']}: {reason}")
+        return "\n".join(lines)
 
     results = data.get("results", [])
     provider = data.get("provider", "unknown")

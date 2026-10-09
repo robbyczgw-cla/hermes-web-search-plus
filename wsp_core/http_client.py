@@ -502,7 +502,34 @@ def _parse_retry_after(error: HTTPError) -> float | None:
     return max(0.0, retry_at.timestamp() - time.time())
 
 
+# Body markers of an empty account. Some providers (Linkup) answer 429 for
+# this; it is a quota problem, not a rate limit that clears in seconds.
+_OUT_OF_CREDIT_MARKERS = (
+    "insufficient_funds", "insufficient funds", "not have enough funds",
+    "insufficient_credits", "insufficient credits", "out of credits",
+    "no credits", "credit balance", "quota exceeded", "quota_exceeded",
+)
+
+
+def _out_of_credit(error: HTTPError) -> bool:
+    if error.code not in {402, 403, 429}:
+        return False
+    try:
+        body = error.read(4096)
+    except Exception:
+        return False
+    text = body.decode("utf-8", "replace").lower() if isinstance(body, bytes) else str(body).lower()
+    return any(marker in text for marker in _OUT_OF_CREDIT_MARKERS)
+
+
 def _raise_provider_http_error(error: HTTPError) -> None:
+    if _out_of_credit(error):
+        raise ProviderRequestError(
+            f"Out of credits: the provider account has no funds left; top it up or "
+            f"remove its key (HTTP {error.code})",
+            status_code=402,
+            transient=False,
+        )
     friendly_msg = _friendly_http_error(error.code)
     raise ProviderRequestError(
         f"{friendly_msg} (HTTP {error.code})",
