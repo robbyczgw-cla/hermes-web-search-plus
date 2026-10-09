@@ -412,6 +412,7 @@ def _default_behavior_config() -> Dict[str, Any]:
         "default_provider": None,
         "auto_routing": {
             "enabled": True,
+            "order": "measured",
             "fallback_provider": "serper",
             "provider_priority": list(_DEFAULT_PROVIDER_PRIORITY),
             "extract_provider_priority": list(_DEFAULT_EXTRACT_PROVIDER_PRIORITY),
@@ -554,6 +555,8 @@ def _merge_behavior_config(user_config: Mapping[str, Any]) -> Dict[str, Any]:
     auto = dict(config["auto_routing"])
     if "enabled" in auto_user:
         auto["enabled"] = bool(auto_user.get("enabled"))
+    if str(auto_user.get("order", "")).strip().lower() == "custom":
+        auto["order"] = "custom"
     if auto_user.get("fallback_provider"):
         auto["fallback_provider"] = _normalize_routing_provider(str(auto_user["fallback_provider"]))
     if auto_user.get("provider_priority"):
@@ -690,6 +693,10 @@ def _routing_summary(config: Mapping[str, Any]) -> str:
         "Routing:",
         f"  profile: {config.get('profile', 'standard')}",
         f"  auto-routing: {'on' if auto.get('enabled', True) else 'off'}",
+        "  order: " + (
+            "custom (search priority, every query)" if auto.get("order") == "custom"
+            else "automatic by query type (setup.py config set-order to choose your own)"
+        ),
         f"  default provider: {config.get('default_provider') or 'none'}",
         f"  fallback provider: {auto.get('fallback_provider', 'serper')}",
         "  search priority: " + ", ".join(auto.get("provider_priority", _DEFAULT_PROVIDER_PRIORITY)),
@@ -1112,6 +1119,13 @@ def _web_search_plus_cli_setup(parser: argparse.ArgumentParser) -> None:
     set_priority.add_argument("providers")
     set_priority.add_argument("--config-path")
     set_priority.add_argument("--dry-run", action="store_true")
+    set_order = config_subs.add_parser(
+        "set-order",
+        help="Your own provider order for every search (comma-separated), or 'auto' for routing by query type",
+    )
+    set_order.add_argument("providers")
+    set_order.add_argument("--config-path")
+    set_order.add_argument("--dry-run", action="store_true")
     set_extract_priority = config_subs.add_parser("set-extract-priority", help="Set comma-separated extraction auto-routing priority")
     set_extract_priority.add_argument("providers")
     set_extract_priority.add_argument("--config-path")
@@ -1202,6 +1216,14 @@ def _handle_config_command(args: Any) -> None:
         config["auto_routing"]["fallback_provider"] = _normalize_routing_provider(getattr(args, "provider"))
     elif subcommand == "set-priority":
         config["auto_routing"]["provider_priority"] = _normalize_provider_csv(getattr(args, "providers"), routing=True)
+    elif subcommand == "set-order":
+        raw = str(getattr(args, "providers")).strip().lower()
+        if raw in {"auto", "automatic", "measured"}:
+            config["auto_routing"]["order"] = "measured"
+        else:
+            config["auto_routing"]["order"] = "custom"
+            config["auto_routing"]["provider_priority"] = _normalize_provider_csv(raw, routing=True)
+            config["auto_routing"]["enabled"] = True
     elif subcommand == "set-extract-priority":
         config["auto_routing"]["extract_provider_priority"] = _normalize_extract_provider_csv(getattr(args, "providers"))
     elif subcommand == "disable":
@@ -1410,6 +1432,36 @@ def _web_search_plus_cli_command(args: Any) -> None:
                 keyless_enable.append("keenable")
         for provider in keyless_enable:
             config.setdefault(PROVIDER_SPECS[provider].config_section, {})["allow_public"] = True
+        # Two or more search providers: let the user keep automatic routing or
+        # fix their own order. Asked only when there is a choice to make.
+        custom_order_set = False
+        keyed_search = [
+            item["provider"] for item in _PROVIDER_CATALOG
+            if PROVIDER_SPECS[item["provider"]].supports_search
+            and (item["env"] in values or env_now.get(item["env"]))
+        ]
+        if len(keyed_search) >= 2 and not force_keyless:
+            try:
+                answer = input(
+                    "\nSearch order: automatic by query type (recommended) or your own order "
+                    f"of {', '.join(keyed_search)}? [A/c]: "
+                ).strip().lower()
+            except (EOFError, OSError):
+                answer = ""
+            if answer in ("c", "custom"):
+                try:
+                    raw_order = input(f"  Your order, comma-separated [{','.join(keyed_search)}]: ").strip()
+                except (EOFError, OSError):
+                    raw_order = ""
+                try:
+                    order = _normalize_provider_csv(raw_order or ",".join(keyed_search), routing=True)
+                except (SystemExit, ValueError) as exc:
+                    print(f"  Order not changed: {exc}")
+                else:
+                    auto = config.setdefault("auto_routing", {})
+                    auto["order"] = "custom"
+                    auto["provider_priority"] = order
+                    custom_order_set = True
         jev_wrote = False
         if want_jev is None:
             if sys.stdin.isatty():
@@ -1467,8 +1519,11 @@ def _web_search_plus_cli_command(args: Any) -> None:
             print(f"\n✓ Configured {len(changed)} provider key(s) in {env_path}: " + ", ".join(changed))
             print("✓ Secrets were not printed.")
             wrote_any = True
-        if routing_args_present or keyless_enable or jev_wrote:
+        if routing_args_present or keyless_enable or jev_wrote or custom_order_set:
             _write_behavior_config(config_path, config)
+            if custom_order_set:
+                order = config["auto_routing"]["provider_priority"]
+                print(f"✓ Saved your search order in {config_path}: " + ", ".join(order))
             if routing_args_present:
                 print(f"✓ Saved routing preferences in {config_path}")
             if keyless_enable:

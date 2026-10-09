@@ -29,7 +29,7 @@ Current release: **v4.3.5**. Version history: [Changelog](CHANGELOG.md).
 - **Searches in the query's language.** A clearly German or French query is searched in German or French, unless you set a language yourself.
 - **Simpler setup.** `setup.py setup` asks for the four providers automatic routing uses most: Brave, Serper, Exa and Linkup. Without a key, it offers Keenable's free public tier so search works right away.
 
-5.0 changes how automatic routing chooses providers, so most searches now use your Brave quota. Code that imports engine modules directly has to change its imports. Details: [Breaking changes in 5.0](CHANGELOG.md#breaking-changes).
+5.0 changes how automatic routing chooses providers: with a Brave key, most searches now go to Brave. Code that imports engine modules directly has to change its imports. Prefer your own order? `setup.py config set-order exa,serper,brave` uses it for every query. Details: [Breaking changes in 5.0](CHANGELOG.md#breaking-changes).
 
 ---
 

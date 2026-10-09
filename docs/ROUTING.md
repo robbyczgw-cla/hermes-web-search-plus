@@ -64,7 +64,10 @@ Two consequences:
   starts with `tavily` still leaves `brave` first while `brave` is eligible. To keep a
   provider from being chosen first, put it in `disabled_providers` or set its
   `auto_allow` entry to `false`. To use one provider for every search, turn automatic
-  routing off and set `default_provider` (see [Configuration](#configuration)).
+  routing off and set `default_provider` (see [Configuration](#configuration)). To use
+  your own order for every query instead of the per-intent table, run `setup.py config
+  set-order exa,serper,brave` (or pick "your own order" in `setup.py setup`); `set-order
+  auto` returns to this table.
 
 ## The measured order
 

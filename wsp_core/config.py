@@ -92,6 +92,9 @@ DEFAULT_CONFIG = {
     },
     "auto_routing": {
         "enabled": True,
+        # "measured": first provider by query type (docs/ROUTING.md).
+        # "custom": provider_priority as the user ordered it, for every query.
+        "order": "measured",
         "fallback_provider": "serper",
         # Low-trust / experimental providers can stay configured for explicit use
         # without being selected automatically.
@@ -416,10 +419,12 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
             auto["fallback_provider"] = DEFAULT_CONFIG["auto_routing"]["fallback_provider"]
         else:
             auto["fallback_provider"] = _normalize_routing_provider_config(str(auto["fallback_provider"]))
+    order_mode = str(auto.get("order") or "measured").strip().lower()
+    auto["order"] = order_mode if order_mode in {"measured", "custom"} else "measured"
     if auto.get("provider_priority"):
-        priority = _replace_pre_5_default_priority(
-            _normalize_routing_provider_list_config(auto["provider_priority"])
-        )
+        priority = _normalize_routing_provider_list_config(auto["provider_priority"])
+        if auto["order"] != "custom":
+            priority = _replace_pre_5_default_priority(priority)
         if not priority:
             priority = list(DEFAULT_CONFIG["auto_routing"]["provider_priority"])
         auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
@@ -905,6 +910,20 @@ def _apply_desktop_settings(config: Dict[str, Any], settings: Dict[str, Any]) ->
                 auto = {}
                 config["auto_routing"] = auto
             auto["enabled"] = enabled
+    if "provider_order" in settings:
+        raw_order = _present_desktop_text(settings.get("provider_order"))
+        if raw_order:
+            auto = config.get("auto_routing")
+            if not isinstance(auto, dict):
+                auto = {}
+                config["auto_routing"] = auto
+            if raw_order.strip().lower() in {"auto", "automatic", "measured"}:
+                auto["order"] = "measured"
+            else:
+                names = [part.strip().lower() for part in raw_order.split(",") if part.strip()]
+                if names:
+                    auto["order"] = "custom"
+                    auto["provider_priority"] = names
     if "searxng_url" in settings:
         url = _present_desktop_text(settings.get("searxng_url"))
         if url:
