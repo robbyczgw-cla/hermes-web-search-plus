@@ -33,7 +33,7 @@
 {"id": "tuning-arxiv-llm-agent-benchmark-2026-swe-bench", "intent": "academic", "lang": "en", "query": "arxiv LLM agent benchmark 2026 SWE-bench", "tags": ["tuning_set", "academic_arxiv"]}
 {"id": "tuning-latest-paper-tool-use-agents-benchmark-2026", "intent": "academic", "lang": "en", "query": "latest paper tool use agents benchmark 2026", "tags": ["tuning_set", "academic_general"]}
 {"id": "tuning-best-dac-under-500-euros-forum-measurements-2026", "intent": "community", "lang": "en", "query": "best DAC under 500 euros forum measurements 2026", "tags": ["tuning_set", "community_product_en"]}
-{"id": "tuning-site-reddit-com-r-localllama-best-local-coding-m", "intent": "community", "lang": "en", "query": "site:reddit.com r/LocalLLaMA best local coding model 2026", "tags": ["tuning_set", "community_reddit"]}
+{"id": "tuning-site-reddit-com-r-localllama-best-local-coding-m-2", "intent": "community", "lang": "en", "query": "site:reddit.com r/LocalLLaMA best local coding model 2026", "tags": ["tuning_set", "community_reddit"]}
 {"id": "tuning-tailscale-acl-policy-syntax-official-docs-grants", "intent": "docs", "lang": "en", "query": "Tailscale ACL policy syntax official docs grants", "tags": ["tuning_set", "docs_official"]}
 {"id": "tuning-site-docs-anthropic-com-claude-code-hooks-settin", "intent": "docs", "lang": "en", "query": "site:docs.anthropic.com Claude Code hooks settings json documentation", "tags": ["tuning_set", "docs_official"]}
 {"id": "tuning-nvidia-earnings-q1-2027-revenue-guidance-officia", "intent": "news", "lang": "en", "query": "Nvidia earnings Q1 2027 revenue guidance official", "tags": ["tuning_set", "finance_earnings"]}

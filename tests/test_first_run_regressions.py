@@ -26,7 +26,8 @@ def isolated_credentials(monkeypatch):
 
 def test_empty_dashboard_recommends_setup_not_search():
     text = wsp._render_status_dashboard(wsp._provider_config_status({}), color=False)
-    assert 'python3 ~/.hermes/plugins/web-search-plus/setup.py setup --preset starter' in text
+    assert 'python3 ~/.hermes/plugins/web-search-plus/setup.py setup' in text
+    assert 'Brave + Serper + Exa + Linkup' in text
     assert 'search.py --query' not in text
 
 
@@ -41,7 +42,7 @@ def test_configured_dashboard_recommends_search_and_reload():
 def test_starter_badges_match_preset():
     expected = {item['provider'] for item in wsp._providers_for_preset('starter')}
     actual = {item['provider'] for item in wsp._get_provider_catalog() if item['recommended']}
-    assert actual == expected == {'you', 'serper', 'linkup'}
+    assert actual == expected == {'brave', 'serper', 'exa', 'linkup'}
 
 
 def test_standard_profile_is_not_ready_with_no_provider():

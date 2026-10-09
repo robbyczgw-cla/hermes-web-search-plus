@@ -4,7 +4,7 @@ Locks down the guarantees the bench feature makes: ranking follows the
 success/latency/quality score, a failing provider never aborts the run (it
 just ranks last), the recommendation is advisory (config_key + apply hint,
 never a config write), and bench traffic never touches provider_health
-cooldowns or provider_stats adaptive-routing memory. All providers are mocked;
+cooldowns or provider_stats latency memory. All providers are mocked;
 no network.
 """
 

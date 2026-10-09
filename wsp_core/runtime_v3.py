@@ -7,7 +7,7 @@ import unicodedata
 from copy import deepcopy
 from datetime import datetime
 from typing import Any, Dict, List, Mapping
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from .contract_v3 import (
     AttemptOutcome,
@@ -24,20 +24,7 @@ from .contract_v3 import (
     SkipReason,
 )
 from .orchestrator_v3 import ProviderPlan
-
-
-def _canonical_url(value: str) -> str:
-    parsed = urlsplit(value)
-    host = (parsed.hostname or "").lower()
-    port = parsed.port
-    netloc = host
-    if port and not (
-        (parsed.scheme == "http" and port == 80)
-        or (parsed.scheme == "https" and port == 443)
-    ):
-        netloc = f"{host}:{port}"
-    path = parsed.path or "/"
-    return urlunsplit((parsed.scheme.lower(), netloc, path, parsed.query, ""))
+from .urls import canonical_url
 
 
 def _stable_id(prefix: str, *parts: object) -> str:
@@ -142,7 +129,6 @@ def _attempts(
     return attempts
 
 
-PROJECTION_REQUIRED_PROVIDERS = frozenset({"parallel", "you"})
 _SNIPPET_SEPARATOR = "\n\n"
 _MAX_AGGREGATED_SNIPPET_CHARS = 600
 _AUTHORITATIVE_SOURCE_TYPES = frozenset({"docs", "paper", "repo", "reference"})
@@ -322,7 +308,15 @@ def _observation(
     provider_score = None
     if isinstance(score, (int, float)) and not isinstance(score, bool):
         provider_score = {"value": float(score), "semantics": "unknown"}
-    raw_date = item.get("published_at") or item.get("published_date") or item.get("date")
+    raw_date = (
+        item.get("published_at")
+        or item.get("published_date")
+        or item.get("date")
+        or item.get("publish_date")
+        or item.get("publishedDate")
+        or item.get("page_age")
+        or item.get("age")
+    )
     published_at = None
     if isinstance(raw_date, str):
         published_at = {"raw": raw_date, "normalized": _valid_rfc3339(raw_date)}
@@ -333,7 +327,7 @@ def _observation(
         "provider": provider,
         "endpoint_id": endpoint_id,
         "kind": kind,
-        "url": {"observed": observed_url, "canonical": _canonical_url(observed_url)},
+        "url": {"observed": observed_url, "canonical": canonical_url(observed_url)},
         "title": (
             unicodedata.normalize("NFC", str(item.get("title")))
             if item.get("title") is not None
@@ -388,7 +382,7 @@ def project_results_from_observations(
             clusters.setdefault(observation["url"]["canonical"], []).append(observation)
         emitted = set()
         for item in selected_items:
-            canonical = _canonical_url(str(item.get("url") or ""))
+            canonical = canonical_url(str(item.get("url") or ""))
             members = sorted(clusters.get(canonical) or [], key=_observation_order)
             if not members or canonical in emitted:
                 continue
@@ -453,21 +447,6 @@ def _source_diversity(observations: List[Dict[str, Any]], results: List[Dict[str
         "source_family_count": len(providers),
         "unique_cluster_count": len(clusters),
     }
-
-
-def render_response_v3(response: ResponseV3) -> str:
-    """Render source projections only; this formatter has no answer concept."""
-    lines = []
-    for result in response.results:
-        title = (result.get("title") or {}).get("text") or "Untitled source"
-        url = (result.get("url") or {}).get("observed") or ""
-        snippet = (result.get("snippet") or result.get("text") or {}).get("text") or ""
-        lines.append(title)
-        if url:
-            lines.append(url)
-        if snippet:
-            lines.append(snippet)
-    return "\n".join(lines)
 
 
 def response_from_legacy(
@@ -564,8 +543,13 @@ def response_from_legacy(
     else:
         status = ResponseStatus.OK
 
+    # A hedge loser is cancelled because another attempt won, not by a budget.
+    superseded = set(payload.get("_v3_superseded_providers") or ())
     budget_limited = payload.get("_v3_budget_limited") is True or any(
-        attempt.outcome is AttemptOutcome.CANCELLED
+        (
+            attempt.outcome is AttemptOutcome.CANCELLED
+            and attempt.provider not in superseded
+        )
         or attempt.skip_reason
         in {SkipReason.BUDGET_BLOCKED, SkipReason.DEADLINE_EXCEEDED}
         for attempt in provider_attempts
@@ -594,20 +578,16 @@ def response_from_legacy(
         )
 
     fallback_used = bool(routing.get("fallback_used") or _error_items(payload))
+    reported_reason = routing.get("fallback_reason")
     fallback_reason = (
-        FallbackReason.SELECTED_FAILED.value
+        reported_reason
+        if fallback_used and reported_reason in {reason.value for reason in FallbackReason}
+        else FallbackReason.SELECTED_FAILED.value
         if fallback_used
         else FallbackReason.NONE.value
     )
-    cached = bool(payload.get("cached"))
     if request.cache.get("mode") == "bypass":
         cache_status = {"disposition": "bypassed"}
-    elif cached:
-        cache_status = {
-            "disposition": "fresh_hit",
-            "age_seconds": max(0, int(payload.get("cache_age_seconds", 0))),
-            "source_contract_version": "2.x",
-        }
     else:
         cache_status = {"disposition": "miss"}
 

@@ -8,6 +8,7 @@ import os
 import secrets
 import sqlite3
 import stat
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -23,6 +24,28 @@ DEFAULT_OPEN_SECONDS = {
     ErrorClass.TRANSIENT: 60,
     ErrorClass.TIMEOUT: 60,
 }
+# A single 5xx or timeout is usually a blip. Transient and timeout buckets
+# block admission only after this many consecutive failures; a success
+# deletes the bucket and resets the count. Auth, quota and rate-limit
+# buckets still block on the first failure: they are not blips.
+CONSECUTIVE_FAILURES_TO_OPEN = {
+    ErrorClass.TRANSIENT: 3,
+    ErrorClass.TIMEOUT: 3,
+}
+
+# Database files whose schema this process has initialized, keyed by path and
+# inode: a deleted or replaced file (restore, another process's migration) is
+# initialized again, as every store construction did before.
+_INITIALIZED_STATE_FILES: set[tuple[str, int, int]] = set()
+_INITIALIZED_STATE_FILES_LOCK = threading.Lock()
+
+
+def _state_file_identity(path: Path) -> Optional[tuple[str, int, int]]:
+    try:
+        metadata = os.stat(path)
+    except OSError:
+        return None
+    return (os.path.realpath(path), metadata.st_dev, metadata.st_ino)
 
 
 def credential_fingerprint(
@@ -66,6 +89,9 @@ class AdmissionDecision:
     skip_reason: Optional[SkipReason] = None
     store_available: bool = True
     blocking_error_class: Optional[ErrorClass] = None
+    # Transient and timeout buckets that hold failures below the open
+    # threshold; a success must clear them or blips add up across requests.
+    failing_error_classes: tuple[ErrorClass, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -149,6 +175,8 @@ class SQLiteStateStore:
         self._local_secret = secrets.token_bytes(32)
         self._secret_available = False
         self._available = False
+        self._request_budgets: dict[tuple[str, str], list[int]] = {}
+        self._request_budgets_lock = threading.Lock()
         self._initialize_local_secret()
         self._initialize()
         if not self._secret_available:
@@ -164,6 +192,8 @@ class SQLiteStateStore:
         store._local_secret = b""
         store._secret_available = False
         store._available = False
+        store._request_budgets = {}
+        store._request_budgets_lock = threading.Lock()
         try:
             absolute = Path(os.path.abspath(os.fspath(store.path)))
             current = Path(os.path.sep)
@@ -249,13 +279,18 @@ class SQLiteStateStore:
     def _initialize(self) -> None:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            connection = self._connect()
-            try:
-                connection.execute("PRAGMA journal_mode=WAL")
-                connection.execute("PRAGMA foreign_keys=ON")
-                initialize_state_schema(connection)
-            finally:
-                connection.close()
+            with _INITIALIZED_STATE_FILES_LOCK:
+                if _state_file_identity(self.path) not in _INITIALIZED_STATE_FILES:
+                    connection = self._connect()
+                    try:
+                        connection.execute("PRAGMA journal_mode=WAL")
+                        connection.execute("PRAGMA foreign_keys=ON")
+                        initialize_state_schema(connection)
+                    finally:
+                        connection.close()
+                    identity = _state_file_identity(self.path)
+                    if identity is not None:
+                        _INITIALIZED_STATE_FILES.add(identity)
             self._available = True
         except (OSError, sqlite3.Error):
             self._available = False
@@ -358,6 +393,10 @@ class SQLiteStateStore:
         except sqlite3.Error:
             self._available = False
             return CircuitRecord(CircuitState.UNKNOWN)
+        return self._circuit_record(row)
+
+    @staticmethod
+    def _circuit_record(row: Optional[sqlite3.Row]) -> CircuitRecord:
         if row is None:
             return CircuitRecord()
         return CircuitRecord(
@@ -422,17 +461,26 @@ class SQLiteStateStore:
             (ErrorClass.TRANSIENT, SkipReason.CIRCUIT_OPEN),
             (ErrorClass.TIMEOUT, SkipReason.CIRCUIT_OPEN),
         )
+        records = self._get_circuits(key, tuple(error for error, _ in checks))
+        if not self._available:
+            return AdmissionDecision(
+                True, CircuitState.UNKNOWN, None, store_available=False
+            )
+        failing = tuple(
+            error
+            for error in CONSECUTIVE_FAILURES_TO_OPEN
+            if records[error].failure_count > 0
+        )
         expired = []
         for error_class, skip_reason in checks:
-            record = self.get_circuit(key, error_class)
-            if not self._available:
-                return AdmissionDecision(
-                    True,
-                    CircuitState.UNKNOWN,
-                    None,
-                    store_available=False,
-                )
+            record = records[error_class]
             if record.state is CircuitState.CLOSED:
+                continue
+            threshold = CONSECUTIVE_FAILURES_TO_OPEN.get(error_class, 1)
+            if (
+                record.state is CircuitState.OPEN
+                and record.failure_count < threshold
+            ):
                 continue
             active = record.open_until is None or record.open_until > now
             if active:
@@ -450,6 +498,7 @@ class SQLiteStateStore:
                     True,
                     CircuitState.HALF_OPEN,
                     blocking_error_class=error_class,
+                    failing_error_classes=failing,
                 )
             if not self._available:
                 return AdmissionDecision(
@@ -465,13 +514,49 @@ class SQLiteStateStore:
                 skip_reason,
                 blocking_error_class=error_class,
             )
-        return AdmissionDecision(True, CircuitState.CLOSED)
+        return AdmissionDecision(
+            True, CircuitState.CLOSED, failing_error_classes=failing
+        )
+
+    def _get_circuits(
+        self, key: CircuitKey, error_classes: tuple[ErrorClass, ...]
+    ) -> dict[ErrorClass, CircuitRecord]:
+        """Fetch the circuit buckets for one admission with one SQLite query."""
+        if not self._available:
+            return {error: CircuitRecord(CircuitState.UNKNOWN) for error in error_classes}
+        try:
+            connection = self._connect()
+            try:
+                rows = connection.execute(
+                    """
+                    SELECT error_class, state, failure_count, open_until, updated_at
+                    FROM circuit_state
+                    WHERE provider=? AND capability=? AND endpoint=?
+                      AND credential_fingerprint=?
+                    """,
+                    key.values(),
+                ).fetchall()
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            self._available = False
+            return {error: CircuitRecord(CircuitState.UNKNOWN) for error in error_classes}
+        by_error = {row["error_class"]: row for row in rows}
+        return {error: self._circuit_record(by_error.get(error.value)) for error in error_classes}
 
     def configure_budget(
         self, scope: str, window_key: str, *, limit_units: int
     ) -> None:
         if limit_units < 0:
             raise ValueError("budget limit_units must be non-negative")
+        if window_key == "request":
+            with self._request_budgets_lock:
+                budget = self._request_budgets.get((scope, window_key))
+                if budget is None:
+                    self._request_budgets[(scope, window_key)] = [limit_units, 0, 0]
+                else:
+                    budget[0] = limit_units
+            return
         if not self._available:
             return
         try:
@@ -495,6 +580,13 @@ class SQLiteStateStore:
     def reserve_budget(self, scope: str, window_key: str, *, units: int) -> bool:
         if units < 0:
             raise ValueError("budget units must be non-negative")
+        if window_key == "request":
+            with self._request_budgets_lock:
+                budget = self._request_budgets.get((scope, window_key))
+                if budget is None or sum(budget[1:]) + units > budget[0]:
+                    return False
+                budget[2] += units
+                return True
         if not self._available:
             return False
         try:
@@ -542,6 +634,14 @@ class SQLiteStateStore:
             raise ValueError("budget units must be non-negative")
         if actual_units > reserved_units:
             raise ValueError("actual budget units cannot exceed reserved units")
+        if window_key == "request":
+            with self._request_budgets_lock:
+                budget = self._request_budgets.get((scope, window_key))
+                if budget is None or budget[2] < reserved_units:
+                    raise RuntimeError("budget reservation missing during reconciliation")
+                budget[1] += actual_units
+                budget[2] -= reserved_units
+                return True
         if not self._available:
             return False
         try:
@@ -576,6 +676,12 @@ class SQLiteStateStore:
             return False
 
     def get_budget(self, scope: str, window_key: str) -> BudgetRecord:
+        if window_key == "request":
+            with self._request_budgets_lock:
+                budget = self._request_budgets.get((scope, window_key))
+                if budget is None:
+                    raise KeyError((scope, window_key))
+                return BudgetRecord(scope, window_key, *budget)
         if not self._available:
             raise RuntimeError("state store unavailable")
         try:
@@ -612,6 +718,10 @@ class SQLiteStateStore:
         :meth:`open_readonly`; a missing row is distinct from an unavailable
         database so policy can fail closed only when necessary.
         """
+        if window_key == "request":
+            with self._request_budgets_lock:
+                budget = self._request_budgets.get((scope, window_key))
+                return BudgetRecord(scope, window_key, *budget) if budget else None
         if not self._available:
             return None
         try:

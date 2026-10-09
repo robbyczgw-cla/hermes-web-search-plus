@@ -11,7 +11,9 @@ from urllib.parse import urlparse
 
 from .daemon_tasks import DaemonTask
 from .diversity_v3 import DEFAULT_NEAR_DUPLICATE_THRESHOLD, rerank_duplicate_candidates
-from .quality import deduplicate_results_across_providers, normalize_result_url
+from .quality import normalize_result_url
+from .span_extraction_v3 import select_spans
+from .urls import url_key
 
 
 # Small real-time grace given to already-submitted provider calls once the
@@ -20,6 +22,83 @@ from .quality import deduplicate_results_across_providers, normalize_result_url
 _RESULT_GRACE_SECONDS = 0.25
 _DEFAULT_QUORUM_RESULT_TARGET_CAP = 5
 _DEFAULT_QUORUM_MIN_DOMAINS = 3
+# Reciprocal Rank Fusion constant (Cormack et al. 2009) and the extra weight
+# for each additional provider that returned the same page.
+RRF_K = 60
+AGREEMENT_BONUS = 0.25
+# Passages per extracted source. Two of up to 300 characters beat one of 500
+# in a blind usefulness judgment on the evaluation set.
+SOURCE_PASSAGES = 2
+SOURCE_PASSAGE_CHARS = 300
+
+
+def source_passages(text: str, query: str) -> List[Dict[str, Any]]:
+    """Query-ranked passages of an extracted page, with character offsets."""
+    if not text or not query:
+        return []
+    try:
+        spans = select_spans(text, query, max_spans=SOURCE_PASSAGES, max_span_chars=SOURCE_PASSAGE_CHARS)
+    except Exception:
+        return []
+    return [
+        {"text": span["text"], "start": span["start"], "end": span["end"]}
+        for span in spans
+        if isinstance(span, dict) and str(span.get("text") or "").strip()
+    ]
+
+
+def fuse_results(
+    provider_results: List[Tuple[str, Dict[str, Any]]],
+    max_results: int,
+    *,
+    k: int = RRF_K,
+    agreement_bonus: float = AGREEMENT_BONUS,
+) -> Tuple[List[Dict[str, Any]], int]:
+    """Merge provider rankings with Reciprocal Rank Fusion.
+
+    Each page scores sum(1 / (k + rank)) over the providers that returned it,
+    times (1 + agreement_bonus * (providers - 1)). Pages are identified by
+    urls.url_key, so URL variants count once. The kept copy is the one from
+    the provider that ranked it highest; ``providers`` lists every provider
+    that returned it. Returns the fused page list and how many duplicate
+    results were merged away.
+    """
+    scores: Dict[str, float] = {}
+    best: Dict[str, Tuple[int, int, Dict[str, Any]]] = {}
+    found_by: Dict[str, List[str]] = {}
+    duplicates = 0
+    for provider_index, (provider_name, payload) in enumerate(provider_results):
+        seen_here = set()
+        for rank, item in enumerate(payload.get("results", []) or []):
+            if not isinstance(item, dict):
+                continue
+            key = url_key(item.get("url", "")) or f"#{provider_index}:{rank}"
+            if key in seen_here:
+                duplicates += 1
+                continue
+            seen_here.add(key)
+            if key in scores:
+                duplicates += 1
+            scores[key] = scores.get(key, 0.0) + 1.0 / (k + rank + 1)
+            found_by.setdefault(key, []).append(provider_name)
+            if key not in best or (rank, provider_index) < best[key][:2]:
+                best[key] = (rank, provider_index, item)
+    fused = []
+    order = sorted(
+        scores,
+        key=lambda key: (
+            -scores[key] * (1 + agreement_bonus * (len(found_by[key]) - 1)),
+            best[key][0],
+            best[key][1],
+        ),
+    )
+    for key in order[: max(0, max_results)]:
+        _rank, provider_index, item = best[key]
+        merged = item.copy()
+        merged["provider"] = provider_results[provider_index][0]
+        merged["providers"] = list(found_by[key])
+        fused.append(merged)
+    return fused, duplicates
 
 
 def _positive_int(value: Any, default: int, minimum: int = 1) -> int:
@@ -320,7 +399,7 @@ def run_research_mode(
         deduped = reranked_candidates[:max_results]
         dedup_count = 0
     else:
-        deduped, dedup_count = deduplicate_results_across_providers(provider_results, max_results)
+        deduped, dedup_count = fuse_results(provider_results, max_results)
     urls = [r.get("url") for r in deduped if r.get("url")][:max(0, max_extract_urls)]
     extracted = {"provider": None, "results": []}
     extraction_error = None
@@ -353,7 +432,12 @@ def run_research_mode(
     if extraction_error:
         routing["extraction_error"] = extraction_error
 
-    source_summaries = extracted.get("results", []) or []
+    source_summaries = []
+    for summary in extracted.get("results", []) or []:
+        if isinstance(summary, dict):
+            text = str(summary.get("content") or summary.get("raw_content") or "")
+            summary = {**summary, "passages": source_passages(text, query)}
+        source_summaries.append(summary)
 
     metadata = {
         "dedup_count": dedup_count,

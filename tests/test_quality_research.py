@@ -164,16 +164,18 @@ class ResearchModeTests(unittest.TestCase):
         self.assertEqual(result["mode"], "research")
         self.assertEqual(result["routing"]["providers_queried"], ["tavily", "linkup"])
         self.assertEqual(result["metadata"]["dedup_count"], 1)
+        # Reciprocal Rank Fusion: the page both providers returned ranks first.
         self.assertEqual([r["url"] for r in result["results"]], [
-            "https://example.com/a",
             "https://example.com/dupe",
+            "https://example.com/a",
             "https://other.test/b",
         ])
+        self.assertEqual(result["results"][0]["providers"], ["tavily", "linkup"])
         self.assertEqual([s["url"] for s in result["source_summaries"]], [
-            "https://example.com/a",
             "https://example.com/dupe",
+            "https://example.com/a",
         ])
-        self.assertEqual(result["source_summaries"][0]["content"], "content for https://example.com/a")
+        self.assertEqual(result["source_summaries"][1]["content"], "content for https://example.com/a")
 
     def test_research_mode_keeps_search_results_when_extraction_fails(self):
         def execute(provider):
@@ -387,14 +389,15 @@ class ResearchModeTests(unittest.TestCase):
         finally:
             release_slow.set()
 
-        # fast-b completes before fast-a, but the public merge order remains
-        # submission order. The blocked daemon task is explicitly preempted.
+        # fast-b completes before fast-a, but completion timing never leaks:
+        # rank ties are broken by submission order (RRF interleaves the
+        # providers). The blocked daemon task is explicitly preempted.
         self.assertLess(elapsed, 1.0)
         self.assertEqual(result["routing"]["providers_queried"], ["fast-a", "fast-b"])
         self.assertEqual([item["url"] for item in result["results"]], [
             "https://one.test/a",
-            "https://two.test/a",
             "https://three.test/b",
+            "https://two.test/a",
         ])
         self.assertIn(
             {"provider": "slow", "error": "preempted_after_quorum"},

@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import time
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -110,10 +111,20 @@ def store_web_text(url: str, text: str, max_chars: int = MAX_STORED_TEXT_CHARS) 
     }
 
 
+def normalize_query_for_cache(query: str) -> str:
+    """Query as it counts for cache identity: NFC, casefolded, one space per whitespace run.
+
+    Only cache keys use this. Providers and users keep seeing the raw query.
+    """
+    if not isinstance(query, str):
+        return query
+    return " ".join(unicodedata.normalize("NFC", query).casefold().split())
+
+
 def _build_cache_payload(query: str, provider: str, max_results: int, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Build normalized payload used for cache key hashing."""
     payload = {
-        "query": query,
+        "query": normalize_query_for_cache(query),
         "provider": provider,
         "max_results": max_results,
     }
@@ -412,21 +423,55 @@ FRESHNESS_CACHE_TTL = {
 }
 
 
-def recency_cache_ttl_cap(query: str, freshness: Optional[str] = None) -> int:
-    """Shortest TTL allowed for this query's recency/freshness signals."""
+# Query intents (wsp_core/intents.py) whose answers go stale within minutes. An
+# intent only ever lowers the TTL; the others keep the recency and freshness
+# caps alone.
+CLASS_CACHE_TTL = {
+    "news": 300,
+    "security": 300,
+}
+
+
+def routing_class_of(routing: Optional[Dict[str, Any]]) -> Optional[str]:
+    """Routing class carried by a routing/plan dict, or None when it has no analysis."""
+    summary = (routing or {}).get("analysis_summary")
+    routing_class = summary.get("routing_class") if isinstance(summary, dict) else None
+    return routing_class if isinstance(routing_class, str) else None
+
+
+def _query_routing_class(query: str) -> Optional[str]:
+    """Query intent computed from the query alone (no plan, e.g. an explicit provider)."""
+    try:
+        from .intents import classify_intent
+
+        return classify_intent(query).intent
+    except Exception:
+        return None
+
+
+def recency_cache_ttl_cap(
+    query: str,
+    freshness: Optional[str] = None,
+    routing_class: Optional[str] = None,
+) -> int:
+    """Shortest TTL allowed for this query's recency, freshness and class signals."""
     caps = [DEFAULT_CACHE_TTL]
     if freshness:
         caps.append(
             FRESHNESS_CACHE_TTL.get(str(freshness).strip().lower(), DEFAULT_CACHE_TTL)
         )
     try:
-        from .routing import QueryAnalyzer
+        from .routing import detect_recency
 
-        is_recency, score = QueryAnalyzer({})._detect_recency_intent(query or "")
+        is_recency, score = detect_recency(query or "")
     except Exception:
         is_recency, score = False, 0.0
     if is_recency:
         caps.append(60 if score >= 3.0 else 300)
+    # The planned class wins; without a plan the same classifier runs on the query.
+    if routing_class is None:
+        routing_class = _query_routing_class(query or "")
+    caps.append(CLASS_CACHE_TTL.get(routing_class, DEFAULT_CACHE_TTL))
     return min(caps)
 
 
@@ -435,9 +480,10 @@ def effective_search_cache_ttl(
     *,
     freshness: Optional[str] = None,
     requested_ttl: Optional[int] = None,
+    routing_class: Optional[str] = None,
 ) -> int:
     """Cap the search-cache TTL. Explicit no_cache still bypasses lookup."""
     requested = DEFAULT_CACHE_TTL if requested_ttl is None else int(requested_ttl)
     if requested <= 0:
         requested = DEFAULT_CACHE_TTL
-    return min(requested, recency_cache_ttl_cap(query, freshness))
+    return min(requested, recency_cache_ttl_cap(query, freshness, routing_class))

@@ -382,6 +382,8 @@ class ReplayTransport(Transport):
         if fault == "empty":
             payload = json.dumps({"results": [], "organic": [], "web": {"results": []},
                                   "data": {"web": []}}).encode("utf-8")
+        elif fault == "http503":
+            status, payload = 503, b'{"error":"unavailable"}'
         return status, {"Content-Type": "application/json"}, payload
 
 
@@ -635,6 +637,10 @@ def approx_tokens(text: str) -> int:
 # Runner
 # ---------------------------------------------------------------------------
 
+# A proxy sends provider traffic through urllib's proxy path, which bypasses the synthetic transport.
+PROXY_VARIABLES = frozenset({"http_proxy", "https_proxy", "all_proxy", "no_proxy", "ftp_proxy"})
+
+
 def _isolated_environment(work: Path, config: Dict[str, Any], keys: Dict[str, str]) -> None:
     hermes_home = work / "hermes-home"
     cache_dir = work / "cache"
@@ -643,7 +649,9 @@ def _isolated_environment(work: Path, config: Dict[str, Any], keys: Dict[str, st
     config_path = work / "config.json"
     config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
     for name in list(os.environ):
-        if name.endswith("_API_KEY") or name in {"SEARXNG_INSTANCE_URL", "DONSETCH_BIN", "WSP_FORCE_SUBPROCESS"}:
+        if (name.endswith("_API_KEY")
+                or name in {"SEARXNG_INSTANCE_URL", "DONSETCH_BIN", "WSP_FORCE_SUBPROCESS"}
+                or name.lower() in PROXY_VARIABLES):
             del os.environ[name]
     os.environ.update({
         "HERMES_HOME": str(hermes_home),

@@ -122,7 +122,8 @@ def test_setup_guidance_points_unconfigured_users_to_one_simple_path():
     assert "extraction-capable" in text
     assert "Recommended starter" in text
     assert "SERPER_API_KEY" in text
-    assert "YOU_API_KEY" in text
+    assert "BRAVE_API_KEY" in text
+    assert "EXA_API_KEY" in text
     assert "LINKUP_API_KEY" in text
     assert "python3 ~/.hermes/plugins/web-search-plus/setup.py setup" in text
     assert "hermes web-search-plus setup" not in text
@@ -191,7 +192,7 @@ def test_setup_command_treats_eof_as_blank_input(monkeypatch, capsys):
 
     out = capsys.readouterr().out
     assert "Setup plan:" in out
-    for item in wsp._get_provider_catalog():
+    for item in wsp._providers_for_preset("starter"):
         assert item["display_name"] in out
     assert "No keys entered; nothing changed." in out
 
@@ -213,23 +214,54 @@ def test_setup_presets_choose_expected_providers():
     extract = {item["provider"] for item in wsp._providers_for_preset("extract")}
     all_providers = {item["provider"] for item in wsp._providers_for_preset("all")}
 
-    assert starter == {"you", "serper", "linkup"}
-    assert lean == {"you", "linkup"}
+    assert starter == {"brave", "serper", "exa", "linkup"}
+    assert lean == {"brave", "linkup"}
     assert extract == {"linkup", "firecrawl", "tavily"}
     assert all_providers == {item["provider"] for item in wsp._get_provider_catalog()}
 
 
-def test_bare_setup_defaults_to_all_supported_providers(monkeypatch, capsys):
+def test_bare_setup_defaults_to_the_starter_providers(monkeypatch, capsys):
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["setup", "--dry-run"])
 
     args.func(args)
 
-    out = capsys.readouterr().out
-    assert "Setup plan:" in out
+    plan = capsys.readouterr().out.split("Setup plan:", 1)[1]
+    for item in wsp._providers_for_preset("starter"):
+        assert item["display_name"] in plan
+    assert "TinyFish" not in plan and "Octen" not in plan
+
+
+def test_setup_preset_all_still_walks_every_provider(monkeypatch, capsys):
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "--preset", "all", "--dry-run"])
+
+    args.func(args)
+
+    plan = capsys.readouterr().out.split("Setup plan:", 1)[1]
     for item in wsp._get_provider_catalog():
-        assert item["display_name"] in out
+        assert item["display_name"] in plan
+
+
+def test_starter_preset_matches_the_router_first_providers():
+    from wsp_core.provider_registry import SETUP_PRESETS
+    from wsp_core.routing import INTENT_FIRST_PROVIDER, MEASURED_PROVIDER_ORDER
+
+    router_first = set(INTENT_FIRST_PROVIDER.values()) | {MEASURED_PROVIDER_ORDER[0]}
+    assert router_first <= set(SETUP_PRESETS["starter"])
+    recommended = {item["provider"] for item in wsp._get_provider_catalog() if item.get("recommended")}
+    assert recommended == set(SETUP_PRESETS["starter"])
+
+
+def test_status_dashboard_names_intents_that_fall_back(monkeypatch):
+    status = wsp._provider_config_status(env={"BRAVE_API_KEY": "k1", "SERPER_API_KEY": "k2"})
+    text = wsp._render_status_dashboard(status, color=False)
+    assert "Routing falls back:" in text
+    assert "academic, docs would use Exa (EXA_API_KEY missing)" in text
+    full = wsp._provider_config_status(env={"BRAVE_API_KEY": "a", "SERPER_API_KEY": "b", "EXA_API_KEY": "c"})
+    assert "Routing falls back" not in wsp._render_status_dashboard(full, color=False)
 
 
 def test_setup_dry_run_prints_plan_without_prompting(monkeypatch, capsys):
@@ -242,7 +274,7 @@ def test_setup_dry_run_prints_plan_without_prompting(monkeypatch, capsys):
 
     out = capsys.readouterr().out
     assert "Setup plan:" in out
-    assert "You.com" in out
+    assert "Brave Search" in out
     assert "Linkup" in out
     assert "Dry run only" in out
 
@@ -260,7 +292,8 @@ def test_setup_dry_run_uses_target_env_path_for_dashboard(tmp_path, monkeypatch,
     out = capsys.readouterr().out
     assert "Providers: 1/15 configured" in out
     assert "Active: You.com" in out
-    assert "Brave Search" not in out.split("Setup plan:", 1)[0]
+    # The live BRAVE_API_KEY must not count; the dashboard reports it missing.
+    assert "would use Brave Search (BRAVE_API_KEY missing)" in out.split("Setup plan:", 1)[0]
 
 
 def test_status_uses_target_env_path_for_dashboard(tmp_path, monkeypatch, capsys):
@@ -276,7 +309,7 @@ def test_status_uses_target_env_path_for_dashboard(tmp_path, monkeypatch, capsys
     out = capsys.readouterr().out
     assert "Providers: 1/15 configured" in out
     assert "Active: Linkup" in out
-    assert "Brave Search" not in out
+    assert "Active: Linkup, Brave" not in out and "Brave Search, " not in out
 
 
 def test_register_exposes_core_independent_session_onboarding_surfaces():
@@ -411,7 +444,7 @@ def test_config_set_auto_allow_updates_provider_gate(tmp_path):
 def test_default_behavior_config_blocks_low_trust_auto_providers():
     config = wsp._default_behavior_config()
 
-    assert config["auto_routing"]["provider_priority"][:7] == ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave"]
+    assert config["auto_routing"]["provider_priority"][:7] == ["brave", "serper", "exa", "tavily", "you", "firecrawl", "linkup"]
     assert config["auto_routing"]["extract_provider_priority"] == list(wsp.EXTRACT_PROVIDER_IDS)
     assert config["auto_routing"]["auto_allow"]["serpbase"] is False
     assert config["auto_routing"]["auto_allow"]["querit"] is False
@@ -877,6 +910,169 @@ def test_setup_skips_keyless_prompt_when_already_opted_in(tmp_path, monkeypatch,
     args.func(args)
 
     assert "No keys entered; nothing changed." in capsys.readouterr().out
+
+
+class _Stdin:
+    def __init__(self, tty: bool):
+        self._tty = tty
+
+    def isatty(self) -> bool:
+        return self._tty
+
+
+def _run_starter_setup(tmp_path, monkeypatch, *, tty: bool, answer: str, config_text: str | None = None):
+    """Run `setup --no-jev` with blank key prompts; return the Keenable offer prompts shown."""
+    env_path = tmp_path / ".env"
+    config_path = tmp_path / "config.json"
+    if config_text is not None:
+        config_path.write_text(config_text)
+    _isolate_keyless_env(monkeypatch, config_path)
+    monkeypatch.setattr(wsp.sys, "stdin", _Stdin(tty))
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "--no-jev", "--env-path", str(env_path), "--config-path", str(config_path)])
+    prompts = []
+    monkeypatch.setattr(wsp.getpass, "getpass", lambda _prompt: "")
+    monkeypatch.setattr("builtins.input", lambda prompt: prompts.append(prompt) or (answer(prompt) if callable(answer) else answer))
+
+    args.func(args)
+
+    return env_path, config_path, prompts
+
+
+def _allow_public_written(config_path) -> bool:
+    return config_path.exists() and "allow_public" in config_path.read_text()
+
+
+@pytest.mark.parametrize("answer", ["y", "Yes"])
+def test_starter_setup_without_any_key_opts_in_to_keyless_start_on_yes(tmp_path, monkeypatch, capsys, answer):
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer=answer)
+
+    out = capsys.readouterr().out
+    assert any("Start without a key using Keenable" in prompt and "[y/N]" in prompt for prompt in prompts)
+    assert "Enabled keyless public search for Keenable" in out
+    assert json.loads(config_path.read_text())["keenable"]["allow_public"] is True
+    assert not env_path.exists()
+
+
+@pytest.mark.parametrize("answer", ["", "n", "no", "maybe", "  "])
+def test_starter_setup_without_any_key_declines_keyless_start_unless_told_yes(tmp_path, monkeypatch, capsys, answer):
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer=answer)
+
+    assert any("Start without a key using Keenable" in prompt for prompt in prompts)
+    assert "No keys entered; nothing changed." in capsys.readouterr().out
+    assert not _allow_public_written(config_path)
+    assert not env_path.exists()
+
+
+def test_keyless_offer_says_what_is_sent_before_it_asks(tmp_path, monkeypatch, capsys):
+    shown_before_prompt = []
+
+    def answer(prompt):
+        shown_before_prompt.append(capsys.readouterr().out)
+        return ""
+
+    _run_starter_setup(tmp_path, monkeypatch, tty=True, answer=answer)
+
+    offer = [text for text in shown_before_prompt if "unauthenticated public service" in text]
+    assert len(offer) == 1
+    assert "queries and fetched URLs" in offer[0]
+    assert "Keenable" in offer[0]
+
+
+def test_starter_setup_without_a_terminal_never_opts_in_to_keyless(tmp_path, monkeypatch, capsys):
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=False, answer="y")
+
+    out = capsys.readouterr().out
+    assert not any("Keenable" in prompt for prompt in prompts)
+    assert "--keyless-public" in out
+    assert "unauthenticated public service" in out
+    assert "No keys entered; nothing changed." in out
+    assert not _allow_public_written(config_path)
+    assert not env_path.exists()
+
+
+def test_piped_blank_lines_do_not_opt_in_to_keyless(tmp_path):
+    script = Path(__file__).resolve().parents[1] / "setup.py"
+    env_path = tmp_path / ".env"
+    config_path = tmp_path / "config.json"
+    clean_env = {
+        "PATH": os.environ.get("PATH", ""),
+        "HOME": str(tmp_path),
+        "HERMES_HOME": str(tmp_path / "hermes"),
+        "WEB_SEARCH_PLUS_CONFIG": str(config_path),
+    }
+
+    result = subprocess.run(
+        [sys.executable, str(script), "setup", "--no-jev", "--env-path", str(env_path), "--config-path", str(config_path)],
+        input="\n" * 40,
+        env=clean_env,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "--keyless-public" in result.stdout
+    assert "No keys entered; nothing changed." in result.stdout
+    assert not _allow_public_written(config_path)
+
+
+def test_starter_setup_with_a_search_key_in_the_process_environment_does_not_offer_keyless(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("BRAVE_API_KEY", "brave-env-key-123456")
+
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer="y")
+
+    assert not any("Keenable" in prompt for prompt in prompts)
+    assert "Start without a key" not in capsys.readouterr().out
+    assert not _allow_public_written(config_path)
+
+
+@pytest.mark.parametrize(
+    "config_text",
+    [
+        '{"version": 1, "keenable": {"api_key": "keenable-config-key-123456"}}\n',
+        '{"version": 1, "searxng": {"base_url": "https://search.example"}}\n',
+        '{"version": 1, "keenable": {"allow_public": true}}\n',
+    ],
+    ids=["keenable-key", "searxng-url", "keyless-already-on"],
+)
+def test_starter_setup_with_a_search_provider_in_the_config_does_not_offer_keyless(tmp_path, monkeypatch, config_text):
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer="y", config_text=config_text)
+
+    assert not any("Keenable" in prompt for prompt in prompts)
+
+
+def test_starter_setup_with_a_search_key_in_the_env_file_does_not_offer_keyless(tmp_path, monkeypatch):
+    (tmp_path / ".env").write_text("EXA_API_KEY=exa-file-key-123456\n")
+
+    env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer="y")
+
+    assert not any("Keenable" in prompt for prompt in prompts)
+    assert not _allow_public_written(config_path)
+
+
+def test_starter_setup_with_a_search_key_does_not_offer_keyless(tmp_path, monkeypatch, capsys):
+    env_path = tmp_path / ".env"
+    config_path = tmp_path / "config.json"
+    _isolate_keyless_env(monkeypatch, config_path)
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["setup", "--no-jev", "--env-path", str(env_path), "--config-path", str(config_path)])
+    monkeypatch.setattr(wsp.getpass, "getpass", lambda prompt: "fake-brave-key" if "BRAVE_API_KEY" in prompt else "")
+    monkeypatch.setattr("builtins.input", lambda prompt: (_ for _ in ()).throw(AssertionError(prompt)))
+
+    args.func(args)
+
+    out = capsys.readouterr().out
+    assert "fake-brave-key" not in out
+    assert "BRAVE_API_KEY" in env_path.read_text()
+    assert not config_path.exists() or "allow_public" not in config_path.read_text()
+
+
+def test_empty_dashboard_points_to_keyless_and_donsetch():
+    text = wsp._render_setup_guidance(env={}, fancy=True)
+    assert "--keyless-public" in text
+    assert "DonSeTch" in text and "explicit calls only" in text
 
 
 def test_routing_rewrite_preserves_non_routing_provider_sections(tmp_path):

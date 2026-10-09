@@ -11,7 +11,7 @@ python3 search.py bench --json
 
 The search benchmark runs a small fixed live query suite against configured search providers and reports success rate, latency, result volume, URL uniqueness, and snippet coverage. It recommends an `auto_routing.provider_priority` order.
 
-Search benchmark traffic bypasses response cache, provider cooldown mutation, and adaptive routing statistics so measurement does not train or punish the live router.
+Search benchmark traffic bypasses response cache, provider cooldown mutation, and the latency statistics that time the hedged fallback, so measurement does not punish live providers. The recommended `provider_priority` orders the fallback chain; with the default `auto_routing.order: measured` it does not change the first provider (use `config set-order` for that).
 
 Apply a reviewed recommendation explicitly:
 

@@ -8,6 +8,8 @@ import pytest
 from wsp_core import cache
 from wsp_core import provider_stats
 from wsp_core import search
+from wsp_core.config import keyless_public_env_var
+from wsp_core.provider_registry import PROVIDER_SPECS
 
 
 @pytest.fixture(autouse=True)
@@ -40,6 +42,22 @@ def _isolate_runtime_state(tmp_path, monkeypatch):
     monkeypatch.setattr(cache, "CACHE_DIR", tmp_path)
     monkeypatch.setattr(search, "CACHE_DIR", tmp_path)
     monkeypatch.setattr(extract, "CACHE_DIR", tmp_path)
+
+
+@pytest.fixture(autouse=True)
+def _no_operator_credentials(monkeypatch):
+    """Never let a test see the developer's real provider credentials.
+
+    wsp_core loads .env files (plugin directory, its parent, the Hermes profile)
+    into os.environ when it is imported. Routing depends on which providers are
+    configured, so real keys changed routing decisions and sent a research
+    fan-out to a provider the test had not mocked. A test that needs a key sets
+    a dummy one itself.
+    """
+    for spec in PROVIDER_SPECS.values():
+        monkeypatch.delenv(spec.env_var, raising=False)
+        if spec.keyless:
+            monkeypatch.delenv(keyless_public_env_var(spec.provider), raising=False)
 
 
 @pytest.fixture(autouse=True)

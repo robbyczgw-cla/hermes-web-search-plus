@@ -18,6 +18,8 @@ registry capability flags can never drift apart.
 
 from __future__ import annotations
 
+import re
+
 from typing import Any, Callable, Dict
 
 from .config import _validate_searxng_url, keyless_public_allowed
@@ -28,6 +30,7 @@ from .provider_adapter_protocol import (
 )
 from .provider_registry import PROVIDER_SPECS
 from .search_locale import resolve_locale
+from .urls import SITE_OPERATOR_LIMIT, domain_filters
 
 
 def _resolve(namespace: Any, name: str) -> Callable[..., Dict[str, Any]]:
@@ -47,7 +50,8 @@ def _locale(prov: str, args: Any, config: Dict[str, Any]):
     CLI flags arrive through ``args.country``/``args.language`` (None unless
     explicitly passed); everything else — explicit provider config, query
     location hints, ``defaults.locale``, us/en fallback — is resolved centrally
-    in search_locale.resolve_locale.
+    in search_locale.resolve_locale. The language is None when "auto" found no
+    confident language; the provider functions then omit the parameter.
     """
     country, language, _meta = resolve_locale(
         prov,
@@ -65,10 +69,36 @@ def _locale(prov: str, args: Any, config: Dict[str, Any]):
 # =============================================================================
 
 
+# ``site:`` as an operator, not inside ``-site:`` or a longer word.
+_SITE_OPERATOR = re.compile(r"(?<![\w-])site:", re.IGNORECASE)
+
+
+def _with_site_operators(query: str, args: Any) -> str:
+    """Add ``site:`` operators for providers without a native domain filter.
+
+    Brave, Serper, SerpBase and You.com have no include/exclude-domain field, so
+    ``include_domains`` used to be dropped silently for them. All four honour
+    ``site:`` / ``-site:`` in the query text. Entries are reduced to bare
+    hostnames by :func:`urls.domain_filters`, which raises ``ValueError`` when
+    include entries were given and none is usable: an unrestricted search must
+    not stand in for a restricted one.
+    """
+    include, exclude = domain_filters(
+        getattr(args, "include_domains", None), getattr(args, "exclude_domains", None)
+    )
+    query = query or ""
+    present = set(query.lower().split())
+    parts = [query]
+    if include and not _SITE_OPERATOR.search(query):
+        parts.append(" OR ".join(f"site:{d}" for d in include[:SITE_OPERATOR_LIMIT]))
+    parts.extend(f"-site:{d}" for d in exclude[:SITE_OPERATOR_LIMIT] if f"-site:{d}" not in present)
+    return " ".join(p for p in parts if p).strip()
+
+
 def _call_serper_search(search_module, prov, args, key, config, routing_info):
     country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_serper")(
-        query=args.query,
+        query=_with_site_operators(args.query, args),
         api_key=key,
         max_results=args.max_results,
         country=country,
@@ -83,7 +113,7 @@ def _call_serpbase_search(search_module, prov, args, key, config, routing_info):
     serpbase_config = config.get("serpbase", {})
     country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_serpbase")(
-        query=args.query,
+        query=_with_site_operators(args.query, args),
         api_key=key,
         max_results=args.max_results,
         country=country,
@@ -98,7 +128,7 @@ def _call_brave_search(search_module, prov, args, key, config, routing_info):
     brave_config = config.get("brave", {})
     country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_brave")(
-        query=args.query,
+        query=_with_site_operators(args.query, args),
         api_key=key,
         max_results=args.max_results,
         country=country,
@@ -212,7 +242,7 @@ def _call_parallel_search(search_module, prov, args, key, config, routing_info):
 def _call_you_search(search_module, prov, args, key, config, routing_info):
     country, language = _locale(prov, args, config)
     return _resolve(search_module, "search_you")(
-        query=args.query,
+        query=_with_site_operators(args.query, args),
         api_key=key,
         max_results=args.max_results,
         country=country,

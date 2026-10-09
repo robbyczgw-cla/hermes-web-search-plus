@@ -6,7 +6,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from .contract_v3 import (
     AttemptOutcome,
@@ -247,6 +247,7 @@ class AttemptEngine:
                 before = decision.circuit_state
             if decision.allowed and decision.blocking_error_class is not None:
                 encountered.add(decision.blocking_error_class)
+            encountered.update(decision.failing_error_classes)
             if not decision.allowed:
                 return self._skipped(
                     context,
@@ -440,3 +441,36 @@ class AttemptEngine:
             )
 
         raise RuntimeError(last_error or "attempt loop exhausted")
+
+
+def request_deadline(budget: Dict[str, Any]) -> float | None:
+    """Monotonic deadline from a request's positive integer max_wall_time_ms."""
+    ms = budget.get("max_wall_time_ms")
+    if isinstance(ms, int) and not isinstance(ms, bool) and ms > 0:
+        return time.monotonic() + ms / 1000
+    return None
+
+
+def provider_attempt_context(
+    store: Any,
+    provider: str,
+    capability: Capability,
+    provider_config: Dict[str, Any],
+    credential: str | None,
+    **budget: Any,
+) -> AttemptContext:
+    """Attempt context for one provider: endpoint, credential fingerprint, budget."""
+    endpoint = str(
+        provider_config.get("endpoint")
+        or provider_config.get("base_url")
+        or provider_config.get("url")
+        or f"provider://{provider}/{capability.value}"
+    )
+    return AttemptContext(
+        provider=provider,
+        capability=capability,
+        endpoint=endpoint,
+        credential_fingerprint=store.fingerprint_credential(credential or f"keyless:{provider}"),
+        budget_window="request",
+        **budget,
+    )

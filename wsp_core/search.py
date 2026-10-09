@@ -1,41 +1,42 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 4.3.5
+Version: 5.0.0
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
 Brave Search, SerpBase, Querit, Parallel, SearXNG, Keenable.
 Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com, Keenable, Serper.
 
-Smart Routing uses multi-signal analysis:
-  - Routing v2 language/script and query-class detection
-  - Query intent classification (shopping, research, discovery)
-  - Linguistic pattern detection (how much vs how does)
-  - Product/brand recognition
-  - URL detection
-  - Confidence scoring
+Automatic routing (provider "auto") labels the query with an intent and picks
+the first provider from a measured table: Exa for academic and documentation
+queries, Serper for shopping, Brave otherwise; the fallback chain follows
+auto_routing.provider_priority. See docs/ROUTING.md.
 
 Usage:
     python3 search.py --query "..."                    # Auto-route based on query
     python3 search.py --provider [you|serper|exa|firecrawl|tavily|linkup|brave|serpbase|querit|searxng|auto] --query "..." [options]
 
 Examples:
-    python3 search.py -q "東京 AI ニュース 今日"              # → You.com (multilingual current)
-    python3 search.py -q "arXiv 2024 LLM scaling laws"      # → Exa (academic discovery)
-    python3 search.py -q "latest OpenSSH CVE mitigation"    # → Serper (security/current)
+    python3 search.py -q "arXiv paper LLM scaling laws"            # → Exa (academic)
+    python3 search.py -q "iPhone 16 Pro Max price"                 # → Serper (shopping)
+    python3 search.py -q "latest OpenSSH CVE mitigation"           # → Brave (security)
 """
 
 from __future__ import annotations
 
 
 import argparse
+import copy
 import json
 import os
+import queue
 import sys
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
 from typing import List, Dict, Any, Optional, Tuple
-from .http_client import ProviderRequestError
+from .daemon_tasks import DaemonTask
+from .http_client import ProviderRequestError, request_timeout_cap
 from .cache import (
     CACHE_DIR,
     DEFAULT_CACHE_TTL,
@@ -44,6 +45,7 @@ from .cache import (
     cache_put,
     cache_stats,
     effective_search_cache_ttl,
+    routing_class_of,
 )
 from .budget_preflight_v3 import daily_preflight_budget as _daily_preflight_budget
 
@@ -65,7 +67,7 @@ from .provider_health import (
     provider_in_cooldown,
     reset_provider_health,
 )
-from .provider_stats import record_provider_outcome
+from .provider_stats import latency_quantile, record_provider_outcome
 from .quality import (
     build_quality_report,
     deduplicate_results_across_providers,
@@ -86,13 +88,19 @@ from .provider_registry import (
     doctor_catalog,
 )
 from .request_gate_v3 import validate_provider_mode
-from .search_locale import provider_supports_locale, resolve_locale
+from .search_locale import (
+    AUTO_LANGUAGE,
+    apply_auto_language,
+    is_auto_language,
+    provider_supports_locale,
+    resolve_locale,
+)
 from .env_loader import load_env_files
 from .research import run_research_mode
-from .attempt_engine_v3 import AttemptContext, AttemptEngine
-from .cache_v3 import peek_legacy_search
+from .attempt_engine_v3 import AttemptEngine, provider_attempt_context, request_deadline
+from .cache_v3 import ResponseCacheV3
 from .compat_v3 import legacy_request_to_v3, v3_response_to_legacy_search
-from .contract_v3 import Capability, RequestV3, ResponseV3, SkipReason
+from .contract_v3 import Capability, ErrorClass, RequestV3, ResponseV3, SkipReason
 from .orchestrator_v3 import (
     CapabilityAdapter,
     CapabilityExecution,
@@ -101,10 +109,11 @@ from .orchestrator_v3 import (
 )
 from .runtime_v3 import response_from_legacy
 from .state_store_v3 import SQLiteStateStore
+from .urls import domain_filter_tokens, domain_filters
 from . import providers as _providers
 from . import extract as _extract
 from .routing import (
-    QueryAnalyzer,  # noqa: F401
+    ROUTING_POLICY,
     _provider_auto_allowed,
     auto_route_provider,
     explain_routing,
@@ -117,7 +126,6 @@ def _load_env_file():
     load_env_files(__file__)
 
 
-ROUTING_POLICY = "routing-v2"
 EXTRACT_PROVIDER_PRIORITY = _extract.EXTRACT_PROVIDER_PRIORITY
 resolve_extract_provider_priority = _extract.resolve_extract_provider_priority
 
@@ -288,26 +296,22 @@ def build_parser(config: Dict[str, Any]) -> argparse.ArgumentParser:
         description="Web Search Plus — Intelligent multi-provider search with smart auto-routing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Intelligent Auto-Routing:
-  The query is analyzed using multi-signal detection to find the optimal provider:
-  
-  Shopping Intent → Serper (Google)
-    "how much", "price of", "buy", product+brand combos, deals, specs
-  
-  Research Intent → Tavily  
-    "how does", "explain", "what is", analysis, pros/cons, tutorials
+Automatic routing (provider "auto"):
+  The query gets one of eight intents; the intent picks the first provider.
 
-  Multilingual + Real-Time AI Search → Querit
-    multilingual search, metadata-rich results, current information for AI workflows
-  
-  Discovery Intent → Exa (Neural)
-    "similar to", "companies like", "alternatives", URLs, startups, papers
+  academic, docs   → Exa      papers, studies, DOIs; API docs, error messages, code
+  shopping         → Serper   buy, price, deals, "best ... under 300 euros"
+  everything else  → Brave    community, general, local, news, security
+
+  A missing provider is skipped (Brave, Serper, Exa, Tavily, then
+  auto_routing.provider_priority). Fallback follows provider_priority.
 
 Examples:
-  python3 search.py -q "iPhone 16 Pro Max price"          # → Serper (shopping)
-  python3 search.py -q "how does HTTPS encryption work"   # → Tavily (research)
-  python3 search.py -q "startups similar to Notion"       # → Exa (discovery)
-  python3 search.py --explain-routing -q "your query"     # Debug routing
+  python3 search.py -q "arXiv paper LLM scaling laws"            # → Exa (academic)
+  python3 search.py -q "python asyncio TaskGroup documentation"  # → Exa (docs)
+  python3 search.py -q "iPhone 16 Pro Max price"                 # → Serper (shopping)
+  python3 search.py -q "reddit best budget mechanical keyboard"  # → Brave (community)
+  python3 search.py --explain-routing -q "your query"            # Show the decision
 
 Full docs: See README.md and SKILL.md
         """,
@@ -429,7 +433,7 @@ Full docs: See README.md and SKILL.md
     parser.add_argument(
         "--language",
         default=None,
-        help="ISO 639-1 language override (e.g. de); beats config defaults and query language inference"
+        help="ISO 639-1 language override (e.g. de), or 'auto' to detect it from the query; beats config defaults"
     )
     parser.add_argument(
         "--type", 
@@ -736,6 +740,7 @@ def main():
     config = load_config()
     parser = build_parser(config)
     args = parser.parse_args()
+    args.language, config = apply_auto_language(args.language, config)
 
     migration_options_used = bool(
         args.apply or args.rollback or args.migration_backup_root is not None
@@ -805,15 +810,19 @@ def main():
             print("History written: {}".format(report["history_written"]))
         return
 
-    # Handle cache management commands first (before query validation)
+    # Handle cache management commands first (before query validation). The
+    # tools answer repeats from the v3 response cache, so both commands cover it.
+    response_cache = ResponseCacheV3((config.get("v3") or {}).get("cache_dir") or CACHE_DIR)
     if args.clear_cache:
         result = cache_clear()
+        result["v3_response_cleared"] = response_cache.clear()
         indent = None if args.compact else 2
         print(json.dumps(result, indent=indent, ensure_ascii=False))
         return
-    
+
     if args.cache_stats:
         result = cache_stats()
+        result["v3_response"] = response_cache.stats()
         indent = None if args.compact else 2
         print(json.dumps(result, indent=indent, ensure_ascii=False))
         return
@@ -844,6 +853,15 @@ def main():
     
     if not args.query and not args.similar_url:
         parser.error("--query is required (unless using --similar-url with Exa)")
+    try:
+        domain_filters(args.include_domains, args.exclude_domains)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if (
+        str(args.provider or "").lower() in _providers.DOMAIN_SUFFIX_FILTER_UNSUPPORTED
+        and _providers.public_suffix_entries(args.include_domains, args.exclude_domains)
+    ):
+        parser.error(_providers.domain_suffix_unsupported_message(str(args.provider).lower()))
     
     # Handle --explain-routing
     if args.explain_routing:
@@ -905,7 +923,7 @@ def _apply_result_quality_pipeline(
     except (TypeError, ValueError):
         max_per_domain = 2
     if max_per_domain > 0:
-        reranked, demoted = rerank_domain_diversity(results, max_per_domain=max_per_domain)
+        reranked, demoted = rerank_domain_diversity(results, max_per_domain=max_per_domain, query=query)
         if demoted:
             result["results"] = reranked
             result.setdefault("metadata", {})["domain_diversity_demoted"] = demoted
@@ -922,7 +940,7 @@ def _legacy_search_cache_context(
         cli_language=args.language,
     )
     return {
-        "locale": f"{locale_country}:{locale_language}",
+        "locale": f"{locale_country}:{locale_language or ''}",
         "freshness": args.freshness,
         "time_range": getattr(args, "time_range", None),
         "include_domains": sorted(args.include_domains)
@@ -1219,8 +1237,9 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
     def execute_with_retry(prov: str) -> Dict[str, Any]:
         # The v3 AttemptEngine owns retries and circuit state, so an
         # engine-owned call runs once here and the engine retries around it.
-        # Adaptive routing samples are a separate signal and are recorded on
-        # both paths; otherwise v3 traffic never trains the router.
+        # Latency samples (provider_stats) are a separate signal and are
+        # recorded on both paths; the hedged fallback reads them to time the
+        # next attempt.
         started = time.monotonic()
         try:
             if engine_owned_attempt:
@@ -1333,6 +1352,9 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         args.query or "",
         freshness=getattr(args, "time_range", None) or getattr(args, "freshness", None),
         requested_ttl=args.cache_ttl,
+        routing_class=routing_class_of(
+            getattr(args, "_v3_planned_routing", None) or routing_info
+        ),
     )
     if not args.no_cache and args.query:
         cached_result = cache_get(
@@ -1345,6 +1367,9 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         if cached_result:
             cache_hit = True
             result = {k: v for k, v in cached_result.items() if not k.startswith("_cache_")}
+            if "query" in result:
+                # The key ignores case and spacing; show this caller's own query.
+                result["query"] = args.query
             result["cached"] = True
             result["cache_age_seconds"] = int(time.time() - cached_result.get("_cache_timestamp", 0))
 
@@ -1435,13 +1460,27 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
         if cooldown_skips:
             routing_info["cooldown_skips"] = cooldown_skips
 
-        routing_class = routing_info.get("analysis_summary", {}).get("routing_class", "general")
+        # A v3 attempt is a fixed-provider search; rank and report with the
+        # routing the engine planned for the request.
+        planned_routing = getattr(args, "_v3_planned_routing", None)
+        ranking_routing = (
+            {**planned_routing, "provider": routing_info.get("provider")}
+            if planned_routing
+            else routing_info
+        )
+        routing_class = ranking_routing.get("analysis_summary", {}).get("routing_class", "general")
         if not cache_hit and isinstance(result.get("results"), list):
-            reranked, rerank_metadata = rerank_results_for_intent(args.query or "", routing_class, result.get("results", []))
+            reranked, rerank_metadata = rerank_results_for_intent(
+                args.query or "", routing_class, result.get("results", []),
+                window=getattr(args, "_v3_requested_results", None),
+            )
             result["results"] = reranked
             if rerank_metadata.get("reranked"):
                 result.setdefault("metadata", {})["intent_rerank"] = rerank_metadata
             _apply_result_quality_pipeline(result, config, query=args.query or "", include_domains=args.include_domains)
+        requested_results = getattr(args, "_v3_requested_results", None)
+        if requested_results and isinstance(result.get("results"), list):
+            result["results"] = result["results"][:requested_results]
 
         result["routing"] = routing_info
 
@@ -1477,7 +1516,6 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             not cache_hit
             and not args.no_cache
             and args.query
-            and not getattr(args, "_v3_no_legacy_cache_write", False)
         ):
             cache_put(
                 query=args.query,
@@ -1498,7 +1536,7 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             result["quality_report"] = build_quality_report(
                 query=args.query,
                 result=result,
-                routing_info=routing_info,
+                routing_info=ranking_routing,
                 providers_considered=providers_considered,
                 eligible_providers=eligible_providers,
                 cooldown_skips=cooldown_skips,
@@ -1575,6 +1613,11 @@ def _plan_search_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
     return ProviderPlan(tuple(candidates), selected, routing_metadata=dict(routed))
 
 
+# Spare results requested per search attempt so filtering can refill the top N.
+SEARCH_OVERFETCH_EXTRA = 5
+SEARCH_OVERFETCH_CAP = 20
+
+
 def _search_args_from_v3(request: RequestV3, config: Dict[str, Any]):
     # CLI defaults without argparse; request data is never parsed as argv.
     args = default_search_args(config)
@@ -1603,40 +1646,7 @@ def _search_args_from_v3(request: RequestV3, config: Dict[str, Any]):
         args.no_cache = True
     if "ttl_seconds" in request.cache:
         args.cache_ttl = request.cache["ttl_seconds"]
-    args._v3_no_legacy_cache_write = True
     return args
-
-
-def _lookup_legacy_search_v3(
-    request: RequestV3, plan: ProviderPlan, config: Dict[str, Any]
-) -> CapabilityExecution | None:
-    legacy_args = _search_args_from_v3(request, config)
-    legacy_args.provider = plan.selected_provider
-    if legacy_args.mode == "research":
-        return None
-    legacy_lookup = peek_legacy_search(
-        CACHE_DIR,
-        query=legacy_args.query,
-        provider=plan.selected_provider,
-        max_results=legacy_args.max_results,
-        params=_legacy_search_cache_context(
-            legacy_args, plan.selected_provider, config
-        ),
-        ttl_seconds=effective_search_cache_ttl(
-            legacy_args.query or "",
-            freshness=getattr(legacy_args, "time_range", None)
-            or getattr(legacy_args, "freshness", None),
-            requested_ttl=int(request.cache.get("ttl_seconds", 3600)),
-        ),
-        now=int(time.time()),
-    )
-    if legacy_lookup.legacy_payload is None:
-        return None
-    return CapabilityExecution(
-        payload=legacy_lookup.legacy_payload,
-        provider_attempts=(),
-        stages=("dedup_fingerprint",),
-    )
 
 
 def _execute_research_v3(
@@ -1668,23 +1678,9 @@ def _execute_research_v3(
     daily_budget = _daily_preflight_budget(config)
 
     for provider in providers:
-        provider_config = config.get(provider) or {}
-        endpoint = str(
-            provider_config.get("endpoint")
-            or provider_config.get("base_url")
-            or provider_config.get("url")
-            or f"provider://{provider}/search"
-        )
-        credential = get_api_key(provider, config) or f"keyless:{provider}"
-        contexts[provider] = AttemptContext(
-            provider=provider,
-            capability=Capability.SEARCH,
-            endpoint=endpoint,
-            credential_fingerprint=store.fingerprint_credential(credential),
-            budget_scope=scope,
-            budget_window="request",
-            budget_limit_units=budget_limit,
-            **daily_budget,
+        contexts[provider] = provider_attempt_context(
+            store, provider, Capability.SEARCH, config.get(provider) or {}, get_api_key(provider, config),
+            budget_scope=scope, budget_limit_units=budget_limit, **daily_budget,
         )
 
     def execute_provider(provider: str) -> Dict[str, Any]:
@@ -1862,75 +1858,69 @@ def _execute_search_v3(
             v3_config.get("default_max_provider_attempts", 3),
         )
     )
+    candidates = list(plan.candidate_order)
+    has_fallback = len(candidates) > 1
+    # With a fallback waiting, one quick try beats two slow ones: a provider
+    # gets a single attempt and a shorter socket timeout. Without one (an
+    # explicit provider), the retry and the provider's own timeout stay.
     engine = AttemptEngine(
         store,
-        max_attempts=int(v3_config.get("max_attempts_per_provider", 2)),
+        max_attempts=1 if has_fallback else int(v3_config.get("max_attempts_per_provider", 2)),
     )
-    receipts = []
-    payload = None
-    successful_provider = None
+    attempt_timeout = (
+        _positive_float(v3_config.get("attempt_timeout_seconds"), 10.0) if has_fallback else None
+    )
+    hedge_floor = _positive_float(v3_config.get("hedge_min_delay_seconds"), 2.5)
     scope = request.request_id or plan.execution_id
     daily_budget = _daily_preflight_budget(config)
-    max_wall_time_ms = request.budget.get("max_wall_time_ms")
-    deadline = (
-        time.monotonic() + (max_wall_time_ms / 1000)
-        if isinstance(max_wall_time_ms, int)
-        and not isinstance(max_wall_time_ms, bool)
-        and max_wall_time_ms > 0
-        else None
-    )
-
-    for provider in plan.candidate_order:
-        provider_config = config.get(provider) or {}
-        endpoint = str(
-            provider_config.get("endpoint")
-            or provider_config.get("base_url")
-            or provider_config.get("url")
-            or f"provider://{provider}/search"
+    deadline = request_deadline(request.budget)
+    contexts = {
+        provider: provider_attempt_context(
+            store, provider, Capability.SEARCH, config.get(provider) or {}, get_api_key(provider, config),
+            budget_scope=scope, budget_limit_units=budget_limit, deadline_monotonic=deadline, **daily_budget,
         )
-        credential = get_api_key(provider, config) or f"keyless:{provider}"
-        context = AttemptContext(
-            provider=provider,
-            capability=Capability.SEARCH,
-            endpoint=endpoint,
-            credential_fingerprint=store.fingerprint_credential(credential),
-            budget_scope=scope,
-            budget_window="request",
-            budget_limit_units=budget_limit,
-            deadline_monotonic=deadline,
-            **daily_budget,
-        )
-        if payload is not None:
-            receipts.append(
-                engine.skip(context, SkipReason.POLICY_EXCLUDED).receipt
-            )
-            continue
-        if deadline is not None and time.monotonic() >= deadline:
-            receipts.append(
-                engine.skip(context, SkipReason.DEADLINE_EXCEEDED).receipt
-            )
-            continue
+        for provider in candidates
+    }
 
-        def operation(current_provider=provider):
+    def operation_for(current_provider: str):
+        def operation():
             args = _search_args_from_v3(request, config)
             args.provider = current_provider
             args.allow_fallback = False
             args.no_cache = True
             args._v3_engine_owned_attempt = True
-            provider_payload, exit_code = _execute_search_request_core(args, config)
+            # Ask for a few spare results: spam removal and the per-domain cap
+            # then refill the list instead of leaving duplicates in the top N.
+            requested = int(args.max_results or 5)
+            args._v3_requested_results = requested
+            args.max_results = min(SEARCH_OVERFETCH_CAP, requested + SEARCH_OVERFETCH_EXTRA)
+            if str(request.routing.get("provider") or "auto") == "auto":
+                # Rank and report with the auto-routing decision, not the
+                # fixed-provider routing of this attempt.
+                args._v3_planned_routing = plan.routing_metadata
+            with request_timeout_cap(attempt_timeout):
+                provider_payload, exit_code = _execute_search_request_core(args, config)
             if exit_code:
                 raise ProviderRequestError(
                     str(provider_payload.get("error") or "provider failed"),
                     transient=False,
                 )
             return provider_payload
+        return operation
 
-        attempted = engine.execute(context, operation)
-        receipts.append(attempted.receipt)
-        if attempted.payload is not None:
-            payload = attempted.payload
-            successful_provider = provider
-            continue
+    def hedge_delay(provider: str) -> float:
+        usual = latency_quantile(provider, 0.75) or 0.0
+        delay = max(hedge_floor, usual)
+        return min(delay, attempt_timeout) if attempt_timeout else delay
+
+    race = _race_providers(engine, candidates, contexts, operation_for, hedge_delay, deadline)
+    if race.provider is None and candidates and all(
+        receipt.skip_reason in _OUTAGE_SKIPS for receipt in race.receipts
+    ):
+        race = _last_resort_probe(engine, store, candidates[0], contexts, operation_for, race)
+    receipts = race.receipts
+    payload = race.payload
+    successful_provider = race.provider
 
     if payload is None:
         payload = {
@@ -1948,7 +1938,7 @@ def _execute_search_v3(
                     "error": (
                         receipt.error.message
                         if receipt.error is not None
-                        else receipt.skip_reason.value
+                        else _SKIP_REASON_TEXT.get(receipt.skip_reason, receipt.skip_reason.value)
                         if receipt.skip_reason is not None
                         else "provider attempt failed"
                     ),
@@ -1959,6 +1949,8 @@ def _execute_search_v3(
         add_provider_setup_guidance(payload, "search", list(plan.candidate_order), config,
                                     requested_provider=str(request.routing.get("provider") or "auto"))
     else:
+        if race.superseded:
+            payload["_v3_superseded_providers"] = list(race.superseded)
         routing = payload.setdefault("routing", {})
         requested = str(request.routing.get("provider") or "auto")
         if requested == "auto":
@@ -1970,6 +1962,14 @@ def _execute_search_v3(
             routing["fallback_used"] = True
             routing["original_provider"] = plan.selected_provider
             routing["provider"] = successful_provider
+            # No value says "slower than usual and lost the race". For that
+            # case selected_failed is the closest: the receipt rules tie it to
+            # a cancelled or failed prior attempt, which is what is recorded.
+            routing["fallback_reason"] = (
+                "insufficient_results"
+                if plan.selected_provider in race.empty_providers
+                else "selected_failed"
+            )
 
     stages = ["admission", "provider_attempt"]
     if any(receipt.error is not None for receipt in receipts):
@@ -1985,13 +1985,194 @@ def _execute_search_v3(
     )
 
 
+_MAX_IN_FLIGHT = 2
+
+# Skips that mean "recently down", not "not allowed". When they exclude every
+# candidate, the top one still gets a probe, as 4.3.5 did: an answer from a
+# provider that may have recovered beats a guaranteed "All providers failed".
+_OUTAGE_SKIPS = frozenset({SkipReason.CIRCUIT_OPEN})
+
+
+def _last_resort_probe(engine, store, provider, contexts, operation_for, race):
+    context = contexts[provider]
+    now = int(time.time())
+    for error_class in (ErrorClass.TRANSIENT, ErrorClass.TIMEOUT):
+        store.record_success(context.circuit_key, error_class, now=now)
+    execution = engine.execute(context, operation_for(provider))
+    receipts = [execution.receipt if r.provider == provider else r for r in race.receipts]
+    payload = execution.payload
+    if payload is None:
+        return _Race(None, None, receipts, race.empty_providers)
+    empty = [] if payload.get("results") else [provider]
+    return _Race(provider, payload, receipts, empty)
+
+
+# Why a provider was not called, as the search error lists it. The first
+# failure names its cause ("Out of credits: ..."); while the resulting block
+# lasts, these keep it readable instead of a bare "quota_blocked". WSP's own
+# fixed text, never the provider's.
+_SKIP_REASON_TEXT = {
+    SkipReason.QUOTA_BLOCKED: (
+        "Out of credits or quota at its last call; skipped for up to an hour. "
+        "Top up the account or remove its key"
+    ),
+    SkipReason.AUTH_BLOCKED: "Authentication failed at its last call; skipped for a few minutes. Check its API key",
+    SkipReason.RATE_LIMITED: "Rate limit reached at its last call; skipped until it resets",
+    SkipReason.CIRCUIT_OPEN: "Failed several times in a row; skipped for about a minute",
+    SkipReason.BUDGET_BLOCKED: "Call budget for this request or day is used up",
+    SkipReason.DEADLINE_EXCEEDED: "Not tried: the request ran out of time",
+}
+
+
+@dataclass
+class _Race:
+    provider: Optional[str]
+    payload: Optional[Dict[str, Any]]
+    receipts: List[Any]
+    empty_providers: List[str]
+    # Still running when another provider's non-empty answer won; cancelled by
+    # that win, not by the request's time budget.
+    superseded: List[str] = field(default_factory=list)
+
+
+def _positive_float(value: Any, default: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return number if number > 0 else default
+
+
+def _race_providers(engine, candidates, contexts, operation_for, hedge_delay, deadline) -> _Race:
+    """Run candidates in order, hedged: the first non-empty answer wins.
+
+    The next candidate starts as soon as the running one fails or answers
+    empty, or when it is slower than its hedge delay (its usual p75 latency,
+    at least the configured floor). At most two run at once. A provider that
+    is still running when another wins is reported as cancelled; it finishes
+    in the background without affecting the answer.
+    """
+    done: "queue.Queue[str]" = queue.Queue()
+    tasks: Dict[str, Tuple[DaemonTask, float, float]] = {}
+    finished: Dict[str, Any] = {}
+    pending = list(candidates)
+    winner = None
+    hedge_at = None
+    deadline_hit = False
+
+    def launch() -> None:
+        nonlocal hedge_at
+        provider = pending.pop(0)
+        if deadline is not None and time.monotonic() >= deadline:
+            finished[provider] = engine.skip(contexts[provider], SkipReason.DEADLINE_EXCEEDED)
+            return
+        task = DaemonTask(engine.execute, contexts[provider], operation_for(provider))
+        tasks[provider] = (task, time.time(), time.monotonic())
+        task.add_done_callback(lambda _task, name=provider: done.put(name))
+        hedge_at = time.monotonic() + hedge_delay(provider)
+
+    def in_flight() -> List[str]:
+        return [provider for provider in tasks if provider not in finished]
+
+    launch()
+    while True:
+        running = in_flight()
+        if not running:
+            if winner is not None or not pending:
+                break
+            launch()
+            continue
+        can_hedge = bool(pending) and len(running) < _MAX_IN_FLIGHT
+        wait = max(0.0, hedge_at - time.monotonic()) if can_hedge and hedge_at is not None else None
+        if deadline is not None:
+            remaining = max(0.0, deadline - time.monotonic())
+            wait = remaining if wait is None else min(wait, remaining)
+        try:
+            provider = done.get(timeout=wait)
+        except queue.Empty:
+            if deadline is not None and time.monotonic() >= deadline:
+                deadline_hit = True
+                break
+            launch()  # hedge: the running provider is slower than usual
+            continue
+        try:
+            execution = tasks[provider][0].result(timeout=0)
+        except Exception:  # pragma: no cover - engine.execute converts provider errors
+            execution = None
+        finished[provider] = execution
+        payload = execution.payload if execution is not None else None
+        if payload is not None and (payload.get("results") or []):
+            winner = provider
+            break
+        if pending and len(in_flight()) < _MAX_IN_FLIGHT:
+            launch()
+
+    empty_providers = [
+        provider for provider in candidates
+        if finished.get(provider) is not None and finished[provider].payload is not None
+        and not (finished[provider].payload.get("results") or [])
+    ]
+    if winner is None and empty_providers:
+        winner = empty_providers[0]  # every answer was empty: report the truthful empty result
+    receipts = []
+    superseded = []
+    for provider in candidates:
+        execution = finished.get(provider)
+        if execution is not None:
+            receipts.append(execution.receipt)
+        elif provider in tasks:
+            if not deadline_hit:
+                superseded.append(provider)
+            _task, started_wall, started_monotonic = tasks[provider]
+            receipts.append(engine.cancel_started(
+                contexts[provider],
+                started_at=started_wall,
+                duration_ms=int(max(0.0, time.monotonic() - started_monotonic) * 1000),
+            ).receipt)
+        else:
+            reason = SkipReason.DEADLINE_EXCEEDED if deadline_hit else SkipReason.POLICY_EXCLUDED
+            receipts.append(engine.skip(contexts[provider], reason).receipt)
+    payload = finished[winner].payload if winner is not None else None
+    return _Race(winner, payload, receipts, empty_providers, superseded)
+
+
+def _search_cache_vary(
+    request: RequestV3, plan: ProviderPlan, config: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Keep language "auto" apart from fixed-language entries in the v3 cache.
+
+    A per-call "auto" never appears in the request (the contract has no value
+    for it), so the cache key would equal that of a plain request while the
+    provider call differs.
+    """
+    locale = (config.get("defaults") or {}).get("locale") or {}
+    return {"language": AUTO_LANGUAGE} if is_auto_language(locale.get("language")) else {}
+
+
+def _search_cache_write_eligible(
+    _request: RequestV3,
+    _plan: ProviderPlan,
+    response: ResponseV3,
+    _legacy_payload: Dict[str, Any],
+    _config: Dict[str, Any],
+) -> bool:
+    """Cache only answers that have results.
+
+    When every candidate answers with nothing, the cause is often transient. A
+    cached empty answer would keep repeats from reaching a provider for the
+    whole TTL, which defeats the empty-answer fallback.
+    """
+    return bool(response.results)
+
+
 def _search_adapter() -> CapabilityAdapter:
     return CapabilityAdapter(
         capability=Capability.SEARCH,
         plan=_plan_search_v3,
         execute=_execute_search_v3,
         normalize=response_from_legacy,
-        legacy_cache_lookup=_lookup_legacy_search_v3,
+        cache_vary=_search_cache_vary,
+        cache_write_eligible=_search_cache_write_eligible,
     )
 
 
@@ -2033,12 +2214,29 @@ def run_search_request(
     """
     if not query and not (include_domains or exclude_domains):
         return {"error": "query is required", "provider": provider, "query": query, "results": []}
+    requested = str(provider or "auto").strip().lower()
+    suffix_filters = _providers.public_suffix_entries(include_domains, exclude_domains)
     try:
         freshness = _providers.normalize_freshness(freshness)
         search_type = _providers.normalize_search_type(search_type)
+        domain_filters(include_domains, exclude_domains)  # raises when include_domains has no usable domain
+        if suffix_filters and requested in _providers.DOMAIN_SUFFIX_FILTER_UNSUPPORTED:
+            raise ValueError(_providers.domain_suffix_unsupported_message(requested))
     except ValueError as exc:
         return {"error": str(exc), "provider": provider, "query": query, "results": []}
+    # One list of entries whatever the caller sent ("a.com, b.com" or a bare string).
+    include_domains = domain_filter_tokens(include_domains) or None
+    exclude_domains = domain_filter_tokens(exclude_domains) or None
     config = apply_profile_effects(config) if config is not None else load_config()
+    if suffix_filters:
+        # A suffix filter (".gov") must not route to a provider that cannot apply
+        # it, neither first nor as fallback or research member.
+        config = copy.deepcopy(config)
+        auto = config.setdefault("auto_routing", {})
+        auto["disabled_providers"] = sorted(
+            set(auto.get("disabled_providers") or []) | _providers.DOMAIN_SUFFIX_FILTER_UNSUPPORTED
+        )
+    language, config = apply_auto_language(language, config)
     policy_mode = str((config.get("routing") or {}).get("policy_mode", "classic"))
     request = legacy_request_to_v3(
         Capability.SEARCH,

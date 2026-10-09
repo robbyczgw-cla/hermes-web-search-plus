@@ -57,6 +57,24 @@ def test_attempt_engine_retries_transient_and_records_one_provider_receipt(tmp_p
     assert store.get_budget("request-1", "request").used_units == 2
 
 
+def test_request_budget_blocks_after_max_provider_attempts(tmp_path):
+    store = SQLiteStateStore(tmp_path / "state.sqlite3")
+    engine = AttemptEngine(store, max_attempts=1)
+    context = _context(budget_limit_units=1)
+    calls = []
+
+    first = engine.execute(
+        context, lambda: calls.append("called") or {"results": []}, now=lambda: 100
+    )
+    blocked = engine.execute(
+        context, lambda: calls.append("unexpected") or {"results": []}, now=lambda: 101
+    )
+
+    assert first.payload == {"results": []}
+    assert blocked.receipt.skip_reason is SkipReason.BUDGET_BLOCKED
+    assert calls == ["called"]
+
+
 def test_attempt_ids_are_unique_for_same_context_and_second(tmp_path):
     store = SQLiteStateStore(tmp_path / "state.sqlite3")
     engine = AttemptEngine(store, max_attempts=1)

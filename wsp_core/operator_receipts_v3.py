@@ -25,6 +25,12 @@ JOURNAL_SCHEMA_VERSION = 1
 DEFAULT_TTL_SECONDS = 604800
 DEFAULT_MAX_RECORDS = 1000
 DEFAULT_MAX_BYTES = 8 * 1024 * 1024
+# Every journal line starts with this (the keys are written sorted), so a line
+# cut short by an interrupted append is still recognisable as ours.
+_LINE_PREFIX = (
+    f'{{"journal_schema_version":{JOURNAL_SCHEMA_VERSION},'
+    f'"owner":{json.dumps(JOURNAL_OWNER)},"payload":'
+)
 
 
 def receipt_record_from_response(
@@ -198,6 +204,28 @@ class OperatorReceiptJournal:
             return None
         return payload
 
+    @staticmethod
+    def _without_torn_tail(raw: bytes) -> bytes:
+        """Drop an unfinished last line left behind by an interrupted append.
+
+        Only a fragment of one of our own lines qualifies. A complete last line
+        without its newline, or anything that is not ours, stays and goes
+        through the normal ownership checks.
+        """
+        if not raw or raw.endswith(b"\n"):
+            return raw
+        head, newline, tail = raw.rpartition(b"\n")
+        text = tail.decode("utf-8", "replace")
+        if not (text.startswith(_LINE_PREFIX) or _LINE_PREFIX.startswith(text)):
+            return raw
+        try:
+            json.loads(text)
+        except ValueError:
+            return head + newline
+        except RecursionError:
+            pass
+        return raw
+
     def _read_all_owned(
         self, directory_descriptor: int
     ) -> list[dict[str, Any]] | None:
@@ -227,9 +255,10 @@ class OperatorReceiptJournal:
                 != (path_stat.st_dev, path_stat.st_ino)
             ):
                 return None
-            with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
+            with os.fdopen(descriptor, "rb") as handle:
                 descriptor = -1
-                lines = handle.read().splitlines()
+                raw = handle.read()
+            lines = self._without_torn_tail(raw).decode("utf-8").splitlines()
         except (OSError, UnicodeError):
             return None
         finally:
@@ -245,7 +274,15 @@ class OperatorReceiptJournal:
             records.append(payload)
         return records
 
-    def _retained(self, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def _retained(
+        self, records: list[dict[str, Any]], headroom: float = 1.0
+    ) -> list[dict[str, Any]]:
+        """Apply TTL and size limits.
+
+        ``headroom`` < 1 trims a little below the limits on compaction, so the
+        following appends take the O(1) path instead of rewriting every time
+        once the journal is full.
+        """
         cutoff = self.now() - self.ttl_seconds
         retained = [
             record
@@ -254,19 +291,23 @@ class OperatorReceiptJournal:
             and not isinstance(record.get("timestamp"), bool)
             and float(record["timestamp"]) >= cutoff
         ]
+        max_records = self.max_records
+        max_bytes = self.max_bytes
+        if headroom < 1.0 and len(retained) > max_records:
+            max_records -= round(max_records * (1.0 - headroom))
         if self.max_records == 0:
             retained = []
-        elif len(retained) > self.max_records:
-            retained = retained[-self.max_records :]
-        while retained:
-            encoded_size = sum(
-                len(encode_journal_record(record).encode("utf-8")) + 1
-                for record in retained
-            )
-            if encoded_size <= self.max_bytes:
-                break
-            retained.pop(0)
-        return retained
+        elif len(retained) > max_records:
+            retained = retained[-max_records:]
+        sizes = [len(encode_journal_record(record).encode("utf-8")) + 1 for record in retained]
+        encoded_size = sum(sizes)
+        start = 0
+        if headroom < 1.0 and encoded_size > max_bytes:
+            max_bytes -= round(max_bytes * (1.0 - headroom))
+        while start < len(retained) and encoded_size > max_bytes:
+            encoded_size -= sizes[start]
+            start += 1
+        return retained[start:]
 
     def _rewrite(
         self,
@@ -302,14 +343,88 @@ class OperatorReceiptJournal:
             except FileNotFoundError:
                 pass
 
+    def _try_fast_append(
+        self, line: str, record: dict[str, Any], directory_descriptor: int
+    ) -> bool:
+        """Append one line in place when no retention limit is reached.
+
+        A search used to read, validate and rewrite the whole journal (cost grew
+        with every stored receipt). Appending is O(1) in the common case; the
+        full compaction below still runs whenever a limit would be crossed or the
+        file is not plainly ours.
+        """
+        cutoff = self.now() - self.ttl_seconds
+        stamp = record.get("timestamp")
+        if (
+            not isinstance(stamp, (int, float))
+            or isinstance(stamp, bool)
+            or float(stamp) < cutoff
+        ):
+            return False
+        flags = os.O_RDWR | os.O_APPEND | os.O_CLOEXEC | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open("receipts.jsonl", flags, dir_fd=directory_descriptor)
+        except FileNotFoundError:
+            return False
+        try:
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.geteuid():
+                return False
+            data = b""
+            if info.st_size:
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                chunks = []
+                while True:
+                    chunk = os.read(descriptor, 1 << 20)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                data = b"".join(chunks)
+                if not data.endswith(b"\n"):
+                    return False
+            encoded = (line + "\n").encode("utf-8")
+            if data.count(b"\n") + 1 > self.max_records or len(data) + len(encoded) > self.max_bytes:
+                return False
+            if data:
+                oldest = self._decode_owned_line(data.split(b"\n", 1)[0].decode("utf-8", "replace"))
+                stamp = oldest.get("timestamp") if oldest else None
+                if (
+                    not isinstance(stamp, (int, float))
+                    or isinstance(stamp, bool)
+                    or float(stamp) < cutoff
+                ):
+                    return False
+            try:
+                written = 0
+                while written < len(encoded):
+                    count = os.write(descriptor, encoded[written:])
+                    if count <= 0:
+                        raise OSError("journal write made no progress")
+                    written += count
+                os.fsync(descriptor)
+            except OSError:
+                # A short write (disk full, quota) must not leave half a line
+                # behind: cut the file back and let the full rewrite try. If
+                # even that fails, the next read drops the torn last line.
+                try:
+                    os.ftruncate(descriptor, len(data))
+                except OSError:
+                    pass
+                return False
+            return True
+        finally:
+            os.close(descriptor)
+
     def append(self, record: dict[str, Any]) -> bool:
         try:
-            encode_journal_record(record)
+            line = encode_journal_record(record)
             with self._locked() as directory_descriptor:
+                if self.max_records and self._try_fast_append(line, record, directory_descriptor):
+                    return True
                 existing = self._read_all_owned(directory_descriptor)
                 if existing is None:
                     return False
-                retained = self._retained([*existing, dict(record)])
+                retained = self._retained([*existing, dict(record)], headroom=0.9)
                 self._rewrite(retained, directory_descriptor)
             return True
         except Exception:

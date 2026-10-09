@@ -91,7 +91,7 @@ def fake_make_request(url, headers, body, timeout=30):
     raise AssertionError(f"Unexpected POST URL in contract test: {url}")
 
 
-def fake_make_get_request(url, headers):
+def fake_make_get_request(url, headers, **_kwargs):
     if "api.search.brave.com" in url:
         return {
             "web": {"results": [{"title": "Brave title", "url": RESULT_URL, "description": "Brave snippet"}]},

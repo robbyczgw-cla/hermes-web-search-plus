@@ -10,14 +10,28 @@ Values already present in ``os.environ`` are never overwritten.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import List, MutableMapping, Optional, Set, Union
+
+
+# Template values copied from .env.example files or setup docs, for example
+# "your-brave-api-key-here", "<api-key>", "xxxxxx" or "changeme".
+_TEMPLATE_PLACEHOLDER = re.compile(
+    r"^(?:<[^<>]*>|\{\{[^{}]*\}\}|\$\{[^{}]*\}|your[-_ ].*|.*[-_ ]here|x{3,}"
+    r"|change[-_ ]?me|replace[-_ ]?me|placeholder|insert[-_ ].*|todo)$",
+    re.IGNORECASE,
+)
 
 
 def is_placeholder_env_value(value: str) -> bool:
     """Return True for empty/template placeholders that are not credentials."""
     stripped = (value or "").strip().strip('"').strip("'")
-    return not stripped or set(stripped) == {"*"}
+    return (
+        not stripped
+        or set(stripped) == {"*"}
+        or bool(_TEMPLATE_PLACEHOLDER.match(stripped))
+    )
 
 
 def clean_env_value(value: str) -> Optional[str]:

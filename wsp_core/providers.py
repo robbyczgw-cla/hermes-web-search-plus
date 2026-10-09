@@ -10,7 +10,7 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
+from urllib.parse import quote, urlencode
 from urllib.request import Request
 
 from .daemon_tasks import DaemonTask
@@ -24,6 +24,15 @@ from .http_client import (
     urlopen,
 )
 from .quality import _title_from_url
+from .diversity_v3 import MULTI_LABEL_SUFFIXES
+from .urls import (
+    SITE_OPERATOR_LIMIT,
+    domain_filter_host,
+    domain_filter_tokens,
+    domain_filters,
+    strip_tracking_params,
+    wildcard_domain_entries,
+)
 from .request_gate_v3 import validate_outbound_body, validate_provider_mode
 from .config import normalize_parallel_search_mode
 
@@ -252,12 +261,15 @@ def search_serper(
     api_key: str,
     max_results: int = 5,
     country: str = "us",
-    language: str = "en",
+    language: Optional[str] = "en",
     search_type: str = "search",
     time_range: Optional[str] = None,
     include_images: bool = False,
 ) -> dict:
-    """Search using Serper (Google Search API)."""
+    """Search using Serper (Google Search API).
+
+    ``language=None`` omits ``hl`` so Serper applies its own default.
+    """
     endpoint = f"https://google.serper.dev/{search_type}"
 
     body = {
@@ -267,6 +279,8 @@ def search_serper(
         "num": max_results,
         "autocorrect": True,
     }
+    if not language:
+        del body["hl"]
 
     if time_range and time_range != "none":
         tbs_map = {
@@ -311,11 +325,10 @@ def search_serper(
     images = []
     if include_images:
         try:
-            img_data = make_request(
-                "https://google.serper.dev/images",
-                headers,
-                {"q": query, "gl": country, "hl": language, "num": 5},
-            )
+            image_body = {"q": query, "gl": country, "hl": language, "num": 5}
+            if not language:
+                del image_body["hl"]
+            img_data = make_request("https://google.serper.dev/images", headers, image_body)
             images = [img.get("imageUrl", "") for img in img_data.get("images", [])[:5] if img.get("imageUrl")]
         except Exception:
             pass
@@ -330,20 +343,6 @@ def search_serper(
         "related_searches": [r.get("query") for r in data.get("relatedSearches", [])]
     }
 
-def _strip_tracking_params(url: str) -> str:
-    """Remove common SERP tracking params while preserving the canonical target URL."""
-    if not url:
-        return ""
-    parsed = urlparse(url)
-    tracking_prefixes = ("utm_",)
-    tracking_names = {"srsltid", "gclid", "fbclid", "mc_cid", "mc_eid"}
-    query = [
-        (key, value)
-        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        if key.lower() not in tracking_names and not key.lower().startswith(tracking_prefixes)
-    ]
-    return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
-
 def _serpbase_related_search_query(item: Any) -> Optional[str]:
     if isinstance(item, dict):
         return item.get("query") or item.get("title")
@@ -356,7 +355,7 @@ def search_serpbase(
     api_key: str,
     max_results: int = 5,
     country: str = "us",
-    language: str = "en",
+    language: Optional[str] = "en",
     page: int = 1,
     api_url: str = "https://api.serpbase.dev/google/search",
     timeout: int = 30,
@@ -364,7 +363,7 @@ def search_serpbase(
     """Search using SerpBase's Google Search endpoint.
 
     SerpBase returns HTTP 200 for some business failures, so `status == 0` is
-    required before parsing results.
+    required before parsing results. ``language=None`` omits ``hl``.
     """
     body = {
         "q": query,
@@ -372,6 +371,8 @@ def search_serpbase(
         "gl": country,
         "page": page,
     }
+    if not language:
+        del body["hl"]
     headers = {
         "X-API-Key": api_key,
         "Content-Type": "application/json",
@@ -388,7 +389,7 @@ def search_serpbase(
     for i, item in enumerate(data.get("organic", [])[:max_results]):
         results.append({
             "title": item.get("title", ""),
-            "url": _strip_tracking_params(item.get("link", "") or item.get("url", "")),
+            "url": strip_tracking_params(item.get("link", "") or item.get("url", "")),
             "snippet": item.get("snippet", ""),
             "score": round(1.0 - i * 0.1, 2),
             "rank": item.get("rank") or item.get("position") or i + 1,
@@ -411,16 +412,160 @@ def search_serpbase(
         "session_id": data.get("session_id"),
     }
 
+# Brave's search_lang is an enum; a value outside it fails the request.
+_BRAVE_SEARCH_LANGS = frozenset(
+    "ar eu bn bg ca zh-hans zh-hant hr cs da nl en en-gb et fi fr gl de el gu he hi hu "
+    "is it ja jp kn ko lv lt ms ml mr nb pl pt-br pt-pt pa ro ru sr sk sl es sv ta te "
+    "th tr uk vi".split()
+)
+
+
+def _brave_search_lang(language: Optional[str], country: str) -> Optional[str]:
+    """Brave's code for an ISO 639-1 language, or None to leave search_lang out."""
+    if not language:
+        return None
+    code = language.lower()
+    region = (country or "").lower()
+    if code == "pt":
+        return "pt-br" if region == "br" else "pt-pt"
+    if code == "zh":
+        return "zh-hant" if region in ("tw", "hk", "mo") else "zh-hans"
+    return code if code in _BRAVE_SEARCH_LANGS else None
+
+
+_BRAVE_RATE_HEADERS = (
+    "X-RateLimit-Policy",
+    "X-RateLimit-Remaining",
+    "X-RateLimit-Reset",
+    "Retry-After",
+)
+# Longest wait for a short (per-second) Brave window. Longer resets, such as a
+# spent monthly quota, fail fast so the hedged fallback can take over.
+BRAVE_MAX_RATE_WAIT_SECONDS = 2.0
+
+
+def _split_header_numbers(value: Optional[str]) -> List[Optional[float]]:
+    numbers: List[Optional[float]] = []
+    for part in (value or "").split(","):
+        try:
+            numbers.append(float(part.strip()))
+        except ValueError:
+            numbers.append(None)
+    return numbers
+
+
+def brave_min_interval(headers: Dict[str, str]) -> Optional[float]:
+    """Seconds between calls implied by the tightest X-RateLimit-Policy window.
+
+    Brave sends e.g. ``1;w=1, 2000;w=2678400`` (1 call per second, 2000 per
+    month). Only windows up to one minute are used for pacing.
+    """
+    best: Optional[float] = None
+    for part in (headers.get("X-RateLimit-Policy") or "").split(","):
+        fields = [field.strip() for field in part.split(";")]
+        try:
+            limit = float(fields[0])
+            window = next(
+                float(field[2:]) for field in fields[1:] if field.startswith("w=")
+            )
+        except (ValueError, StopIteration, IndexError):
+            continue
+        if limit <= 0 or window <= 0 or window > 60:
+            continue
+        interval = window / limit
+        best = interval if best is None else max(best, interval)
+    return best
+
+
+def brave_retry_wait(headers: Dict[str, str]) -> Optional[float]:
+    """Seconds until the exhausted Brave window resets, or None if unknown."""
+    retry_after = _split_header_numbers(headers.get("Retry-After"))
+    if retry_after and retry_after[0] is not None:
+        return max(0.0, retry_after[0])
+    remaining = _split_header_numbers(headers.get("X-RateLimit-Remaining"))
+    reset = _split_header_numbers(headers.get("X-RateLimit-Reset"))
+    waits = [
+        r for rem, r in zip(remaining, reset)
+        if rem is not None and rem <= 0 and r is not None
+    ]
+    return max(waits) if waits else None
+
+
+class _CallPacer:
+    """Process-wide spacing between calls to one rate-limited provider.
+
+    The interval is learned from the provider's rate-limit headers, so plans
+    without a per-second limit are never slowed down.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._last_start = None
+        self._next_slot = 0.0
+        self.interval = 0.0
+
+    def wait_turn(self, max_wait: float) -> None:
+        with self._lock:
+            now = time.monotonic()
+            start = max(now, self._next_slot)
+            if start - now > max_wait:
+                start = now
+            self._last_start = start
+            self._next_slot = start + self.interval
+        if start > now:
+            time.sleep(start - now)
+
+    def learn(self, interval: Optional[float]) -> None:
+        if interval is None:
+            return
+        with self._lock:
+            self.interval = min(interval, BRAVE_MAX_RATE_WAIT_SECONDS)
+            if self._last_start is not None:
+                self._next_slot = max(self._next_slot, self._last_start + self.interval)
+
+
+_BRAVE_PACER = _CallPacer()
+
+
+def _brave_get(url: str, headers: Dict[str, str]) -> dict:
+    """GET a Brave endpoint, paced to its per-second limit, one retry on 429."""
+    for attempt in range(2):
+        _BRAVE_PACER.wait_turn(BRAVE_MAX_RATE_WAIT_SECONDS)
+        seen: Dict[str, str] = {}
+        try:
+            data = make_get_request(
+                url,
+                dict(headers),
+                capture_headers=_BRAVE_RATE_HEADERS,
+                response_headers=seen,
+            )
+        except ProviderRequestError as exc:
+            _BRAVE_PACER.learn(brave_min_interval(seen))
+            wait = brave_retry_wait(seen)
+            if (
+                attempt == 0
+                and getattr(exc, "status_code", None) == 429
+                and wait is not None
+                and wait <= BRAVE_MAX_RATE_WAIT_SECONDS
+            ):
+                time.sleep(wait)
+                continue
+            raise
+        _BRAVE_PACER.learn(brave_min_interval(seen))
+        return data
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
 def search_brave(
     query: str,
     api_key: str,
     max_results: int = 5,
     country: str = "US",
-    language: str = "en",
+    language: Optional[str] = "en",
     time_range: Optional[str] = None,
     safesearch: str = "moderate",
 ) -> dict:
-    """Search using Brave Search API."""
+    """Search using Brave Search API. ``language=None`` omits ``search_lang``."""
     freshness_map = {
         "hour": "pd",
         "day": "pd",
@@ -428,14 +573,17 @@ def search_brave(
         "month": "pm",
         "year": "py",
     }
+    search_lang = _brave_search_lang(language, country)
     params = {
         "q": query,
         "count": max_results,
         "country": country.upper(),
-        "search_lang": language,
+        "search_lang": search_lang,
         "safesearch": safesearch,
         "spellcheck": 1,
     }
+    if not search_lang:
+        del params["search_lang"]
     if time_range and time_range in freshness_map:
         params["freshness"] = freshness_map[time_range]
 
@@ -446,7 +594,7 @@ def search_brave(
         "Accept-Encoding": "gzip",
     }
 
-    data = make_get_request(url, headers)
+    data = _brave_get(url, headers)
 
     web_results = (data.get("web") or {}).get("results", [])[:max_results]
     results = []
@@ -457,14 +605,18 @@ def search_brave(
             snippet_parts.append(description)
         extra_snippets = item.get("extra_snippets") or []
         if extra_snippets:
-            snippet_parts.extend(extra_snippets[:2])
-        results.append({
+            snippet_parts.extend(extra_snippets[:1])
+        result = {
             "title": item.get("title", ""),
             "url": item.get("url", ""),
             "snippet": " ... ".join(part for part in snippet_parts if part),
             "score": round(1.0 - i * 0.1, 2),
             "age": item.get("age"),
-        })
+        }
+        # ISO datetime next to the free-text "age"; absent keys stay absent.
+        if item.get("page_age"):
+            result["page_age"] = item["page_age"]
+        results.append(result)
 
     return {
         "provider": "brave",
@@ -474,6 +626,32 @@ def search_brave(
         "metadata": {},
         "mixed": data.get("mixed"),
     }
+
+# Providers whose own domain field takes hostnames and "*.example.com" but no
+# bare public suffix. Live, Tavily answered "*.gov" and "gov" with HTTP 400 and
+# ".gov" with no results; the site: providers and Exa filter ".gov" fine.
+DOMAIN_SUFFIX_FILTER_UNSUPPORTED = frozenset({"tavily"})
+
+
+def public_suffix_entries(*values: Any) -> List[str]:
+    """Domain-filter entries that name a public suffix (".gov", "*.ac.uk"), not a domain."""
+    found: List[str] = []
+    for value in values:
+        for token in domain_filter_tokens(value):
+            if not token.strip().startswith((".", "*.")):
+                continue
+            suffix = domain_filter_host(token)
+            if suffix and ("." not in suffix or suffix in MULTI_LABEL_SUFFIXES):
+                found.append(token.strip())
+    return found
+
+
+def domain_suffix_unsupported_message(provider: str) -> str:
+    return (
+        f"{provider.capitalize()} cannot filter by a domain suffix such as .gov or *.ac.uk. "
+        "Use hostnames such as cisa.gov, or Brave, Serper, Exa or Firecrawl for suffix filters."
+    )
+
 
 def search_tavily(
     query: str,
@@ -501,10 +679,17 @@ def search_tavily(
         "include_raw_content": include_raw_content,
     }
 
-    if include_domains:
-        body["include_domains"] = include_domains
-    if exclude_domains:
-        body["exclude_domains"] = exclude_domains
+    # Same fail-closed check as the site: providers. Tavily's own fields take
+    # hostnames and "*.example.com"; a public suffix is refused, never sent.
+    domain_filters(include_domains, exclude_domains)
+    if public_suffix_entries(include_domains, exclude_domains):
+        raise ValueError(domain_suffix_unsupported_message("tavily"))
+    exclude = wildcard_domain_entries(exclude_domains)
+    include = [entry for entry in wildcard_domain_entries(include_domains) if entry not in exclude]
+    if include:
+        body["include_domains"] = include
+    if exclude:
+        body["exclude_domains"] = exclude
     if time_range:
         body["time_range"] = time_range
 
@@ -523,6 +708,8 @@ def search_tavily(
         }
         if include_raw_content and item.get("raw_content"):
             result["raw_content"] = item["raw_content"]
+        if item.get("published_date"):  # sent for topic="news"
+            result["published_date"] = item["published_date"]
         results.append(result)
 
     return {
@@ -548,7 +735,7 @@ def search_querit(
     query: str,
     api_key: str,
     max_results: int = 5,
-    language: str = "en",
+    language: Optional[str] = "en",
     country: str = "us",
     time_range: Optional[str] = None,
     include_domains: Optional[List[str]] = None,
@@ -734,10 +921,13 @@ def search_firecrawl(
     if tbs:
         body["tbs"] = tbs
 
-    if include_domains:
-        body["query"] += " " + " ".join(f"site:{domain}" for domain in include_domains)
-    if exclude_domains:
-        body["query"] += " " + " ".join(f"-site:{domain}" for domain in exclude_domains)
+    include, exclude = domain_filters(include_domains, exclude_domains)
+    if include:
+        # OR, as for the other site: providers: "site:a site:b" means both at once
+        # and returns nothing (seen live with docs.rs and tokio.rs).
+        body["query"] += " " + " OR ".join(f"site:{domain}" for domain in include[:SITE_OPERATOR_LIMIT])
+    if exclude:
+        body["query"] += " " + " ".join(f"-site:{domain}" for domain in exclude[:SITE_OPERATOR_LIMIT])
 
     if scrape_markdown:
         body["scrapeOptions"] = {"formats": ["markdown"]}
@@ -1290,7 +1480,7 @@ def search_you(
     api_key: str,
     max_results: int = 5,
     country: str = "US",
-    language: str = "en",
+    language: Optional[str] = "en",
     freshness: Optional[str] = None,
     safesearch: str = "moderate",
     include_news: bool = True,
@@ -1309,7 +1499,7 @@ def search_you(
         api_key: You.com API key
         max_results: Maximum results to return (default 5, max 100)
         country: ISO 3166-2 country code (e.g., US, GB, DE)
-        language: BCP 47 language code (e.g., en, de, fr)
+        language: BCP 47 language code (e.g., en, de, fr); None omits the parameter
         freshness: Filter by recency: day, week, month, year, or YYYY-MM-DDtoYYYY-MM-DD
         safesearch: Content filter: off, moderate (default), strict
         include_news: Include news results when relevant (default True)
@@ -1434,7 +1624,7 @@ def search_searxng(
     max_results: int = 5,
     categories: Optional[List[str]] = None,
     engines: Optional[List[str]] = None,
-    language: str = "en",
+    language: Optional[str] = "en",
     time_range: Optional[str] = None,
     safesearch: int = 0,
 ) -> dict:
@@ -1452,7 +1642,7 @@ def search_searxng(
         max_results: Maximum results to return (default 5)
         categories: Search categories (general, images, news, videos, etc.)
         engines: Specific engines to use (google, bing, duckduckgo, etc.)
-        language: Language code (e.g., en, de, fr)
+        language: Language code (e.g., en, de, fr); None omits the parameter
         time_range: Filter by recency: day, week, month, year
         safesearch: Content filter: 0=off, 1=moderate, 2=strict
 
@@ -1467,6 +1657,8 @@ def search_searxng(
         "language": language,
         "safesearch": str(safesearch),
     }
+    if not language:
+        del params["language"]
 
     if categories:
         params["categories"] = ",".join(categories)

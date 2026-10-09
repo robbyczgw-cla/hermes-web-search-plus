@@ -15,6 +15,7 @@ from .errors_v3 import MissingProviderKeyError, ProviderConfigError
 from .provider_registry import (
     DEFAULT_AUTO_ALLOW,
     DEFAULT_PROVIDER_PRIORITY,
+    PRE_5_DEFAULT_PROVIDER_PRIORITY,
     EXTRACT_PROVIDER_IDS,
     KEYLESS_EXTRACT_PROVIDER_IDS,
     KEYLESS_PROVIDER_IDS,
@@ -56,11 +57,6 @@ SELF_HOSTED_SEARCH_PROVIDER_IDS = ("searxng", *KEYLESS_PROVIDER_IDS)
 SELF_HOSTED_EXTRACT_PROVIDER_IDS = tuple(KEYLESS_EXTRACT_PROVIDER_IDS)
 
 
-def _is_placeholder_env_value(value: str) -> bool:
-    """Return True for template placeholders that should not count as credentials."""
-    return _shared_clean_env_value(value) is None
-
-
 def _clean_env_value(value: str) -> Optional[str]:
     return _shared_clean_env_value(value)
 
@@ -85,9 +81,10 @@ DEFAULT_CONFIG = {
         # parameters (serper, brave, you, serpbase, querit, firecrawl,
         # searxng). country: ISO 3166-1 alpha-2 (e.g. "at"); language:
         # ISO 639-1 code, or "auto" for conservative query language
-        # inference. Unset values fall back to us/en. Explicit provider
-        # sections in config.json (e.g. serper.country) still win — see
-        # search_locale.resolve_locale for the full precedence.
+        # detection (no language is sent when it is unsure). Unset values
+        # fall back to us/en. Explicit provider sections in config.json
+        # (e.g. serper.country) still win — see search_locale.resolve_locale
+        # for the full precedence.
         "locale": {
             "country": None,
             "language": None,
@@ -95,6 +92,9 @@ DEFAULT_CONFIG = {
     },
     "auto_routing": {
         "enabled": True,
+        # "measured": first provider by query type (docs/ROUTING.md).
+        # "custom": provider_priority as the user ordered it, for every query.
+        "order": "measured",
         "fallback_provider": "serper",
         # Low-trust / experimental providers can stay configured for explicit use
         # without being selected automatically.
@@ -242,6 +242,8 @@ def _deepcopy_default_config() -> Dict[str, Any]:
 
 
 _ROUTING_PROVIDER_NAMES = set(PROVIDER_SPECS)
+# ``set-order`` and the Desktop "Provider order" field read these as "routing by query type".
+ORDER_AUTO_WORDS = frozenset({"auto", "automatic", "measured"})
 REMOVED_PROVIDER_IDS = frozenset({"perplexity", "kilo-perplexity", "kilo_perplexity"})
 
 
@@ -282,6 +284,15 @@ def _normalize_routing_provider_list_config(value: Any) -> List[str]:
             return []
         raise ValueError("provider list cannot be empty")
     return providers
+
+
+def _replace_pre_5_default_priority(providers: List[str]) -> List[str]:
+    """The current default order for a provider_priority written by a 4.x setup."""
+    legacy = list(PRE_5_DEFAULT_PROVIDER_PRIORITY)
+    if providers[: len(legacy)] != legacy:
+        return providers
+    current = list(DEFAULT_CONFIG["auto_routing"].get("provider_priority", []))
+    return current + [provider for provider in providers[len(legacy):] if provider not in current]
 
 
 def _append_missing_default_providers(providers: List[str]) -> List[str]:
@@ -410,8 +421,12 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
             auto["fallback_provider"] = DEFAULT_CONFIG["auto_routing"]["fallback_provider"]
         else:
             auto["fallback_provider"] = _normalize_routing_provider_config(str(auto["fallback_provider"]))
+    order_mode = str(auto.get("order") or "measured").strip().lower()
+    auto["order"] = order_mode if order_mode in {"measured", "custom"} else "measured"
     if auto.get("provider_priority"):
         priority = _normalize_routing_provider_list_config(auto["provider_priority"])
+        if auto["order"] != "custom":
+            priority = _replace_pre_5_default_priority(priority)
         if not priority:
             priority = list(DEFAULT_CONFIG["auto_routing"]["provider_priority"])
         auto["provider_priority"] = _append_missing_default_providers(priority) if auto.get("enabled", True) is not False else priority
@@ -617,7 +632,7 @@ def _quarantine_runtime_config(config_path: Path, reason: str) -> None:
         }), file=sys.stderr)
 
 
-_DESKTOP_SETTING_KEYS = ("country", "language", "max_results", "auto_routing", "searxng_url")
+_DESKTOP_SETTING_KEYS = ("country", "language", "max_results", "auto_routing", "provider_order", "searxng_url")
 
 
 def _coerce_yamlish_scalar(raw: str) -> Any:
@@ -858,6 +873,20 @@ def _present_desktop_text(value: Any) -> Optional[str]:
     return text or None
 
 
+def _desktop_provider_order(raw: str) -> List[str]:
+    """The list ``setup.py config set-order`` would store for this text, or [].
+
+    set-order exits on a name it does not know. A config loader must not, so
+    names that are not providers (including removed ones) are dropped and the
+    rest keep their order. Missing default providers are appended, as for
+    every stored order.
+    """
+    names = [part for part in raw.split(",") if part.strip().lower() in _ROUTING_PROVIDER_NAMES]
+    if not names:
+        return []
+    return _append_missing_default_providers(_normalize_routing_provider_list_config(names))
+
+
 def _apply_desktop_settings(config: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
     """Overlay declared Desktop scalars onto config.json. Empty and 0 do not wipe."""
     if not settings:
@@ -897,6 +926,20 @@ def _apply_desktop_settings(config: Dict[str, Any], settings: Dict[str, Any]) ->
                 auto = {}
                 config["auto_routing"] = auto
             auto["enabled"] = enabled
+    if "provider_order" in settings:
+        raw_order = _present_desktop_text(settings.get("provider_order"))
+        if raw_order:
+            auto = config.get("auto_routing")
+            if not isinstance(auto, dict):
+                auto = {}
+                config["auto_routing"] = auto
+            if raw_order.strip().lower() in ORDER_AUTO_WORDS:
+                auto["order"] = "measured"
+            else:
+                names = _desktop_provider_order(raw_order)
+                if names:
+                    auto["order"] = "custom"
+                    auto["provider_priority"] = names
     if "searxng_url" in settings:
         url = _present_desktop_text(settings.get("searxng_url"))
         if url:
@@ -1086,12 +1129,6 @@ def get_searxng_instance_url(config: Dict[str, Any] = None) -> Optional[str]:
     if env_url:
         return _validate_searxng_url(env_url)
     return None
-
-
-# Backward compatibility alias
-def get_env_key(provider: str) -> Optional[str]:
-    """Get API key for provider from environment (legacy function)."""
-    return get_api_key(provider)
 
 
 def validate_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:

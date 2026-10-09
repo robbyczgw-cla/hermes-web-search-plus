@@ -9,13 +9,13 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
-from urllib.parse import urlsplit, urlunsplit
 
+from .cache import normalize_query_for_cache
 from .cache_identity_v3 import (
     EXTRACTION_CACHE_IDENTITY_VERSION,
     ExtractionCacheIdentityV3,
 )
-from .contract_v3 import RequestV3, cache_hit_routing_receipt_v3
+from .contract_v3 import Capability, RequestV3, cache_hit_routing_receipt_v3
 
 
 CACHE_SCHEMA_VERSION = 3
@@ -155,6 +155,11 @@ def legacy_payload_from_cache_material(material: Dict[str, Any]) -> Dict[str, An
         for item in material.get("legacy_projection_hints") or []
         if isinstance(item, dict) and item.get("url")
     }
+    observations_by_id = {
+        str(item.get("observation_id")): item
+        for item in material.get("observations") or []
+        if isinstance(item, dict)
+    }
     results = []
     for item in material.get("projection") or []:
         title = item.get("title")
@@ -185,6 +190,16 @@ def legacy_payload_from_cache_material(material: Dict[str, Any]) -> Dict[str, An
                 if isinstance(text, dict)
                 else None
             )
+            # The tool output prints the publication date from the item. The
+            # provider's own value survives only in the observation. A relative
+            # form ("3 days ago") is read against the time of the hit.
+            observation = observations_by_id.get(
+                str(item.get("representative_observation_id"))
+            )
+            published = (observation or {}).get("published_at")
+            raw_date = published.get("raw") if isinstance(published, dict) else None
+            if isinstance(raw_date, str) and raw_date:
+                legacy_item["published_at"] = raw_date
         results.append(legacy_item)
     legacy = {
         "provider": material.get("origin_provider"),
@@ -206,10 +221,17 @@ def derive_cache_key(
         # The typed form already contains every extraction input that affects
         # evidence. Unlike legacy v3 keys, this is the complete SHA-256.
         return f"extract_{extraction_identity.key}"
+    request_input = request.input
+    if request.capability is Capability.SEARCH and "query" in request_input:
+        # Case and spacing do not change the question. Extraction URLs stay exact.
+        request_input = {
+            **request_input,
+            "query": normalize_query_for_cache(request_input["query"]),
+        }
     material = {
         "contract_version": request.contract_version,
         "capability": request.capability.value,
-        "input": request.input,
+        "input": request_input,
         "options": request.options,
         "routing": request.routing,
         "budget": request.budget,
@@ -480,135 +502,3 @@ class ResponseCacheV3:
             except OSError:
                 pass
         return cleared
-
-
-def peek_legacy_search(
-    root: str | Path,
-    *,
-    query: str,
-    provider: str,
-    max_results: int,
-    params: Optional[Dict[str, Any]],
-    ttl_seconds: int,
-    now: int,
-) -> CacheLookupV3:
-    """Read a v2 search entry without modifying, deleting, or refreshing it."""
-    material: Dict[str, Any] = {
-        "query": query,
-        "provider": provider,
-        "max_results": max_results,
-    }
-    if params:
-        material.update(params)
-    encoded = json.dumps(
-        material, sort_keys=True, separators=(",", ":"), ensure_ascii=False
-    ).encode("utf-8")
-    entry_id = hashlib.sha256(encoded).hexdigest()[:32]
-    path = Path(root) / f"{entry_id}.json"
-    try:
-        cached = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return CacheLookupV3("miss")
-    marker_fields = {
-        "_cache_timestamp",
-        "_cache_key",
-        "_cache_query",
-        "_cache_provider",
-    }
-    if not isinstance(cached, dict) or not marker_fields.issubset(cached):
-        return CacheLookupV3("miss")
-    timestamp = cached.get("_cache_timestamp")
-    if not isinstance(timestamp, (int, float)):
-        return CacheLookupV3("miss")
-    age = max(0, int(now - timestamp))
-    if age > max(0, int(ttl_seconds)):
-        return CacheLookupV3("miss")
-    legacy_payload = {
-        key: value for key, value in cached.items() if not key.startswith("_cache_")
-    }
-    legacy_payload["cached"] = True
-    legacy_payload["cache_age_seconds"] = age
-    return CacheLookupV3(
-        "fresh_hit",
-        entry_id=entry_id,
-        age_seconds=age,
-        source_contract_version="2.x",
-        legacy_payload=legacy_payload,
-    )
-
-
-def _legacy_canonical_url(value: str) -> str:
-    parsed = urlsplit(value)
-    return urlunsplit(
-        (
-            parsed.scheme.lower(),
-            (parsed.hostname or "").lower(),
-            parsed.path or "/",
-            parsed.query,
-            "",
-        )
-    )
-
-
-def sanitize_legacy_search(path: str | Path) -> Dict[str, Any]:
-    """Read and sanitize a v2 search entry without ever modifying its bytes."""
-    source = Path(path)
-    try:
-        payload = json.loads(source.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {"cache_status": "legacy_rejected", "observations": [], "warnings": []}
-    if not isinstance(payload, dict):
-        return {"cache_status": "legacy_rejected", "observations": [], "warnings": []}
-
-    banned = {"answer", "full_synthesis", "claim", "verification", "truth_confidence"}
-    dropped = sorted(key for key in payload if key in banned)
-    provider = str(payload.get("_cache_provider") or "legacy")
-    observations = []
-    for index, raw in enumerate(payload.get("results") or []):
-        if not isinstance(raw, dict):
-            continue
-        result = dict(raw)
-        for key in banned:
-            if key in result:
-                dropped.append(key)
-                result.pop(key, None)
-        if result.get("type") == "synthesis":
-            dropped.append("type:synthesis")
-            result.pop("type", None)
-        url = result.get("url")
-        snippet = result.get("snippet")
-        if not isinstance(url, str) or not url or not isinstance(snippet, str):
-            continue
-        observations.append(
-            {
-                "observation_id": f"obs_legacy_{index}",
-                "provider_attempt_id": "attempt_legacy_cache",
-                "provider_result_index": index,
-                "provider": provider,
-                "endpoint_id": f"{provider}:search",
-                "kind": "search_result",
-                "url": {"observed": url, "canonical": _legacy_canonical_url(url)},
-                "title": str(result.get("title")) if result.get("title") is not None else None,
-                "snippet": snippet,
-                "text": None,
-                "provider_rank": index + 1,
-                "provider_score": None,
-                "published_at": None,
-                "provider_fields": {},
-            }
-        )
-
-    warnings = []
-    if dropped:
-        warnings.append(
-            {
-                "code": "wsp.cache.legacy_field_dropped",
-                "reason": "LEGACY_FIELD_DROPPED",
-                "details": {"fields": sorted(set(dropped))},
-            }
-        )
-    return {
-        "cache_status": "legacy_hit" if observations else "legacy_rejected",
-        "observations": observations,
-        "warnings": warnings,
-    }
