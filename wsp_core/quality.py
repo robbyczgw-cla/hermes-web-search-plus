@@ -428,7 +428,7 @@ def build_quality_report(
     routing_class = routing_info.get("analysis_summary", {}).get("routing_class")
     authority_signals = build_authority_signals(routing_class, results) if routing_class else None
 
-    return {
+    report = {
         "query": query,
         "selected_provider": routing_info.get("provider") or result.get("provider"),
         "routing_reason": routing_info.get("reason"),
@@ -455,6 +455,10 @@ def build_quality_report(
             results, near_duplicate_threshold=near_duplicate_threshold
         ),
     }
+    truncated = (result.get("metadata") or {}).get("query_truncated")
+    if truncated:
+        report["query_truncated"] = truncated
+    return report
 
 
 def select_research_providers(

@@ -87,6 +87,7 @@ from .provider_registry import (
     SEARCH_PROVIDER_IDS,
     doctor_catalog,
 )
+from .query_limits import MAX_QUERY_CHARS
 from .request_gate_v3 import validate_provider_mode
 from .search_locale import (
     AUTO_LANGUAGE,
@@ -2217,6 +2218,10 @@ def run_search_request(
     """
     if not query and not (include_domains or exclude_domains):
         return {"error": "query is required", "provider": provider, "query": query, "results": []}
+    # Search engines ignore or reject longer queries; a 50k-char query only
+    # bloats the echoed answer. Per-provider limits are applied further down.
+    if isinstance(query, str) and len(query) > MAX_QUERY_CHARS:
+        query = query[:MAX_QUERY_CHARS]
     requested = str(provider or "auto").strip().lower()
     suffix_filters = _providers.public_suffix_entries(include_domains, exclude_domains)
     try:
