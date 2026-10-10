@@ -264,6 +264,19 @@ def test_legacy_request_carries_a_positive_wall_time_only():
     assert extract.budget == {"max_wall_time_ms": 5000}
 
 
+def test_wall_time_deadline_does_not_split_the_search_cache_key():
+    from wsp_core.cache_v3 import derive_cache_key
+
+    plain = legacy_request_to_v3(Capability.SEARCH, {"query": "q"})
+    tool = legacy_request_to_v3(
+        Capability.SEARCH, {"query": "q", "max_wall_time_ms": 72000}
+    )
+    research_tool = legacy_request_to_v3(
+        Capability.SEARCH, {"query": "q", "max_wall_time_ms": 87000}
+    )
+    assert derive_cache_key(plain) == derive_cache_key(tool) == derive_cache_key(research_tool)
+
+
 def test_tool_timeout_becomes_the_engine_deadline_for_search_and_extract(monkeypatch):
     seen = {}
 

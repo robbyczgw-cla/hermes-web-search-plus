@@ -234,7 +234,13 @@ def derive_cache_key(
         "input": request_input,
         "options": request.options,
         "routing": request.routing,
-        "budget": request.budget,
+        # A wall-clock deadline decides whether an answer arrives, not what it
+        # says, so it must not split cache entries.
+        "budget": {
+            key: value
+            for key, value in request.budget.items()
+            if key != "max_wall_time_ms"
+        },
     }
     if vary:
         material["vary"] = vary

@@ -959,7 +959,11 @@ def _extract_cache_vary(
     identity = ExtractionCacheIdentityV3(
         requested_urls=tuple(request.input["urls"]),
         attempt_budget={
-            "requested": dict(request.budget),
+            "requested": {
+                key: value
+                for key, value in request.budget.items()
+                if key != "max_wall_time_ms"
+            },
             "effective_max_provider_attempts": int(
                 request.budget.get(
                     "max_provider_attempts",
