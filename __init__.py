@@ -54,6 +54,7 @@ from .wsp_core.config import (
     _replace_pre_5_default_priority,
     apply_profile_effects,
     load_config,
+    provider_configured,
 )
 from .wsp_core.dates import published_date
 from .wsp_core import jev_setup
@@ -411,8 +412,35 @@ def _keyless_public_opted_in(provider: str, config_path: Optional[Path] = None) 
             with open(config_path) as f:
                 section = json.load(f).get(PROVIDER_SPECS[provider].config_section, {})
             return isinstance(section, dict) and is_truthy(section.get("allow_public"))
-    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+    except (json.JSONDecodeError, OSError, TypeError, ValueError, AttributeError):
         pass
+    return False
+
+
+def _effective_config_or_none() -> Optional[Dict[str, Any]]:
+    """The config the tools use (config.json, Desktop settings), or None if it cannot be loaded."""
+    try:
+        return load_config()
+    except Exception:
+        return None
+
+
+def _config_provider_configured(providers: List[str]) -> bool:
+    """Whether any of ``providers`` has a key, SearXNG URL or opt-in in the effective config.
+
+    Never raises: a broken config counts as nothing configured here, and a
+    provider whose URL the engine rejects (e.g. the private-network guard) is
+    treated as not configured.
+    """
+    config = _effective_config_or_none()
+    if config is None:
+        return False
+    for provider in providers:
+        try:
+            if provider_configured(provider, config):
+                return True
+        except Exception:
+            continue
     return False
 
 
@@ -1586,7 +1614,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
 
 def _web_search_plus_slash_setup(raw_args: str = "") -> str:
     """In-session lightweight status/help command."""
-    return _render_setup_guidance()
+    return _render_setup_guidance(config=_effective_config_or_none())
 
 
 def _on_session_start(**kwargs: Any) -> Optional[Dict[str, str]]:
@@ -2232,12 +2260,16 @@ def register(ctx: Any) -> None:
         return _format_results(data)
 
     def check_fn() -> bool:
-        return any(os.environ.get(k) for k in _PROVIDER_ENV_KEYS) or any(
-            _keyless_public_opted_in(p) for p in _KEYLESS_PROVIDER_IDS)
+        if any(os.environ.get(k) for k in _PROVIDER_ENV_KEYS) or any(
+                _keyless_public_opted_in(p) for p in _KEYLESS_PROVIDER_IDS):
+            return True
+        return _config_provider_configured(list(SEARCH_PROVIDER_IDS))
 
     def extract_check_fn() -> bool:
-        return any(os.environ.get(k) for k in _EXTRACT_PROVIDER_ENV_KEYS) or any(
-            _keyless_public_opted_in(p) for p in _KEYLESS_EXTRACT_PROVIDER_IDS)
+        if any(os.environ.get(k) for k in _EXTRACT_PROVIDER_ENV_KEYS) or any(
+                _keyless_public_opted_in(p) for p in _KEYLESS_EXTRACT_PROVIDER_IDS):
+            return True
+        return _config_provider_configured(list(EXTRACT_PROVIDER_IDS))
 
     ctx.register_tool(
         name="web_search_plus",
