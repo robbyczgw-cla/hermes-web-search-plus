@@ -127,8 +127,7 @@ def v3_response_to_legacy_extract(execution: ExecutedV3) -> Dict[str, Any]:
         for item in legacy.get("results") or []
         if isinstance(item, dict)
     }
-    projected = []
-    projected_urls = set()
+    projected_by_url: Dict[str, Dict[str, Any]] = {}
     for item in execution.response.results:
         observed_url = str((item.get("url") or {}).get("observed") or "")
         title = item.get("title") or {}
@@ -142,12 +141,21 @@ def v3_response_to_legacy_extract(execution: ExecutedV3) -> Dict[str, Any]:
             result["spans"] = [dict(span) for span in item["spans"]]
         if "raw_content" in result:
             result["raw_content"] = result["content"]
-        projected.append(result)
-        projected_urls.add(observed_url)
+        projected_by_url.setdefault(observed_url, result)
+    # Keep the payload's order; error items without an observation (e.g. a
+    # URL rejected before any provider call) stay in their requested slot.
+    projected = []
+    emitted = set()
+    for url, item in originals.items():
+        if url in projected_by_url:
+            projected.append(projected_by_url[url])
+        elif item.get("error"):
+            projected.append(item)
+        else:
+            continue
+        emitted.add(url)
     projected.extend(
-        item
-        for url, item in originals.items()
-        if url not in projected_urls and item.get("error")
+        result for url, result in projected_by_url.items() if url not in emitted
     )
     legacy["results"] = projected
     if execution.response.cache_status.get("disposition") in {

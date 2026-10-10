@@ -160,7 +160,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
 
     def test_extract_plus_auto_prefers_tavily_when_available(self):
         with mock.patch.dict(os.environ, {"TAVILY_API_KEY": "tvly-test", "FIRECRAWL_API_KEY": "fc-test", "LINKUP_API_KEY": "linkup-test"}, clear=False):
-            with mock.patch("wsp_core.providers.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
+            with mock.patch("wsp_core.providers.extract_tavily", return_value={"provider": "tavily", "results": [{"url": "https://example.com", "content": "page"}]}) as mock_tavily:
                 result = extract.extract_plus(["https://example.com"], provider="auto")
 
         self.assertEqual(result["provider"], "tavily")
@@ -217,7 +217,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
             }
         }
         with mock.patch.dict(os.environ, {"SERPER_API_KEY": "serper-test", "PARALLEL_API_KEY": "parallel-test"}, clear=True):
-            with mock.patch("wsp_core.providers.extract_serper", return_value={"provider": "serper", "results": []}) as mock_serper:
+            with mock.patch("wsp_core.providers.extract_serper", return_value={"provider": "serper", "results": [{"url": "https://example.com", "content": "page"}]}) as mock_serper:
                 with mock.patch("wsp_core.providers.extract_parallel") as mock_parallel:
                     result = extract.extract_plus(["https://example.com"], provider="auto", config=config)
 
@@ -264,7 +264,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
     def test_extract_plus_auto_prefers_tavily_over_exa(self):
         with mock.patch.dict(os.environ, {"EXA_API_KEY": "exa-test", "TAVILY_API_KEY": "tvly-test"}, clear=True):
             with mock.patch("wsp_core.providers.extract_exa", return_value={"provider": "exa", "results": []}) as mock_exa:
-                with mock.patch("wsp_core.providers.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
+                with mock.patch("wsp_core.providers.extract_tavily", return_value={"provider": "tavily", "results": [{"url": "https://example.com", "content": "page"}]}) as mock_tavily:
                     result = extract.extract_plus(["https://example.com"], provider="auto")
 
         self.assertEqual(result["provider"], "tavily")
@@ -366,7 +366,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
     def test_extract_plus_ignores_legacy_cooldown_state(self):
         with mock.patch.dict(os.environ, {"TAVILY_API_KEY": "tvly-test", "LINKUP_API_KEY": "linkup-test"}, clear=True):
             with mock.patch("wsp_core.provider_health.provider_in_cooldown") as legacy_cooldown:
-                with mock.patch("wsp_core.providers.extract_tavily", return_value={"provider": "tavily", "results": []}) as mock_tavily:
+                with mock.patch("wsp_core.providers.extract_tavily", return_value={"provider": "tavily", "results": [{"url": "https://example.com", "content": "page"}]}) as mock_tavily:
                     with mock.patch("wsp_core.providers.extract_linkup", return_value={"provider": "linkup", "results": [{"url": "https://example.com", "content": "fallback"}]}):
                         result = extract.extract_plus(["https://example.com"], provider="auto")
 

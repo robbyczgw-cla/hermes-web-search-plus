@@ -475,11 +475,22 @@ def response_from_legacy(
         if isinstance(authoritative_attempts, (list, tuple))
         else _attempts(request, plan, payload, selected, len(raw_items))
     )
+    successful_attempts = [
+        attempt for attempt in provider_attempts if attempt.outcome is AttemptOutcome.SUCCESS
+    ]
+    # Prefer the selected provider's attempt: per-URL extract fallback can
+    # leave later successful attempts that contributed nothing.
     successful_attempt = next(
-        (attempt for attempt in reversed(provider_attempts) if attempt.outcome is AttemptOutcome.SUCCESS),
-        None,
+        (attempt for attempt in reversed(successful_attempts) if attempt.provider == selected),
+        successful_attempts[-1] if successful_attempts else None,
     )
-    if aggregate_research and authoritative_attempts:
+    # Per-URL extract fallback can merge items from several providers; each
+    # item is then tied to its own provider's successful attempt.
+    multi_source_extract = request.capability is Capability.EXTRACT and len(
+        {attempt.provider for attempt in successful_attempts}
+        & {str(item.get("provider")) for item in raw_items if not item.get("error")}
+    ) > 1
+    if (aggregate_research or multi_source_extract) and authoritative_attempts:
         observations = []
         for attempt in provider_attempts:
             if attempt.outcome is not AttemptOutcome.SUCCESS:
