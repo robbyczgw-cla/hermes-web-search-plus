@@ -1856,6 +1856,12 @@ def _format_results(data: dict, *, now: Optional[datetime] = None) -> str:
         except Exception:
             pass
     lines.append("[" + " | ".join(header_bits) + "]")
+    if not results:
+        # A successful call with no hits must not read like a success with content.
+        lines.append(
+            "No results found for this query. Do not invent sources or facts; "
+            "try a broader query, different filters or another provider."
+        )
 
     freshness_meta = (data.get("metadata") or {}).get("freshness")
     if isinstance(freshness_meta, dict) and freshness_meta.get("requested"):
@@ -2133,7 +2139,9 @@ def register(ctx: Any) -> None:
     schema = {
         "name": "web_search_plus",
         "description": (
-            "Multi-provider web search with automatic routing by query type: "
+            "Source search with filters, freshness and research mode. "
+            "Use it instead of web_search when you need domain filters, freshness or research mode. "
+            "Automatic routing by query type: "
             "Brave first for general, news, local and community queries, "
             "Exa for docs and academic queries, Serper for security and shopping queries; "
             "if a provider fails, is slow or returns nothing, the next configured one is tried. "
@@ -2336,8 +2344,9 @@ def register(ctx: Any) -> None:
     extract_schema = {
         "name": "web_extract_plus",
         "description": (
-            "Multi-provider URL content extraction. Auto tries Tavily, Exa, Linkup, "
-            "Firecrawl, You.com, Serper (plus keyless Keenable when its public endpoint is opted in); "
+            "Read pages as clean text, with provider fallback. Auto tries Tavily, Exa, Linkup, "
+            "Parallel, Firecrawl, You.com, Keenable, Serper in that order "
+            "(keyless Keenable only when its public endpoint is opted in); "
             "force a provider for robust scraping, clean markdown, or explicit fallback tests."
         ),
         "parameters": {
