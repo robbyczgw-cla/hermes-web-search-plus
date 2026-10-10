@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v5.0.0
+web-search-plus — Hermes Plugin v5.0.1
 Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "5.0.0"
+__version__ = "5.0.1"
 
 import argparse
 import getpass
@@ -54,6 +54,7 @@ from .wsp_core.config import (
     _replace_pre_5_default_priority,
     apply_profile_effects,
     load_config,
+    provider_configured,
 )
 from .wsp_core.dates import published_date
 from .wsp_core import jev_setup
@@ -411,8 +412,35 @@ def _keyless_public_opted_in(provider: str, config_path: Optional[Path] = None) 
             with open(config_path) as f:
                 section = json.load(f).get(PROVIDER_SPECS[provider].config_section, {})
             return isinstance(section, dict) and is_truthy(section.get("allow_public"))
-    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+    except (json.JSONDecodeError, OSError, TypeError, ValueError, AttributeError):
         pass
+    return False
+
+
+def _effective_config_or_none() -> Optional[Dict[str, Any]]:
+    """The config the tools use (config.json, Desktop settings), or None if it cannot be loaded."""
+    try:
+        return load_config()
+    except Exception:
+        return None
+
+
+def _config_provider_configured(providers: List[str]) -> bool:
+    """Whether any of ``providers`` has a key, SearXNG URL or opt-in in the effective config.
+
+    Never raises: a broken config counts as nothing configured here, and a
+    provider whose URL the engine rejects (e.g. the private-network guard) is
+    treated as not configured.
+    """
+    config = _effective_config_or_none()
+    if config is None:
+        return False
+    for provider in providers:
+        try:
+            if provider_configured(provider, config):
+                return True
+        except Exception:
+            continue
     return False
 
 
@@ -1586,7 +1614,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
 
 def _web_search_plus_slash_setup(raw_args: str = "") -> str:
     """In-session lightweight status/help command."""
-    return _render_setup_guidance()
+    return _render_setup_guidance(config=_effective_config_or_none())
 
 
 def _on_session_start(**kwargs: Any) -> Optional[Dict[str, str]]:
@@ -1632,6 +1660,17 @@ def _search_timeout(mode: str, research_time_budget: float, base: int = 75) -> i
     if mode == "research":
         return max(base, int(research_time_budget) + 15)
     return base
+
+
+# Margin between the engine's request deadline and the tool's wall-clock
+# timeout: the engine stops starting provider attempts slightly before the
+# caller gives up, so no billable call begins after the user saw a timeout.
+_DEADLINE_MARGIN_SECONDS = 3
+
+
+def _engine_deadline_ms(timeout: int) -> int:
+    """Request deadline (ms) handed to the engine for a tool timeout in seconds."""
+    return max(1000, int((timeout - _DEADLINE_MARGIN_SECONDS) * 1000))
 
 
 def _call_with_timeout(fn: Callable[[], dict], timeout: int) -> dict:
@@ -1680,6 +1719,7 @@ def _run_search(
             exclude_domains=exclude_domains, mode=mode, quality_report=quality_report,
             research_time_budget=research_time_budget, language=language, country=country,
             no_cache=no_cache, cache_ttl=cache_ttl,
+            max_wall_time_ms=_engine_deadline_ms(timeout),
         )
 
     try:
@@ -1711,6 +1751,7 @@ def _run_extract(
             urls, provider=provider, output_format=output_format,
             include_images=include_images, include_raw_html=include_raw_html,
             render_js=render_js, spans=spans, spans_query=spans_query,
+            max_wall_time_ms=_engine_deadline_ms(timeout),
         )
 
     try:
@@ -1721,7 +1762,14 @@ def _run_extract(
         return {"error": str(e), "provider": provider, "results": []}
 
 
-def _source_summary_excerpt(content: str, query: Optional[str] = None, limit: int = 500) -> str:
+def _source_total_chars(src: dict, shown: int) -> int:
+    """Real page length: the engine's original length when it cut the text to its budget."""
+    info = src.get("full_text")
+    original = info.get("original_chars") if isinstance(info, dict) else None
+    return original if isinstance(original, int) and original > shown else shown
+
+
+def _source_summary_excerpt(content: str, query: Optional[str] = None, limit: int = 500, total_chars: Optional[int] = None) -> str:
     """Keep 500 chars, preferring a query-ranked span over the page prefix."""
     text = (content or "").strip()
     if len(text) <= limit:
@@ -1740,7 +1788,7 @@ def _source_summary_excerpt(content: str, query: Optional[str] = None, limit: in
                     kind = "query-ranked"
         except Exception:
             pass
-    return f"{excerpt} [TRUNCATED: showing {kind} {len(excerpt)} of {len(text)} characters]"
+    return f"{excerpt} [TRUNCATED: showing {kind} {len(excerpt)} of {total_chars or len(text)} characters]"
 
 
 # Exa highlights and Tavily content run to several thousand characters per
@@ -1821,6 +1869,20 @@ def _format_results(data: dict, *, now: Optional[datetime] = None) -> str:
         except Exception:
             pass
     lines.append("[" + " | ".join(header_bits) + "]")
+    if not results:
+        # A successful call with no hits must not read like a success with content.
+        lines.append(
+            "No results found for this query. Do not invent sources or facts; "
+            "try a broader query, different filters or another provider."
+        )
+
+    truncated_meta = (data.get("metadata") or {}).get("query_truncated")
+    if isinstance(truncated_meta, dict):
+        lines.append(
+            f"[Query shortened for {truncated_meta.get('provider')}: "
+            f"{truncated_meta.get('original_chars')} -> {truncated_meta.get('sent_chars')} characters "
+            f"(limit {truncated_meta.get('limit_chars')} characters / {truncated_meta.get('limit_words')} words)]"
+        )
 
     freshness_meta = (data.get("metadata") or {}).get("freshness")
     if isinstance(freshness_meta, dict) and freshness_meta.get("requested"):
@@ -1879,10 +1941,10 @@ def _format_results(data: dict, *, now: Optional[datetime] = None) -> str:
             if passages:
                 noun = "passage" if len(passages) == 1 else "passages"
                 lines.append(
-                    f"   {' … '.join(passages)} [showing {len(passages)} query-ranked {noun} of {len(content)} characters]"
+                    f"   {' … '.join(passages)} [showing {len(passages)} query-ranked {noun} of {_source_total_chars(src, len(content))} characters]"
                 )
             elif content:
-                lines.append(f"   {_source_summary_excerpt(content, query)}")
+                lines.append(f"   {_source_summary_excerpt(content, query, total_chars=_source_total_chars(src, len(content)))}")
         lines.append("")
 
     now = now or datetime.now(timezone.utc)
@@ -1926,9 +1988,6 @@ def _sanitize_extract_content(content: str) -> str:
 
 
 _MAX_TOOL_COUNT = 20
-# Search engines ignore or reject longer queries (Google ~2k, Brave 400
-# chars); a 50k-char query only bloats the echoed answer.
-_MAX_TOOL_QUERY_CHARS = 2000
 
 
 def _clean_tool_count(value: Any, fallback: int = 5) -> int:
@@ -1991,9 +2050,53 @@ def _split_extract_content(content: str, limit: int) -> tuple[str, str, int, int
     return head, tail, omitted_start_line, omitted_chars
 
 
-def _format_truncated_extract_content(content: str, url: str, limit: int) -> str:
+def _format_budget_truncated_content(cleaned: str, limit: int, full_text: dict) -> str:
+    """Format text the engine already cut to its context budget.
+
+    The real page is longer than ``cleaned``. Report the real length and point
+    at the engine's full-text file only if it was verified; never claim that
+    the shown text is the whole page.
+    """
+    original = full_text.get("original_chars")
+    original_note = f"original {original} chars" if isinstance(original, int) else "original length unknown"
+    if len(cleaned) > limit:
+        head, tail, omitted_start_line, _ = _split_extract_content(cleaned, limit)
+        shown = len(head) + len(tail)
+        body = f"{head}\n\n[... omitted middle; see footer ...]\n\n{tail}"
+        shown_note = f"showing {shown} chars (head and a later section of the page)"
+    else:
+        head, tail = cleaned, ""
+        shown = len(cleaned)
+        omitted_start_line = cleaned.count("\n") + 1
+        body = cleaned
+        shown_note = f"showing the first {shown} chars"
+    omitted_note = f"; {original - shown} chars omitted" if isinstance(original, int) and original >= shown else ""
+    footer = ["", "---", f"[Content truncated: {original_note}{omitted_note}; {shown_note}.]"]
+    if full_text.get("stored") and full_text.get("path"):
+        path = full_text["path"]
+        # Line 1 of the stored file is a metadata comment, so text line N is file line N+1.
+        footer.append(f"Full cleaned text stored at: {path}")
+        footer.append(
+            "Read the omitted part with Hermes file tool: "
+            f"read_file(path=\"{path}\", offset={omitted_start_line + 1}, limit=500)"
+        )
+        if tail:
+            footer.append(
+                "The page continues after the shown tail: "
+                f"read_file(path=\"{path}\", offset={cleaned.count(chr(10)) + 2}, limit=500)"
+            )
+        footer.append("Repeat read_file with the next offset to page through the rest.")
+    else:
+        footer.append("No full text is stored, so only the shown part of this page is available.")
+        footer.append("Requesting fewer URLs per call gives each page a larger share of the context budget.")
+    return body + "\n" + "\n".join(footer)
+
+
+def _format_truncated_extract_content(content: str, url: str, limit: int, full_text: Optional[dict] = None) -> str:
     """Return inline-safe extract content, storing full text when truncated."""
     cleaned = _sanitize_extract_content(content)
+    if isinstance(full_text, dict) and full_text.get("truncated"):
+        return _format_budget_truncated_content(cleaned, limit, full_text)
     if len(cleaned) <= limit:
         return cleaned
 
@@ -2037,7 +2140,7 @@ def _format_extract_results(data: dict) -> str:
         if r.get("error"):
             lines.append(f"Error: {r['error']}")
         elif content:
-            lines.append(_format_truncated_extract_content(content, url, limit))
+            lines.append(_format_truncated_extract_content(content, url, limit, r.get("full_text")))
         if "spans" in r:
             lines.append(
                 "Semantic spans (contract v{}): {}".format(
@@ -2054,7 +2157,9 @@ def register(ctx: Any) -> None:
     schema = {
         "name": "web_search_plus",
         "description": (
-            "Multi-provider web search with automatic routing by query type: "
+            "Source search with filters, freshness and research mode. "
+            "Use it instead of web_search when you need domain filters, freshness or research mode. "
+            "Automatic routing by query type: "
             "Brave first for general, news, local and community queries, "
             "Exa for docs and academic queries, Serper for security and shopping queries; "
             "if a provider fails, is slow or returns nothing, the next configured one is tried. "
@@ -2205,8 +2310,6 @@ def register(ctx: Any) -> None:
                 cache_ttl = int(cache_ttl)
             except (TypeError, ValueError, OverflowError):
                 cache_ttl = None
-        if isinstance(query, str) and len(query) > _MAX_TOOL_QUERY_CHARS:
-            query = query[:_MAX_TOOL_QUERY_CHARS]
         count = _clean_tool_count(count)
         provider, provider_error = _clean_tool_provider(provider)
         if provider_error:
@@ -2232,12 +2335,16 @@ def register(ctx: Any) -> None:
         return _format_results(data)
 
     def check_fn() -> bool:
-        return any(os.environ.get(k) for k in _PROVIDER_ENV_KEYS) or any(
-            _keyless_public_opted_in(p) for p in _KEYLESS_PROVIDER_IDS)
+        if any(os.environ.get(k) for k in _PROVIDER_ENV_KEYS) or any(
+                _keyless_public_opted_in(p) for p in _KEYLESS_PROVIDER_IDS):
+            return True
+        return _config_provider_configured(list(SEARCH_PROVIDER_IDS))
 
     def extract_check_fn() -> bool:
-        return any(os.environ.get(k) for k in _EXTRACT_PROVIDER_ENV_KEYS) or any(
-            _keyless_public_opted_in(p) for p in _KEYLESS_EXTRACT_PROVIDER_IDS)
+        if any(os.environ.get(k) for k in _EXTRACT_PROVIDER_ENV_KEYS) or any(
+                _keyless_public_opted_in(p) for p in _KEYLESS_EXTRACT_PROVIDER_IDS):
+            return True
+        return _config_provider_configured(list(EXTRACT_PROVIDER_IDS))
 
     ctx.register_tool(
         name="web_search_plus",
@@ -2253,8 +2360,9 @@ def register(ctx: Any) -> None:
     extract_schema = {
         "name": "web_extract_plus",
         "description": (
-            "Multi-provider URL content extraction. Auto tries Tavily, Exa, Linkup, "
-            "Firecrawl, You.com, Serper (plus keyless Keenable when its public endpoint is opted in); "
+            "Read pages as clean text, with provider fallback. Auto tries Tavily, Exa, Linkup, "
+            "Parallel, Firecrawl, You.com, Keenable, Serper in that order "
+            "(keyless Keenable only when its public endpoint is opted in); "
             "force a provider for robust scraping, clean markdown, or explicit fallback tests."
         ),
         "parameters": {

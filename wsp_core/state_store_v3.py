@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import os
 import secrets
 import sqlite3
@@ -24,6 +25,9 @@ DEFAULT_OPEN_SECONDS = {
     ErrorClass.TRANSIENT: 60,
     ErrorClass.TIMEOUT: 60,
 }
+# Longest circuit-open window taken from a provider's Retry-After; matches the
+# legacy cooldown ceiling so a hostile or buggy header cannot park a provider.
+MAX_OPEN_SECONDS = 3600
 # A single 5xx or timeout is usually a blip. Transient and timeout buckets
 # block admission only after this many consecutive failures; a success
 # deletes the bucket and resets the count. Auth, quota and rate-limit
@@ -314,12 +318,11 @@ class SQLiteStateStore:
         if not self._available:
             return CircuitRecord(CircuitState.UNKNOWN)
         state = self._state_for(error_class)
-        seconds = int(
-            retry_after_seconds
-            if retry_after_seconds is not None
-            else DEFAULT_OPEN_SECONDS.get(error_class, 60)
-        )
-        open_until = now + max(1, seconds)
+        if retry_after_seconds is not None and math.isfinite(retry_after_seconds):
+            seconds = int(min(retry_after_seconds, MAX_OPEN_SECONDS))
+        else:
+            seconds = DEFAULT_OPEN_SECONDS.get(error_class, 60)
+        open_until = now + min(max(1, seconds), MAX_OPEN_SECONDS)
         try:
             connection = self._connect()
             try:

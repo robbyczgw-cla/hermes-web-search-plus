@@ -23,6 +23,8 @@ from .http_client import (
     make_request,
     urlopen,
 )
+from .errors_v3 import classify_provider_error
+from .contract_v3 import ErrorClass
 from .quality import _title_from_url
 from .diversity_v3 import MULTI_LABEL_SUFFIXES
 from .urls import (
@@ -1007,6 +1009,30 @@ def _normalize_extract_result(
             result[key] = value
     return result
 
+# Errors that hit the whole provider account; they must reach the attempt
+# engine (circuit breaker, fallback) instead of becoming a per-URL item.
+_PROVIDER_WIDE_ERROR_CLASSES = frozenset(
+    {ErrorClass.AUTH, ErrorClass.QUOTA, ErrorClass.RATE_LIMIT, ErrorClass.CONFIG}
+)
+
+
+def _per_url_extract_error(provider: str, url: str, label: str, exc: ProviderRequestError) -> Dict[str, Any]:
+    """Turn one URL's fetch error into an error item, or re-raise account-wide errors."""
+    if classify_provider_error(exc, provider=provider).error_class in _PROVIDER_WIDE_ERROR_CLASSES:
+        raise exc
+    status = f" (HTTP {exc.status_code})" if isinstance(exc.status_code, int) else ""
+    return _normalize_extract_result(provider, url, error=f"{label} failed{status}")
+
+
+def _per_url_extract_payload(
+    provider: str, results: List[Dict[str, Any]], first_error: Optional[BaseException]
+) -> dict:
+    """Keep fetched URLs; when every URL failed, raise the first error as before."""
+    if first_error is not None and all(item.get("error") for item in results):
+        raise first_error
+    return {"provider": provider, "results": results}
+
+
 def extract_firecrawl(
     urls: List[str],
     api_key: str,
@@ -1024,11 +1050,18 @@ def extract_firecrawl(
 
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     results: List[Dict[str, Any]] = []
+    first_error: Optional[ProviderRequestError] = None
     for url in urls:
         body: Dict[str, Any] = {"url": url, "formats": formats}
         if render_js:
             body["waitFor"] = 1000
-        data = make_request(api_url, headers, body, timeout=timeout)
+        try:
+            data = make_request(api_url, headers, body, timeout=timeout)
+        except ProviderRequestError as exc:
+            # One failing URL must not discard the pages already paid for.
+            results.append(_per_url_extract_error("firecrawl", url, "Firecrawl scrape", exc))
+            first_error = first_error or exc
+            continue
         if data.get("success") is False:
             results.append(_normalize_extract_result("firecrawl", url, error="Firecrawl scrape failed"))
             continue
@@ -1061,7 +1094,7 @@ def extract_firecrawl(
             images=images,
             metadata=metadata,
         ))
-    return {"provider": "firecrawl", "results": results}
+    return _per_url_extract_payload("firecrawl", results, first_error)
 
 def extract_linkup(
     urls: List[str],
@@ -1101,6 +1134,8 @@ def extract_linkup(
     if len(urls) <= 1:
         return {"provider": "linkup", "results": [fetch_one(url) for url in urls]}
 
+    first_error: Optional[ProviderRequestError] = None
+
     workers = min(len(urls), 5)
     # Bound the total wait so one hung fetch cannot stall the whole batch beyond
     # the per-request HTTP timeout window (plus a small scheduling grace).
@@ -1125,7 +1160,11 @@ def extract_linkup(
             results.append(_normalize_extract_result(
                 "linkup", url, error=f"Extraction timed out after {overall_timeout}s",
             ))
-    return {"provider": "linkup", "results": results}
+        except ProviderRequestError as exc:
+            # One failing URL must not discard the pages already paid for.
+            results.append(_per_url_extract_error("linkup", url, "Linkup fetch", exc))
+            first_error = first_error or exc
+    return _per_url_extract_payload("linkup", results, first_error)
 
 def extract_tavily(
     urls: List[str],
@@ -1189,6 +1228,16 @@ def extract_exa(
             image=item.get("image") if include_images else None,
             favicon=item.get("favicon"),
         ))
+    # Exa reports per-URL crawl failures only in "statuses"; surface them as
+    # error items so they are neither silently dropped nor cached.
+    returned = {str(item.get(key)) for item in data.get("results", []) for key in ("url", "id") if item.get(key)}
+    for status in data.get("statuses") or []:
+        if not isinstance(status, dict) or status.get("status") in (None, "success"):
+            continue
+        failed_url = status.get("id")
+        if isinstance(failed_url, str) and failed_url and failed_url not in returned:
+            results.append(_normalize_extract_result("exa", failed_url, error="Exa could not fetch this URL"))
+            returned.add(failed_url)
     return {
         "provider": "exa",
         "results": results,

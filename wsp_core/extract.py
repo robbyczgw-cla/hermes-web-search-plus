@@ -55,6 +55,7 @@ from .orchestrator_v3 import (
 )
 from .runtime_v3 import response_from_legacy
 from .state_store_v3 import SQLiteStateStore
+from .urls import canonical_url
 
 
 EXTRACT_PROVIDER_PRIORITY = list(EXTRACT_PROVIDER_IDS)
@@ -338,10 +339,74 @@ def _validate_extract_urls(urls: List[str], config: Optional[Dict[str, Any]] = N
         for _family, _type, _proto, _canonname, sockaddr in resolved_ips:
             ip = ipaddress.ip_address(str(sockaddr[0]).split("%", 1)[0])
             if _is_private_or_internal_ip(str(ip)):
+                # Never echo the resolved address: it would reveal internal
+                # network layout to the model.
                 raise ExtractUrlSecurityError(
-                    f"Extraction URL blocked: {hostname} resolves to private/internal IP {ip}"
+                    f"Extraction URL blocked: {hostname} resolves to a private/internal address"
                 )
     return urls
+
+
+def _check_extract_urls(
+    urls: List[str], config: Optional[Dict[str, Any]] = None
+) -> List[tuple]:
+    """Validate each URL on its own so one bad URL cannot sink the batch.
+
+    Returns ``(requested_url, validated_url, error)`` per requested URL, in
+    order; exactly one of ``validated_url`` and ``error`` is set.
+    """
+    checked = []
+    for url in urls:
+        try:
+            checked.append((url, _validate_extract_urls([url], config)[0], None))
+        except ValueError as exc:  # includes ExtractUrlSecurityError
+            checked.append((url, None, str(exc)))
+    return checked
+
+
+_EMPTY_EXTRACT_ERROR = "No content could be extracted from this URL"
+
+
+def _extract_item_usable(item: Any) -> bool:
+    """A per-URL result counts as success only with non-blank content."""
+    if not isinstance(item, dict) or item.get("error"):
+        return False
+    content = item.get("content") or item.get("raw_content") or ""
+    return bool(str(content).strip())
+
+
+def _match_extract_items(urls: List[str], items: List[Any]) -> List[Optional[Dict[str, Any]]]:
+    """Pair provider result items with the requested URLs, one item per URL.
+
+    Exact URL first, then canonical URL, then the remaining items in order
+    (providers report redirect targets). URLs left without an item get None.
+    """
+    candidates = [item for item in items if isinstance(item, dict)]
+    matched: List[Optional[Dict[str, Any]]] = [None] * len(urls)
+    used = set()
+    for key in (str, canonical_url):
+        for position, url in enumerate(urls):
+            if matched[position] is not None:
+                continue
+            wanted = key(url)
+            if not wanted:
+                continue
+            for index, item in enumerate(candidates):
+                if index not in used and key(str(item.get("url") or "")) == wanted:
+                    matched[position] = item
+                    used.add(index)
+                    break
+    leftovers = [item for index, item in enumerate(candidates) if index not in used]
+    for position in range(len(urls)):
+        if matched[position] is None and leftovers:
+            matched[position] = leftovers.pop(0)
+    return matched
+
+
+def _extract_error_item(url: str, error: str, item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    if item is not None:
+        return {**item, "error": item.get("error") or error}
+    return {"url": url, "title": "", "content": "", "error": error}
 
 
 def _extract_plus_core(
@@ -352,11 +417,13 @@ def _extract_plus_core(
     include_raw_html: bool = False,
     render_js: bool = False,
     config: Optional[Dict[str, Any]] = None,
+    urls_validated: bool = False,
 ) -> dict:
     """One extraction attempt against one provider.
 
     The v3 attempt engine owns fallback, retry and circuit state, so failures
-    raise instead of moving on to another provider.
+    raise instead of moving on to another provider. ``urls_validated`` skips
+    the URL check (and its DNS lookups) when the caller already ran it.
     """
     config = config or load_config()
     selected = provider or "auto"
@@ -367,10 +434,11 @@ def _extract_plus_core(
     )
     if not urls:
         return {"provider": selected, "results": [], "error": "No URLs provided", "requested_provider": selected}
-    try:
-        urls = _validate_extract_urls(urls, config)
-    except (ValueError, ExtractUrlSecurityError) as exc:
-        return {"provider": selected, "results": [], "error": str(exc), "requested_provider": selected}
+    if not urls_validated:
+        try:
+            urls = _validate_extract_urls(urls, config)
+        except (ValueError, ExtractUrlSecurityError) as exc:
+            return {"provider": selected, "results": [], "error": str(exc), "requested_provider": selected}
     if selected not in EXTRACT_PROVIDER_PRIORITY:
         return {
             "provider": selected,
@@ -402,7 +470,9 @@ def _extract_plus_core(
         result.setdefault("metadata", {})["jev_extract_quality"] = jev_meta
         if not res_list:
             raise ProviderContractFailure("jev_extract_quality_rejected")
-    if res_list and all(r.get("error") for r in res_list):
+    if not any(_extract_item_usable(r) for r in res_list):
+        # Empty lists and blank pages are failures too, so they fall back
+        # and are never cached as a success.
         raise ProviderContractFailure("all_urls_failed")
     result["routing"] = {"provider": selected, "requested_provider": selected, "fallback_used": False, "fallback_errors": []}
     if profile_deviation:
@@ -452,15 +522,16 @@ def _execute_extract_v3(
     request: RequestV3, plan: ProviderPlan, config: Dict[str, Any]
 ) -> CapabilityExecution:
     options = request.options
-    try:
-        urls = _validate_extract_urls(list(request.input["urls"]), config)
-    except (ValueError, ExtractUrlSecurityError) as exc:
+    checked = _check_extract_urls(list(request.input["urls"]), config)
+    urls = [validated for _url, validated, error in checked if error is None]
+    if not urls:
         requested = str(request.routing.get("provider") or "auto")
+        messages = list(dict.fromkeys(error for _url, _validated, error in checked))
         return CapabilityExecution(
             payload={
                 "provider": requested,
                 "results": [],
-                "error": str(exc),
+                "error": "; ".join(messages),
                 "requested_provider": requested,
             },
             stages=(),
@@ -487,13 +558,19 @@ def _execute_extract_v3(
     successful_provider = None
     deadline = request_deadline(request.budget)
     daily_budget = _daily_preflight_budget(config)
+    # Per-URL state, indexed by position in ``urls``: URLs that failed or came
+    # back blank on one provider are retried on the next one.
+    pending = list(range(len(urls)))
+    succeeded: Dict[int, Dict[str, Any]] = {}
+    failed: Dict[int, Dict[str, Any]] = {}
+    serving_providers = []
 
     for provider in plan.candidate_order:
         context = provider_attempt_context(
             store, provider, Capability.EXTRACT, config.get(provider) or {}, get_api_key(provider, config),
             budget_scope=scope, budget_limit_units=budget_limit, deadline_monotonic=deadline, **daily_budget,
         )
-        if payload is not None:
+        if not pending:
             receipts.append(
                 engine.skip(context, SkipReason.POLICY_EXCLUDED).receipt
             )
@@ -503,16 +580,18 @@ def _execute_extract_v3(
                 engine.skip(context, SkipReason.DEADLINE_EXCEEDED).receipt
             )
             continue
+        batch = [urls[position] for position in pending]
 
-        def operation(current_provider=provider):
+        def operation(current_provider=provider, batch=batch):
             result = _extract_plus_core(
-                urls=urls,
+                urls=batch,
                 provider=current_provider,
                 output_format=str(options.get("output_format", "markdown")),
                 include_images=bool(options.get("include_images", False)),
                 include_raw_html=bool(options.get("include_raw_html", False)),
                 render_js=bool(options.get("render_js", False)),
                 config=dict(config),
+                urls_validated=True,
             )
             if result.get("error"):
                 raise ProviderRequestError(str(result["error"]), transient=False)
@@ -521,8 +600,21 @@ def _execute_extract_v3(
         attempted = engine.execute(context, operation)
         receipts.append(attempted.receipt)
         if attempted.payload is not None:
-            payload = attempted.payload
-            successful_provider = provider
+            if payload is None:
+                payload = attempted.payload
+                successful_provider = provider
+            still_pending = []
+            for position, item in zip(
+                pending, _match_extract_items(batch, attempted.payload.get("results") or [])
+            ):
+                if _extract_item_usable(item):
+                    succeeded[position] = (provider, item)
+                    if provider not in serving_providers:
+                        serving_providers.append(provider)
+                else:
+                    failed[position] = _extract_error_item(urls[position], _EMPTY_EXTRACT_ERROR, item)
+                    still_pending.append(position)
+            pending = still_pending
             continue
         error_code = (
             "all_urls_failed"
@@ -536,6 +628,8 @@ def _execute_extract_v3(
         )
         fallback_errors.append({"provider": provider, "error": error_code})
 
+    if payload is not None and not succeeded:
+        payload = None
     if payload is None:
         payload = {
             "provider": plan.selected_provider,
@@ -546,6 +640,40 @@ def _execute_extract_v3(
         add_provider_setup_guidance(payload, "extract", list(plan.candidate_order), config,
                                     requested_provider=str(request.routing.get("provider") or "auto"))
     else:
+        if pending or len(serving_providers) > 1 or len(urls) < len(checked):
+            # Rebuild the result list in requested-URL order: content from
+            # whichever provider served each URL, error items for the rest.
+            merged = len(serving_providers) > 1
+            results = []
+            positions = iter(range(len(urls)))
+            for requested_url, _validated, error in checked:
+                if error is not None:
+                    results.append(_extract_error_item(requested_url, error))
+                    continue
+                position = next(positions)
+                if position in succeeded:
+                    provider, item = succeeded[position]
+                    if merged:
+                        # Ties each item to the attempt that produced it.
+                        item = {**item, "provider": provider}
+                else:
+                    item = failed.get(position) or _extract_error_item(urls[position], _EMPTY_EXTRACT_ERROR)
+                results.append(item)
+            payload = {**payload, "results": results}
+            if merged:
+                # The receipt names one selected provider: the last one the
+                # fallback reached. Earlier contributors are recorded as
+                # attempts with insufficient results.
+                successful_provider = serving_providers[-1]
+                payload["provider"] = successful_provider
+        # Failures after the selected provider (retrying leftover URLs) stay
+        # in the attempt receipts; fallback_errors lists what preceded it.
+        selected_index = plan.candidate_order.index(successful_provider)
+        fallback_errors = [
+            entry
+            for entry in fallback_errors
+            if plan.candidate_order.index(entry["provider"]) < selected_index
+        ]
         routing = payload.setdefault("routing", {})
         routing["requested_provider"] = str(
             request.routing.get("provider") or "auto"
@@ -568,6 +696,54 @@ def _execute_extract_v3(
     )
 
 
+def _full_text_store(config: Dict[str, Any]) -> FullTextStore:
+    policy = config.get("bounded_context") or {}
+    if not isinstance(policy, dict):
+        policy = {}
+    return FullTextStore(
+        Path(policy.get("cache_root") or CACHE_DIR),
+        ttl_seconds=int(
+            policy.get("full_text_ttl_seconds", DEFAULT_FULL_TEXT_TTL_SECONDS)
+        ),
+        max_bytes=int(
+            policy.get("full_text_max_bytes", DEFAULT_FULL_TEXT_MAX_BYTES)
+        ),
+    )
+
+
+def _resolve_full_text_paths(legacy: Dict[str, Any], config: Dict[str, Any]) -> None:
+    """Turn projected full-text references into verified file paths in place.
+
+    A path is only exposed when the stored file still reads back with the
+    recorded sha256 and length; otherwise the result says nothing is stored.
+    """
+    store = None
+    for result in legacy.get("results") or []:
+        info = result.get("full_text") if isinstance(result, dict) else None
+        if not isinstance(info, dict):
+            continue
+        key = info.pop("store_key", None)
+        digest = info.get("sha256")
+        path = None
+        if isinstance(key, str) and key:
+            try:
+                store = store or _full_text_store(config)
+                text = store.lookup(key)
+                if (
+                    isinstance(text, str)
+                    and len(text) == info.get("original_chars")
+                    and hashlib.sha256(text.encode("utf-8")).hexdigest() == digest
+                ):
+                    path = str(store.path_for_key(key))
+            except (OSError, ValueError):
+                path = None
+        info["stored"] = path is not None
+        if path is not None:
+            info["path"] = path
+        else:
+            info.pop("sha256", None)
+
+
 def _finalize_extract_response(
     request: RequestV3,
     response: ResponseV3,
@@ -577,19 +753,7 @@ def _finalize_extract_response(
     context_plan=None,
 ) -> ResponseV3:
     """Apply the extract envelope before cache write, receipts, and projection."""
-    policy = config.get("bounded_context") or {}
-    if not isinstance(policy, dict):
-        policy = {}
-    cache_root = Path(policy.get("cache_root") or CACHE_DIR)
-    store = FullTextStore(
-        cache_root,
-        ttl_seconds=int(
-            policy.get("full_text_ttl_seconds", DEFAULT_FULL_TEXT_TTL_SECONDS)
-        ),
-        max_bytes=int(
-            policy.get("full_text_max_bytes", DEFAULT_FULL_TEXT_MAX_BYTES)
-        ),
-    )
+    store = _full_text_store(config)
     if isinstance(response.limits_applied.get("extract"), dict):
         if response.cache_status.get("disposition") not in {
             "fresh_hit",
@@ -795,7 +959,11 @@ def _extract_cache_vary(
     identity = ExtractionCacheIdentityV3(
         requested_urls=tuple(request.input["urls"]),
         attempt_budget={
-            "requested": dict(request.budget),
+            "requested": {
+                key: value
+                for key, value in request.budget.items()
+                if key != "max_wall_time_ms"
+            },
             "effective_max_provider_attempts": int(
                 request.budget.get(
                     "max_provider_attempts",
@@ -859,13 +1027,24 @@ def _extract_cache_vary(
 
 
 def _extract_cache_write_eligible(
-    _request: RequestV3,
+    request: RequestV3,
     _provider_plan: ProviderPlan,
     _response: ResponseV3,
     legacy_payload: Dict[str, Any],
-    _config: Dict[str, Any],
+    config: Dict[str, Any],
 ) -> bool:
     """Avoid lossy cache projections for partial or provider-specific payloads."""
+    # Only cache when every processed URL got real content: an empty list, a
+    # blank page or a missing URL would otherwise be served for the full TTL.
+    processed_urls = prepare_extract_request(request, config).processed_urls
+    results = legacy_payload.get("results")
+    if not isinstance(results, list) or not results:
+        return False
+    if not all(
+        _extract_item_usable(item)
+        for item in _match_extract_items(processed_urls, results)
+    ):
+        return False
     # Per-execution provider metadata (upstream request ids, cost accounting,
     # upstream cache statuses) describes ONE live execution. It is never part
     # of the cached evidence and never reproduced on hits, so its presence
@@ -987,6 +1166,7 @@ def extract_plus(
     spans: bool = False,
     spans_query: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
+    max_wall_time_ms: Optional[int] = None,
 ) -> dict:
     """Legacy extract projection over the sole native v3 execution path."""
     selected = provider or "auto"
@@ -1004,6 +1184,7 @@ def extract_plus(
             "render_js": render_js,
             "spans": spans,
             "spans_query": spans_query,
+            "max_wall_time_ms": max_wall_time_ms,
         },
     )
     execution = execute_v3_request(
@@ -1011,4 +1192,6 @@ def extract_plus(
         _extract_adapter(),
         runtime_config,
     )
-    return v3_response_to_legacy_extract(execution)
+    legacy = v3_response_to_legacy_extract(execution)
+    _resolve_full_text_paths(legacy, runtime_config)
+    return legacy

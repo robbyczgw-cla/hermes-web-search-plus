@@ -269,6 +269,15 @@ class WSPNativeBackend(WebSearchProvider):
                 "fetcher", "status", "quality", "lang", "source_type", "page_type",
                 "next_offset", "truncated", "original_content_length",
             ) if key in row}
+            full_text = row.get("full_text")
+            if isinstance(full_text, dict) and full_text.get("truncated"):
+                # Content was cut to the context budget: say so, with the real
+                # length when known, instead of passing it off as the whole page.
+                metadata["truncated"] = True
+                if isinstance(full_text.get("original_chars"), int):
+                    metadata["original_content_length"] = full_text["original_chars"]
+                if full_text.get("stored") and full_text.get("path"):
+                    metadata["full_text_path"] = full_text["path"]
             if metadata:
                 normalized["metadata"] = metadata
             by_url[url] = normalized

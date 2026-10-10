@@ -80,6 +80,21 @@ def test_readiness_honors_disabled_and_auto_allow(backend):
     assert not backend.value.is_available()
 
 
+def test_readiness_ignores_blocked_searxng_url_when_another_provider_is_keyed(backend, monkeypatch):
+    from wsp_core import config as wsp_config
+    for spec in wsp_config.PROVIDER_SPECS.values():
+        monkeypatch.delenv(spec.env_var, raising=False)
+    monkeypatch.delenv("SEARXNG_ALLOW_PRIVATE", raising=False)
+    config = {"auto_routing": {}, "searxng": {"instance_url": "http://127.0.0.1:8888"}}
+    backend.engine.load_config = lambda: config
+    backend.engine.provider_configured = wsp_config.provider_configured
+    backend.engine.SEARCH_PROVIDER_IDS = ("searxng", "brave")
+    backend.config.update(search_backend="wsp")
+    assert not backend.value.is_available()  # only the blocked URL: nothing usable
+    monkeypatch.setenv("BRAVE_API_KEY", "brave-test-key-1234567")
+    assert backend.value.is_available()
+
+
 @pytest.mark.parametrize("failure", ["missing", "raises"])
 def test_no_subprocess_fallback(backend, failure):
     if failure == "missing":

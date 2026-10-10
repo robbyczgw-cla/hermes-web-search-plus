@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from .contract_v3 import ErrorClass, ErrorV3
 from .http_client import ProviderRequestError
+from .query_limits import PROVIDER_QUERY_LIMITS
 from .sdk.errors import ProviderConfigError, ProviderContractFailure
 import json
+import math
 
 
 _MESSAGES = {
@@ -16,6 +18,7 @@ _MESSAGES = {
     ErrorClass.TRANSIENT: "Provider is temporarily unavailable",
     ErrorClass.TIMEOUT: "Provider request timed out",
     ErrorClass.PROVIDER_CONTRACT: "Provider returned an invalid response",
+    ErrorClass.INVALID_REQUEST: "Provider rejected the request as invalid",
     ErrorClass.INTERNAL: "Provider execution failed",
 }
 
@@ -32,8 +35,33 @@ _CODES = {
     ErrorClass.TRANSIENT: "wsp.provider.transient",
     ErrorClass.TIMEOUT: "wsp.provider.timeout",
     ErrorClass.PROVIDER_CONTRACT: "wsp.provider.contract",
+    ErrorClass.INVALID_REQUEST: "wsp.provider.invalid_request",
     ErrorClass.INTERNAL: "wsp.provider.internal",
 }
+
+
+# The provider answered "your request is malformed": a request problem, not a
+# provider health problem. A bare 400 is ambiguous (Serper and Linkup use it for
+# empty accounts, others for anything), so it counts only for providers with a
+# documented query limit.
+_VALIDATION_STATUSES = frozenset({413, 414, 422})
+
+
+def _is_validation_error(provider: str, status: object) -> bool:
+    return status in _VALIDATION_STATUSES or (
+        status == 400 and provider in PROVIDER_QUERY_LIMITS
+    )
+
+
+def _invalid_request_message(provider: str, status: object) -> str:
+    """WSP's own text for a 4xx validation error; never the provider's answer."""
+    limit = PROVIDER_QUERY_LIMITS.get(provider)
+    if limit is None:
+        return f"{_MESSAGES[ErrorClass.INVALID_REQUEST]} (HTTP {status}); the query may be too long or malformed"
+    return (
+        f"Query rejected by {provider} (HTTP {status}); it may be too long "
+        f"({provider} accepts up to {limit.chars} characters / {limit.words} words)"
+    )
 
 
 class MissingProviderKeyError(ProviderConfigError):
@@ -129,6 +157,8 @@ def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
         or (isinstance(status, int) and status >= 500)
     ):
         error_class = ErrorClass.TRANSIENT
+    elif isinstance(error, ProviderRequestError) and _is_validation_error(provider, status):
+        error_class = ErrorClass.INVALID_REQUEST
     elif isinstance(error, ProviderContractFailure):
         error_class = ErrorClass.PROVIDER_CONTRACT
     elif isinstance(error, (TypeError, KeyError)):
@@ -139,6 +169,8 @@ def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
     message = _MESSAGES[error_class]
     if error_class is ErrorClass.QUOTA and getattr(error, "out_of_credit", False):
         message = _OUT_OF_CREDIT_MESSAGE
+    if error_class is ErrorClass.INVALID_REQUEST:
+        message = _invalid_request_message(provider, status)
     details: dict = {}
     if error_class is ErrorClass.CONFIG:
         guidance = _setup_guidance(error)
@@ -158,7 +190,11 @@ def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
         provider=provider,
         http_status=status if isinstance(status, int) else None,
         retry_after_seconds=(
-            float(retry_after) if isinstance(retry_after, (int, float)) else None
+            float(retry_after)
+            if isinstance(retry_after, (int, float))
+            and math.isfinite(retry_after)
+            and retry_after >= 0
+            else None
         ),
         details=details,
     )

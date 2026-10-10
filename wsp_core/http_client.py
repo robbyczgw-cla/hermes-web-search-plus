@@ -8,6 +8,7 @@ import http.client
 from contextlib import contextmanager
 import io
 import json
+import math
 import os
 import re
 import socket
@@ -363,7 +364,7 @@ def urlopen(req, timeout: float = 30):
     return _pooled_open(req, timeout)
 
 
-DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/5.0.0"
+DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/5.0.1"
 
 
 class ProviderRequestError(Exception):
@@ -502,9 +503,11 @@ def _parse_retry_after(error: HTTPError) -> float | None:
     if not value:
         return None
     try:
-        return max(0.0, float(value))
+        seconds = float(value)
     except ValueError:
         pass
+    else:
+        return max(0.0, seconds) if math.isfinite(seconds) else None
     try:
         retry_at = parsedate_to_datetime(value)
     except (TypeError, ValueError):

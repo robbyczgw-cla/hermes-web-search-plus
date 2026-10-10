@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [v5.0.1] — 2026-10-10
+
+### Fixed
+
+- Searches containing words such as "synthesizer", "photosynthesize" or "verify the claim" no longer fail with Exa, Tavily or Linkup. The source-only filter now checks only what Web Search Plus itself sends (answer fields, Tavily `include_answer`, Linkup `outputType`, Exa deep types), not your query text. Docs queries that should go to Exa no longer fall through to another provider.
+- One bad URL no longer sinks an extraction batch. A blocked, unresolvable or failing URL gets its own error line and the other URLs are still extracted; error messages no longer reveal internal IP addresses. URLs that fail or come back empty are retried on the next extraction provider, pages already fetched are kept and results stay in the requested order. Firecrawl and Linkup no longer throw away pages they already fetched when one URL in the batch fails, and Exa reports URLs it could not fetch instead of dropping them.
+- Empty or blank pages no longer count as a successful extraction and are no longer cached for an hour. Only results that cover every requested URL are cached.
+- The extract footer no longer says "original 60000 chars … Full cleaned text stored" for long pages. It reports the page's real length and points `read_file` at the file that really holds the full cleaned text, with correct offsets; if no full text was stored, it says only the shown part is available. Research source summaries report the real page length, and the Hermes native extract marks cut pages (`truncated`, `original_content_length`, `full_text_path`). Stored full-text files with Windows line endings pass the integrity check.
+- A successful search with no hits now says so ("No results found for this query. Do not invent sources or facts; …") instead of returning only the provider line.
+- A rate-limit answer with a long `Retry-After` (for example 3600 s) no longer makes a call wait for it: waits are capped at 30 s, and a longer one skips the retry and leaves the provider rate-limited. Retries without `Retry-After` pause briefly (1 s, then 3 s) instead of firing at once. Values such as `inf` or `1e999` no longer crash the attempt, and a `Retry-After` keeps a provider blocked for at most one hour.
+- The tool's time limit now reaches the engine as the request deadline, so no provider attempt or retry starts after the tool has given up. The deadline does not change cache keys.
+- Long queries no longer fail at Brave, which accepts at most 400 characters and 50 words including the `site:` operators that domain filters add. Web Search Plus shortens the free text at a word boundary, keeps the operators and says so in the output (`[Query shortened for brave: …]`, `metadata.query_truncated`). The 2,000-character cap now applies in the engine, so the Hermes native backend is capped too. A provider answering 422, 413 or 414 (or 400 at Brave) reads "Query rejected … it may be too long" instead of "Provider execution failed".
+- Turning off automatic routing (for example in Hermes Desktop) without a default provider no longer makes every search fail with provider "None"; the configured provider order is used until you set `default_provider`.
+- A SearXNG URL on a private or LAN address without `SEARXNG_ALLOW_PRIVATE=1` no longer breaks every automatic search. SearXNG is skipped, other providers keep working, and `provider="searxng"` still explains how to allow it. The address is checked once per process instead of on every search.
+- Hermes no longer hides `web_search_plus` and `web_extract_plus` when the only keys are in config.json or the SearXNG URL comes from config.json or Hermes Desktop; the availability check reads the same configuration as the tools. `/web-search-plus-setup` reports those keys too.
+
+### Changed
+
+- The tool descriptions start with a short first sentence, which is what Hermes Tool Search shows in its catalog. The `web_extract_plus` description lists the real default order (Tavily, Exa, Linkup, Parallel, Firecrawl, You.com, Keenable, Serper).
+
 ## [v5.0.0] — 2026-10-09
 
 ### Breaking changes

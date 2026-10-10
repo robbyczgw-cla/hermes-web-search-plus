@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Web Search Plus — Unified Multi-Provider Search and Extraction with Intelligent Auto-Routing
-Version: 5.0.0
+Version: 5.0.1
 Supports search providers: You.com, Serper, Exa, Firecrawl, Tavily, Linkup,
 Brave Search, SerpBase, Querit, Parallel, SearXNG, Keenable.
 Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com, Keenable, Serper.
@@ -87,6 +87,7 @@ from .provider_registry import (
     SEARCH_PROVIDER_IDS,
     doctor_catalog,
 )
+from .query_limits import MAX_QUERY_CHARS
 from .request_gate_v3 import validate_provider_mode
 from .search_locale import (
     AUTO_LANGUAGE,
@@ -1179,8 +1180,9 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
     # fall back to other providers. Users who want fallback should keep
     # auto-routing enabled and tune priority/fallback instead.
     explicit_provider_mode = args.provider not in (None, "auto")
-    fixed_provider_mode = (
+    fixed_provider_mode = bool(
         auto_config.get("enabled", True) is False
+        and config.get("default_provider")
         and provider == config.get("default_provider")
         and (args.provider == "auto" or (args.provider is None and not args.similar_url))
     )
@@ -1584,7 +1586,9 @@ def _plan_search_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
     disabled = set(auto_config.get("disabled_providers", []))
     research_mode = str(request.options.get("mode") or "normal") == "research"
     fixed_provider_mode = (
-        requested == "auto" and auto_config.get("enabled", True) is False
+        requested == "auto"
+        and auto_config.get("enabled", True) is False
+        and bool(config.get("default_provider"))
     )
     expand_candidates = routing_request.get("allow_fallback", requested == "auto")
     if not fixed_provider_mode and (
@@ -2204,6 +2208,7 @@ def run_search_request(
     country: Optional[str] = None,
     no_cache: bool = False,
     cache_ttl: Optional[int] = None,
+    max_wall_time_ms: Optional[int] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Run a search in-process and return the result dict the CLI would emit.
@@ -2214,6 +2219,10 @@ def run_search_request(
     """
     if not query and not (include_domains or exclude_domains):
         return {"error": "query is required", "provider": provider, "query": query, "results": []}
+    # Search engines ignore or reject longer queries; a 50k-char query only
+    # bloats the echoed answer. Per-provider limits are applied further down.
+    if isinstance(query, str) and len(query) > MAX_QUERY_CHARS:
+        query = query[:MAX_QUERY_CHARS]
     requested = str(provider or "auto").strip().lower()
     suffix_filters = _providers.public_suffix_entries(include_domains, exclude_domains)
     try:
@@ -2258,6 +2267,7 @@ def run_search_request(
             "country": country,
             "no_cache": bool(no_cache),
             "cache_ttl": int(cache_ttl) if cache_ttl is not None else 3600,
+            "max_wall_time_ms": max_wall_time_ms,
         },
     )
     execution = execute_v3_request(request, _search_adapter(), config)
@@ -2283,6 +2293,7 @@ def run_extract_request(
     render_js: bool = False,
     spans: bool = False,
     spans_query: Optional[str] = None,
+    max_wall_time_ms: Optional[int] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Run URL extraction in-process and return the result dict."""
@@ -2296,6 +2307,7 @@ def run_extract_request(
         render_js=render_js,
         spans=spans,
         spans_query=spans_query,
+        max_wall_time_ms=max_wall_time_ms,
         config=config,
     )
 

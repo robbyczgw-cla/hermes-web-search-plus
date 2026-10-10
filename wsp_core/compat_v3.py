@@ -31,6 +31,10 @@ def legacy_request_to_v3(
         "ttl_seconds": int(payload.get("cache_ttl", 3600)),
     }
     client = {"accept_contract_versions": ["3.0", "2.x"]}
+    budget: Dict[str, Any] = {}
+    wall_time = payload.get("max_wall_time_ms")
+    if isinstance(wall_time, int) and not isinstance(wall_time, bool) and wall_time > 0:
+        budget["max_wall_time_ms"] = wall_time
 
     if capability is Capability.SEARCH:
         query = unicodedata.normalize("NFC", str(payload.get("query") or "")).strip()
@@ -70,6 +74,7 @@ def legacy_request_to_v3(
             options=options,
             cache=cache,
             routing=routing,
+            budget=budget,
             client=client,
         )
 
@@ -100,6 +105,7 @@ def legacy_request_to_v3(
         options=extract_options,
         cache=cache,
         routing=routing,
+        budget=budget,
         client=client,
     )
 
@@ -127,8 +133,12 @@ def v3_response_to_legacy_extract(execution: ExecutedV3) -> Dict[str, Any]:
         for item in legacy.get("results") or []
         if isinstance(item, dict)
     }
-    projected = []
-    projected_urls = set()
+    stored_by_observation = {
+        str(stored.get("observation_id")): stored
+        for stored in execution.response.stored_content
+        if isinstance(stored, dict)
+    }
+    projected_by_url: Dict[str, Dict[str, Any]] = {}
     for item in execution.response.results:
         observed_url = str((item.get("url") or {}).get("observed") or "")
         title = item.get("title") or {}
@@ -137,17 +147,40 @@ def v3_response_to_legacy_extract(execution: ExecutedV3) -> Dict[str, Any]:
         result["title"] = title.get("text")
         result["url"] = observed_url
         result["content"] = text.get("text")
+        stored = stored_by_observation.get(
+            str(item.get("representative_observation_id"))
+        )
+        if stored is not None:
+            # The inline text was cut to the context budget. Carry the real
+            # length and the full-text reference so output can point at it.
+            reference = stored.get("reference")
+            succeeded = stored.get("storage_succeeded") is True
+            result["full_text"] = {
+                "truncated": True,
+                "original_chars": stored.get("full_text_chars") if succeeded else None,
+                "store_key": reference.get("key") if succeeded and isinstance(reference, dict) else None,
+                "sha256": stored.get("full_text_sha256") if succeeded else None,
+            }
         if "spans" in item:
             result["span_contract_version"] = item.get("span_contract_version")
             result["spans"] = [dict(span) for span in item["spans"]]
         if "raw_content" in result:
             result["raw_content"] = result["content"]
-        projected.append(result)
-        projected_urls.add(observed_url)
+        projected_by_url.setdefault(observed_url, result)
+    # Keep the payload's order; error items without an observation (e.g. a
+    # URL rejected before any provider call) stay in their requested slot.
+    projected = []
+    emitted = set()
+    for url, item in originals.items():
+        if url in projected_by_url:
+            projected.append(projected_by_url[url])
+        elif item.get("error"):
+            projected.append(item)
+        else:
+            continue
+        emitted.add(url)
     projected.extend(
-        item
-        for url, item in originals.items()
-        if url not in projected_urls and item.get("error")
+        result for url, result in projected_by_url.items() if url not in emitted
     )
     legacy["results"] = projected
     if execution.response.cache_status.get("disposition") in {

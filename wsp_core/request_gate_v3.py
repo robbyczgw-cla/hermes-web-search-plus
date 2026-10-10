@@ -28,6 +28,12 @@ _BANNED_INSTRUCTION_FRAGMENTS = (
     "reason step by step",
     "verify the claim",
 )
+# Fields that carry the user's own text (search query, URL, domain filters).
+# They are data, not instructions WSP sends, so the fragment scan skips them:
+# "best synthesizer keyboard" is a legitimate query.
+_USER_TEXT_KEYS = frozenset(
+    {"query", "q", "url", "includedomains", "excludedomains", "include_domains", "exclude_domains"}
+)
 
 
 def validate_provider_mode(provider: str, capability: str) -> str:
@@ -68,7 +74,7 @@ def validate_outbound_body(provider: str, body: Mapping[str, Any]) -> None:
             if lowered == "include_answer" and value is False:
                 continue
             raise ValueError(f"source-only request gate rejected field: {key}")
-        if isinstance(value, str):
+        if isinstance(value, str) and lowered not in _USER_TEXT_KEYS:
             text = value.lower()
             if any(fragment in text for fragment in _BANNED_INSTRUCTION_FRAGMENTS):
                 raise ValueError("source-only request gate rejected answer instruction")

@@ -615,12 +615,11 @@ def test_public_extract_cache_hit_preserves_the_same_body(tmp_path, monkeypatch)
     assert hit["routing"] == miss["routing"]
 
 
-def test_empty_extract_cache_hit_preserves_provider(tmp_path, monkeypatch):
-    calls = 0
+def test_empty_extract_result_is_never_cached(tmp_path, monkeypatch):
+    calls = []
 
-    def fake_core(**_kwargs):
-        nonlocal calls
-        calls += 1
+    def fake_core(**kwargs):
+        calls.append(kwargs["provider"])
         return {
             "provider": "linkup",
             "results": [],
@@ -642,9 +641,11 @@ def test_empty_extract_cache_hit_preserves_provider(tmp_path, monkeypatch):
         ["https://example.com/empty"], provider="linkup", config=config
     )
 
-    assert calls == 1
+    # An empty result is a failure, not a success to serve for the cache TTL.
+    assert calls.count("linkup") == 2
     assert miss["provider"] == hit["provider"] == "linkup"
-    assert hit["cached"] is True
+    assert miss["results"] == hit["results"] == []
+    assert not hit.get("cached")
 
 
 def test_cache_identity_includes_attempt_budget_but_not_request_policy():
@@ -915,12 +916,11 @@ def test_extract_cache_identity_includes_all_original_urls(
 def test_partial_extract_errors_are_never_projected_through_lossy_cache(
     tmp_path, monkeypatch
 ):
-    calls = 0
+    calls = []
     urls = ["https://example.com/ok", "https://example.com/fail"]
 
-    def fake_core(**_kwargs):
-        nonlocal calls
-        calls += 1
+    def fake_core(**kwargs):
+        calls.append(kwargs["provider"])
         return {
             "provider": "linkup",
             "results": [
@@ -941,7 +941,8 @@ def test_partial_extract_errors_are_never_projected_through_lossy_cache(
     first = search.run_extract_request(urls, provider="linkup", config=config)
     second = search.run_extract_request(urls, provider="linkup", config=config)
 
-    assert calls == 2
+    # The failed URL is also retried on the fallback provider (per-URL fallback).
+    assert calls.count("linkup") == 2
     assert first["results"][1]["error"] == "upstream failed"
     assert second["results"][1]["error"] == "upstream failed"
     assert not (tmp_path / "v3" / "response" / "extract").exists()
