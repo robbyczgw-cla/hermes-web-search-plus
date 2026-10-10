@@ -2208,6 +2208,7 @@ def run_search_request(
     country: Optional[str] = None,
     no_cache: bool = False,
     cache_ttl: Optional[int] = None,
+    max_wall_time_ms: Optional[int] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Run a search in-process and return the result dict the CLI would emit.
@@ -2266,6 +2267,7 @@ def run_search_request(
             "country": country,
             "no_cache": bool(no_cache),
             "cache_ttl": int(cache_ttl) if cache_ttl is not None else 3600,
+            "max_wall_time_ms": max_wall_time_ms,
         },
     )
     execution = execute_v3_request(request, _search_adapter(), config)
@@ -2291,6 +2293,7 @@ def run_extract_request(
     render_js: bool = False,
     spans: bool = False,
     spans_query: Optional[str] = None,
+    max_wall_time_ms: Optional[int] = None,
     config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Run URL extraction in-process and return the result dict."""
@@ -2304,6 +2307,7 @@ def run_extract_request(
         render_js=render_js,
         spans=spans,
         spans_query=spans_query,
+        max_wall_time_ms=max_wall_time_ms,
         config=config,
     )
 

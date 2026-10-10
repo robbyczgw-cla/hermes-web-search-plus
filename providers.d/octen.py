@@ -8,6 +8,7 @@ the routing and evidence layer; Octen contributes ranked source results only.
 from __future__ import annotations
 
 import json
+import math
 import socket
 from collections.abc import Mapping
 from typing import Any
@@ -71,7 +72,7 @@ def _retry_after(error: HTTPError) -> float | None:
         parsed = float(value)
     except (AttributeError, TypeError, ValueError):
         return None
-    return parsed if parsed >= 0 else None
+    return parsed if math.isfinite(parsed) and parsed >= 0 else None
 
 
 def _status(code: Any) -> tuple[int | None, bool]:
