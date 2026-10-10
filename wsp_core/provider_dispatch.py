@@ -29,6 +29,7 @@ from .provider_adapter_protocol import (
     assert_dispatch_conformance,
 )
 from .provider_registry import PROVIDER_SPECS
+from .query_limits import fit_query
 from .search_locale import resolve_locale
 from .urls import SITE_OPERATOR_LIMIT, domain_filters
 
@@ -73,6 +74,20 @@ def _locale(prov: str, args: Any, config: Dict[str, Any]):
 _SITE_OPERATOR = re.compile(r"(?<![\w-])site:", re.IGNORECASE)
 
 
+def _site_operator_parts(query: str, args: Any) -> tuple[str, list[str]]:
+    """Return ``(query, operators)``: the free text and the ``site:`` operators to append."""
+    include, exclude = domain_filters(
+        getattr(args, "include_domains", None), getattr(args, "exclude_domains", None)
+    )
+    query = query or ""
+    present = set(query.lower().split())
+    parts = []
+    if include and not _SITE_OPERATOR.search(query):
+        parts.append(" OR ".join(f"site:{d}" for d in include[:SITE_OPERATOR_LIMIT]))
+    parts.extend(f"-site:{d}" for d in exclude[:SITE_OPERATOR_LIMIT] if f"-site:{d}" not in present)
+    return query, parts
+
+
 def _with_site_operators(query: str, args: Any) -> str:
     """Add ``site:`` operators for providers without a native domain filter.
 
@@ -83,22 +98,34 @@ def _with_site_operators(query: str, args: Any) -> str:
     include entries were given and none is usable: an unrestricted search must
     not stand in for a restricted one.
     """
-    include, exclude = domain_filters(
-        getattr(args, "include_domains", None), getattr(args, "exclude_domains", None)
-    )
-    query = query or ""
-    present = set(query.lower().split())
-    parts = [query]
-    if include and not _SITE_OPERATOR.search(query):
-        parts.append(" OR ".join(f"site:{d}" for d in include[:SITE_OPERATOR_LIMIT]))
-    parts.extend(f"-site:{d}" for d in exclude[:SITE_OPERATOR_LIMIT] if f"-site:{d}" not in present)
-    return " ".join(p for p in parts if p).strip()
+    query, parts = _site_operator_parts(query, args)
+    return " ".join(p for p in [query, *parts] if p).strip()
+
+
+def _provider_query(prov: str, args: Any) -> tuple[str, dict | None]:
+    """The query sent to ``prov`` with site operators, within its documented limit.
+
+    The second item describes a shortening (None when the query is unchanged).
+    """
+    query, parts = _site_operator_parts(args.query, args)
+    return fit_query(prov, query, parts)
+
+
+def _mark_query_truncated(result: Any, info: dict | None) -> Any:
+    """Record on the provider result that its query was shortened."""
+    if info and isinstance(result, dict):
+        metadata = result.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = result["metadata"] = {}
+        metadata["query_truncated"] = info
+    return result
 
 
 def _call_serper_search(search_module, prov, args, key, config, routing_info):
     country, language = _locale(prov, args, config)
-    return _resolve(search_module, "search_serper")(
-        query=_with_site_operators(args.query, args),
+    query, truncated = _provider_query(prov, args)
+    result = _resolve(search_module, "search_serper")(
+        query=query,
         api_key=key,
         max_results=args.max_results,
         country=country,
@@ -107,13 +134,15 @@ def _call_serper_search(search_module, prov, args, key, config, routing_info):
         time_range=getattr(args, "time_range", None) or args.freshness,
         include_images=args.images,
     )
+    return _mark_query_truncated(result, truncated)
 
 
 def _call_serpbase_search(search_module, prov, args, key, config, routing_info):
     serpbase_config = config.get("serpbase", {})
     country, language = _locale(prov, args, config)
-    return _resolve(search_module, "search_serpbase")(
-        query=_with_site_operators(args.query, args),
+    query, truncated = _provider_query(prov, args)
+    result = _resolve(search_module, "search_serpbase")(
+        query=query,
         api_key=key,
         max_results=args.max_results,
         country=country,
@@ -122,13 +151,15 @@ def _call_serpbase_search(search_module, prov, args, key, config, routing_info):
         api_url=serpbase_config.get("api_url", "https://api.serpbase.dev/google/search"),
         timeout=int(serpbase_config.get("timeout", 30)),
     )
+    return _mark_query_truncated(result, truncated)
 
 
 def _call_brave_search(search_module, prov, args, key, config, routing_info):
     brave_config = config.get("brave", {})
     country, language = _locale(prov, args, config)
-    return _resolve(search_module, "search_brave")(
-        query=_with_site_operators(args.query, args),
+    query, truncated = _provider_query(prov, args)
+    result = _resolve(search_module, "search_brave")(
+        query=query,
         api_key=key,
         max_results=args.max_results,
         country=country,
@@ -136,6 +167,7 @@ def _call_brave_search(search_module, prov, args, key, config, routing_info):
         time_range=getattr(args, "time_range", None) or args.freshness,
         safesearch=brave_config.get("safesearch", "moderate"),
     )
+    return _mark_query_truncated(result, truncated)
 
 
 def _call_tavily_search(search_module, prov, args, key, config, routing_info):
@@ -241,8 +273,9 @@ def _call_parallel_search(search_module, prov, args, key, config, routing_info):
 
 def _call_you_search(search_module, prov, args, key, config, routing_info):
     country, language = _locale(prov, args, config)
-    return _resolve(search_module, "search_you")(
-        query=_with_site_operators(args.query, args),
+    query, truncated = _provider_query(prov, args)
+    result = _resolve(search_module, "search_you")(
+        query=query,
         api_key=key,
         max_results=args.max_results,
         country=country,
@@ -252,6 +285,7 @@ def _call_you_search(search_module, prov, args, key, config, routing_info):
         include_news=not args.no_news,
         livecrawl=args.livecrawl,
     )
+    return _mark_query_truncated(result, truncated)
 
 
 def _call_searxng_search(search_module, prov, args, key, config, routing_info):

@@ -1822,6 +1822,14 @@ def _format_results(data: dict, *, now: Optional[datetime] = None) -> str:
             pass
     lines.append("[" + " | ".join(header_bits) + "]")
 
+    truncated_meta = (data.get("metadata") or {}).get("query_truncated")
+    if isinstance(truncated_meta, dict):
+        lines.append(
+            f"[Query shortened for {truncated_meta.get('provider')}: "
+            f"{truncated_meta.get('original_chars')} -> {truncated_meta.get('sent_chars')} characters "
+            f"(limit {truncated_meta.get('limit_chars')} characters / {truncated_meta.get('limit_words')} words)]"
+        )
+
     freshness_meta = (data.get("metadata") or {}).get("freshness")
     if isinstance(freshness_meta, dict) and freshness_meta.get("requested"):
         per_provider = freshness_meta.get("providers")
@@ -1926,9 +1934,6 @@ def _sanitize_extract_content(content: str) -> str:
 
 
 _MAX_TOOL_COUNT = 20
-# Search engines ignore or reject longer queries (Google ~2k, Brave 400
-# chars); a 50k-char query only bloats the echoed answer.
-_MAX_TOOL_QUERY_CHARS = 2000
 
 
 def _clean_tool_count(value: Any, fallback: int = 5) -> int:
@@ -2205,8 +2210,6 @@ def register(ctx: Any) -> None:
                 cache_ttl = int(cache_ttl)
             except (TypeError, ValueError, OverflowError):
                 cache_ttl = None
-        if isinstance(query, str) and len(query) > _MAX_TOOL_QUERY_CHARS:
-            query = query[:_MAX_TOOL_QUERY_CHARS]
         count = _clean_tool_count(count)
         provider, provider_error = _clean_tool_provider(provider)
         if provider_error:
