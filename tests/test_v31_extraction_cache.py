@@ -335,11 +335,10 @@ def test_corrupt_entry_is_quarantined_and_misses_without_raising(tmp_path):
 def test_lossy_extract_payload_classes_never_write_cache(
     tmp_path, monkeypatch, request_options, result
 ):
-    calls = 0
+    calls = []
 
-    def fake_core(**_kwargs):
-        nonlocal calls
-        calls += 1
+    def fake_core(**kwargs):
+        calls.append(kwargs["provider"])
         return {
             "provider": "linkup",
             "results": [result],
@@ -365,7 +364,8 @@ def test_lossy_extract_payload_classes_never_write_cache(
     extract.run_extract_request_v3(request, config=config)
     extract.run_extract_request_v3(request, config=config)
 
-    assert calls == 2
+    # A failed URL is also retried on the fallback provider (per-URL fallback).
+    assert calls.count("linkup") == 2
     assert not (tmp_path / "v3" / "response" / "extract").exists()
 
 
