@@ -393,7 +393,7 @@ These keys in `config.json` affect automatic routing.
 
 | Key | Default | Effect |
 |---|---|---|
-| `auto_routing.enabled` | `true` | When `false`, routing does not run. Every search without an explicit provider uses `default_provider`, with no fallback. Without `default_provider`, routing returns no provider (`auto_routing_disabled_no_default_provider`). |
+| `auto_routing.enabled` | `true` | When `false`, routing does not run. Every search without an explicit provider uses `default_provider`, with no fallback. Without `default_provider`, routing uses the configured priority order and the normal fallback chain (`auto_routing_disabled_no_default_provider`). |
 | `default_provider` | none | A top-level key. Used only when `auto_routing.enabled` is `false`. It cannot also be in `disabled_providers`. |
 | `auto_routing.provider_priority` | `brave`, `serper`, `exa`, `tavily`, `you`, `firecrawl`, `linkup`, `parallel`, `serpbase`, `querit`, `searxng`, `keenable` | Order of the fallback chain, and of the first provider when no measured provider is eligible. See [The fallback chain](#the-fallback-chain). |
 | `auto_routing.disabled_providers` | `[]` | Providers that automatic routing and fallback never choose. |

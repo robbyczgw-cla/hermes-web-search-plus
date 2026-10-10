@@ -23,8 +23,15 @@ from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, PR
 def provider_configured(provider: str, config: Dict[str, Any] | None = None) -> bool:
     """Whether a provider can run: keyed via this module's (sync-patchable)
     ``get_api_key`` binding, or keyless with its public endpoint opted in."""
-    if get_api_key(provider, config):
-        return True
+    try:
+        if get_api_key(provider, config):
+            return True
+    except ValueError:
+        # A SearXNG URL that fails validation (private address without
+        # SEARXNG_ALLOW_PRIVATE=1, bad scheme) means "not configured" here, so
+        # one bad URL cannot break eligibility for every other provider. An
+        # explicit provider="searxng" call still raises the blocked-URL error.
+        return False
     return keyless_public_allowed(provider, config)
 
 
@@ -387,15 +394,13 @@ def auto_route_provider(query: str, config: Dict[str, Any]) -> Dict[str, Any]:
                 "top_signals": [],
                 "auto_routed": False,
             }
-        return {
-            "provider": None,
-            "confidence": 0.0,
-            "confidence_level": "low",
-            "reason": "auto_routing_disabled_no_default_provider",
-            "scores": {},
-            "top_signals": [],
-            "auto_routed": False,
-        }
+        # Auto routing is off but nothing is pinned (the Desktop toggle cannot set
+        # default_provider): use the configured priority instead of routing to
+        # no provider. Set default_provider to pin one explicitly.
+        decision = route_query(query, config)
+        if decision.get("candidate_order"):
+            decision = {**decision, "reason": "auto_routing_disabled_no_default_provider"}
+        return {**decision, "auto_routed": False}
     return route_query(query, config)
 
 

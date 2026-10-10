@@ -538,14 +538,13 @@ def test_search_auto_route_uses_default_provider_when_auto_disabled(monkeypatch)
     assert routing["auto_routed"] is False
 
 
-def test_search_auto_route_errors_cleanly_when_auto_disabled_without_default():
+def test_search_auto_route_falls_back_to_priority_when_auto_disabled_without_default():
     config = {"default_provider": None, "auto_routing": {"enabled": False}}
 
     routing = search.auto_route_provider("latest AI news", config)
 
-    assert routing["provider"] is None
-    assert routing["reason"] == "auto_routing_disabled_no_default_provider"
-    assert routing["confidence_level"] == "low"
+    assert routing["provider"] not in (None, "None")
+    assert routing["auto_routed"] is False
 
 
 def test_config_set_threshold_rejects_out_of_range_without_writing(tmp_path):
