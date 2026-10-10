@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v5.0.1] — 2026-10-10
+
 ### Fixed
 
 - Searches containing words such as "synthesizer", "photosynthesize" or "verify the claim" no longer fail with Exa, Tavily or Linkup. The source-only filter now checks only what Web Search Plus itself sends (answer fields, Tavily `include_answer`, Linkup `outputType`, Exa deep types), not your query text. Docs queries that should go to Exa no longer fall through to another provider.
