@@ -987,6 +987,7 @@ def extract_plus(
     spans: bool = False,
     spans_query: Optional[str] = None,
     config: Optional[Dict[str, Any]] = None,
+    max_wall_time_ms: Optional[int] = None,
 ) -> dict:
     """Legacy extract projection over the sole native v3 execution path."""
     selected = provider or "auto"
@@ -1004,6 +1005,7 @@ def extract_plus(
             "render_js": render_js,
             "spans": spans,
             "spans_query": spans_query,
+            "max_wall_time_ms": max_wall_time_ms,
         },
     )
     execution = execute_v3_request(

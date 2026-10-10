@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import time
 import uuid
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from .contract_v3 import (
     SkipReason,
 )
 from .errors_v3 import classify_provider_error
+from .provider_health import MAX_RETRY_AFTER_WAIT_SECONDS, _retry_delay
 from .state_store_v3 import CircuitKey, SQLiteStateStore
 
 
@@ -96,7 +98,9 @@ class AttemptEngine:
     @staticmethod
     def _try_error(error) -> Dict:
         retry_after_ms = None
-        if error.retry_after_seconds is not None:
+        if error.retry_after_seconds is not None and math.isfinite(
+            error.retry_after_seconds
+        ):
             retry_after_ms = max(0, int(error.retry_after_seconds * 1000))
         return {
             "error_class": error.error_class.value,
@@ -105,6 +109,30 @@ class AttemptEngine:
             "retryable": error.retryable,
             "retry_after_ms": retry_after_ms,
         }
+
+    @staticmethod
+    def _retry_wait(
+        context: AttemptContext, error, attempt_index: int
+    ) -> Optional[float]:
+        """Seconds to pause before the next try, or None when no retry should run.
+
+        A Retry-After above the inline cap (or past the request deadline) is not
+        waited out: the failure is recorded and the circuit holds the provider.
+        Without Retry-After a short backoff spaces the retry, as the legacy path did.
+        """
+        retry_after = error.retry_after_seconds
+        if retry_after is not None and math.isfinite(retry_after) and retry_after >= 0:
+            wait = float(retry_after)
+            if wait > MAX_RETRY_AFTER_WAIT_SECONDS:
+                return None
+        else:
+            wait = _retry_delay(attempt_index)
+        if (
+            context.deadline_monotonic is not None
+            and time.monotonic() + wait >= context.deadline_monotonic
+        ):
+            return None
+        return wait
 
     def _skipped(
         self,
@@ -343,9 +371,13 @@ class AttemptEngine:
                         "error": self._try_error(classified),
                     }
                 )
-                should_retry = classified.retryable and index < self.max_attempts - 1
-                if should_retry:
-                    self.sleep(classified.retry_after_seconds or 0.0)
+                retry_wait = (
+                    self._retry_wait(context, classified, index)
+                    if classified.retryable and index < self.max_attempts - 1
+                    else None
+                )
+                if retry_wait is not None:
+                    self.sleep(retry_wait)
                     continue
                 after_record = self.store.record_failure(
                     context.circuit_key,

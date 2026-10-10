@@ -1634,6 +1634,17 @@ def _search_timeout(mode: str, research_time_budget: float, base: int = 75) -> i
     return base
 
 
+# Margin between the engine's request deadline and the tool's wall-clock
+# timeout: the engine stops starting provider attempts slightly before the
+# caller gives up, so no billable call begins after the user saw a timeout.
+_DEADLINE_MARGIN_SECONDS = 3
+
+
+def _engine_deadline_ms(timeout: int) -> int:
+    """Request deadline (ms) handed to the engine for a tool timeout in seconds."""
+    return max(1000, int((timeout - _DEADLINE_MARGIN_SECONDS) * 1000))
+
+
 def _call_with_timeout(fn: Callable[[], dict], timeout: int) -> dict:
     """Run ``fn`` on a daemon thread bounded by a wall-clock timeout.
 
@@ -1680,6 +1691,7 @@ def _run_search(
             exclude_domains=exclude_domains, mode=mode, quality_report=quality_report,
             research_time_budget=research_time_budget, language=language, country=country,
             no_cache=no_cache, cache_ttl=cache_ttl,
+            max_wall_time_ms=_engine_deadline_ms(timeout),
         )
 
     try:
@@ -1711,6 +1723,7 @@ def _run_extract(
             urls, provider=provider, output_format=output_format,
             include_images=include_images, include_raw_html=include_raw_html,
             render_js=render_js, spans=spans, spans_query=spans_query,
+            max_wall_time_ms=_engine_deadline_ms(timeout),
         )
 
     try:

@@ -6,6 +6,7 @@ from .contract_v3 import ErrorClass, ErrorV3
 from .http_client import ProviderRequestError
 from .sdk.errors import ProviderConfigError, ProviderContractFailure
 import json
+import math
 
 
 _MESSAGES = {
@@ -158,7 +159,11 @@ def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
         provider=provider,
         http_status=status if isinstance(status, int) else None,
         retry_after_seconds=(
-            float(retry_after) if isinstance(retry_after, (int, float)) else None
+            float(retry_after)
+            if isinstance(retry_after, (int, float))
+            and math.isfinite(retry_after)
+            and retry_after >= 0
+            else None
         ),
         details=details,
     )

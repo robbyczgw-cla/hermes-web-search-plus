@@ -31,6 +31,10 @@ def legacy_request_to_v3(
         "ttl_seconds": int(payload.get("cache_ttl", 3600)),
     }
     client = {"accept_contract_versions": ["3.0", "2.x"]}
+    budget: Dict[str, Any] = {}
+    wall_time = payload.get("max_wall_time_ms")
+    if isinstance(wall_time, int) and not isinstance(wall_time, bool) and wall_time > 0:
+        budget["max_wall_time_ms"] = wall_time
 
     if capability is Capability.SEARCH:
         query = unicodedata.normalize("NFC", str(payload.get("query") or "")).strip()
@@ -70,6 +74,7 @@ def legacy_request_to_v3(
             options=options,
             cache=cache,
             routing=routing,
+            budget=budget,
             client=client,
         )
 
@@ -100,6 +105,7 @@ def legacy_request_to_v3(
         options=extract_options,
         cache=cache,
         routing=routing,
+        budget=budget,
         client=client,
     )
 
