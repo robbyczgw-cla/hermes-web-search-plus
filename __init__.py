@@ -1721,7 +1721,14 @@ def _run_extract(
         return {"error": str(e), "provider": provider, "results": []}
 
 
-def _source_summary_excerpt(content: str, query: Optional[str] = None, limit: int = 500) -> str:
+def _source_total_chars(src: dict, shown: int) -> int:
+    """Real page length: the engine's original length when it cut the text to its budget."""
+    info = src.get("full_text")
+    original = info.get("original_chars") if isinstance(info, dict) else None
+    return original if isinstance(original, int) and original > shown else shown
+
+
+def _source_summary_excerpt(content: str, query: Optional[str] = None, limit: int = 500, total_chars: Optional[int] = None) -> str:
     """Keep 500 chars, preferring a query-ranked span over the page prefix."""
     text = (content or "").strip()
     if len(text) <= limit:
@@ -1740,7 +1747,7 @@ def _source_summary_excerpt(content: str, query: Optional[str] = None, limit: in
                     kind = "query-ranked"
         except Exception:
             pass
-    return f"{excerpt} [TRUNCATED: showing {kind} {len(excerpt)} of {len(text)} characters]"
+    return f"{excerpt} [TRUNCATED: showing {kind} {len(excerpt)} of {total_chars or len(text)} characters]"
 
 
 # Exa highlights and Tavily content run to several thousand characters per
@@ -1879,10 +1886,10 @@ def _format_results(data: dict, *, now: Optional[datetime] = None) -> str:
             if passages:
                 noun = "passage" if len(passages) == 1 else "passages"
                 lines.append(
-                    f"   {' … '.join(passages)} [showing {len(passages)} query-ranked {noun} of {len(content)} characters]"
+                    f"   {' … '.join(passages)} [showing {len(passages)} query-ranked {noun} of {_source_total_chars(src, len(content))} characters]"
                 )
             elif content:
-                lines.append(f"   {_source_summary_excerpt(content, query)}")
+                lines.append(f"   {_source_summary_excerpt(content, query, total_chars=_source_total_chars(src, len(content)))}")
         lines.append("")
 
     now = now or datetime.now(timezone.utc)
@@ -1991,9 +1998,53 @@ def _split_extract_content(content: str, limit: int) -> tuple[str, str, int, int
     return head, tail, omitted_start_line, omitted_chars
 
 
-def _format_truncated_extract_content(content: str, url: str, limit: int) -> str:
+def _format_budget_truncated_content(cleaned: str, limit: int, full_text: dict) -> str:
+    """Format text the engine already cut to its context budget.
+
+    The real page is longer than ``cleaned``. Report the real length and point
+    at the engine's full-text file only if it was verified; never claim that
+    the shown text is the whole page.
+    """
+    original = full_text.get("original_chars")
+    original_note = f"original {original} chars" if isinstance(original, int) else "original length unknown"
+    if len(cleaned) > limit:
+        head, tail, omitted_start_line, _ = _split_extract_content(cleaned, limit)
+        shown = len(head) + len(tail)
+        body = f"{head}\n\n[... omitted middle; see footer ...]\n\n{tail}"
+        shown_note = f"showing {shown} chars (head and a later section of the page)"
+    else:
+        head, tail = cleaned, ""
+        shown = len(cleaned)
+        omitted_start_line = cleaned.count("\n") + 1
+        body = cleaned
+        shown_note = f"showing the first {shown} chars"
+    omitted_note = f"; {original - shown} chars omitted" if isinstance(original, int) and original >= shown else ""
+    footer = ["", "---", f"[Content truncated: {original_note}{omitted_note}; {shown_note}.]"]
+    if full_text.get("stored") and full_text.get("path"):
+        path = full_text["path"]
+        # Line 1 of the stored file is a metadata comment, so text line N is file line N+1.
+        footer.append(f"Full cleaned text stored at: {path}")
+        footer.append(
+            "Read the omitted part with Hermes file tool: "
+            f"read_file(path=\"{path}\", offset={omitted_start_line + 1}, limit=500)"
+        )
+        if tail:
+            footer.append(
+                "The page continues after the shown tail: "
+                f"read_file(path=\"{path}\", offset={cleaned.count(chr(10)) + 2}, limit=500)"
+            )
+        footer.append("Repeat read_file with the next offset to page through the rest.")
+    else:
+        footer.append("No full text is stored, so only the shown part of this page is available.")
+        footer.append("Requesting fewer URLs per call gives each page a larger share of the context budget.")
+    return body + "\n" + "\n".join(footer)
+
+
+def _format_truncated_extract_content(content: str, url: str, limit: int, full_text: Optional[dict] = None) -> str:
     """Return inline-safe extract content, storing full text when truncated."""
     cleaned = _sanitize_extract_content(content)
+    if isinstance(full_text, dict) and full_text.get("truncated"):
+        return _format_budget_truncated_content(cleaned, limit, full_text)
     if len(cleaned) <= limit:
         return cleaned
 
@@ -2037,7 +2088,7 @@ def _format_extract_results(data: dict) -> str:
         if r.get("error"):
             lines.append(f"Error: {r['error']}")
         elif content:
-            lines.append(_format_truncated_extract_content(content, url, limit))
+            lines.append(_format_truncated_extract_content(content, url, limit, r.get("full_text")))
         if "spans" in r:
             lines.append(
                 "Semantic spans (contract v{}): {}".format(

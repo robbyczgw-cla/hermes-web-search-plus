@@ -127,6 +127,11 @@ def v3_response_to_legacy_extract(execution: ExecutedV3) -> Dict[str, Any]:
         for item in legacy.get("results") or []
         if isinstance(item, dict)
     }
+    stored_by_observation = {
+        str(stored.get("observation_id")): stored
+        for stored in execution.response.stored_content
+        if isinstance(stored, dict)
+    }
     projected = []
     projected_urls = set()
     for item in execution.response.results:
@@ -137,6 +142,20 @@ def v3_response_to_legacy_extract(execution: ExecutedV3) -> Dict[str, Any]:
         result["title"] = title.get("text")
         result["url"] = observed_url
         result["content"] = text.get("text")
+        stored = stored_by_observation.get(
+            str(item.get("representative_observation_id"))
+        )
+        if stored is not None:
+            # The inline text was cut to the context budget. Carry the real
+            # length and the full-text reference so output can point at it.
+            reference = stored.get("reference")
+            succeeded = stored.get("storage_succeeded") is True
+            result["full_text"] = {
+                "truncated": True,
+                "original_chars": stored.get("full_text_chars") if succeeded else None,
+                "store_key": reference.get("key") if succeeded and isinstance(reference, dict) else None,
+                "sha256": stored.get("full_text_sha256") if succeeded else None,
+            }
         if "spans" in item:
             result["span_contract_version"] = item.get("span_contract_version")
             result["spans"] = [dict(span) for span in item["spans"]]

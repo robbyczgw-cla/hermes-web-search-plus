@@ -568,6 +568,54 @@ def _execute_extract_v3(
     )
 
 
+def _full_text_store(config: Dict[str, Any]) -> FullTextStore:
+    policy = config.get("bounded_context") or {}
+    if not isinstance(policy, dict):
+        policy = {}
+    return FullTextStore(
+        Path(policy.get("cache_root") or CACHE_DIR),
+        ttl_seconds=int(
+            policy.get("full_text_ttl_seconds", DEFAULT_FULL_TEXT_TTL_SECONDS)
+        ),
+        max_bytes=int(
+            policy.get("full_text_max_bytes", DEFAULT_FULL_TEXT_MAX_BYTES)
+        ),
+    )
+
+
+def _resolve_full_text_paths(legacy: Dict[str, Any], config: Dict[str, Any]) -> None:
+    """Turn projected full-text references into verified file paths in place.
+
+    A path is only exposed when the stored file still reads back with the
+    recorded sha256 and length; otherwise the result says nothing is stored.
+    """
+    store = None
+    for result in legacy.get("results") or []:
+        info = result.get("full_text") if isinstance(result, dict) else None
+        if not isinstance(info, dict):
+            continue
+        key = info.pop("store_key", None)
+        digest = info.get("sha256")
+        path = None
+        if isinstance(key, str) and key:
+            try:
+                store = store or _full_text_store(config)
+                text = store.lookup(key)
+                if (
+                    isinstance(text, str)
+                    and len(text) == info.get("original_chars")
+                    and hashlib.sha256(text.encode("utf-8")).hexdigest() == digest
+                ):
+                    path = str(store.path_for_key(key))
+            except (OSError, ValueError):
+                path = None
+        info["stored"] = path is not None
+        if path is not None:
+            info["path"] = path
+        else:
+            info.pop("sha256", None)
+
+
 def _finalize_extract_response(
     request: RequestV3,
     response: ResponseV3,
@@ -577,19 +625,7 @@ def _finalize_extract_response(
     context_plan=None,
 ) -> ResponseV3:
     """Apply the extract envelope before cache write, receipts, and projection."""
-    policy = config.get("bounded_context") or {}
-    if not isinstance(policy, dict):
-        policy = {}
-    cache_root = Path(policy.get("cache_root") or CACHE_DIR)
-    store = FullTextStore(
-        cache_root,
-        ttl_seconds=int(
-            policy.get("full_text_ttl_seconds", DEFAULT_FULL_TEXT_TTL_SECONDS)
-        ),
-        max_bytes=int(
-            policy.get("full_text_max_bytes", DEFAULT_FULL_TEXT_MAX_BYTES)
-        ),
-    )
+    store = _full_text_store(config)
     if isinstance(response.limits_applied.get("extract"), dict):
         if response.cache_status.get("disposition") not in {
             "fresh_hit",
@@ -1011,4 +1047,6 @@ def extract_plus(
         _extract_adapter(),
         runtime_config,
     )
-    return v3_response_to_legacy_extract(execution)
+    legacy = v3_response_to_legacy_extract(execution)
+    _resolve_full_text_paths(legacy, runtime_config)
+    return legacy

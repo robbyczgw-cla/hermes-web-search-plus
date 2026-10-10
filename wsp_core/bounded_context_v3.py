@@ -436,7 +436,9 @@ class FullTextStore:
             if self.now() - stat.st_mtime > self.ttl_seconds:
                 path.unlink(missing_ok=True)
                 return None
-            payload = path.read_text(encoding="utf-8")
+            # Bytes, not text mode: universal newlines would turn CRLF/CR in the
+            # stored page into LF and break the sha256/length integrity check.
+            payload = path.read_bytes().decode("utf-8")
         except (OSError, UnicodeError):
             return None
         first, separator, text = payload.partition("\n")
