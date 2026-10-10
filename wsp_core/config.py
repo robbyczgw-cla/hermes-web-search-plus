@@ -8,7 +8,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .env_loader import clean_env_value as _shared_clean_env_value, is_truthy, load_env_files
 from .errors_v3 import MissingProviderKeyError, ProviderConfigError
@@ -1024,8 +1024,14 @@ def provider_configured(provider: str, config: Dict[str, Any] = None) -> bool:
     Distinct from ``get_api_key`` truthiness so key-status logic never treats a
     keyless provider as keyed.
     """
-    if get_api_key(provider, config):
-        return True
+    try:
+        if get_api_key(provider, config):
+            return True
+    except ValueError:
+        # An invalid or blocked SearXNG URL (see _validate_searxng_url) counts as
+        # "not configured" so it cannot break eligibility for other providers.
+        # validate_api_key still raises the clear error for provider="searxng".
+        return False
     return keyless_public_allowed(provider, config)
 
 
@@ -1059,6 +1065,9 @@ def add_provider_setup_guidance(
     })
 
 
+_SEARXNG_HOST_VERDICTS: Dict[Tuple[str, int], str] = {}
+
+
 def _validate_searxng_url(url: str) -> str:
     """Validate and sanitize SearXNG instance URL to prevent SSRF.
 
@@ -1090,17 +1099,28 @@ def _validate_searxng_url(url: str) -> str:
     # Operators who intentionally self-host on private networks can opt out
     allow_private = os.environ.get("SEARXNG_ALLOW_PRIVATE", "").strip() == "1"
     if not allow_private:
-        try:
-            resolved_ips = socket.getaddrinfo(hostname, parsed.port or 80, proto=socket.IPPROTO_TCP)
+        # The verdict per host:port is cached for the process, so the eligibility
+        # checks on every search do not each cost a DNS lookup. A failed
+        # resolution is not cached (it may be transient).
+        host_key = (hostname, parsed.port or 80)
+        verdict = _SEARXNG_HOST_VERDICTS.get(host_key)
+        if verdict is None:
+            try:
+                resolved_ips = socket.getaddrinfo(hostname, parsed.port or 80, proto=socket.IPPROTO_TCP)
+            except socket.gaierror:
+                raise ValueError(f"SearXNG URL blocked: cannot resolve hostname {hostname}")
+            verdict = ""
             for family, _type, _proto, _canonname, sockaddr in resolved_ips:
                 ip = ipaddress.ip_address(sockaddr[0])
                 if ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_reserved:
-                    raise ValueError(
+                    verdict = (
                         f"SearXNG URL blocked: {hostname} resolves to private/internal IP {ip}. "
                         f"If this is intentional, set SEARXNG_ALLOW_PRIVATE=1 in your environment."
                     )
-        except socket.gaierror:
-            raise ValueError(f"SearXNG URL blocked: cannot resolve hostname {hostname}")
+                    break
+            _SEARXNG_HOST_VERDICTS[host_key] = verdict
+        if verdict:
+            raise ValueError(verdict)
 
     return url
 
@@ -1112,9 +1132,11 @@ def get_searxng_instance_url(config: Dict[str, Any] = None) -> Optional[str]:
     Priority: config.json searxng.base_url > legacy instance_url >
     SEARXNG_INSTANCE_URL environment variable.
 
-    Security: URL is validated to prevent SSRF via scheme enforcement.
-    Both config sources (config.json, env var) are operator-controlled,
-    not agent-controlled, so private IPs like localhost are permitted.
+    Security: the URL is validated to prevent SSRF: http/https only, cloud
+    metadata hosts blocked, and hostnames resolving to loopback, private or
+    link-local addresses are rejected (ValueError) unless the operator sets
+    SEARXNG_ALLOW_PRIVATE=1. ``provider_configured`` treats such a URL as
+    "not configured"; an explicit searxng request raises the error.
     """
     # Check config.json first
     if config:

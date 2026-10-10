@@ -34,6 +34,13 @@ MAX_ENDPOINT_LIMIT = 100
 MAX_READ_BYTES = 8 * 1024 * 1024
 
 
+def _key_present(provider: str, config: Mapping[str, Any]) -> bool:
+    try:
+        return bool(get_api_key(provider, dict(config)))
+    except ValueError:  # blocked/invalid SearXNG URL: not usable, not an error here
+        return False
+
+
 def _bounded_limit(value: int) -> int:
     if isinstance(value, bool):
         return 1
@@ -409,7 +416,7 @@ def _provider_rows(
                 "display_name": spec.display_name,
                 "capabilities": capabilities,
                 "configured": provider_configured(provider, dict(config)),
-                "key_present": bool(get_api_key(provider, dict(config))),
+                "key_present": _key_present(provider, config),
                 "disabled": provider in disabled,
                 "auto_allowed": (
                     provider in allowed if allowed is not None else spec.auto_allowed_by_default

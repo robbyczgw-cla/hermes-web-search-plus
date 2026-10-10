@@ -537,7 +537,8 @@ def _config_section() -> List[str]:
     lines += [
         f"| `auto_routing.enabled` | `{enabled}` | When `false`, routing does not run. Every search "
         "without an explicit provider uses `default_provider`, with no fallback. Without "
-        "`default_provider`, routing returns no provider (`auto_routing_disabled_no_default_provider`). |",
+        "`default_provider`, routing uses the configured priority order and the "
+        "normal fallback chain (`auto_routing_disabled_no_default_provider`). |",
         "| `default_provider` | none | A top-level key. Used only when `auto_routing.enabled` is "
         "`false`. It cannot also be in `disabled_providers`. |",
         f"| `auto_routing.provider_priority` | {_code(default_priority)} | Order of the fallback "

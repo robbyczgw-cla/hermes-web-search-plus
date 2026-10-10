@@ -1179,8 +1179,9 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
     # fall back to other providers. Users who want fallback should keep
     # auto-routing enabled and tune priority/fallback instead.
     explicit_provider_mode = args.provider not in (None, "auto")
-    fixed_provider_mode = (
+    fixed_provider_mode = bool(
         auto_config.get("enabled", True) is False
+        and config.get("default_provider")
         and provider == config.get("default_provider")
         and (args.provider == "auto" or (args.provider is None and not args.similar_url))
     )
@@ -1584,7 +1585,9 @@ def _plan_search_v3(request: RequestV3, config: Dict[str, Any]) -> ProviderPlan:
     disabled = set(auto_config.get("disabled_providers", []))
     research_mode = str(request.options.get("mode") or "normal") == "research"
     fixed_provider_mode = (
-        requested == "auto" and auto_config.get("enabled", True) is False
+        requested == "auto"
+        and auto_config.get("enabled", True) is False
+        and bool(config.get("default_provider"))
     )
     expand_candidates = routing_request.get("allow_fallback", requested == "auto")
     if not fixed_provider_mode and (
