@@ -282,7 +282,7 @@ def test_setup_dry_run_dashboard_reads_the_hermes_resolver_not_the_process_env(t
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "Providers: 1/15 configured" in out
+    assert "Providers: 1/16 configured" in out
     assert "Active: You.com" in out
     # The process BRAVE_API_KEY is not what the Hermes profile sees; the dashboard reports it missing.
     assert "would use Brave Search (BRAVE_API_KEY missing)" in out.split("Setup plan:", 1)[0]
@@ -299,7 +299,7 @@ def test_status_reflects_the_hermes_resolver(tmp_path, monkeypatch, capsys):
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "Providers: 1/15 configured" in out
+    assert "Providers: 1/16 configured" in out
     assert "Active: Linkup" in out
     assert "Brave Search, " not in out
 
@@ -596,7 +596,7 @@ def test_setup_dry_run_can_auto_deny_provider(tmp_path, capsys):
     args.func(args)
 
     out = capsys.readouterr().out
-    assert "auto-allow false: donsetch, octen, querit, serpbase, tinyfish" in out
+    assert "auto-allow false: donsetch, kagi, octen, querit, serpbase, tinyfish" in out
     assert not env_path.exists()
     assert not config_path.exists()
 

@@ -26,7 +26,7 @@ def test_provider_registry_is_the_complete_capability_source():
         "searxng",
         "keenable",
     )
-    assert registry.SEARCH_PROVIDER_IDS[-3:] == ("donsetch", "octen", "tinyfish")
+    assert registry.SEARCH_PROVIDER_IDS[-3:] == ("kagi", "octen", "tinyfish")
     assert registry.EXTRACT_PROVIDER_IDS == (
         "tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper", "donsetch"
     )
@@ -54,6 +54,7 @@ def test_provider_registry_is_the_complete_capability_source():
         "serpbase": False,
         "querit": False,
         "donsetch": False,
+        "kagi": False,
         "octen": False,
         "tinyfish": False,
     }

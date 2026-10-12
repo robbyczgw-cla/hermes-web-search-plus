@@ -74,7 +74,8 @@ Default routing config includes:
       "querit": false,
       "octen": false,
       "tinyfish": false,
-      "donsetch": false
+      "donsetch": false,
+      "kagi": false
     },
     "confidence_threshold": 0.3
   }
@@ -113,7 +114,8 @@ Example:
   "querit": false,
   "octen": false,
   "tinyfish": false,
-  "donsetch": false
+  "donsetch": false,
+  "kagi": false
 }
 ```
 

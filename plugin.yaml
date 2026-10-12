@@ -20,6 +20,7 @@ optional_env:
   - TYPESAFE_API_KEY
   - MONID_API_KEY
   - TINYFISH_API_KEY
+  - KAGI_API_KEY
 provides_tools:
   - web_search_plus
   - web_extract_plus
@@ -80,5 +81,6 @@ config_schema:
   keenable_api_key: {type: secret, env: KEENABLE_API_KEY, description: "Keenable API key"}
   monid_api_key: {type: secret, env: MONID_API_KEY, description: "Monid API key (explicit-only; enable in config.json)"}
   tinyfish_api_key: {type: secret, env: TINYFISH_API_KEY, description: "TinyFish API key (explicit-only; enable in config.json)"}
+  kagi_api_key: {type: secret, env: KAGI_API_KEY, description: "Kagi Search API key (explicit-only; enable in config.json)"}
   typesafe_api_key: {type: secret, env: TYPESAFE_API_KEY, description: "TypeSafe key for the optional Jev overlay (off unless enabled in config.json)"}
   donsetch_bin: {type: str, label: "DonSeTch binary", description: "Path to the DonSeTch binary (a file path, not a secret). Empty leaves config.json unchanged."}

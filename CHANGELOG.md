@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Kagi Search as a bundled, source-only Search provider through the public Provider SDK (`providers.d/kagi.py`). It calls Kagi's v1 Search API (`POST /api/v1/search`) and maps freshness, region and include/exclude-domain filters onto Kagi's `filters` and inline `lens` objects, uses the news workflow for news searches, and asks for Kagi's inline `extract` when raw content is requested. Results stay source-only: web, news and interesting-finds items become `source_result()` entries carrying title, snippet, date, thumbnail and language. The provider is explicit-only by default (`auto_allow=false`), is not part of the default routing priority, and is configured with `KAGI_API_KEY`. A missing or non-positive result count uses the default of 10 and counts above 50 are capped at 50.
+
+### Security and cost controls
+
+- Send the Kagi key only in the `Authorization: Bot …` header of the fixed `https://kagi.com/api/v1/search` endpoint, cap response bodies at 8 MiB, and translate upstream HTTP, transport and Kagi API-error envelopes into stable WSP error codes that never echo Kagi's message text.
+
 ## [v5.1.0] — 2026-10-12
 
 ### Breaking changes
