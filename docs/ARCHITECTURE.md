@@ -46,7 +46,7 @@ Each provider adapter normalizes provider-specific request and response details 
 
 Provider capability classes:
 
-- Search-only: Brave, SearXNG, SerpBase, and Querit. Brave is first in the default auto-pool; SerpBase and Querit default to `auto_allow=false` and are explicit/guarded unless users opt in.
+- Search-only: Brave, SearXNG, SerpBase, Querit, and the optional [Parallel Search MCP provider](PARALLEL_MCP.md). Brave is first in the default auto-pool; SerpBase and Querit default to `auto_allow=false` and are explicit/guarded unless users opt in.
 - Search and extraction: You.com, Serper, Firecrawl, Tavily, Exa, Linkup, Parallel, Keenable, and the optional local DonSeTch MCP sidecar. Serper extraction uses its webpage scraper (`scrape.serper.dev`) and sits last in the default auto-extraction fallback chain. DonSeTch defaults to `auto_allow=false` for both capabilities and is explicit-only unless deliberately enabled.
 
 Provider pricing, freshness, ranking, localization, and vertical support are controlled by the providers. The plugin normalizes responses; it does not make providers equivalent.
@@ -74,6 +74,7 @@ Default routing config includes:
       "querit": false,
       "octen": false,
       "tinyfish": false,
+      "parallel-mcp": false,
       "donsetch": false
     },
     "confidence_threshold": 0.3
@@ -113,6 +114,7 @@ Example:
   "querit": false,
   "octen": false,
   "tinyfish": false,
+  "parallel-mcp": false,
   "donsetch": false
 }
 ```

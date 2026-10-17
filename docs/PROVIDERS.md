@@ -23,6 +23,7 @@ and the plugin provider catalog; regenerate it with `python scripts/gen_provider
 | Keenable | ✅ | ✅ | `KEENABLE_API_KEY` | yes (`KEENABLE_ALLOW_PUBLIC` opt-in) | yes (priority 12) | Keyless public tier; optional key for higher limits | https://keenable.ai |
 | DonSeTch (local MCP) | ✅ | ✅ | `DONSETCH_BIN` | — | explicit-only (`auto_allow=false`) | Free local binary; no API key | https://github.com/dondai44423/donsetch |
 | Octen via Monid | ✅ | — | `MONID_API_KEY` | — | explicit-only (`auto_allow=false`) | No free-tier claim; Monid API key and wallet balance required | https://app.monid.ai/access/api-keys |
+| Parallel Search MCP | ✅ | — | `PARALLEL_MCP_API_KEY` | yes (`PARALLEL_MCP_ALLOW_PUBLIC` opt-in) | explicit-only (`auto_allow=false`) | Free anonymous tier (explicit opt-in); rate limits apply | https://docs.parallel.ai/integrations/mcp/search-mcp |
 | TinyFish Search | ✅ | — | `TINYFISH_API_KEY` | — | explicit-only (`auto_allow=false`) | Search does not consume credits; API access required (30 rpm Free/PAYG) | https://agent.tinyfish.ai/api-keys |
 
 `priority N` is the provider's position in the default routing priority list.
@@ -94,6 +95,10 @@ Local DonSeTch 3.x stdio MCP provider for metasearch, direct extraction, PDF/OCR
 ### Octen via Monid
 
 Explicit-only Octen source-result web search through Monid, with native recency and domain filtering.
+
+### Parallel Search MCP
+
+Opt-in Parallel MCP web search with source excerpts; no key required for the public tier.
 
 ### TinyFish Search
 

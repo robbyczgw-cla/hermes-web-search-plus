@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Optional `parallel-mcp` SDK search provider: free anonymous Parallel Search MCP with explicit public-access opt-in, source excerpts, bounded requests and unchanged automatic routing. See [setup and limits](docs/PARALLEL_MCP.md).
+
 ## [v5.1.1] — 2026-10-15
 
 ### Security

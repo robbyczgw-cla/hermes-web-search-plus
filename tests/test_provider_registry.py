@@ -26,7 +26,7 @@ def test_provider_registry_is_the_complete_capability_source():
         "searxng",
         "keenable",
     )
-    assert registry.SEARCH_PROVIDER_IDS[-3:] == ("donsetch", "octen", "tinyfish")
+    assert registry.SEARCH_PROVIDER_IDS[-4:] == ("donsetch", "octen", "parallel-mcp", "tinyfish")
     assert registry.EXTRACT_PROVIDER_IDS == (
         "tavily", "exa", "linkup", "parallel", "firecrawl", "you", "keenable", "serper", "donsetch"
     )
@@ -36,7 +36,7 @@ def test_provider_registry_is_the_complete_capability_source():
     assert registry.PROVIDER_SPECS["keenable"].supports_search is True
     assert registry.PROVIDER_SPECS["keenable"].keyless is True
     assert registry.KEYLESS_EXTRACT_PROVIDER_IDS == ("keenable",)
-    assert registry.KEYLESS_PROVIDER_IDS == ("keenable",)
+    assert registry.KEYLESS_PROVIDER_IDS == ("keenable", "parallel-mcp")
     assert registry.PROVIDER_SPECS["serper"].env_var == "SERPER_API_KEY"
     assert registry.PROVIDER_SPECS["tavily"].supports_extract is True
     assert registry.PROVIDER_SPECS["brave"].auto_allowed_by_default is True
@@ -56,6 +56,7 @@ def test_provider_registry_is_the_complete_capability_source():
         "donsetch": False,
         "octen": False,
         "tinyfish": False,
+        "parallel-mcp": False,
     }
     assert "research" in registry.PROVIDER_SPECS["tavily"].capability_labels
 
