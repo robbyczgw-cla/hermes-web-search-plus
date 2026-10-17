@@ -71,3 +71,7 @@ The committed `providers.d/example_fixture.py` is a no-network, non-production
 proof of the extension path. It is listed by status/doctor/bench and accepted
 for explicit dispatch only when its keyless public access is enabled; it is
 never in the default auto pool.
+
+The bundled [Parallel Search MCP provider](PARALLEL_MCP.md) demonstrates an
+explicit-only keyless HTTP provider with bounded MCP requests and source-only
+projection.

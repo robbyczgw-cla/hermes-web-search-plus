@@ -55,7 +55,12 @@ def normalize_parallel_search_mode(value: Any) -> Optional[str]:
 
 
 SUPPORTED_PROFILES = frozenset({"standard", "self_hosted"})
-SELF_HOSTED_SEARCH_PROVIDER_IDS = ("searxng", *KEYLESS_PROVIDER_IDS)
+# A keyless SDK provider can still require explicit selection. Profiles must
+# preserve that declaration instead of silently promoting it into auto routing.
+SELF_HOSTED_SEARCH_PROVIDER_IDS = (
+    "searxng",
+    *(provider for provider in KEYLESS_PROVIDER_IDS if PROVIDER_SPECS[provider].auto_allowed_by_default),
+)
 SELF_HOSTED_EXTRACT_PROVIDER_IDS = tuple(KEYLESS_EXTRACT_PROVIDER_IDS)
 
 

@@ -14,6 +14,7 @@ optional_env:
   - FIRECRAWL_API_KEY
   - YOU_API_KEY
   - PARALLEL_API_KEY
+  - PARALLEL_MCP_API_KEY
   - SEARXNG_INSTANCE_URL
   - KEENABLE_API_KEY
   - DONSETCH_BIN
@@ -77,6 +78,7 @@ config_schema:
   querit_api_key: {type: secret, env: QUERIT_API_KEY, description: "Querit API key (explicit-only; enable in config.json)"}
   firecrawl_api_key: {type: secret, env: FIRECRAWL_API_KEY, description: "Firecrawl API key"}
   parallel_api_key: {type: secret, env: PARALLEL_API_KEY, description: "Parallel API key"}
+  parallel_mcp_api_key: {type: secret, env: PARALLEL_MCP_API_KEY, description: "Optional Parallel Search MCP key for higher limits (explicit-only)"}
   keenable_api_key: {type: secret, env: KEENABLE_API_KEY, description: "Keenable API key"}
   monid_api_key: {type: secret, env: MONID_API_KEY, description: "Monid API key (explicit-only; enable in config.json)"}
   tinyfish_api_key: {type: secret, env: TINYFISH_API_KEY, description: "TinyFish API key (explicit-only; enable in config.json)"}

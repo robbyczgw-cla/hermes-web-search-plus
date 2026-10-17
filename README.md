@@ -160,7 +160,7 @@ Full parameters, freshness and locale behavior, provider selection, extraction c
 
 **Where to go next:**
 
-- **Installing or configuring providers** → [User Guide](docs/USER_GUIDE.md) · [DonSeTch local provider](docs/DONSETCH.md)
+- **Installing or configuring providers** → [User Guide](docs/USER_GUIDE.md) · [DonSeTch local provider](docs/DONSETCH.md) · [Parallel keyless search](docs/PARALLEL_MCP.md)
 - **Comparing provider privacy and terms** → [Provider Privacy & Terms](https://websearchplus.xyz/providers.html#privacy-terms)
 - **Upgrading** → [Breaking changes in 5.1](CHANGELOG.md#breaking-changes) · [Breaking changes in 5.0](CHANGELOG.md#breaking-changes-1) · [DonSeTch migration from 4.0](docs/DONSETCH.md#migration-from-hound)
 - **What changed** → [Changelog](CHANGELOG.md)
