@@ -507,8 +507,11 @@ def response_from_legacy(
         if isinstance(authoritative_attempts, (list, tuple))
         else _attempts(request, plan, payload, selected, len(raw_items))
     )
+    # A partial attempt (batch stopped by a provider-wide error) served pages too.
     successful_attempts = [
-        attempt for attempt in provider_attempts if attempt.outcome is AttemptOutcome.SUCCESS
+        attempt
+        for attempt in provider_attempts
+        if attempt.outcome in {AttemptOutcome.SUCCESS, AttemptOutcome.PARTIAL}
     ]
     # Prefer the selected provider's attempt: per-URL extract fallback can
     # leave later successful attempts that contributed nothing.
@@ -528,7 +531,7 @@ def response_from_legacy(
     if (aggregate_research or multi_source_extract) and authoritative_attempts:
         observations = []
         for attempt in provider_attempts:
-            if attempt.outcome is not AttemptOutcome.SUCCESS:
+            if attempt not in successful_attempts:
                 continue
             # Failed or preflight-refused URLs have no serving provider;
             # anchor their slots to the selected attempt instead of dropping them.

@@ -62,3 +62,61 @@ def test_batch_timeout_keeps_completed_pages_and_closes_session(monkeypatch, req
     assert result["results"][0]["content"] == "already fetched"
     assert result["results"][1]["error"] == "donsetch_timeout"
     assert result["results"][2]["error"] == http_client.NOT_TRIED_DEADLINE_ERROR
+
+
+def _failing_session(module, monkeypatch, urls, sessions):
+    class FakeSession:
+        def __init__(self, _binary, _timeout):
+            self.closed = False
+            self.calls = []
+            sessions.append(self)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            self.closed = True
+            return False
+
+        def call(self, _tool, arguments):
+            assert not self.closed
+            self.calls.append(arguments["url"])
+            if arguments["url"] == urls[1]:
+                raise RuntimeError("donsetch_mcp_failed")
+            return {
+                "structured": {"url": arguments["url"], "content_ok": True, "status": 200},
+                "text": "already fetched",
+            }
+
+    monkeypatch.setitem(module, "DonsetchSession", FakeSession)
+
+
+def test_session_failure_midway_keeps_completed_pages_and_stops(monkeypatch):
+    spec = provider_registry.PROVIDER_SPECS["donsetch"]
+    urls = [f"https://example.org/{part}" for part in ("done", "broken", "not-started")]
+    sessions = []
+    _failing_session(spec.execute_extract.__globals__, monkeypatch, urls, sessions)
+
+    result = spec.execute_extract(
+        None, "donsetch", urls, shutil.which("true"), "markdown", False, False, False, {}, False,
+    )
+
+    assert sessions[0].calls == urls[:2]
+    assert sessions[0].closed
+    assert [item["url"] for item in result["results"]] == urls
+    assert result["results"][0]["content"] == "already fetched"
+    assert result["results"][1]["error"] == "donsetch_mcp_failed"
+    assert result["results"][2]["error"] == "not tried: donsetch_mcp_failed"
+
+
+def test_session_failure_on_first_url_still_raises(monkeypatch):
+    spec = provider_registry.PROVIDER_SPECS["donsetch"]
+    urls = [f"https://example.org/{part}" for part in ("broken", "not-started")]
+    sessions = []
+    _failing_session(spec.execute_extract.__globals__, monkeypatch, ["", urls[0]], sessions)
+
+    with pytest.raises(RuntimeError, match="donsetch_mcp_failed"):
+        spec.execute_extract(
+            None, "donsetch", urls, shutil.which("true"), "markdown", False, False, False, {}, False,
+        )
+    assert sessions[0].calls == urls[:1]

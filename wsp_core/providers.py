@@ -17,6 +17,7 @@ from .daemon_tasks import DaemonTask
 from .http_client import (
     DEFAULT_USER_AGENT,
     NOT_TRIED_DEADLINE_ERROR,
+    ProviderBatchStopped,
     ProviderRequestError,
     RequestDeadlineExceeded,
     TRANSIENT_HTTP_CODES,
@@ -1025,11 +1026,15 @@ def _normalize_extract_result(
             result[key] = value
     return result
 
-# Errors that hit the whole provider account; they must reach the attempt
-# engine (circuit breaker, fallback) instead of becoming a per-URL item.
-_PROVIDER_WIDE_ERROR_CLASSES = frozenset(
-    {ErrorClass.AUTH, ErrorClass.QUOTA, ErrorClass.RATE_LIMIT, ErrorClass.CONFIG}
-)
+# Errors that hit the whole provider account. Further requests in the batch
+# would fail the same way, so the batch stops; the error must still reach the
+# attempt engine (circuit breaker, receipts) instead of becoming a per-URL item.
+_PROVIDER_WIDE_ERROR_CAUSES = {
+    ErrorClass.RATE_LIMIT: "provider rate limit reached",
+    ErrorClass.QUOTA: "provider out of credits",
+    ErrorClass.AUTH: "provider authentication failed",
+    ErrorClass.CONFIG: "provider configuration error",
+}
 
 
 def _not_tried_extract_result(provider: str, url: str) -> Dict[str, Any]:
@@ -1037,21 +1042,46 @@ def _not_tried_extract_result(provider: str, url: str) -> Dict[str, Any]:
     return _normalize_extract_result(provider, url, error=NOT_TRIED_DEADLINE_ERROR)
 
 
+def _provider_wide_cause(provider: str, exc: BaseException) -> Optional[str]:
+    """Short cause for an account-wide error, or None for a per-URL error."""
+    return _PROVIDER_WIDE_ERROR_CAUSES.get(classify_provider_error(exc, provider=provider).error_class)
+
+
+def _batch_stopped_extract_result(provider: str, url: str, cause: str) -> Dict[str, Any]:
+    """Error item for a batch URL skipped after a provider-wide error."""
+    return _normalize_extract_result(provider, url, error=f"not tried: {cause}")
+
+
 def _per_url_extract_error(provider: str, url: str, label: str, exc: ProviderRequestError) -> Dict[str, Any]:
-    """Turn one URL's fetch error into an error item, or re-raise account-wide errors."""
-    if classify_provider_error(exc, provider=provider).error_class in _PROVIDER_WIDE_ERROR_CLASSES:
-        raise exc
+    """Turn one URL's fetch error into an error item naming its cause."""
     status = f" (HTTP {exc.status_code})" if isinstance(exc.status_code, int) else ""
-    return _normalize_extract_result(provider, url, error=f"{label} failed{status}")
+    cause = _provider_wide_cause(provider, exc)
+    return _normalize_extract_result(provider, url, error=f"{label} failed{status}" + (f": {cause}" if cause else ""))
 
 
-def _per_url_extract_payload(
-    provider: str, results: List[Dict[str, Any]], first_error: Optional[BaseException]
+def _extract_batch_payload(
+    provider: str,
+    urls: List[str],
+    results: List[Dict[str, Any]],
+    first_error: Optional[BaseException],
+    stop_error: Optional[BaseException] = None,
 ) -> dict:
-    """Keep fetched URLs; when every URL failed, raise the first error as before."""
+    """Keep fetched URLs; when every URL failed, raise the first error as before.
+
+    After a provider-wide ``stop_error`` the fetched pages travel inside
+    ProviderBatchStopped, so the engine records the failure without losing
+    them. With nothing fetched the error itself is raised, as before.
+    """
+    for url, item in zip(urls, results):
+        item["requested_url"] = url
+    payload = {"provider": provider, "results": results}
+    if stop_error is not None:
+        if not any(not item.get("error") and str(item.get("content") or "").strip() for item in results):
+            raise stop_error
+        raise ProviderBatchStopped(stop_error, payload)
     if first_error is not None and all(item.get("error") for item in results):
         raise first_error
-    return {"provider": provider, "results": results}
+    return payload
 
 
 def extract_firecrawl(
@@ -1072,7 +1102,11 @@ def extract_firecrawl(
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     results: List[Dict[str, Any]] = []
     first_error: Optional[ProviderRequestError] = None
+    stop_error: Optional[ProviderRequestError] = None
     for url in urls:
+        if stop_error is not None:
+            results.append(_batch_stopped_extract_result("firecrawl", url, _provider_wide_cause("firecrawl", stop_error)))
+            continue
         if deadline_passed():
             # Pages already fetched are kept; no new request after the deadline.
             results.append(_not_tried_extract_result("firecrawl", url))
@@ -1086,6 +1120,9 @@ def extract_firecrawl(
             # One failing URL must not discard the pages already paid for.
             results.append(_per_url_extract_error("firecrawl", url, "Firecrawl scrape", exc))
             first_error = first_error or exc
+            if _provider_wide_cause("firecrawl", exc):
+                # The account is blocked: later URLs would fail the same way.
+                stop_error = exc
             continue
         if data.get("success") is False:
             results.append(_normalize_extract_result("firecrawl", url, error="Firecrawl scrape failed"))
@@ -1119,9 +1156,7 @@ def extract_firecrawl(
             images=images,
             metadata=metadata,
         ))
-    for url, item in zip(urls, results):
-        item["requested_url"] = url
-    return _per_url_extract_payload("firecrawl", results, first_error)
+    return _extract_batch_payload("firecrawl", urls, results, first_error, stop_error)
 
 def extract_linkup(
     urls: List[str],
@@ -1135,8 +1170,12 @@ def extract_linkup(
 ) -> dict:
     """Extract URL content using Linkup fetch."""
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    # The first provider-wide error; queued fetches see it and send nothing.
+    stopped: List[ProviderRequestError] = []
 
     def fetch_one(url: str) -> Dict[str, Any]:
+        if stopped:
+            return _batch_stopped_extract_result("linkup", url, _provider_wide_cause("linkup", stopped[0]))
         if deadline_passed():
             # DaemonTask copies the context, so queued fetches see the deadline.
             return _not_tried_extract_result("linkup", url)
@@ -1146,7 +1185,12 @@ def extract_linkup(
             "includeRawHtml": include_raw_html or output_format == "html",
             "renderJs": render_js,
         }
-        data = make_request(api_url, headers, body, timeout=timeout)
+        try:
+            data = make_request(api_url, headers, body, timeout=timeout)
+        except ProviderRequestError as exc:
+            if _provider_wide_cause("linkup", exc):
+                stopped.append(exc)
+            raise
         if data.get("error"):
             return _normalize_extract_result("linkup", url, error="Linkup fetch failed")
         markdown = data.get("markdown") or ""
@@ -1196,9 +1240,7 @@ def extract_linkup(
             # One failing URL must not discard the pages already paid for.
             results.append(_per_url_extract_error("linkup", url, "Linkup fetch", exc))
             first_error = first_error or exc
-    for url, item in zip(urls, results):
-        item["requested_url"] = url
-    return _per_url_extract_payload("linkup", results, first_error)
+    return _extract_batch_payload("linkup", urls, results, first_error, stopped[0] if stopped else None)
 
 def extract_tavily(
     urls: List[str],
@@ -1920,7 +1962,11 @@ def extract_keenable(
     base_url, headers = _keenable_endpoint(api_url, api_key, public)
 
     results: List[Dict[str, Any]] = []
+    stop_error: Optional[ProviderRequestError] = None
     for url in urls:
+        if stop_error is not None:
+            results.append(_batch_stopped_extract_result("keenable", url, _provider_wide_cause("keenable", stop_error)))
+            continue
         if deadline_passed():
             results.append(_not_tried_extract_result("keenable", url))
             continue
@@ -1937,11 +1983,16 @@ def extract_keenable(
                 author=data.get("author"),
                 description=data.get("description"),
             ))
+        except ProviderRequestError as e:
+            if _provider_wide_cause("keenable", e):
+                # The account is blocked: stop, keep fetched pages, tell the engine.
+                results.append(_per_url_extract_error("keenable", url, "Keenable fetch", e))
+                stop_error = e
+            else:
+                results.append(_normalize_extract_result("keenable", url, error=str(e)))
         except Exception as e:
             results.append(_normalize_extract_result("keenable", url, error=str(e)))
-    for url, item in zip(urls, results):
-        item["requested_url"] = url
-    return {"provider": "keenable", "results": results}
+    return _extract_batch_payload("keenable", urls, results, None, stop_error)
 
 
 def extract_serper(
@@ -1967,7 +2018,11 @@ def extract_serper(
     """
     headers = {"X-API-KEY": api_key, "Content-Type": "application/json"}
     results: List[Dict[str, Any]] = []
+    stop_error: Optional[ProviderRequestError] = None
     for url in urls:
+        if stop_error is not None:
+            results.append(_batch_stopped_extract_result("serper", url, _provider_wide_cause("serper", stop_error)))
+            continue
         if deadline_passed():
             results.append(_not_tried_extract_result("serper", url))
             continue
@@ -1992,8 +2047,13 @@ def extract_serper(
                 jsonld=data.get("jsonld"),
                 credits=data.get("credits"),
             ))
+        except ProviderRequestError as e:
+            if _provider_wide_cause("serper", e):
+                # The account is blocked: stop, keep fetched pages, tell the engine.
+                results.append(_per_url_extract_error("serper", url, "Serper scrape", e))
+                stop_error = e
+            else:
+                results.append(_normalize_extract_result("serper", url, error=str(e)))
         except Exception as e:
             results.append(_normalize_extract_result("serper", url, error=str(e)))
-    for url, item in zip(urls, results):
-        item["requested_url"] = url
-    return {"provider": "serper", "results": results}
+    return _extract_batch_payload("serper", urls, results, None, stop_error)

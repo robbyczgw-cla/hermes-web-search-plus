@@ -970,6 +970,17 @@ def execute_extract(
                     # A late MCP reply can no longer be paired safely. Exit the
                     # session (and reap its child) without discarding earlier pages.
                     break
+                except RuntimeError as exc:
+                    if not any(not item.get("error") for item in projected):
+                        raise
+                    # The session failed midway: keep the fetched pages and
+                    # stop instead of sending more calls into a broken process.
+                    projected.append({"url": requested_url, "requested_url": requested_url, "error": str(exc), "status": 0})
+                    projected.extend(
+                        {"url": url, "requested_url": url, "error": f"not tried: {exc}", "status": 0}
+                        for url in requested_urls[index + 1:]
+                    )
+                    break
                 result = _project_fetch_item(payload, requested_url)
                 if include_raw_html and not result.get("error"):
                     # DonSeTch deliberately returns Markdown; do not label it HTML.

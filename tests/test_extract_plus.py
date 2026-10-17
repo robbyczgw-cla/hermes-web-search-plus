@@ -659,3 +659,17 @@ class ExtractPlusPluginTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_format_extract_results_shows_urls_past_the_cap():
+    payload = {
+        "provider": "firecrawl",
+        "results": [
+            {"url": "https://example.com/a", "title": "A", "content": "page text"},
+            {"url": "https://example.com/k", "title": "", "content": None,
+             "error": "not tried: limit of 10 URLs per call reached"},
+        ],
+    }
+    text = plugin._format_extract_results(payload)
+    assert "https://example.com/k" in text
+    assert "not tried: limit of 10 URLs per call reached" in text

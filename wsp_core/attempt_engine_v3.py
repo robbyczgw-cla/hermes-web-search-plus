@@ -20,6 +20,7 @@ from .contract_v3 import (
 from .credentials import is_secret_scope_error
 from .errors_v3 import classify_provider_error
 from .http_client import (
+    ProviderBatchStopped,
     RequestDeadlineExceeded,
     is_request_deadline_abort,
     request_deadline_scope,
@@ -198,8 +199,13 @@ class AttemptEngine:
         before: CircuitState,
         now: Callable[[], int],
         deadline_aborted: bool = False,
+        payload: Optional[Dict] = None,
     ) -> AttemptExecution:
-        """Report a real try, recording only provider-owned failures as health."""
+        """Report a real try, recording only provider-owned failures as health.
+
+        A ``payload`` (results fetched before a provider-wide error stopped
+        the batch) is kept and the attempt is reported as partial.
+        """
         after = before
         if not deadline_aborted:
             after = self.store.record_failure(
@@ -208,15 +214,20 @@ class AttemptEngine:
                 now=int(now()),
                 retry_after_seconds=error.retry_after_seconds,
             ).state
+        outcome = AttemptOutcome.FAILED
+        if deadline_aborted:
+            outcome = AttemptOutcome.CANCELLED
+        elif payload is not None:
+            outcome = AttemptOutcome.PARTIAL
         return AttemptExecution(
-            None,
+            payload,
             ProviderAttemptV3(
                 attempt_id=self._attempt_id(context, started),
                 provider=context.provider,
                 capability=context.capability,
-                outcome=(AttemptOutcome.CANCELLED if deadline_aborted else AttemptOutcome.FAILED),
+                outcome=outcome,
                 retry_count=len(tries) - 1,
-                result_count=0,
+                result_count=len((payload or {}).get("results") or []),
                 started_at=self._started_at(started),
                 duration_ms=max(
                     0, int((time.monotonic() - attempt_started_monotonic) * 1000)
@@ -517,6 +528,9 @@ class AttemptEngine:
                     # without retaining a probe that produced no health verdict.
                     self._release_lease(context, decision, int(now()))
                     raise
+                stopped = exc if isinstance(exc, ProviderBatchStopped) else None
+                if stopped is not None:
+                    exc = stopped.cause
                 classified = classify_provider_error(exc, provider=context.provider)
                 if classified.error_class not in _HEALTH_ERROR_CLASSES:
                     self._release_lease(context, decision, int(now()))
@@ -540,7 +554,8 @@ class AttemptEngine:
                     self._release_lease(context, decision, int(now()))
                 retry_wait = (
                     self._retry_wait(context, classified, index)
-                    if not deadline_aborted and classified.retryable and index < self.max_attempts - 1
+                    if not deadline_aborted and stopped is None and classified.retryable
+                    and index < self.max_attempts - 1
                     else None
                 )
                 if retry_wait is not None:
@@ -560,6 +575,7 @@ class AttemptEngine:
                     before=before,
                     now=now,
                     deadline_aborted=deadline_aborted,
+                    payload=stopped.payload if stopped is not None else None,
                 )
 
             reconciled = self.store.commit_budget(

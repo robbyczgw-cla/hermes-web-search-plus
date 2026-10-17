@@ -36,7 +36,7 @@ from .bounded_context_v3 import (
 from .attempt_engine_v3 import AttemptEngine, provider_attempt_context, request_deadline
 from .errors_v3 import ProviderContractFailure
 from .http_client import NOT_TRIED_DEADLINE_ERROR, RequestDeadlineExceeded
-from .http_client import ProviderRequestError
+from .http_client import ProviderBatchStopped, ProviderRequestError
 # Provider dispatch resolves implementations late through this module.
 from . import providers as _providers
 from .provider_adapter_protocol import validate_adapter_result
@@ -446,12 +446,15 @@ def _extract_plus_core(
         raise ValueError(f"Unknown extract provider: {selected}")
     # provider_dispatch.EXTRACT_DISPATCH builds provider kwargs; this module is
     # passed so adapters resolve extract_<provider> late.
-    result = validate_adapter_result(
-        selected,
-        "extract",
-        adapter(_providers, selected, urls, key, output_format, include_images,
-                include_raw_html, render_js, config, keyless_allowed),
-    )
+    stopped: Optional[ProviderBatchStopped] = None
+    try:
+        raw_result = adapter(_providers, selected, urls, key, output_format, include_images,
+                             include_raw_html, render_js, config, keyless_allowed)
+    except ProviderBatchStopped as exc:
+        # A provider-wide error ended the batch: check the fetched pages like
+        # any result, then hand them back on the exception.
+        stopped, raw_result = exc, exc.payload
+    result = validate_adapter_result(selected, "extract", raw_result)
     from .jev_optional import filter_extract_results
 
     res_list, jev_meta = filter_extract_results(result.get("results") or [], config=config)
@@ -461,6 +464,8 @@ def _extract_plus_core(
         if not res_list:
             raise ProviderContractFailure("jev_extract_quality_rejected")
     if not any(_extract_item_usable(r) for r in res_list):
+        if stopped is not None:
+            raise stopped.cause
         if res_list and all(r.get("error") == NOT_TRIED_DEADLINE_ERROR for r in res_list):
             raise RequestDeadlineExceeded()
         # Empty lists and blank pages are failures too, so they fall back
@@ -469,6 +474,9 @@ def _extract_plus_core(
     result["routing"] = {"provider": selected, "requested_provider": selected, "fallback_used": False, "fallback_errors": []}
     if profile_deviation:
         result.setdefault("metadata", {})["profile_deviation"] = True
+    if stopped is not None:
+        stopped.payload = result
+        raise stopped
     return result
 
 
@@ -578,16 +586,20 @@ def _execute_extract_v3(
         batch = [urls[position] for position in pending]
 
         def operation(current_provider=provider, batch=batch):
-            result = _extract_plus_core(
-                urls=batch,
-                provider=current_provider,
-                output_format=str(options.get("output_format", "markdown")),
-                include_images=bool(options.get("include_images", False)),
-                include_raw_html=bool(options.get("include_raw_html", False)),
-                render_js=bool(options.get("render_js", False)),
-                config=dict(config),
-                urls_validated=True,
-            )
+            stopped = None
+            try:
+                result = _extract_plus_core(
+                    urls=batch,
+                    provider=current_provider,
+                    output_format=str(options.get("output_format", "markdown")),
+                    include_images=bool(options.get("include_images", False)),
+                    include_raw_html=bool(options.get("include_raw_html", False)),
+                    render_js=bool(options.get("render_js", False)),
+                    config=dict(config),
+                    urls_validated=True,
+                )
+            except ProviderBatchStopped as exc:
+                stopped, result = exc, exc.payload
             if result.get("error"):
                 raise ProviderRequestError(str(result["error"]), transient=False)
             matched, unmatched = match_extract_items(batch, result.get("results") or [])
@@ -597,7 +609,13 @@ def _execute_extract_v3(
                      "has_content": _extract_item_usable(item)}
                     for item in unmatched
                 )
+                if stopped is not None:
+                    raise stopped.cause
                 raise ProviderContractFailure("all_urls_unmatched_or_failed")
+            if stopped is not None:
+                # The engine records the failure and keeps the fetched pages;
+                # the URLs left open go to the next provider below.
+                raise stopped
             return result
 
         attempted = engine.execute(context, operation)
@@ -630,6 +648,9 @@ def _execute_extract_v3(
                     failed[position] = _extract_error_item(urls[position], _EMPTY_EXTRACT_ERROR, item)
                     still_pending.append(position)
             pending = still_pending
+            if attempted.receipt.error is not None:
+                # Partial attempt stopped by a provider-wide error.
+                fallback_errors.append({"provider": provider, "error": attempted.receipt.error.error_class.value})
             continue
         error_code = (
             "all_urls_failed"
@@ -1237,4 +1258,22 @@ def extract_plus(
     )
     legacy = v3_response_to_legacy_extract(execution)
     _resolve_full_text_paths(legacy, runtime_config)
+    _append_omitted_url_errors(legacy, prepare_extract_request(request, runtime_config))
     return legacy
+
+
+def _append_omitted_url_errors(legacy: Dict[str, Any], plan: Any) -> None:
+    """One result per requested URL: URLs past the fan-out cap get an error row.
+
+    The engine only processes the first ``max_urls`` URLs; the rest used to
+    vanish from the tool output with just an internal warning.
+    """
+    if not plan.omitted_urls:
+        return
+    results = legacy.get("results")
+    if not isinstance(results, list):
+        results = []
+        legacy["results"] = results
+    message = f"not tried: limit of {plan.max_urls} URLs per call reached"
+    for url in plan.omitted_urls:
+        results.append({"url": url, "title": "", "content": None, "error": message})

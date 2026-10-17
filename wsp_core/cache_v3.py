@@ -40,7 +40,7 @@ def cache_material_from_response(
     """Reduce a wire response to cache-owned evidence material."""
     attempts = payload.get("provider_attempts") or []
     successful = next(
-        (item for item in reversed(attempts) if item.get("outcome") == "success"),
+        (item for item in reversed(attempts) if item.get("outcome") in {"success", "partial"}),
         {},
     )
     routing = payload.get("routing_receipt") or {}
