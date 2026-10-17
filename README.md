@@ -17,6 +17,8 @@ It adds two Hermes tools:
 - `web_search_plus` — search the web and return useful sources
 - `web_extract_plus` — read and clean the pages you already have
 
+Run Hermes from your phone? See [HUI+](https://hermesui.xyz).
+
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
 Current release: **v5.1.1**. Version history: [Changelog](CHANGELOG.md).
@@ -211,6 +213,7 @@ MIT — see [LICENSE](LICENSE).
 
 ## Related
 
+- [HUI+ · Hermes UI+](https://hermesui.xyz) — phone, web and desktop app for your own Hermes: approve commands from your phone and act on answers (checklists, choices, forms) instead of reading them
 - [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) — TypeScript/OpenClaw version
 - [Hermes Agent](https://github.com/NousResearch/hermes-agent) — the agent runtime this plugin extends
 - [DonSeTch](https://github.com/dondai44423/donsetch) — independent AGPL-3.0-only local web-research MCP program; WSP integrates through a separate stdio process
