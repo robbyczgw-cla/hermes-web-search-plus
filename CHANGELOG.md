@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows: the DonSeTch stdio MCP session no longer waits on the child's stdout with `select()`. `select()` cannot wait on a pipe on Windows (`WinError 10038`), which failed every donsetch search and extract on Windows with `donsetch: Provider execution failed`. Each session now starts one reader thread when the process starts (mirroring the stderr collector), and JSON-RPC replies are read from that thread's queue, so every call in a batch sees its own response.
+
 ## [v5.1.4] — 2026-10-20
 
 ### Fixed
