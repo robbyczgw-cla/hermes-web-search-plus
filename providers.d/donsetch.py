@@ -24,8 +24,8 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import queue
 import re
-import select
 import shutil
 import subprocess
 import threading
@@ -377,18 +377,20 @@ def _mcp_response_from_stdout(stdout: str, request_id: int) -> dict[str, Any]:
     raise RuntimeError("donsetch_mcp_contract_failed")
 
 
-def _read_mcp_message(process: subprocess.Popen[str], request_id: int, deadline: float) -> dict[str, Any]:
-    if process.stdout is None:
+def _read_mcp_message(lines: queue.Queue[str], request_id: int, deadline: float) -> dict[str, Any]:
+    """Read the next matching JSON-RPC message from the session's queue."""
+    if lines is None:
         raise RuntimeError("donsetch_process_failed")
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError
-        ready, _, _ = select.select([process.stdout], [], [], remaining)
-        if not ready:
+        try:
+            line = lines.get(timeout=remaining)
+        except queue.Empty:
             raise TimeoutError
-        line = process.stdout.readline()
         if not line:
+            lines.put("")  # Keep the end-of-stream marker for later readers.
             raise RuntimeError("donsetch_mcp_failed")
         try:
             message = json.loads(line)
@@ -585,6 +587,8 @@ class DonsetchSession:
         self._deadline = 0.0
         self._stderr = ""
         self._stderr_thread: threading.Thread | None = None
+        self._stdout_lines: queue.Queue[str] | None = None
+        self._stdout_thread: threading.Thread | None = None
         self._closed = False
 
     def __enter__(self) -> DonsetchSession:
@@ -613,6 +617,9 @@ class DonsetchSession:
             bufsize=1,
             env=_child_env(),
         )
+        self._stdout_lines = queue.Queue()
+        self._stdout_thread = threading.Thread(target=self._collect_stdout, daemon=True)
+        self._stdout_thread.start()
         self._stderr_thread = threading.Thread(target=self._collect_stderr, daemon=True)
         self._stderr_thread.start()
         if self._process.stdin is None or self._process.stdout is None:
@@ -638,6 +645,23 @@ class DonsetchSession:
             pass
         self._stderr = "".join(chunks)[:STDERR_LIMIT]
         _remember_stderr(self._stderr)
+
+    def _collect_stdout(self) -> None:
+        # select() cannot wait on a stdio pipe on Windows (WinError 10038),
+        # so one reader thread per process feeds every response line to the
+        # queue that _read_mcp_message waits on.
+        process = self._process
+        lines = self._stdout_lines
+        if process is None or process.stdout is None or lines is None:
+            return
+        try:
+            for raw in process.stdout:
+                lines.put(raw)
+        except (OSError, ValueError):
+            # ValueError: close() shut the pipe while a read was in flight.
+            pass
+        finally:
+            lines.put("")  # End-of-stream marker, like readline() returning "".
 
     def _write(self, payload: dict[str, Any]) -> None:
         process = self._process
@@ -665,7 +689,8 @@ class DonsetchSession:
             }
         )
         assert self._process is not None
-        _mcp_result(_read_mcp_message(self._process, request_id, self._deadline), request_id)
+        assert self._stdout_lines is not None
+        _mcp_result(_read_mcp_message(self._stdout_lines, request_id, self._deadline), request_id)
         self._write({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
 
     def call(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -680,7 +705,8 @@ class DonsetchSession:
             }
         )
         assert self._process is not None
-        result = _mcp_result(_read_mcp_message(self._process, request_id, self._deadline), request_id)
+        assert self._stdout_lines is not None
+        result = _mcp_result(_read_mcp_message(self._stdout_lines, request_id, self._deadline), request_id)
         return _payload_from_tool_result(result)
 
     def close(self) -> None:
