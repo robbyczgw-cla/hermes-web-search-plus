@@ -196,7 +196,10 @@ def test_engine_result_dict_is_unchanged_by_the_header_facts(monkeypatch, handle
     hit = search.run_search_request(**kwargs)
     plain = search.run_search_request(query="json stays", config=_config())
 
-    assert hit == plain
+    # Both are cache hits; their age can differ by a second on a slow run.
+    assert {k: v for k, v in hit.items() if k != "cache_age_seconds"} == {
+        k: v for k, v in plain.items() if k != "cache_age_seconds"
+    }
     assert hit["cached"] is True and "routing" not in hit
     assert not any(key.startswith("_v3_") or key in {"trace", "elapsed_ms", "fallback_from"} for key in hit)
     assert trace["cache_origin_routing"] == {"auto_routed": True, "confidence_level": "low", "reason": "intent_general"}

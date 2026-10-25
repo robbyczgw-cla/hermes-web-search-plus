@@ -2,9 +2,17 @@
 
 ## [Unreleased]
 
+## [v5.1.5] — 2026-10-25
+
 ### Fixed
 
-- Windows: the DonSeTch stdio MCP session no longer waits on the child's stdout with `select()`. `select()` cannot wait on a pipe on Windows (`WinError 10038`), which failed every donsetch search and extract on Windows with `donsetch: Provider execution failed`. Each session now starts one reader thread when the process starts (mirroring the stderr collector), and JSON-RPC replies are read from that thread's queue, so every call in a batch sees its own response.
+- Windows: the DonSeTch stdio MCP session no longer waits on the child's stdout with `select()`. `select()` cannot wait on a pipe on Windows (`WinError 10038`), which failed every donsetch search and extract on Windows with `donsetch: Provider execution failed`. Each session now starts one reader thread when the process starts (mirroring the stderr collector), and JSON-RPC replies are read from that thread's queue, so every call in a batch sees its own response. Thanks to @pompousman for the fix and its regression test (#168).
+- DonSeTch handshake: `clientInfo.version` now carries the Web Search Plus version instead of the DonSeTch version it was tested with (#167).
+- Tests: `test_engine_result_dict_is_unchanged_by_the_header_facts` no longer fails now and then when two cache hits differ in `cache_age_seconds` by a second.
+
+### Changed
+
+- DonSeTch `TESTED_VERSION` is now 4.10.2 (verified with search and extract; 4.7.0 and newer still work). `docs/DONSETCH.md` explains pointing `DONSETCH_BIN` at the binary rather than a `PATH` wrapper, and how to keep a private DonSeTch install for Web Search Plus so a global `npm i -g donsetch` upgrade does not change it. Thanks to @friday-cp for the WSL2 note (#167).
 
 ## [v5.1.4] — 2026-10-20
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 from plugin_loader import load_plugin
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "5.1.4"
+EXPECTED_VERSION = "5.1.5"
 
 
 def _load_plugin_module():
