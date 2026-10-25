@@ -47,7 +47,23 @@ from wsp_sdk import (
 _ALLOWED_OUTPUT_FORMATS = {"markdown"}
 _ALLOWED_SEARCH_TYPES = {"search", "news"}
 _ALLOWED_INTENTS = {"auto", "web", "code", "paper", "news", "entity"}
-TESTED_VERSION = "4.10.1"
+TESTED_VERSION = "4.10.2"
+
+
+def _wsp_version() -> str:
+    """This Web Search Plus release, for the MCP handshake's clientInfo.version.
+
+    Read from the loading engine's user agent (one of the release-version
+    surfaces), so there is no second place to bump. DonSeTch only reads the
+    client name; a failure here must never break a session.
+    """
+    try:
+        engine = wsp_sdk.__name__.rpartition(".")[0] or "wsp_core"
+        agent = importlib.import_module(engine + ".http_client").DEFAULT_USER_AGENT
+        version = str(agent).rpartition("/")[2]
+        return version if re.fullmatch(r"\d+\.\d+\.\d+", version) else "unknown"
+    except Exception:  # noqa: BLE001
+        return "unknown"
 
 
 def _engine_credentials():
@@ -684,7 +700,7 @@ class DonsetchSession:
                 "params": {
                     "protocolVersion": "2025-11-25",
                     "capabilities": {},
-                    "clientInfo": {"name": "web-search-plus", "version": TESTED_VERSION},
+                    "clientInfo": {"name": "web-search-plus", "version": _wsp_version()},
                 },
             }
         )
