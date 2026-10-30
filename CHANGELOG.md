@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v5.1.6] — 2026-10-30
+
 ### Fixed
 
 - Search sources no longer expose opaque Google `/goto` links (`google.com/goto?url=…`), which Serper has passed through since Google's mid-2026 change, typically for every result from position 4 on. They are dropped before ranking, deduplication and caching, without contacting Google, so a Serper search usually keeps about three sources. Classic Google `/url` wrappers are decoded locally. JSON metadata reports wrapped/resolved/dropped counts; the Hermes header adds `redirects_dropped=N` when needed. Optional `serper.resolve_redirects=true` tries one GET per wrapped link (one redirect hop, public destinations only, two seconds per link, within the request deadline); in live tests Google redirected only the first wrapped link of a search and served a JavaScript page for the rest, so it is off by default. It sends a request from your machine to Google.

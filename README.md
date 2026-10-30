@@ -21,10 +21,11 @@ Run Hermes from your phone? See [HUI+](https://hermesui.xyz).
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v5.1.5**. Version history: [Changelog](CHANGELOG.md).
+Current release: **v5.1.6**. Version history: [Changelog](CHANGELOG.md).
 
 ### What's new in 5.1
 
+- **5.1.6:** better sources. Google `goto` redirect links (Serper passes them through for most results since Google's mid-2026 change) are dropped instead of shown, SerpBase returns working links, broken URLs are filtered out, and security and shopping searches start with Brave. See the [5.1.6 release notes](docs/RELEASE_NOTES_V516.md).
 - **5.1.5:** the DonSeTch provider works on Windows (thanks to @pompousman) and is tested with DonSeTch 4.10.2. See the [5.1.5 release notes](docs/RELEASE_NOTES_V515.md).
 - **5.1.4:** the DonSeTch provider works with DonSeTch 4.7.1 and newer again (tested 4.10.1). Thanks to @friday-cp for the report. See the [5.1.4 release notes](docs/RELEASE_NOTES_V514.md).
 - **5.1.3:** upgrading from 5.0 no longer loses your key silently (`status` and the tools say where the old `.env` is and what to run), and `status` explains how to make Hermes' own `web_search` use your keys (`hermes config set web.search_backend wsp`). See the [5.1.3 release notes](docs/RELEASE_NOTES_V513.md).
