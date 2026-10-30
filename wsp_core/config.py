@@ -167,6 +167,7 @@ DEFAULT_CONFIG = {
     # key as an explicit user override from config.json.
     "serper": {
         "type": "search",
+        "resolve_redirects": True,
         # Webpage scraper endpoint; operator-overridable for compatible
         # self-hosted/proxy services (firecrawl scrape_url pattern).
         "scrape_url": "https://scrape.serper.dev"

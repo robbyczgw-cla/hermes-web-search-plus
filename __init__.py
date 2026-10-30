@@ -2226,6 +2226,9 @@ def _format_results(data: dict, *, now: Optional[datetime] = None) -> str:
     fallback_from = _header_list(data.get("fallback_from"))
     if fallback_from:
         header_bits.append(f"fallback_from={fallback_from}")
+    redirects_dropped = _header_count(metadata.get("redirects_dropped"))
+    if redirects_dropped:
+        header_bits.append(f"redirects_dropped={redirects_dropped}")
     lines.append("[" + " | ".join(header_bits) + "]")
     if not results:
         # A successful call with no hits must not read like a success with content.

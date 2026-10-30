@@ -88,3 +88,4 @@
 {"id": "extract-forced-linkup", "tool": "web_extract_plus", "query": "", "args": {"urls": ["https://docs.example-docs.org/x"], "provider": "linkup"}}
 {"id": "extract-spans", "tool": "web_extract_plus", "query": "", "args": {"urls": ["https://docs.example-docs.org/spans"], "spans": true, "spans_query": "full text"}}
 {"id": "extract-unsafe-url", "tool": "web_extract_plus", "query": "", "args": {"urls": ["http://127.0.0.1/admin"]}}
+{"id": "serper-google-goto-sources", "query": "Football Manager 27 skins modding", "google_redirects": true, "args": {"provider": "serper", "count": 8}}

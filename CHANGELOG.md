@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Search sources no longer expose opaque Google `/goto` links passed through by Serper or other providers. WSP resolves one GET hop with a two-second timeout and at most five concurrent requests, validates public destinations, drops unusable redirects and deduplicates the resolved URLs before caching. Classic Google `/url` wrappers are decoded locally. JSON metadata reports wrapped/resolved/dropped counts; the Hermes header adds `redirects_dropped=N` when needed. Set `serper.resolve_redirects=false` to drop wrappers without contacting Google (fewer results). Resolution sends one GET per opaque wrapper from the user's machine to Google.
+
 ## [v5.1.5] — 2026-10-25
 
 ### Fixed

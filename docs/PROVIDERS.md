@@ -37,6 +37,10 @@ until opted in with `setup.py config set-auto-allow <provider> on`.
 
 Google-like SERP results for facts, shopping, local and news queries, plus webpage scraping.
 
+Google `/goto` source redirects are resolved with one GET per wrapped link from your machine to Google, before deduplication and caching (up to five concurrent requests, two seconds per link, bounded by the request deadline). Google sees your IP address and the token; destination pages are not fetched. Unusable or unsafe redirects are dropped. Classic `/url?q=` and `/url?url=` links are decoded locally.
+
+Set `serper.resolve_redirects=false` in `config.json` to drop wrappers without contacting Google; this yields fewer results and applies to wrappers from any provider. Cache hits reuse cleaned URLs. Result metadata reports `redirects_wrapped`, `redirects_resolved`, and `redirects_dropped`; Hermes appends `redirects_dropped=N` only when N is positive. Native v3 JSON carries the counts in `wsp.search.redirects` warning details.
+
 ### SerpBase
 
 Cheap Google-like SERP fallback; WSP exposes search only, explicit/fallback-only by default.

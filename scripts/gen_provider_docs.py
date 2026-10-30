@@ -113,6 +113,13 @@ def render_provider_docs() -> str:
         if item["recommended"]:
             lines.extend(["*Recommended starter provider.*", ""])
         lines.append(item["description"])
+        if item["provider"] == "serper":
+            lines.extend([
+                "",
+                "Google `/goto` source redirects are resolved with one GET per wrapped link from your machine to Google, before deduplication and caching (up to five concurrent requests, two seconds per link, bounded by the request deadline). Google sees your IP address and the token; destination pages are not fetched. Unusable or unsafe redirects are dropped. Classic `/url?q=` and `/url?url=` links are decoded locally.",
+                "",
+                "Set `serper.resolve_redirects=false` in `config.json` to drop wrappers without contacting Google; this yields fewer results and applies to wrappers from any provider. Cache hits reuse cleaned URLs. Result metadata reports `redirects_wrapped`, `redirects_resolved`, and `redirects_dropped`; Hermes appends `redirects_dropped=N` only when N is positive. Native v3 JSON carries the counts in `wsp.search.redirects` warning details.",
+            ])
 
     lines.append("")
     return "\n".join(lines)
