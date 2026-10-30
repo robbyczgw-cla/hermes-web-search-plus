@@ -8,6 +8,7 @@ from urllib.request import Request
 import pytest
 
 from wsp_core import provider_registry
+from wsp_core import config as config_module
 from wsp_core import providers
 from wsp_core.http_client import ProviderRequestError
 
@@ -25,6 +26,16 @@ class FakeResponse:
 
     def read(self, size=-1):
         return self._raw if size < 0 else self._raw[:size]
+
+
+def test_monid_key_configures_octen_search_not_a_monid_provider(monkeypatch):
+    monkeypatch.setenv("MONID_API_KEY", "fake-monid-test-key")
+    config = config_module._deepcopy_default_config()
+    assert config_module.provider_configured("octen", config)
+    assert not config_module.provider_configured("monid", config)
+    spec = provider_registry.PROVIDER_SPECS["octen"]
+    assert spec.supports_search and not spec.supports_extract
+    assert provider_registry.DEFAULT_AUTO_ALLOW["octen"] is False
 
 
 def _provider_globals():

@@ -1,7 +1,7 @@
 # DonSeTch local provider
 
 Web Search Plus can use [DonSeTch](https://github.com/dondai44423/donsetch)
-4.10.2 (and 4.7.0 and newer) as a separately installed local provider for source-only Search and
+4.10.3 (and 4.7.0 and newer) as a separately installed local provider for source-only Search and
 Extract. DonSeTch is an independent AGPL-3.0-only project. Web Search Plus
 does not bundle, copy, or redistribute its binary.
 
@@ -16,7 +16,7 @@ routing or fallback.
 The upstream project distributes a platform binary through npm:
 
 ```bash
-npm install -g donsetch@4.10.2
+npm install -g donsetch@4.10.3
 command -v donsetch
 donsetch --version
 donsetch doctor
@@ -98,7 +98,7 @@ path, as the doctor suggests. To keep a global `npm i -g donsetch` upgrade from
 changing what Web Search Plus runs, install a private copy for it:
 
 ```bash
-npm install --prefix ~/.hermes/donsetch donsetch@4.10.2
+npm install --prefix ~/.hermes/donsetch donsetch@4.10.3
 hermes config set DONSETCH_BIN ~/.hermes/donsetch/node_modules/donsetch/binaries/donsetch
 ```
 
@@ -106,7 +106,7 @@ Thanks to [@friday-cp](https://github.com/friday-cp) for the WSL2 note (#167).
 
 ## Supported versions and the MCP result shape
 
-DonSeTch 4.7.0 and newer work. 4.10.2 is the tested version; `status` reports
+DonSeTch 4.7.0 and newer work. 4.10.3 is the tested version; `status` reports
 `tested` for it and `compatible_unverified` for any other parsed version.
 4.7.0 and 4.10.1 were verified with the same search and extract run.
 
@@ -133,6 +133,6 @@ JSON object with a boolean `ok`; anything else is still a contract error
 - In the standalone MCP package, explicit DonSeTch calls get a 195-second outer
   subprocess budget, covering the adapter's 180-second stdio timeout; other
   provider budgets remain unchanged.
-- This integration was tested against DonSeTch 4.10.2, 4.10.1 and 4.7.0 for stdio MCP
+- This integration was tested against DonSeTch 4.10.3, 4.10.2, 4.10.1 and 4.7.0 for stdio MCP
   initialization, Search, Fetch, and structured error handling. Successful
   browser/anti-bot execution remains an environment-dependent open gate.

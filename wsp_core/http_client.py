@@ -223,7 +223,12 @@ class _SameOriginRedirectHandler(_urllib_request.HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def _safe_opener():
+class _NoRedirectHandler(_urllib_request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _safe_opener(*, follow_redirects: bool = True):
     """urllib opener with same-origin redirects and no file:/ftp:/data: handlers.
 
     Built per call on purpose: ProxyHandler snapshots the proxy environment at
@@ -237,7 +242,7 @@ def _safe_opener():
         _urllib_request.UnknownHandler(),
         _urllib_request.HTTPHandler(),
         _urllib_request.HTTPSHandler(),
-        _SameOriginRedirectHandler(),
+        _SameOriginRedirectHandler() if follow_redirects else _NoRedirectHandler(),
         _urllib_request.HTTPDefaultErrorHandler(),
         _urllib_request.HTTPErrorProcessor(),
     ):
@@ -417,7 +422,26 @@ def urlopen(req, timeout: float = 30):
     return _pooled_open(req, timeout)
 
 
-DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/5.1.5"
+DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/5.1.6"
+
+
+def redirect_location(url: str, timeout: float = 2.0) -> str | None:
+    """GET just the headers of one hop; never follow or read a response body.
+
+    A dedicated opener preserves the client's proxy/TLS conventions while
+    disabling *all* redirects, including same-origin ones. The caller validates
+    both the request URL and the returned destination.
+    """
+    timeout = dispatch_timeout(timeout)
+    req = Request(url, headers={"User-Agent": DEFAULT_USER_AGENT}, method="GET")
+    try:
+        response = _safe_opener(follow_redirects=False).open(req, timeout=timeout)
+    except HTTPError as exc:
+        response = exc
+    with response:
+        if response.code in _REDIRECT_CODES:
+            return _response_header(response, "Location") or None
+    return None
 
 
 class ProviderRequestError(Exception):

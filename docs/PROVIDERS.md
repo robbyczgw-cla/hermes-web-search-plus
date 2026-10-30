@@ -29,6 +29,24 @@ and the plugin provider catalog; regenerate it with `python scripts/gen_provider
 Providers marked explicit-only stay out of `provider="auto"` routing and fallback
 until opted in with `setup.py config set-auto-allow <provider> on`.
 
+## Automatic search routing
+
+| Intent | First eligible provider |
+|---|---|
+| academic | `exa` |
+| community | `brave` |
+| docs | `exa` |
+| general | `brave` |
+| local | `brave` |
+| news | `brave` |
+| security | `brave` |
+| shopping | `brave` |
+
+Serper remains in the fallback candidates. Security and shopping now start with Brave:
+live probes on 2026-10-30 found roughly three usable Serper sources after Google
+`/goto` removal, and shopping links leading to Google Shopping instead of merchants.
+Custom provider orders take precedence; see [Routing](ROUTING.md).
+
 ## Provider notes
 
 ### Serper
@@ -37,9 +55,15 @@ until opted in with `setup.py config set-auto-allow <provider> on`.
 
 Google-like SERP results for facts, shopping, local and news queries, plus webpage scraping.
 
+Google `/goto` source redirects (usually every Serper result from position 4 on) are dropped before deduplication and caching, without contacting Google, so a Serper search typically keeps about three sources. Classic `/url?q=` and `/url?url=` links are decoded locally.
+
+Set `serper.resolve_redirects=true` in `config.json` to try one GET per wrapped link from your machine to Google (up to five concurrent requests, two seconds per link, bounded by the request deadline; Google sees your IP address and the token). In tests only the first wrapped link per search resolved, so this usually adds about one source and roughly 0.75 s. The setting applies to wrappers from any provider. Cache hits reuse cleaned URLs. Result metadata reports `redirects_wrapped`, `redirects_resolved`, and `redirects_dropped`; Hermes appends `redirects_dropped=N` only when N is positive. Native v3 JSON carries the counts in `wsp.search.redirects` warning details.
+
 ### SerpBase
 
 Cheap Google-like SERP fallback; WSP exposes search only, explicit/fallback-only by default.
+
+`serpbase.device` defaults to `mobile` to avoid links reconstructed from truncated desktop breadcrumbs; only `mobile` and `desktop` are accepted. Canonical `url` takes precedence over organic `link` when supplied. `source_url` is provenance only. Requests use WSP's User-Agent because the default urllib agent is blocked by SerpBase's Cloudflare layer.
 
 ### Brave Search
 
@@ -94,6 +118,8 @@ Local DonSeTch (4.7.0 and newer) stdio MCP provider for metasearch, direct extra
 ### Octen via Monid
 
 Explicit-only Octen source-result web search through Monid, with native recency and domain filtering.
+
+`MONID_API_KEY` configures `octen` for search only. Monid is the access and billing service, not a provider ID: `provider_configured("monid")` is false by design. Use `provider="octen"` with a Monid key and wallet balance; no extra setting is needed for explicit search. Automatic routing requires opting in with `auto_allow`.
 
 ### TinyFish Search
 

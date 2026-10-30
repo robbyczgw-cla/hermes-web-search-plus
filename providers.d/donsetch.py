@@ -47,7 +47,7 @@ from wsp_sdk import (
 _ALLOWED_OUTPUT_FORMATS = {"markdown"}
 _ALLOWED_SEARCH_TYPES = {"search", "news"}
 _ALLOWED_INTENTS = {"auto", "web", "code", "paper", "news", "entity"}
-TESTED_VERSION = "4.10.2"
+TESTED_VERSION = "4.10.3"
 
 
 def _wsp_version() -> str:

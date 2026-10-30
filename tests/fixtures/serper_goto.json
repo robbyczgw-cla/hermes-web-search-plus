@@ -1,0 +1,16 @@
+{
+  "searchParameters": {"q": "Football Manager 27 skins modding", "gl": "us", "hl": "en", "num": 10},
+  "organic": [
+    {"title": "FM27 skin guide", "link": "https://skins.example/guide", "snippet": "How to install skins.", "position": 1},
+    {"title": "Community mods", "link": "https://community.example/mods", "snippet": "Community skin downloads.", "position": 2},
+    {"title": "Modding reference", "link": "https://docs.example/modding", "snippet": "Modding reference documentation.", "position": 3},
+    {"title": "Skin guide duplicate", "link": "https://www.google.com/goto?url=CAESduplicate", "snippet": "Install skins.", "position": 4},
+    {"title": "New skin", "link": "https://www.google.com/goto?url=CAESresolved", "snippet": "A new skin download.", "position": 5},
+    {"title": "Unusable response", "link": "https://www.google.com/goto?url=CAES200", "snippet": "Skin preview.", "position": 6},
+    {"title": "Slow response", "link": "https://www.google.com/goto?url=CAEStimeout", "snippet": "More downloads.", "position": 7},
+    {"title": "Private target", "link": "https://www.google.com/goto?url=CAESprivate", "snippet": "Private target.", "position": 8},
+    {"title": "Nested redirect", "link": "https://www.google.com/goto?url=CAESnested", "snippet": "Redirect target.", "position": 9},
+    {"title": "Relative target", "link": "https://www.google.com/goto?url=CAESrelative", "snippet": "Another target.", "position": 10}
+  ],
+  "relatedSearches": []
+}

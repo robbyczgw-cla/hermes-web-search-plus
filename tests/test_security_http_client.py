@@ -419,3 +419,18 @@ def test_firecrawl_search_result_metadata_error_and_warning_are_not_passed_throu
     with mock.patch.object(providers, "make_request", return_value=payload):
         result = providers.search_firecrawl("q", SECRET)
     assert "IGNORE" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+@pytest.mark.parametrize("cross_origin", [False, True])
+def test_redirect_probe_never_follows_even_same_origin(status, cross_origin):
+    target = "https://destination.example/page" if cross_origin else "/must-not-follow"
+    server = _serve(lambda req: (status, {"Location": target}, b""))
+    try:
+        assert http_client.redirect_location(server.base + "/goto?url=opaque") == target
+        assert len(server.seen) == 1
+        assert server.seen[0][0] == "GET"
+        assert server.seen[0][2]["User-Agent"] == http_client.DEFAULT_USER_AGENT
+    finally:
+        server.shutdown()
+        server.server_close()

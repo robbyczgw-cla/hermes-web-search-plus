@@ -1,0 +1,21 @@
+{
+  "status": 0,
+  "organic": [
+    {
+      "title": "Truncated breadcrumb",
+      "link": "https://github.com/python/cpython/blob/3.14.rst",
+      "url": "https://github.com/python/cpython/blob/3.14/Doc/whatsnew/3.14.rst",
+      "displayed_link": "github.com › python › cpython › blob › 3.14.rst",
+      "source_url": "https://www.google.com/search?q=sanitised"
+    },
+    {
+      "title": "Breadcrumb without canonical",
+      "link": "https://docs.python.org/whatsnew/3.14.html",
+      "displayed_link": "docs.python.org › whatsnew › 3.14.html"
+    },
+    {
+      "title": "Provenance only",
+      "source_url": "https://www.google.com/search?q=sanitised"
+    }
+  ]
+}

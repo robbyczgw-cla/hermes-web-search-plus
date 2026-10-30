@@ -64,6 +64,7 @@ AUTO_POOL_KEYS = {
 
 HOST_PROVIDER = {
     "google.serper.dev": "serper",
+    "www.google.com": "google_redirect",
     "scrape.serper.dev": "serper",
     "api.search.brave.com": "brave",
     "api.tavily.com": "tavily",
@@ -219,7 +220,24 @@ def synthetic_answer(request: Dict[str, Any], query: str) -> Tuple[int, Dict[str
     latency_ms = 40.0 + (_digest("latency", provider) % 7) * 15.0
     docs = _synthetic_pick(query, provider, count)
     body: Any
-    if host == "google.serper.dev":
+    if CONTEXT.case.get("google_redirects") and host == "www.google.com":
+        token = params.get("url", "")
+        targets = {
+            "CAESduplicate": "https://www.skins.example/guide/?utm_source=google",
+            "CAESresolved": "https://download.example/skin",
+            "CAESprivate": "http://127.0.0.1/admin",
+            "CAESnested": "https://www.google.com/url?q=https%3A%2F%2Fexample.com",
+            "CAESrelative": "/relative",
+        }
+        if token == "CAEStimeout":
+            return 200, {}, b"", HANG_MS
+        if token in targets:
+            return 302, {"Location": targets[token]}, b"", 0.0
+        return 200, {}, b"unusable", 0.0
+    if CONTEXT.case.get("google_redirects") and host == "google.serper.dev":
+        fixture = Path(__file__).resolve().parents[2] / "tests/fixtures/serper_goto.json"
+        body = json.loads(fixture.read_text(encoding="utf-8"))
+    elif host == "google.serper.dev":
         items = [{"title": d["title"], "link": d["url"], "snippet": d["text"][:160],
                   "date": d["date"], "position": int(d["rank"]) + 1} for d in docs]
         body = {"news": items} if path.endswith("/news") else {"organic": items, "relatedSearches": []}
@@ -468,6 +486,8 @@ class FakeConnection:
 
     transport: Transport = SyntheticTransport()
     is_https = False
+    debuglevel = 0  # urllib HTTPHandler reads this class attribute
+    _http_vsn = 11  # urllib HTTPSHandler configures ALPN from this
 
     def __init__(self, host, port=None, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None,
                  *args, context=None, **kwargs) -> None:

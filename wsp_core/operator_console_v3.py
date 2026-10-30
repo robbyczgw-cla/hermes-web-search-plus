@@ -514,7 +514,7 @@ def build_overview(
     config: Mapping[str, Any] | None = None,
     provider_ids: Sequence[str] | None = None,
     state_path: str | Path | None = None,
-    plugin_version: str = "5.1.5",
+    plugin_version: str = "5.1.6",
     now: Callable[[], float] = time.time,
 ) -> dict[str, Any]:
     root = Path(cache_root)

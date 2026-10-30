@@ -45,7 +45,7 @@ def test_measured_order_is_the_default():
     assert config["auto_routing"]["order"] == "measured"
     decision = routing.route_query("best budget headphones under 100", config)
     assert decision["reason"] != "custom_order"
-    assert decision["provider"] == "serper"  # shopping rule, not the user's list order
+    assert decision["provider"] == "brave"  # shopping rule takes precedence over the user's fallback list
 
 
 def test_unknown_order_value_falls_back_to_measured():

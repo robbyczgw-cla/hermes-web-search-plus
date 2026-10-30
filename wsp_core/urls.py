@@ -24,7 +24,49 @@ from __future__ import annotations
 import ipaddress
 import re
 from typing import Any, List, Optional, Tuple
-from urllib.parse import SplitResult, parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import SplitResult, parse_qsl, unquote, urlencode, urlsplit, urlunsplit
+
+
+_BAD_URL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f-\x9f\ufffd]")
+# UTF-8 bytes decoded as Latin-1, or a dangling encoding marker after a
+# digit-bearing ASCII token (the observed Querit `1712aznkjÂ` shape). Do not
+# reject accents generally: Zürich, São_Paulo and Ãngela are valid IRIs.
+_URL_MOJIBAKE = re.compile(
+    r"[ÂÃ][\x80-\xbf]|(?<![A-Za-z0-9])(?=[A-Za-z0-9]*[0-9])[A-Za-z0-9]+[ÂÃ](?=$|[/?&#=])"
+)
+
+
+def sane_result_url(url: object) -> bool:
+    """Conservatively reject corrupt URLs, including percent-encoded damage.
+
+    This is a text sanity check, not a language, reachability or SSRF check.
+    Decode once so valid UTF-8 escapes survive and provider query re-encoding
+    cannot hide control characters or the recorded mojibake shape.
+    """
+    if not isinstance(url, str) or not url:
+        return False
+    if _BAD_URL_CHARACTERS.search(url):
+        return False
+    decoded = unquote(url)
+    if _BAD_URL_CHARACTERS.search(decoded):
+        return False
+    try:
+        parts = urlsplit(decoded)
+    except ValueError:
+        return False
+    return not _URL_MOJIBAKE.search(parts.path + "?" + parts.query)
+
+
+def clean_result_urls(payload: dict) -> None:
+    """Filter every provider's search results before ranking and caching."""
+    results = payload.get("results") or []
+    kept = [item for item in results if sane_result_url(item.get("url"))]
+    dropped = len(results) - len(kept)
+    if dropped:
+        payload["results"] = kept
+        metadata = payload.setdefault("metadata", {})
+        metadata["invalid_urls_dropped"] = metadata.get("invalid_urls_dropped", 0) + dropped
+
 
 TRACKING_PARAMETER_NAMES = frozenset(
     {
@@ -167,6 +209,10 @@ def strip_tracking_params(url: str) -> str:
     """Remove tracking parameters only; the URL otherwise stays as given."""
     if not url:
         return ""
+    # Preserve the original damage for the shared result filter and its count;
+    # urlsplit would silently discard newlines and tabs here.
+    if not sane_result_url(url):
+        return url
     try:
         parsed = urlsplit(url)
         pairs = parse_qsl(parsed.query, keep_blank_values=True)

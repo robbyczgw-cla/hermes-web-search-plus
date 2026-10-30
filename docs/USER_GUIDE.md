@@ -87,9 +87,27 @@ Two guarantees worth knowing:
 
 Note that the bench makes a few real API calls per provider, so it spends a small amount of quota on every configured provider.
 
+Automatic routing starts with Brave for security and shopping queries as well
+as community, general, local and news queries; docs and academic queries start
+with Exa. Serper remains a fallback candidate. Live probes on 2026-10-30 found
+roughly three usable Serper sources after Google `/goto` removal and shopping
+links leading to Google Shopping instead of merchant pages. Custom provider
+orders still take precedence. See the generated [routing table](ROUTING.md).
+
 ## Provider setup
 
 Keys live in the active Hermes profile. Store them with `hermes config set <NAME> <key>` or in Hermes Desktop; Web Search Plus reads them through Hermes and never prints secret values. See the generated [provider reference](PROVIDERS.md) for every provider's capabilities, env var, auto-routing default, free tier, and signup link.
+
+`MONID_API_KEY` configures the search-only provider `octen` (Octen via Monid).
+There is no `monid` provider ID: `provider_configured("monid")` is false by design.
+Use `provider="octen"`; a key needs no additional setting for explicit search, but
+Monid wallet balance is required. Octen stays out of automatic routing and fallback
+unless `auto_allow` is enabled; it cannot extract pages.
+
+SerpBase sends `device="mobile"` by default to avoid URLs reconstructed from
+truncated desktop breadcrumbs. Set `serpbase.device` in `config.json` to `mobile`
+or `desktop` (other values are rejected). A returned canonical `url` takes
+precedence over the organic `link`; `source_url` is provenance only.
 
 Useful commands:
 
@@ -449,6 +467,22 @@ Parameter semantics:
 - `quality_report`: include routing diagnostics, skipped providers, result quality hints, and extraction recommendation.
 - `mode="research"`: query multiple providers and optionally extract selected URLs within a best-effort wall-clock budget.
 
+All search providers share a conservative URL sanity filter before ranking and
+caching: control characters, replacement characters and recognisable mojibake
+are dropped, including the observed digit-bearing junk query ending in `Â`.
+Legitimate IRIs such as `/wiki/Zürich`, UTF-8 escapes and other languages remain.
+Metadata counts drops as `invalid_urls_dropped`; Hermes appends the single
+`invalid_urls_dropped=N` header token only for positive counts. Native v3 JSON
+preserves the count in `wsp.search.invalid_urls` warning details, including cache hits.
+
+Google source redirects: Serper and other Google-backed providers can return opaque `google.com/goto?url=…` links (since Google's mid-2026 change; with Serper, typically every result from position 4 on). WSP never shows them as sources: by default it drops them before ranking and caching, without contacting Google, so a Serper search usually keeps about three sources. Classic `/url?q=` and `/url?url=` links are decoded locally.
+
+Optional resolution: set `"serper": {"resolve_redirects": true}` in `config.json` to try one GET per wrapped link (at most five at a time, two seconds per link, within the request deadline; only one redirect hop to a public HTTP(S) destination is accepted). In tests Google redirected only the first wrapped link of a search and answered the rest with a JavaScript page, so this usually adds about one source and roughly 0.75 s.
+
+Privacy: with resolution on, WSP sends one GET per opaque wrapped link from your machine to Google (normally `google.com`); Google sees your IP address and the redirect token. WSP does not fetch the destination page. The setting applies to wrappers from any provider. Cache hits reuse the cleaned URLs without resolving again; changing this setting starts a separate cache entry.
+
+JSON result `metadata` includes `redirects_wrapped`, `redirects_resolved` and `redirects_dropped` when wrappers were present. Resolved includes locally decoded links and links later removed as duplicates; dropped counts only unresolvable/disabled wrappers. Native v3 JSON exposes the same counts in the `wsp.search.redirects` warning's `details`.
+
 Reading the text output: after a security notice line, the header line names the serving provider, then how it was routed, then machine-readable `key=value` bits. Clients that parse the text should ignore bits they do not know.
 
 ```text
@@ -458,6 +492,7 @@ Reading the text output: after a security notice line, the header line names the
 ```
 
 - `results`: results in this output, also `0` for a search that found nothing.
+- `redirects_dropped`: appended at the end only when Google wrapper sources were dropped (`N > 0`).
 - `elapsed_ms`: wall time of this call; for a cache hit, the time of the lookup.
 - `fallback_from`: providers that failed or came back empty before the serving one, in order. Absent without a fallback.
 - `providers` and `pages` (research only): the providers whose results were merged and the number of pages read.

@@ -24,6 +24,7 @@ from .contract_v3 import (
     SkipReason,
 )
 from .orchestrator_v3 import ProviderPlan
+from .result_redirects import COUNT_KEYS
 from .urls import canonical_url
 
 
@@ -703,6 +704,20 @@ def response_from_legacy(
                 }
             )
     freshness = (payload.get("metadata") or {}).get("freshness")
+    redirect_counts = {key: (payload.get("metadata") or {}).get(key, 0) for key in COUNT_KEYS}
+    if redirect_counts["redirects_wrapped"]:
+        warnings.append({
+            "code": "wsp.search.redirects",
+            "message": "Google source redirects were resolved or dropped.",
+            "details": redirect_counts,
+        })
+    invalid_urls = (payload.get("metadata") or {}).get("invalid_urls_dropped", 0)
+    if invalid_urls:
+        warnings.append({
+            "code": "wsp.search.invalid_urls",
+            "message": "Corrupt source URLs were dropped.",
+            "details": {"invalid_urls_dropped": invalid_urls},
+        })
     if isinstance(freshness, dict):
         warnings.append(
             {

@@ -162,7 +162,7 @@ def _exceptions_text() -> str:
     by_provider: Dict[str, List[str]] = {}
     for intent in intents.INTENTS:
         provider = routing.INTENT_FIRST_PROVIDER.get(intent)
-        if provider:
+        if provider and provider != routing.MEASURED_PROVIDER_ORDER[0]:
             by_provider.setdefault(provider, []).append(intent)
     return "; ".join(
         f"`{provider}` for {_and(names)}" for provider, names in sorted(by_provider.items())
@@ -271,8 +271,14 @@ def _measured_order_section() -> List[str]:
         "A table that picks the best provider per intent scored better on the queries it was "
         "fitted to. Tested with leave-one-out (each query's provider chosen from the other "
         "queries of its intent), it fell below always using the first provider of the "
-        f"measured order. Only these choices were the same in every fold: {_exceptions_text()}. "
-        "They are the intent rules in the table above. Nothing finer is used."
+        "measured order. Exa for academic/docs and Serper for shopping were stable "
+        "in that historical recording. Current intent rules are shown above."
+    )
+    lines += _bullet(
+        "Live probes on 2026-10-30 supersede the older Serper-first security/shopping "
+        "evidence: Google /goto removal leaves roughly three usable Serper sources, "
+        "and shopping links lead to Google Shopping rather than merchants. Both intents "
+        "now start with Brave; Serper remains a later fallback candidate."
     )
     lines += ["", "What the order does not show:", ""]
     lines += _bullet(

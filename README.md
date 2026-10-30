@@ -21,10 +21,11 @@ Run Hermes from your phone? See [HUI+](https://hermesui.xyz).
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v5.1.5**. Version history: [Changelog](CHANGELOG.md).
+Current release: **v5.1.6**. Version history: [Changelog](CHANGELOG.md).
 
 ### What's new in 5.1
 
+- **5.1.6:** better sources. Google `goto` redirect links (Serper passes them through for most results since Google's mid-2026 change) are dropped instead of shown, SerpBase returns working links, broken URLs are filtered out, and security and shopping searches start with Brave. See the [5.1.6 release notes](docs/RELEASE_NOTES_V516.md).
 - **5.1.5:** the DonSeTch provider works on Windows (thanks to @pompousman) and is tested with DonSeTch 4.10.2. See the [5.1.5 release notes](docs/RELEASE_NOTES_V515.md).
 - **5.1.4:** the DonSeTch provider works with DonSeTch 4.7.1 and newer again (tested 4.10.1). Thanks to @friday-cp for the report. See the [5.1.4 release notes](docs/RELEASE_NOTES_V514.md).
 - **5.1.3:** upgrading from 5.0 no longer loses your key silently (`status` and the tools say where the old `.env` is and what to run), and `status` explains how to make Hermes' own `web_search` use your keys (`hermes config set web.search_backend wsp`). See the [5.1.3 release notes](docs/RELEASE_NOTES_V513.md).
@@ -78,7 +79,7 @@ hermes web-search-plus status
 
 A new or changed key applies from your next message on the gateway (Telegram, Discord, API); in the interactive CLI run `/reload` first. To switch a provider off, set its key to an empty value (`hermes config set BRAVE_API_KEY ""`): `hermes config unset` removes the line, but a key Hermes does not know by name stays active until Hermes restarts.
 
-Web Search Plus supports 15 search and 9 extraction providers; you do **not** need them all. One search key enables `web_search_plus`, one extraction key enables `web_extract_plus`. Automatic routing tries Brave first for most queries, Exa for docs and academic queries, and Serper for security and shopping; `hermes web-search-plus status` shows which query types fall back because a key is missing. `hermes web-search-plus setup --preset all` lists every provider. Hermes stores the keys in the active profile; never commit them to a repository.
+Web Search Plus supports 15 search and 9 extraction providers; you do **not** need them all. One search key enables `web_search_plus`, one extraction key enables `web_extract_plus`. Automatic routing tries Brave first, including security and shopping, and Exa first for docs and academic queries. Serper remains a fallback candidate; `hermes web-search-plus status` shows which query types fall back because a key is missing. `hermes web-search-plus setup --preset all` lists every provider. Hermes stores the keys in the active profile; never commit them to a repository.
 
 Optional Jev stays off unless you pass `--jev`:
 
@@ -107,6 +108,8 @@ Set `MONID_API_KEY` from [Monid](https://app.monid.ai/access/api-keys) to use [O
 ```python
 web_search_plus(query="recent vector database research", provider="octen", freshness="month")
 ```
+
+`octen` is the provider ID; Monid supplies authentication and billing, so `provider="monid"` is not valid. `MONID_API_KEY` configures Octen for search only; it does not enable extraction.
 
 The adapter executes Octen's `/search` endpoint through Monid's documented HTTP API for ranked links and highlights. It supports freshness and domain filters, explicitly disables full-content retrieval, and does not call Octen's answer or Broad Search APIs. Access and billing use Monid's prepaid wallet; see Monid for current pricing and terms. Octen stays outside automatic routing and fallback unless you deliberately enable `auto_allow`.
 

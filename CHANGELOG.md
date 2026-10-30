@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [v5.1.6] — 2026-10-30
+
+### Fixed
+
+- Search sources no longer expose opaque Google `/goto` links (`google.com/goto?url=…`), which Serper has passed through since Google's mid-2026 change, typically for every result from position 4 on. They are dropped before ranking, deduplication and caching, without contacting Google, so a Serper search usually keeps about three sources. Classic Google `/url` wrappers are decoded locally. JSON metadata reports wrapped/resolved/dropped counts; the Hermes header adds `redirects_dropped=N` when needed. Optional `serper.resolve_redirects=true` tries one GET per wrapped link (one redirect hop, public destinations only, two seconds per link, within the request deadline); in live tests Google redirected only the first wrapped link of a search and served a JavaScript page for the rest, so it is off by default. It sends a request from your machine to Google.
+
+- SerpBase now requests the mobile Google result shape by default (`serpbase.device`, validated as `mobile` or `desktop`), avoiding links reconstructed from truncated desktop breadcrumbs. Canonical `url` overrides `link` when supplied; `source_url` is retained only as provenance. Sanitised mobile/desktop response fixtures and a wire-level WSP User-Agent test cover the integration.
+- All search providers drop URLs with control/replacement characters or recognisable mojibake before ranking, observations and caching. Legitimate IRIs and UTF-8 escapes remain supported. `invalid_urls_dropped` metadata survives merges and cache hits; the Hermes header appends one token only when positive.
+
+### Changed
+
+- Automatic security and shopping search now starts with Brave. Serper remains a later fallback: live probes on 2026-10-30 found only about three usable sources after Google `/goto` removal, and its shopping links lead to Google Shopping rather than merchants. Docs and academic searches still start with Exa; custom orders keep their behavior.
+- DonSeTch 4.10.3 is now the tested version, following live search and extraction verification; 4.7.0 and newer remain supported. Current status, tests and install examples use 4.10.3.
+- Clarified that `MONID_API_KEY` configures `octen`, a search-only, explicit-only provider. `monid` is the access/billing service, not a provider ID; no extra setting is required for explicit Octen search with a key and wallet balance.
+- CI now budgets the UTF-8 text returned by the registered Hermes search/extract handlers: 4 KiB for a representative eight-result search, 6 KiB for a 5,000-character page, and 16 KiB per long English extract at the default preview limit (48 KiB for CJK text). Tests retain complete short content and full-text pointers for truncated pages.
+
 ## [v5.1.5] — 2026-10-25
 
 ### Fixed

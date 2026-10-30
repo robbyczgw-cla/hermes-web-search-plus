@@ -1,7 +1,7 @@
 """Routing v3: the measured intent table, its fall-through, migration and reporting.
 
 The first provider for a query comes from its intent (wsp_core/intents.py) and a
-small measured table: academic and docs start with Exa, shopping with Serper,
+small table: academic and docs start with Exa, security and shopping with Brave,
 everything else with Brave. A provider that is not configured (or is disabled or
 not auto-allowed) is skipped, and the user's provider_priority only orders the
 fallback chain after the first provider. No test here touches the network: keys
@@ -54,8 +54,8 @@ FIRST_WITH_CORE = {
     "general": "brave",
     "local": "brave",
     "news": "brave",
-    "security": "serper",
-    "shopping": "serper",
+    "security": "brave",
+    "shopping": "brave",
 }
 
 
@@ -82,12 +82,12 @@ def _plan(query, config):
 # --- the table ---------------------------------------------------------------
 
 
-def test_the_table_is_what_the_benchmarks_measured():
+def test_the_table_matches_current_source_quality_policy():
     assert routing.INTENT_FIRST_PROVIDER == {
         "academic": "exa",
         "docs": "exa",
-        "security": "serper",
-        "shopping": "serper",
+        "security": "brave",
+        "shopping": "brave",
     }
     assert routing.MEASURED_PROVIDER_ORDER == ("brave", "serper", "exa", "tavily")
     assert routing.ROUTING_POLICY == quality.ROUTING_POLICY == search.ROUTING_POLICY == "routing-v3"
@@ -110,13 +110,21 @@ def test_the_table_covers_every_intent():
     assert sorted(FIRST_WITH_CORE) == sorted(INTENTS)
 
 
+@pytest.mark.parametrize("intent", ["security", "shopping"])
+def test_brave_starts_and_serper_remains_a_later_fallback(intent):
+    route = search.auto_route_provider(QUERY[intent], _config())
+    assert route["candidate_order"][:2] == ["brave", "serper"]
+    no_brave = search.auto_route_provider(QUERY[intent], _config(("serper", "exa", "tavily")))
+    assert no_brave["provider"] == "serper"
+
+
 @pytest.mark.parametrize(
     "intent, configured, expected",
     [
         # Exa is missing: docs and academic fall to the measured order.
         ("docs", ("brave", "serper", "tavily"), "brave"),
         ("academic", ("brave", "serper", "tavily"), "brave"),
-        # Serper is missing: shopping falls to Brave.
+        # Shopping stays on Brave when Serper is missing.
         ("shopping", ("brave", "exa", "tavily"), "brave"),
         # The measured order itself is walked in order.
         ("docs", ("serper", "tavily"), "serper"),
@@ -402,7 +410,7 @@ def test_the_migrated_default_drives_the_first_provider_like_a_fresh_install(tmp
 @pytest.mark.parametrize(
     "query, expected_intent, expected_provider",
     [
-        ("what are the CVEs in openssl 3.2", "security", "serper"),
+        ("what are the CVEs in openssl 3.2", "security", "brave"),
         ("nvidia driver install linux", "general", "brave"),
         ("apple pie recipe", "general", "brave"),
         ("hotels in salzburg", "general", "brave"),
@@ -580,8 +588,8 @@ def test_explain_routing_output_shape():
     assert explanation["first_provider_rules"] == {
         "academic": "exa",
         "docs": "exa",
-        "security": "serper",
-        "shopping": "serper",
+        "security": "brave",
+        "shopping": "brave",
     }
     assert explanation["measured_order"] == ["brave", "serper", "exa", "tavily"]
     assert explanation["query_analysis"]["routing_class"] == "docs"

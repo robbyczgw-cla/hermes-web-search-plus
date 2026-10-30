@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from .daemon_tasks import DaemonTask
+from .result_redirects import combined_redirect_counts
 from .diversity_v3 import DEFAULT_NEAR_DUPLICATE_THRESHOLD, rerank_duplicate_candidates
 from .quality import normalize_result_url
 from .span_extraction_v3 import select_spans
@@ -454,6 +455,7 @@ def run_research_mode(
             triggered=quorum_triggered,
         ),
     }
+    metadata.update(combined_redirect_counts(provider_results))
     if diversity_rerank:
         metadata["diversity_reranked"] = len(diversity_duplicates)
 

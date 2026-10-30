@@ -253,20 +253,16 @@ def infer_query_language(query: Optional[str]) -> Optional[str]:
 # ---------------------------------------------------------------------------
 # Routing: query intent -> first provider
 # ---------------------------------------------------------------------------
-# Measured on the recorded evaluation set: Brave gave
-# the best results overall (nDCG@5 0.696; Serper 0.642, Exa 0.638, Tavily
-# 0.552), Exa led on academic and documentation queries and Serper on shopping,
-# in every leave-one-out fold. Security goes to Serper after a live A/B of the
-# 26 security queries with authority domains: authority hit@5 22/26 on v4.3.5,
-# 16/26 with Brave first, 23/26 with Serper first, at fewer output tokens.
-# Community stays on Brave: on all 36 community queries Brave, Serper and
-# Firecrawl each hit the authority domain 15/15, with Brave at p50 640 ms /
-# p90 733 ms against Serper's 1067 / 1686 ms.
+# Brave led overall in the recorded evaluation; Exa led on academic/docs.
+# Live probes (see CHANGELOG) supersede the older Serper-first security/shopping
+# evidence: Google /goto wrappers leave roughly three usable Serper sources,
+# and Shopping links lead to Google search rather than merchant pages.
+# Brave now starts both intents; Serper remains in the fallback candidates.
 INTENT_FIRST_PROVIDER: Dict[str, str] = {
     "academic": "exa",
     "docs": "exa",
-    "security": "serper",
-    "shopping": "serper",
+    "security": "brave",
+    "shopping": "brave",
 }
 MEASURED_PROVIDER_ORDER: Tuple[str, ...] = ("brave", "serper", "exa", "tavily")
 
