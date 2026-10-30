@@ -216,6 +216,7 @@ DEFAULT_CONFIG = {
     },
     "serpbase": {
         "api_url": "https://api.serpbase.dev/google/search",
+        "device": "mobile",
         "page": 1,
         "timeout": 30,
     },
@@ -475,6 +476,11 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(parallel, dict):
         raise ValueError("parallel must be an object")
     parallel["mode"] = normalize_parallel_search_mode(parallel.get("mode", "fast")) or "fast"
+    serpbase = config.setdefault("serpbase", dict(DEFAULT_CONFIG["serpbase"]))
+    if not isinstance(serpbase, dict):
+        raise ValueError("serpbase must be an object")
+    if serpbase.get("device", "mobile") not in ("mobile", "desktop"):
+        raise ValueError("serpbase.device must be mobile or desktop")
     budget_preflight = config.get(
         "budget_preflight", dict(DEFAULT_CONFIG["budget_preflight"])
     )

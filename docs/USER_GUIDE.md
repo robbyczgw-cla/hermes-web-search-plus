@@ -87,9 +87,27 @@ Two guarantees worth knowing:
 
 Note that the bench makes a few real API calls per provider, so it spends a small amount of quota on every configured provider.
 
+Automatic routing starts with Brave for security and shopping queries as well
+as community, general, local and news queries; docs and academic queries start
+with Exa. Serper remains a fallback candidate. Live probes on 2026-10-30 found
+roughly three usable Serper sources after Google `/goto` removal and shopping
+links leading to Google Shopping instead of merchant pages. Custom provider
+orders still take precedence. See the generated [routing table](ROUTING.md).
+
 ## Provider setup
 
 Keys live in the active Hermes profile. Store them with `hermes config set <NAME> <key>` or in Hermes Desktop; Web Search Plus reads them through Hermes and never prints secret values. See the generated [provider reference](PROVIDERS.md) for every provider's capabilities, env var, auto-routing default, free tier, and signup link.
+
+`MONID_API_KEY` configures the search-only provider `octen` (Octen via Monid).
+There is no `monid` provider ID: `provider_configured("monid")` is false by design.
+Use `provider="octen"`; a key needs no additional setting for explicit search, but
+Monid wallet balance is required. Octen stays out of automatic routing and fallback
+unless `auto_allow` is enabled; it cannot extract pages.
+
+SerpBase sends `device="mobile"` by default to avoid URLs reconstructed from
+truncated desktop breadcrumbs. Set `serpbase.device` in `config.json` to `mobile`
+or `desktop` (other values are rejected). A returned canonical `url` takes
+precedence over the organic `link`; `source_url` is provenance only.
 
 Useful commands:
 
@@ -448,6 +466,14 @@ Parameter semantics:
 - `include_domains` / `exclude_domains`: domain filters, as a list or one string separated by commas or spaces. Providers with a domain field get them natively; Brave, Serper, SerpBase, You.com and Firecrawl get `site:` / `-site:` operators built from bare hostnames (`.gov` filters by suffix). An `include_domains` value without a usable domain is an error rather than an unrestricted search. Tavily cannot filter by a suffix such as `.gov` (it takes `*.example.com`); automatic search skips it for suffix filters.
 - `quality_report`: include routing diagnostics, skipped providers, result quality hints, and extraction recommendation.
 - `mode="research"`: query multiple providers and optionally extract selected URLs within a best-effort wall-clock budget.
+
+All search providers share a conservative URL sanity filter before ranking and
+caching: control characters, replacement characters and recognisable mojibake
+are dropped, including the observed digit-bearing junk query ending in `Â`.
+Legitimate IRIs such as `/wiki/Zürich`, UTF-8 escapes and other languages remain.
+Metadata counts drops as `invalid_urls_dropped`; Hermes appends the single
+`invalid_urls_dropped=N` header token only for positive counts. Native v3 JSON
+preserves the count in `wsp.search.invalid_urls` warning details, including cache hits.
 
 Google source redirects: Serper and other Google-backed providers can return opaque `google.com/goto?url=…` links (since Google's mid-2026 change; with Serper, typically every result from position 4 on). WSP never shows them as sources: by default it drops them before ranking and caching, without contacting Google, so a Serper search usually keeps about three sources. Classic `/url?q=` and `/url?url=` links are decoded locally.
 

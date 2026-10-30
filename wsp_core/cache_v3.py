@@ -226,7 +226,7 @@ def legacy_payload_from_cache_material(material: Dict[str, Any]) -> Dict[str, An
     # second copy of the full legacy payload. Keep the Hermes cache-hit note.
     if capability == "search":
         for warning in material.get("warnings") or []:
-            if warning.get("code") == "wsp.search.redirects":
+            if warning.get("code") in {"wsp.search.redirects", "wsp.search.invalid_urls"}:
                 legacy.setdefault("metadata", {}).update(warning.get("details") or {})
     return legacy
 

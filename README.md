@@ -78,7 +78,7 @@ hermes web-search-plus status
 
 A new or changed key applies from your next message on the gateway (Telegram, Discord, API); in the interactive CLI run `/reload` first. To switch a provider off, set its key to an empty value (`hermes config set BRAVE_API_KEY ""`): `hermes config unset` removes the line, but a key Hermes does not know by name stays active until Hermes restarts.
 
-Web Search Plus supports 15 search and 9 extraction providers; you do **not** need them all. One search key enables `web_search_plus`, one extraction key enables `web_extract_plus`. Automatic routing tries Brave first for most queries, Exa for docs and academic queries, and Serper for security and shopping; `hermes web-search-plus status` shows which query types fall back because a key is missing. `hermes web-search-plus setup --preset all` lists every provider. Hermes stores the keys in the active profile; never commit them to a repository.
+Web Search Plus supports 15 search and 9 extraction providers; you do **not** need them all. One search key enables `web_search_plus`, one extraction key enables `web_extract_plus`. Automatic routing tries Brave first, including security and shopping, and Exa first for docs and academic queries. Serper remains a fallback candidate; `hermes web-search-plus status` shows which query types fall back because a key is missing. `hermes web-search-plus setup --preset all` lists every provider. Hermes stores the keys in the active profile; never commit them to a repository.
 
 Optional Jev stays off unless you pass `--jev`:
 
@@ -107,6 +107,8 @@ Set `MONID_API_KEY` from [Monid](https://app.monid.ai/access/api-keys) to use [O
 ```python
 web_search_plus(query="recent vector database research", provider="octen", freshness="month")
 ```
+
+`octen` is the provider ID; Monid supplies authentication and billing, so `provider="monid"` is not valid. `MONID_API_KEY` configures Octen for search only; it does not enable extraction.
 
 The adapter executes Octen's `/search` endpoint through Monid's documented HTTP API for ranked links and highlights. It supports freshness and domain filters, explicitly disables full-content retrieval, and does not call Octen's answer or Broad Search APIs. Access and billing use Monid's prepaid wallet; see Monid for current pricing and terms. Octen stays outside automatic routing and fallback unless you deliberately enable `auto_allow`.
 

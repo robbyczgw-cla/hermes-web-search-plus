@@ -9,8 +9,7 @@ works in routing policy `routing-v3`. It is generated from `wsp_core/routing.py`
 `wsp_core/provider_registry.py`, and a test fails when it drifts from them.
 
 In short: the first provider is `brave`, with these exceptions: `exa` for `academic` and
-`docs`; `serper` for `security` and `shopping`. Everything after the first provider
-follows `provider_priority`.
+`docs`. Everything after the first provider follows `provider_priority`.
 
 Contents:
 
@@ -50,8 +49,8 @@ With all four measured providers configured and allowed, the result is:
 | `general` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
 | `local` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
 | `news` | `brave` | measured order | `serper`, `exa`, `tavily`, then `provider_priority` |
-| `security` | `serper` | intent rule | `brave`, `exa`, `tavily`, then `provider_priority` |
-| `shopping` | `serper` | intent rule | `brave`, `exa`, `tavily`, then `provider_priority` |
+| `security` | `brave` | intent rule | `serper`, `exa`, `tavily`, then `provider_priority` |
+| `shopping` | `brave` | intent rule | `serper`, `exa`, `tavily`, then `provider_priority` |
 
 The measured order is `brave`, `serper`, `exa`, `tavily`. If the first provider in a row
 is not eligible, the next one in the row is chosen.
@@ -83,9 +82,12 @@ How it was measured:
 - A table that picks the best provider per intent scored better on the queries it was
   fitted to. Tested with leave-one-out (each query's provider chosen from the other
   queries of its intent), it fell below always using the first provider of the measured
-  order. Only these choices were the same in every fold: `exa` for `academic` and
-  `docs`; `serper` for `security` and `shopping`. They are the intent rules in the table
-  above. Nothing finer is used.
+  order. Exa for academic/docs and Serper for shopping were stable in that historical
+  recording. Current intent rules are shown above.
+- Live probes on 2026-10-30 supersede the older Serper-first security/shopping evidence:
+  Google /goto removal leaves roughly three usable Serper sources, and shopping links
+  lead to Google Shopping rather than merchants. Both intents now start with Brave;
+  Serper remains a later fallback candidate.
 
 What the order does not show:
 
@@ -176,9 +178,9 @@ measured providers are configured:
 |---|---|---|---|
 | randomized controlled trial of intermittent fasting | `academic` | `exa` | `trial_design`, `study_design` |
 | how to read a file in python | `docs` | `exa` | `how_to_lang`, `lang_clear` |
-| best headphones under 300 euros | `shopping` | `serper` | `best_under`, `under_amount`, `currency_amount`, ... |
-| Kopfhörer Preisvergleich | `shopping` | `serper` | `price_compare`, `category` |
-| CVE-2024-3094 remote code execution | `security` | `serper` | `cve_id`, `cve`, `vuln_class` |
+| best headphones under 300 euros | `shopping` | `brave` | `best_under`, `under_amount`, `currency_amount`, ... |
+| Kopfhörer Preisvergleich | `shopping` | `brave` | `price_compare`, `category` |
+| CVE-2024-3094 remote code execution | `security` | `brave` | `cve_id`, `cve`, `vuln_class` |
 | restaurants near me open now | `local` | `brave` | `near_me`, `hours`, `poi` |
 | Wetter Wien morgen | `local` | `brave` | `weather` |
 | is it worth switching to Linux reddit | `community` | `brave` | `platform`, `worth_it` |
@@ -302,7 +304,7 @@ Cue families, strongest first:
 Vulnerabilities and attacks: CVE ids, exploits, malware, security advisories, data
 breaches.
 
-- **First provider:** `serper` (intent rule).
+- **First provider:** `brave` (intent rule).
 - **Threshold:** a score of at least 3.0.
 
 Cue families, strongest first:
@@ -320,7 +322,7 @@ Cue families, strongest first:
 Buying and prices: where to buy, price and deals, "best ... under 300 euros", product
 categories, reviews, model numbers.
 
-- **First provider:** `serper` (intent rule).
+- **First provider:** `brave` (intent rule).
 - **Threshold:** a score of at least 3.0.
 - **Precise intent:** also needs a lead of at least 1.0 over every other intent and one
   cue family of weight 2.0 or more.

@@ -367,17 +367,21 @@ def search_serpbase(
     page: int = 1,
     api_url: str = "https://api.serpbase.dev/google/search",
     timeout: int = 30,
+    device: str = "mobile",
 ) -> dict:
     """Search using SerpBase's Google Search endpoint.
 
     SerpBase returns HTTP 200 for some business failures, so `status == 0` is
     required before parsing results. ``language=None`` omits ``hl``.
     """
+    if device not in ("mobile", "desktop"):
+        raise ValueError("serpbase.device must be mobile or desktop")
     body = {
         "q": query,
         "hl": language,
         "gl": country,
         "page": page,
+        "device": device,
     }
     if not language:
         del body["hl"]
@@ -395,14 +399,19 @@ def search_serpbase(
 
     results = []
     for i, item in enumerate(data.get("organic", [])[:max_results]):
-        results.append({
+        result = {
             "title": item.get("title", ""),
-            "url": strip_tracking_params(item.get("link", "") or item.get("url", "")),
+            # `url` is the canonical target when supplied; `link` is the
+            # primary organic link. source_url is provenance, never a target.
+            "url": strip_tracking_params(item.get("url") or item.get("link", "")),
             "snippet": item.get("snippet", ""),
             "score": round(1.0 - i * 0.1, 2),
             "rank": item.get("rank") or item.get("position") or i + 1,
             "display_link": item.get("display_link") or item.get("displayed_link"),
-        })
+        }
+        if item.get("source_url"):
+            result["source_url"] = item["source_url"]
+        results.append(result)
 
     related_searches = [
         value for value in (_serpbase_related_search_query(item) for item in data.get("related_searches", [])) if value

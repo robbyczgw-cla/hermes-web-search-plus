@@ -67,6 +67,7 @@ def _auto_routing_cell(registry: Any, provider: str, supports_search: bool) -> s
 
 def render_provider_docs() -> str:
     registry, catalog = _load_registry_and_catalog()
+    from wsp_core import intents, routing
 
     lines: List[str] = [
         "# Provider reference",
@@ -104,15 +105,40 @@ def render_provider_docs() -> str:
             "Providers marked explicit-only stay out of `provider=\"auto\"` routing and fallback",
             "until opted in with `setup.py config set-auto-allow <provider> on`.",
             "",
-            "## Provider notes",
+            "## Automatic search routing",
+            "",
+            "| Intent | First eligible provider |",
+            "|---|---|",
         ]
     )
+    for intent in sorted(intents.INTENTS):
+        first = routing.INTENT_FIRST_PROVIDER.get(intent, routing.MEASURED_PROVIDER_ORDER[0])
+        lines.append(f"| {intent} | `{first}` |")
+    lines.extend([
+        "",
+        "Serper remains in the fallback candidates. Security and shopping now start with Brave:",
+        "live probes on 2026-10-30 found roughly three usable Serper sources after Google",
+        "`/goto` removal, and shopping links leading to Google Shopping instead of merchants.",
+        "Custom provider orders take precedence; see [Routing](ROUTING.md).",
+        "",
+        "## Provider notes",
+    ])
 
     for item in catalog:
         lines.extend(["", f"### {item['display_name']}", ""])
         if item["recommended"]:
             lines.extend(["*Recommended starter provider.*", ""])
         lines.append(item["description"])
+        if item["provider"] == "serpbase":
+            lines.extend([
+                "",
+                "`serpbase.device` defaults to `mobile` to avoid links reconstructed from truncated desktop breadcrumbs; only `mobile` and `desktop` are accepted. Canonical `url` takes precedence over organic `link` when supplied. `source_url` is provenance only. Requests use WSP's User-Agent because the default urllib agent is blocked by SerpBase's Cloudflare layer.",
+            ])
+        if item["provider"] == "octen":
+            lines.extend([
+                "",
+                "`MONID_API_KEY` configures `octen` for search only. Monid is the access and billing service, not a provider ID: `provider_configured(\"monid\")` is false by design. Use `provider=\"octen\"` with a Monid key and wallet balance; no extra setting is needed for explicit search. Automatic routing requires opting in with `auto_allow`.",
+            ])
         if item["provider"] == "serper":
             lines.extend([
                 "",

@@ -1091,7 +1091,7 @@ def _donsetch_status(env: Mapping[str, str], config: Mapping[str, Any]) -> Dict[
         return {
             "state": "missing",
             "version": None,
-            "tested_version": "4.10.2",
+            "tested_version": "4.10.3",
             "compatibility": "unknown",
             "binary_configured": bool(_clean_env_value(env.get("DONSETCH_BIN") or "")),
         }
@@ -2229,6 +2229,9 @@ def _format_results(data: dict, *, now: Optional[datetime] = None) -> str:
     redirects_dropped = _header_count(metadata.get("redirects_dropped"))
     if redirects_dropped:
         header_bits.append(f"redirects_dropped={redirects_dropped}")
+    invalid_urls_dropped = _header_count(metadata.get("invalid_urls_dropped"))
+    if invalid_urls_dropped:
+        header_bits.append(f"invalid_urls_dropped={invalid_urls_dropped}")
     lines.append("[" + " | ".join(header_bits) + "]")
     if not results:
         # A successful call with no hits must not read like a success with content.

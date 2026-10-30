@@ -1,0 +1,61 @@
+{
+  "provider": "brave",
+  "query": "Python documentation and releases",
+  "routing": {
+    "auto_routed": true
+  },
+  "results": [
+    {
+      "title": "Python 3.14 release notes",
+      "url": "https://docs.python.org/3.14/whatsnew/3.14.html",
+      "snippet": "Read the official Python documentation for release details, compatibility notes and supported interfaces. The reference includes examples, migration guidance and links to related library documentation. Check the version selector before applying examples to an existing project.",
+      "score": 1.0
+    },
+    {
+      "title": "Python downloads and release schedule",
+      "url": "https://www.python.org/downloads/",
+      "snippet": "Read the official Python documentation for release details, compatibility notes and supported interfaces. The reference includes examples, migration guidance and links to related library documentation. Check the version selector before applying examples to an existing project.",
+      "score": 0.9
+    },
+    {
+      "title": "Python developer guide: supported versions",
+      "url": "https://devguide.python.org/versions/",
+      "snippet": "Read the official Python documentation for release details, compatibility notes and supported interfaces. The reference includes examples, migration guidance and links to related library documentation. Check the version selector before applying examples to an existing project.",
+      "score": 0.8
+    },
+    {
+      "title": "CPython reference implementation",
+      "url": "https://github.com/python/cpython",
+      "snippet": "Read the official Python documentation for release details, compatibility notes and supported interfaces. The reference includes examples, migration guidance and links to related library documentation. Check the version selector before applying examples to an existing project.",
+      "score": 0.7
+    },
+    {
+      "title": "Python enhancement proposals",
+      "url": "https://peps.python.org/",
+      "snippet": "Read the official Python documentation for release details, compatibility notes and supported interfaces. The reference includes examples, migration guidance and links to related library documentation. Check the version selector before applying examples to an existing project.",
+      "score": 0.6
+    },
+    {
+      "title": "Python standard library reference",
+      "url": "https://docs.python.org/3/library/",
+      "snippet": "Read the official Python documentation for release details, compatibility notes and supported interfaces. The reference includes examples, migration guidance and links to related library documentation. Check the version selector before applying examples to an existing project.",
+      "score": 0.5
+    },
+    {
+      "title": "Python packaging user guide",
+      "url": "https://packaging.python.org/en/latest/",
+      "snippet": "Read the official Python documentation for release details, compatibility notes and supported interfaces. The reference includes examples, migration guidance and links to related library documentation. Check the version selector before applying examples to an existing project.",
+      "score": 0.4
+    },
+    {
+      "title": "Python tutorial and language reference",
+      "url": "https://docs.python.org/3/tutorial/",
+      "snippet": "Read the official Python documentation for release details, compatibility notes and supported interfaces. The reference includes examples, migration guidance and links to related library documentation. Check the version selector before applying examples to an existing project.",
+      "score": 0.3
+    }
+  ],
+  "metadata": {
+    "invalid_urls_dropped": 1,
+    "redirects_dropped": 2
+  }
+}

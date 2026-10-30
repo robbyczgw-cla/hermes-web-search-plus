@@ -65,7 +65,7 @@ class ExtractDispatchCompletenessTests(unittest.TestCase):
 # behavior change and must show up here.
 EXPECTED_SEARCH_KWARGS = {
     "serper": {"query", "api_key", "max_results", "country", "language", "search_type", "time_range", "include_images"},
-    "serpbase": {"query", "api_key", "max_results", "country", "language", "page", "api_url", "timeout"},
+    "serpbase": {"query", "api_key", "max_results", "country", "language", "page", "device", "api_url", "timeout"},
     "brave": {"query", "api_key", "max_results", "country", "language", "time_range", "safesearch"},
     "tavily": {"query", "api_key", "max_results", "depth", "topic", "include_domains", "exclude_domains", "include_images", "include_raw_content", "time_range"},
     "querit": {"query", "api_key", "max_results", "language", "country", "time_range", "include_domains", "exclude_domains", "base_url", "base_path", "timeout"},

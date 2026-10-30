@@ -81,6 +81,7 @@ from .diversity_v3 import DEFAULT_NEAR_DUPLICATE_THRESHOLD
 from .provider_adapter_protocol import validate_adapter_result
 from .provider_dispatch import SEARCH_DISPATCH
 from .result_redirects import CACHE_POLICY, clean_result_redirects, combined_redirect_counts
+from .urls import clean_result_urls
 from .provider_registry import (
     EXTRACT_PROVIDER_IDS,
     PROVIDER_STARTUP_DIAGNOSTICS,
@@ -939,6 +940,7 @@ def _legacy_search_cache_context(
     return {
         "result_url_policy": CACHE_POLICY,
         "resolve_redirects": (config.get("serper") or {}).get("resolve_redirects", False) is True,
+        "serpbase_device": (config.get("serpbase") or {}).get("device", "mobile") if provider == "serpbase" else None,
         "locale": f"{locale_country}:{locale_language or ''}",
         "freshness": args.freshness,
         "time_range": getattr(args, "time_range", None),
@@ -1225,7 +1227,9 @@ def _execute_search_request_core(args, config: Dict[str, Any]) -> Tuple[Dict[str
             "search",
             adapter(_providers, prov, args, key, config, routing_info),
         )
+        clean_result_urls(provider_result)
         clean_result_redirects(provider_result, config)
+        clean_result_urls(provider_result)
         if engine_owned_attempt:
             provider_result["_v3_raw_results"] = [
                 dict(item)
@@ -2193,6 +2197,8 @@ def _search_cache_vary(
     vary["credential_scope"] = search_credential_context(plan.candidate_order, config)
     vary["result_url_policy"] = CACHE_POLICY
     vary["resolve_redirects"] = (config.get("serper") or {}).get("resolve_redirects", False) is True
+    if "serpbase" in plan.candidate_order:
+        vary["serpbase_device"] = (config.get("serpbase") or {}).get("device", "mobile")
     return vary
 
 

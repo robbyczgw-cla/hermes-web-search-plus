@@ -19,7 +19,7 @@ _MAX_PARALLEL = 5
 _MIN_REMAINING = 0.05
 COUNT_KEYS = ("redirects_wrapped", "redirects_resolved", "redirects_dropped")
 # Also keeps results cached before this policy from leaking wrapper URLs.
-CACHE_POLICY = "google-redirects-v1"
+CACHE_POLICY = "google-redirects-url-sanity-v2"
 
 
 def _google_redirect_path(url: str) -> str | None:
@@ -160,9 +160,13 @@ def clean_result_redirects(payload: dict, config: dict) -> None:
 
 
 def combined_redirect_counts(provider_results: list) -> dict:
-    """Keep source-quality receipts when fallback or Research merges providers."""
+    """Keep redirect and URL-sanity counts across fallback and Research merges."""
     totals = {
         key: sum((payload.get("metadata") or {}).get(key, 0) for _, payload in provider_results)
         for key in COUNT_KEYS
     }
-    return totals if totals["redirects_wrapped"] else {}
+    counts = totals if totals["redirects_wrapped"] else {}
+    invalid = sum((payload.get("metadata") or {}).get("invalid_urls_dropped", 0) for _, payload in provider_results)
+    if invalid:
+        counts["invalid_urls_dropped"] = invalid
+    return counts

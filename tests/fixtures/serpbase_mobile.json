@@ -1,0 +1,54 @@
+{
+  "status": 0,
+  "session_id": "sanitised-mobile",
+  "organic": [
+    {
+      "title": "Python documentation 1",
+      "link": "https://docs.python.org/3.14/whatsnew/3.14.html",
+      "snippet": "Python reference source 1.",
+      "position": 1
+    },
+    {
+      "title": "Python documentation 2",
+      "link": "https://www.python.org/downloads/release/python-3140/",
+      "snippet": "Python reference source 2.",
+      "position": 2
+    },
+    {
+      "title": "Python documentation 3",
+      "link": "https://github.com/python/cpython/blob/3.14/Doc/whatsnew/3.14.rst",
+      "snippet": "Python reference source 3.",
+      "position": 3
+    },
+    {
+      "title": "Python documentation 4",
+      "link": "https://peps.python.org/pep-0745/",
+      "snippet": "Python reference source 4.",
+      "position": 4
+    },
+    {
+      "title": "Python documentation 5",
+      "link": "https://docs.python.org/3.14/library/asyncio.html",
+      "snippet": "Python reference source 5.",
+      "position": 5
+    },
+    {
+      "title": "Python documentation 6",
+      "link": "https://devguide.python.org/versions/",
+      "snippet": "Python reference source 6.",
+      "position": 6
+    },
+    {
+      "title": "Python documentation 7",
+      "link": "https://www.google.com/goto?url=SANITISEDmobile1",
+      "snippet": "Python reference source 7.",
+      "position": 7
+    },
+    {
+      "title": "Python documentation 8",
+      "link": "https://www.google.com/goto?url=SANITISEDmobile2",
+      "snippet": "Python reference source 8.",
+      "position": 8
+    }
+  ]
+}

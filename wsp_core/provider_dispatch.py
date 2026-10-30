@@ -148,6 +148,7 @@ def _call_serpbase_search(search_module, prov, args, key, config, routing_info):
         country=country,
         language=language,
         page=int(serpbase_config.get("page", 1)),
+        device=serpbase_config.get("device", "mobile"),
         api_url=serpbase_config.get("api_url", "https://api.serpbase.dev/google/search"),
         timeout=int(serpbase_config.get("timeout", 30)),
     )
