@@ -22,6 +22,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlsplit
 from urllib.request import Request
 
+from . import extract_failures
+
 
 TRANSIENT_HTTP_CODES = {429, 503}
 
@@ -454,6 +456,7 @@ class ProviderRequestError(Exception):
         transient: bool = False,
         retry_after: float | None = None,
         out_of_credit: bool = False,
+        target_failure: str | None = None,
     ):
         super().__init__(message)
         self.status_code = status_code
@@ -463,6 +466,10 @@ class ProviderRequestError(Exception):
         # The provider account is empty. status_code stays the provider's real
         # status (Linkup answers 429, Serper 400); this flag drives QUOTA.
         self.out_of_credit = out_of_credit
+        # The provider worked but the page did not (an extract_failures reason:
+        # Linkup's FETCH_TARGET_NOT_FOUND, Firecrawl's 403 for a site it refuses).
+        # Not an account problem: never AUTH, never a circuit change.
+        self.target_failure = target_failure
 
 
 class ProviderBatchStopped(Exception):
@@ -662,11 +669,19 @@ def _error_body_text(error: HTTPError) -> str:
     Decoded like any response body (Brave answers gzip). Callers must never
     copy this text into messages, logs or results.
     """
+    cached = getattr(error, "_wsp_error_body_text", None)
+    if isinstance(cached, str):
+        return cached  # The body stream can be read only once.
     try:
         body = _read_response_body(error, _ERROR_BODY_LIMIT)
     except Exception:
         return ""
-    return body.decode("utf-8", "replace")
+    text = body.decode("utf-8", "replace")
+    try:
+        error._wsp_error_body_text = text
+    except AttributeError:
+        pass
+    return text
 
 
 def _json_error_codes(text: str) -> list[str]:
@@ -696,6 +711,14 @@ def _out_of_credit(error: HTTPError) -> bool:
     return _OUT_OF_CREDIT_WORDING.search(text.lower()) is not None
 
 
+def _target_failure(error: HTTPError) -> str | None:
+    """A page-level failure carried in a 400/403 error body, or None."""
+    if error.code not in {400, 403}:
+        return None
+    text = _error_body_text(error)
+    return extract_failures.reason_for_error_body(error.code, text, _json_error_codes(text))
+
+
 def _raise_provider_http_error(error: HTTPError) -> None:
     if _out_of_credit(error):
         raise ProviderRequestError(
@@ -704,6 +727,14 @@ def _raise_provider_http_error(error: HTTPError) -> None:
             status_code=error.code,
             transient=False,
             out_of_credit=True,
+        )
+    target = _target_failure(error)
+    if target is not None:
+        raise ProviderRequestError(
+            f"{extract_failures.message(target)} (provider answered HTTP {error.code})",
+            status_code=error.code,
+            transient=False,
+            target_failure=target,
         )
     friendly_msg = _friendly_http_error(error.code)
     raise ProviderRequestError(

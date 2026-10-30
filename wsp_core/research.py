@@ -445,7 +445,10 @@ def run_research_mode(
     metadata = {
         "dedup_count": dedup_count,
         "providers_merged": [p for p, _ in provider_results],
-        "extracted_url_count": len(source_summaries),
+        # Pages actually read; failed URLs keep a row with their reason.
+        "extracted_url_count": sum(
+            1 for summary in source_summaries if not (isinstance(summary, dict) and summary.get("error"))
+        ),
         "research_quorum": _quorum_metadata(
             provider_results,
             enabled=quorum_enabled,

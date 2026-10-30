@@ -10,6 +10,20 @@ import json
 import math
 
 
+
+class ExtractUrlsFailed(ProviderContractFailure):
+    """Every URL of an extract batch failed at the target; ``results`` keeps why.
+
+    A contract failure for the attempt engine (no retry, no circuit change):
+    a missing page or a site that refuses the provider says nothing about the
+    provider's account or health.
+    """
+
+    def __init__(self, message: str, results: list):
+        super().__init__(message)
+        self.results = results
+
+
 _MESSAGES = {
     ErrorClass.CONFIG: "Provider configuration is invalid",
     ErrorClass.AUTH: "Provider authentication failed",
@@ -143,6 +157,9 @@ def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
         error_class = ErrorClass.CONFIG
     elif isinstance(error, (TimeoutError,)):
         error_class = ErrorClass.TIMEOUT
+    elif isinstance(error, ProviderRequestError) and getattr(error, "target_failure", None):
+        # The page failed, not the provider: no auth block, no circuit change.
+        error_class = ErrorClass.PROVIDER_CONTRACT
     elif isinstance(error, ProviderRequestError) and getattr(error, "out_of_credit", False):
         # Keeps the provider's real status in http_status (Linkup answers 429).
         error_class = ErrorClass.QUOTA

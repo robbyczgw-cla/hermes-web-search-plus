@@ -81,6 +81,23 @@ def _refused_entry(url: str) -> Dict[str, Any]:
     }
 
 
+
+# Same limit as the plugin's own web_search_plus display: some providers return
+# whole page sections as a snippet (Exa: 5,113 characters for one result).
+_DESCRIPTION_CHARS = 1200
+
+
+def _capped_description(text: str) -> str:
+    """Cut a long snippet at a word boundary, with a visible truncation marker."""
+    flat = " ".join(text.split())
+    if len(flat) <= _DESCRIPTION_CHARS:
+        return text
+    cut = flat[: _DESCRIPTION_CHARS + 1].rpartition(" ")[0]
+    if len(cut) < _DESCRIPTION_CHARS // 2:
+        cut = flat[:_DESCRIPTION_CHARS]
+    return f"{cut} … [TRUNCATED: showing first {len(cut)} of {len(text)} characters]"
+
+
 class WSPNativeBackend(WebSearchProvider):
     """In-process bridge from Hermes ``web_search``/``web_extract`` to WSP."""
 
@@ -249,12 +266,12 @@ class WSPNativeBackend(WebSearchProvider):
                 {
                     "url": str(item.get("url") or ""),
                     "title": str(item.get("title") or ""),
-                    "description": str(
+                    "description": _capped_description(str(
                         item.get("snippet")
                         or item.get("description")
                         or item.get("content")
                         or ""
-                    ),
+                    )),
                     "position": i + 1,
                 }
             )
@@ -377,7 +394,13 @@ class WSPNativeBackend(WebSearchProvider):
             if full_text.get("stored") and full_text.get("path"):
                 metadata["full_text_path"] = full_text["path"]
         if row.get("error"):
-            normalized["error"] = "WSP extraction failed for this URL"
+            # Reasons classified by the engine (not found, site refused, ...) are
+            # WSP's own controlled text; anything else stays generic.
+            normalized["error"] = (
+                f"WSP extraction failed for this URL: {row['error']}"
+                if row.get("error_reason")
+                else "WSP extraction failed for this URL"
+            )
         if metadata:
             normalized["metadata"] = metadata
         return normalized
