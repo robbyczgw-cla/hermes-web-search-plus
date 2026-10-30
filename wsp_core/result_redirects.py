@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlsplit
 from . import http_client
 from .daemon_tasks import DaemonTask
 from .urls import url_key
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 
 
 _GOOGLE_HOST = re.compile(r"(?:www\.)?google\.(?:[a-z]{2,63}|(?:co|com)\.[a-z]{2})\Z")
@@ -130,7 +131,7 @@ def clean_result_redirects(payload: dict, config: dict) -> None:
             for task in tasks:
                 try:
                     task.result(timeout=max(0.0, deadline - time.monotonic()))
-                except TimeoutError:
+                except FuturesTimeoutError:  # not the builtin TimeoutError before Python 3.11
                     pass
             while not completed.empty():
                 index, destination = completed.get_nowait()
