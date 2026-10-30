@@ -726,6 +726,8 @@ def _execute_extract_v3(
             "results": results,
             "error": extract_failures.summary(results, tried, not_tried, budget_limit),
             "fallback_errors": fallback_errors,
+            # Marks the summary as WSP's own text for the v3 response.
+            "_v3_extract_failed": True,
         }
         refused_urls = [url for url, _validated, error in checked if error is not None]
         if refused_urls:

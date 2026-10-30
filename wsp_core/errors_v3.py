@@ -184,6 +184,9 @@ def classify_provider_error(error: BaseException, *, provider: str) -> ErrorV3:
         error_class = ErrorClass.INTERNAL
 
     message = _MESSAGES[error_class]
+    if isinstance(error, ExtractUrlsFailed) or getattr(error, "target_failure", None):
+        # The provider answered; the pages did not (not found, site refused).
+        message = "Provider could not read the requested pages"
     if error_class is ErrorClass.QUOTA and getattr(error, "out_of_credit", False):
         message = _OUT_OF_CREDIT_MESSAGE
     if error_class is ErrorClass.INVALID_REQUEST:
