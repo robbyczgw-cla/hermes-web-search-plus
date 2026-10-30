@@ -938,7 +938,7 @@ def _legacy_search_cache_context(
     )
     return {
         "result_url_policy": CACHE_POLICY,
-        "resolve_redirects": (config.get("serper") or {}).get("resolve_redirects", True),
+        "resolve_redirects": (config.get("serper") or {}).get("resolve_redirects", False) is True,
         "locale": f"{locale_country}:{locale_language or ''}",
         "freshness": args.freshness,
         "time_range": getattr(args, "time_range", None),
@@ -2192,7 +2192,7 @@ def _search_cache_vary(
     vary: Dict[str, Any] = {"language": AUTO_LANGUAGE} if is_auto_language(locale.get("language")) else {}
     vary["credential_scope"] = search_credential_context(plan.candidate_order, config)
     vary["result_url_policy"] = CACHE_POLICY
-    vary["resolve_redirects"] = (config.get("serper") or {}).get("resolve_redirects", True)
+    vary["resolve_redirects"] = (config.get("serper") or {}).get("resolve_redirects", False) is True
     return vary
 
 

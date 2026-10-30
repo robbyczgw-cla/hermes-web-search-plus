@@ -74,12 +74,17 @@ def config(tmp_path):
     cfg["v3"] = {"cache_dir": str(tmp_path), "state_path": str(tmp_path / "state.sqlite3"),
                  "operator_receipt_journal": False}
     cfg["bounded_context"] = {"cache_root": str(tmp_path)}
+    # Most engine tests exercise the opt-in resolver; the default-off path has its own test.
+    cfg["serper"]["resolve_redirects"] = True
     return cfg
+
+
+RESOLVE = {"serper": {"resolve_redirects": True}}
 
 
 def test_recorded_shape_resolves_drops_and_deduplicates_before_display(fake_http):
     result = payload()
-    result_redirects.clean_result_redirects(result, {})
+    result_redirects.clean_result_redirects(result, RESOLVE)
     assert {key: result["metadata"][key] for key in result_redirects.COUNT_KEYS} == {
         "redirects_wrapped": 7, "redirects_resolved": 2, "redirects_dropped": 5,
     }
@@ -120,7 +125,7 @@ def test_classic_redirects_decode_offline(host, param, public_dns):
 def test_unsafe_locations_are_dropped(target, fake_http, monkeypatch):
     monkeypatch.setattr(http_client, "redirect_location", lambda *a, **kw: target)
     result = {"results": [{"url": "https://google.com/goto?url=CAESbad"}]}
-    result_redirects.clean_result_redirects(result, {})
+    result_redirects.clean_result_redirects(result, RESOLVE)
     assert result["results"] == [] and result["metadata"]["redirects_dropped"] == 1
 
 
@@ -130,7 +135,7 @@ def test_dns_private_destination_is_dropped(fake_http, monkeypatch):
         (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.1.2.3" if host == "private.example" else "93.184.216.34", port))
     ])
     result = {"results": [{"url": "https://google.com/goto?url=x"}]}
-    result_redirects.clean_result_redirects(result, {})
+    result_redirects.clean_result_redirects(result, RESOLVE)
     assert result["results"] == []
 
 
@@ -146,7 +151,7 @@ def test_config_off_drops_all_wrappers_without_http(fake_http):
 def test_no_resolution_starts_after_deadline(fake_http):
     result = payload()
     with http_client.request_deadline_scope(time.monotonic() - 1):
-        result_redirects.clean_result_redirects(result, {})
+        result_redirects.clean_result_redirects(result, RESOLVE)
     assert fake_http[0] == []
     assert result["metadata"]["redirects_dropped"] == 7
 
@@ -167,7 +172,7 @@ def test_deadline_bounds_wait_and_prevents_queued_requests(fake_http, monkeypatc
     started = time.monotonic()
     try:
         with http_client.request_deadline_scope(started + 0.15):
-            result_redirects.clean_result_redirects(result, {})
+            result_redirects.clean_result_redirects(result, RESOLVE)
         assert entered.is_set() and 1 <= len(calls) <= 5
         assert time.monotonic() - started < 0.6
         assert len(result["results"]) == 3
@@ -181,7 +186,7 @@ def test_deadline_bounds_wait_and_prevents_queued_requests(fake_http, monkeypatc
 
 def test_dispatch_timeout_cap_applies_to_redirect_get(fake_http):
     with http_client.request_timeout_cap(0.25):
-        result_redirects.clean_result_redirects(payload(), {})
+        result_redirects.clean_result_redirects(payload(), RESOLVE)
     assert all(timeout <= 0.25 for _, timeout in fake_http[0])
 
 
@@ -242,3 +247,16 @@ def test_empty_wrapped_provider_keeps_drop_counts_after_fallback(tmp_path, monke
     assert result["provider"] == "brave"
     assert result["metadata"]["redirects_dropped"] == 7
     assert plugin._format_results(result).splitlines()[1].endswith("redirects_dropped=7]")
+
+
+def test_default_config_drops_wrappers_without_contacting_google(tmp_path, monkeypatch, fake_http):
+    # Live 2026-10-30: Google redirected only the first /goto link per search and served a
+    # JavaScript page for the rest, so resolution is opt-in and the default never calls Google.
+    cfg = _deepcopy_default_config()
+    assert cfg["serper"]["resolve_redirects"] is False
+    result = payload()
+    result_redirects.clean_result_redirects(result, cfg)
+    assert fake_http[0] == []
+    assert all("/goto" not in item["url"] for item in result["results"])
+    assert result["metadata"]["redirects_resolved"] == 0
+    assert result["metadata"]["redirects_dropped"] == 7

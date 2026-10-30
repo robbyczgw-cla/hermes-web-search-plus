@@ -90,12 +90,23 @@ def clean_result_redirects(payload: dict, config: dict) -> None:
     if not wrappers:
         return
     resolved: dict[int, str] = {}
-    if (config.get("serper") or {}).get("resolve_redirects", True) is not False:
+    # Classic /url wrappers carry the destination in their query: decode them locally,
+    # always, without any request.
+    for index, wrapper in wrappers.items():
+        if wrapper[0] == "/url":
+            destination = _resolve(results[index]["url"], wrapper)
+            if destination:
+                resolved[index] = destination
+    network = [index for index, wrapper in wrappers.items() if wrapper[0] != "/url"]
+    # Opt-in: live tests (2026-10-30) resolved only the first /goto link per search; Google
+    # serves a JavaScript shell for the rest, so resolution mostly costs latency and a
+    # request from the user's machine to Google for about one extra source.
+    if network and (config.get("serper") or {}).get("resolve_redirects", False) is True:
         completed = queue.Queue()
         pending = queue.Queue()
-        for index in wrappers:
+        for index in network:
             pending.put(index)
-        deadline = time.monotonic() + math.ceil(len(wrappers) / _MAX_PARALLEL) * _LINK_TIMEOUT
+        deadline = time.monotonic() + math.ceil(len(network) / _MAX_PARALLEL) * _LINK_TIMEOUT
         remaining = http_client.remaining_seconds()
         if remaining is not None:
             deadline = min(deadline, time.monotonic() + max(0.0, remaining))
@@ -115,7 +126,7 @@ def clean_result_redirects(payload: dict, config: dict) -> None:
                             completed.put((index, destination))
 
         if deadline - time.monotonic() >= _MIN_REMAINING:
-            tasks = [DaemonTask(worker) for _ in range(min(_MAX_PARALLEL, len(wrappers)))]
+            tasks = [DaemonTask(worker) for _ in range(min(_MAX_PARALLEL, len(network)))]
             for task in tasks:
                 try:
                     task.result(timeout=max(0.0, deadline - time.monotonic()))

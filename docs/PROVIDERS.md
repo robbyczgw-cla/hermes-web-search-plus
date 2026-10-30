@@ -37,9 +37,9 @@ until opted in with `setup.py config set-auto-allow <provider> on`.
 
 Google-like SERP results for facts, shopping, local and news queries, plus webpage scraping.
 
-Google `/goto` source redirects are resolved with one GET per wrapped link from your machine to Google, before deduplication and caching (up to five concurrent requests, two seconds per link, bounded by the request deadline). Google sees your IP address and the token; destination pages are not fetched. Unusable or unsafe redirects are dropped. Classic `/url?q=` and `/url?url=` links are decoded locally.
+Google `/goto` source redirects (usually every Serper result from position 4 on) are dropped before deduplication and caching, without contacting Google, so a Serper search typically keeps about three sources. Classic `/url?q=` and `/url?url=` links are decoded locally.
 
-Set `serper.resolve_redirects=false` in `config.json` to drop wrappers without contacting Google; this yields fewer results and applies to wrappers from any provider. Cache hits reuse cleaned URLs. Result metadata reports `redirects_wrapped`, `redirects_resolved`, and `redirects_dropped`; Hermes appends `redirects_dropped=N` only when N is positive. Native v3 JSON carries the counts in `wsp.search.redirects` warning details.
+Set `serper.resolve_redirects=true` in `config.json` to try one GET per wrapped link from your machine to Google (up to five concurrent requests, two seconds per link, bounded by the request deadline; Google sees your IP address and the token). In tests only the first wrapped link per search resolved, so this usually adds about one source and roughly 0.75 s. The setting applies to wrappers from any provider. Cache hits reuse cleaned URLs. Result metadata reports `redirects_wrapped`, `redirects_resolved`, and `redirects_dropped`; Hermes appends `redirects_dropped=N` only when N is positive. Native v3 JSON carries the counts in `wsp.search.redirects` warning details.
 
 ### SerpBase
 
