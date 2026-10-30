@@ -424,7 +424,7 @@ def urlopen(req, timeout: float = 30):
     return _pooled_open(req, timeout)
 
 
-DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/5.1.6"
+DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/5.1.7"
 
 
 def redirect_location(url: str, timeout: float = 2.0) -> str | None:
