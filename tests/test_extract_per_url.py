@@ -298,7 +298,10 @@ def test_provider_wide_error_midway_without_fallback_keeps_pages_and_is_not_cach
     assert [item["error"] for item in result["results"][3:]] == [f"not tried: {cause}"] * 2
     assert result["routing"]["provider"] == "firecrawl"
     assert not second.get("cached")
-    assert second["error"] == "All extraction providers failed"
+    # The circuit is open, so nothing was fetched; every URL still gets a row.
+    assert second["error"].startswith("Could not read any of the 5 pages")
+    assert [item["url"] for item in second["results"]] == BATCH
+    assert all(item["error"] and not item["content"] for item in second["results"])
     assert calls == BATCH[:3]
 
 
@@ -477,8 +480,10 @@ def test_blank_content_falls_back_and_is_not_cached():
         first = extract.extract_plus([GOOD], provider="tavily")
         second = extract.extract_plus([GOOD], provider="tavily")
 
-    assert first["results"] == []
-    assert first["error"] == "All extraction providers failed"
+    # One row for the URL, with the reason instead of an empty list.
+    assert [(row["url"], row["content"]) for row in first["results"]] == [(GOOD, "")]
+    assert first["results"][0]["error"] == "No content could be extracted from this URL"
+    assert first["error"].startswith("Could not read the page")
     assert not second.get("cached")
     assert tv.call_count == 2
 
@@ -548,7 +553,8 @@ def test_exa_failed_statuses_become_error_items():
 
     assert [item["url"] for item in result["results"]] == [GOOD, OTHER]
     assert not result["results"][0].get("error")
-    assert result["results"][1]["error"] == "Exa could not fetch this URL"
+    assert result["results"][1]["error"] == "page not found (HTTP 404)"
+    assert result["results"][1]["error_reason"] == "not_found"
 
 
 # URLs past the fan-out cap -----------------------------------------------------

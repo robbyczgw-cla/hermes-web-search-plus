@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import unicodedata
 from copy import deepcopy
+from dataclasses import replace
 from datetime import datetime
 from typing import Any, Dict, List, Mapping
 from urllib.parse import urlsplit
@@ -599,6 +600,24 @@ def response_from_legacy(
             ),
             None,
         ) or _error(str(top_error), str(selected) if selected else None)
+        if request.capability is Capability.EXTRACT and payload.get("_v3_extract_failed") and failed_items:
+            # The engine's own summary ("Could not read the page: page not found
+            # (HTTP 404)") instead of the attempt's generic class message, and
+            # each URL's reason, which a failed response otherwise drops.
+            error = replace(error, message=str(top_error))
+            warnings.append(
+                {
+                    "code": DegradedReason.PARTIAL_EXTRACTION.value,
+                    "message": "No extraction result succeeded.",
+                    "details": {
+                        "failed_count": len(failed_items),
+                        "failed_urls": [
+                            {"url": str(item.get("url")), "error": str(item.get("error"))}
+                            for item in failed_items
+                        ],
+                    },
+                }
+            )
     elif failed_items:
         status = ResponseStatus.DEGRADED
         warnings.append(

@@ -28,7 +28,8 @@ from .http_client import (
     remaining_seconds,
     urlopen,
 )
-from .errors_v3 import classify_provider_error
+from .errors_v3 import ExtractUrlsFailed, classify_provider_error
+from . import extract_failures
 from .contract_v3 import ErrorClass
 from .credentials import redact_url
 from .quality import _title_from_url
@@ -1063,6 +1064,12 @@ def _batch_stopped_extract_result(provider: str, url: str, cause: str) -> Dict[s
 
 def _per_url_extract_error(provider: str, url: str, label: str, exc: ProviderRequestError) -> Dict[str, Any]:
     """Turn one URL's fetch error into an error item naming its cause."""
+    target = getattr(exc, "target_failure", None)
+    if target:
+        # The provider worked; the page did not (not found, site refused).
+        return _normalize_extract_result(
+            provider, url, **extract_failures.failure_fields(target, provider=label.split()[0])
+        )
     status = f" (HTTP {exc.status_code})" if isinstance(exc.status_code, int) else ""
     cause = _provider_wide_cause(provider, exc)
     return _normalize_extract_result(provider, url, error=f"{label} failed{status}" + (f": {cause}" if cause else ""))
@@ -1089,6 +1096,9 @@ def _extract_batch_payload(
             raise stop_error
         raise ProviderBatchStopped(stop_error, payload)
     if first_error is not None and all(item.get("error") for item in results):
+        if all(item.get("error_reason") for item in results):
+            # Every page failed at the site: keep the reasons for the user.
+            raise ExtractUrlsFailed("all_urls_failed", results)
         raise first_error
     return payload
 
@@ -1139,6 +1149,14 @@ def extract_firecrawl(
         payload = data.get("data") if isinstance(data.get("data"), dict) else data
         metadata = payload.get("metadata") or {}
         final_url = metadata.get("sourceURL") or metadata.get("url") or url
+        target_reason, target_status = extract_failures.split_status(metadata.get("statusCode"))
+        if target_reason is not None:
+            # Firecrawl answers success with the site's error page (a 404 page
+            # is text too); it must not reach the model or the cache as content.
+            results.append(_normalize_extract_result(
+                "firecrawl", url, **extract_failures.failure_fields(target_reason, target_status),
+            ))
+            continue
         title = metadata.get("title") or ""
         markdown = payload.get("markdown") or ""
         html = payload.get("html") or payload.get("rawHtml") or ""
@@ -1215,9 +1233,17 @@ def extract_linkup(
         )
 
     if len(urls) <= 1:
-        return {"provider": "linkup", "results": [
-            {**fetch_one(url), "requested_url": url} for url in urls
-        ]}
+        single = []
+        for url in urls:
+            try:
+                item = fetch_one(url)
+            except ProviderRequestError as exc:
+                if not getattr(exc, "target_failure", None):
+                    raise
+                # Linkup answers HTTP 400 FETCH_TARGET_NOT_FOUND for a missing page.
+                item = _per_url_extract_error("linkup", url, "Linkup fetch", exc)
+            single.append({**item, "requested_url": url})
+        return {"provider": "linkup", "results": single}
 
     first_error: Optional[ProviderRequestError] = None
 
@@ -1279,8 +1305,25 @@ def extract_tavily(
         ))
     for failed in data.get("failed_results", []) or []:
         failed_url = failed.get("url", "")
-        results.append(_normalize_extract_result("tavily", failed_url, error="Tavily extract failed"))
+        reason = extract_failures.reason_for_text(failed.get("error")) if isinstance(failed, dict) else None
+        fields = extract_failures.failure_fields(reason) or {"error": "Tavily extract failed"}
+        results.append(_normalize_extract_result("tavily", failed_url, **fields))
     return {"provider": "tavily", "results": results}
+
+_EXA_TIMEOUT_TAGS = {"CRAWL_LIVECRAWL_TIMEOUT", "CRAWL_TIMEOUT"}
+
+
+def _exa_failure_fields(error: Any) -> Dict[str, Any]:
+    """Exa ``statuses[].error`` ({httpStatusCode, tag}) as error-item fields."""
+    error = error if isinstance(error, dict) else {}
+    tag = str(error.get("tag") or "").upper()
+    reason, status = extract_failures.split_status(error.get("httpStatusCode"))
+    if tag == "CRAWL_NOT_FOUND":
+        reason, status = extract_failures.NOT_FOUND, status or 404
+    elif tag in _EXA_TIMEOUT_TAGS:
+        reason, status = extract_failures.UNREACHABLE, None
+    return extract_failures.failure_fields(reason, status) or {"error": "Exa could not fetch this URL"}
+
 
 def extract_exa(
     urls: List[str],
@@ -1321,7 +1364,7 @@ def extract_exa(
             continue
         failed_url = status.get("id")
         if isinstance(failed_url, str) and failed_url and failed_url not in returned:
-            results.append(_normalize_extract_result("exa", failed_url, error="Exa could not fetch this URL"))
+            results.append(_normalize_extract_result("exa", failed_url, **_exa_failure_fields(status.get("error"))))
             returned.add(failed_url)
     return {
         "provider": "exa",
@@ -1420,7 +1463,13 @@ def extract_parallel(
         ))
     for failed in data.get("errors", []) or []:
         failed_url = failed.get("url", "") if isinstance(failed, dict) else ""
-        results.append(_normalize_extract_result("parallel", failed_url, error="Parallel extract failed"))
+        fields: Dict[str, Any] = {}
+        if isinstance(failed, dict):
+            reason, status = extract_failures.split_status(failed.get("http_status_code"))
+            if reason is None and failed.get("error_type") == "network_error":
+                reason = extract_failures.UNREACHABLE
+            fields = extract_failures.failure_fields(reason, status)
+        results.append(_normalize_extract_result("parallel", failed_url, **(fields or {"error": "Parallel extract failed"})))
     return {
         "provider": "parallel",
         "results": results,

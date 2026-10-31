@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+## [v5.1.7] — 2026-10-30
+
+### Fixed
+
+- Failed extractions say why, per URL: `page not found (HTTP 404)`, `page removed (HTTP 410)`, `the site refused automated access`, `the site could not be reached or timed out`, `<provider> does not support this site`. The reasons are read from Tavily `failed_results`, Exa `statuses`, Parallel `errors`, Linkup `FETCH_TARGET_*` error codes and Firecrawl's page `statusCode`; provider text is matched against known patterns, never copied into the output. A fully failed request used to return `results: []` and "All extraction providers failed". It now returns one row per URL and a summary that names the providers tried and how many were not tried because of the per-request attempt limit.
+- A page the site reports as missing (404/410) ends the fallback chain for that URL. Live on 2026-10-30, a 404 cost one Tavily call (0.7 s) instead of three paid calls (Tavily, Exa, Linkup, 2.7 s).
+- Extract fallback reaches three providers again: with another provider waiting, each provider gets one try, as in search. The retry of the first provider used to spend one of the three attempt units, so a transient error ended the chain after two providers.
+- Firecrawl: a page answering 404 was returned and cached as page content (Firecrawl reports success and sends the site's error page). It is now an error row. Firecrawl's HTTP 403 "we do not support this site" counted as an authentication failure and blocked Firecrawl for five minutes for every URL, with the advice to check the API key. It is now a per-URL failure and Firecrawl stays available.
+- Extract titles and URLs are printed on one line. A line break in a page title could make the model see a second, fake result.
+- Research lists sources it could not read with the reason and counts only pages actually read in `extracted_url_count`.
+- The v3 response of a fully failed extract carries the summary and each URL's reason instead of the generic "Provider returned an invalid response".
+- Native backend (`web.extract_backend: wsp`): failed URLs keep the classified reason; search snippets are capped at 1,200 characters like `web_search_plus` (a live Exa snippet had 5,113).
+
 ## [v5.1.6] — 2026-10-30
 
 ### Fixed

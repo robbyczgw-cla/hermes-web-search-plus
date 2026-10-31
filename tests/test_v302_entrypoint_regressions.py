@@ -644,7 +644,10 @@ def test_empty_extract_result_is_never_cached(tmp_path, monkeypatch):
     # An empty result is a failure, not a success to serve for the cache TTL.
     assert calls.count("linkup") == 2
     assert miss["provider"] == hit["provider"] == "linkup"
-    assert miss["results"] == hit["results"] == []
+    # One error row for the URL, never content, never served from the cache.
+    assert miss["results"] == hit["results"]
+    assert [(row["url"], row["content"]) for row in miss["results"]] == [("https://example.com/empty", "")]
+    assert miss["results"][0]["error"]
     assert not hit.get("cached")
 
 

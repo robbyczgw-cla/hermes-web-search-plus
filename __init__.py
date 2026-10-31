@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v5.1.6
+web-search-plus — Hermes Plugin v5.1.7
 Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "5.1.6"
+__version__ = "5.1.7"
 
 import argparse
 import importlib
@@ -2310,6 +2310,8 @@ def _format_results(data: dict, *, now: Optional[datetime] = None) -> str:
             elif content:
                 excerpt = _source_summary_excerpt(content, query, total_chars=_source_total_chars(src, len(content)))
                 lines.append(f"   {_indent_continuation(excerpt)}")
+            elif src.get("error"):
+                lines.append(f"   not read: {_one_line(str(src['error']))}")
         lines.append("")
 
     now = now or datetime.now(timezone.utc)
@@ -2502,17 +2504,23 @@ def _format_extract_results(data: dict) -> str:
     if "error" in data and not data.get("results"):
         return f"Extract error: {data['error']}"
     provider = data.get("provider", "unknown")
-    lines = [_UNTRUSTED_WEB_DATA_NOTICE, f"[Provider: {provider}]"]
+    if data.get("error"):
+        # No URL could be read: the summary first, then one reason per URL.
+        lines = [f"Extract error: {data['error']}"]
+    else:
+        lines = [_UNTRUSTED_WEB_DATA_NOTICE, f"[Provider: {provider}]"]
     limit = _extract_char_limit()
     for i, r in enumerate(data.get("results", []), 1):
-        title = r.get("title") or "No title"
-        url = r.get("url", "")
+        # Page titles and URLs are web data: a line break would start a fake item.
+        title = _one_line(str(r.get("title") or "")) or "No title"
+        url = _one_line(str(r.get("url") or ""))
         content = r.get("content") or r.get("raw_content") or ""
         lines.append(f"\n{i}. {title}")
         if url:
             lines.append(url)
         if r.get("error"):
-            lines.append(f"Error: {r['error']}")
+            reporter = f" (reported by {r['provider']})" if r.get("error_reason") and r.get("provider") else ""
+            lines.append(f"Error: {_one_line(str(r['error']))}{reporter}")
         elif content:
             lines.append(_format_truncated_extract_content(content, url, limit, r.get("full_text")))
         if "spans" in r:

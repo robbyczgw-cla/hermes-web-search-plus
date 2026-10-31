@@ -34,7 +34,8 @@ from .bounded_context_v3 import (
     prepare_extract_request,
 )
 from .attempt_engine_v3 import AttemptEngine, provider_attempt_context, request_deadline
-from .errors_v3 import ProviderContractFailure
+from .errors_v3 import ExtractUrlsFailed, ProviderContractFailure
+from . import extract_failures
 from .http_client import NOT_TRIED_DEADLINE_ERROR, RequestDeadlineExceeded
 from .http_client import ProviderBatchStopped, ProviderRequestError
 # Provider dispatch resolves implementations late through this module.
@@ -393,6 +394,15 @@ def _match_extract_items(urls: List[str], items: List[Any]) -> List[Optional[Dic
     return match_extract_items(urls, items)[0]
 
 
+def _failure_row(url: str, item: Dict[str, Any]) -> Dict[str, Any]:
+    """A failed URL as a result row: no page text, the reason and who reported it."""
+    row = {"url": url, "title": "", "content": "", "error": item.get("error") or "could not read this page"}
+    for key in ("error_reason", "target_status", "provider"):
+        if item.get(key) is not None:
+            row[key] = item[key]
+    return row
+
+
 def _extract_error_item(url: str, error: str, item: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     if item is not None:
         return {**item, "error": item.get("error") or error}
@@ -469,8 +479,8 @@ def _extract_plus_core(
         if res_list and all(r.get("error") == NOT_TRIED_DEADLINE_ERROR for r in res_list):
             raise RequestDeadlineExceeded()
         # Empty lists and blank pages are failures too, so they fall back
-        # and are never cached as a success.
-        raise ProviderContractFailure("all_urls_failed")
+        # and are never cached as a success. The items keep each URL's reason.
+        raise ExtractUrlsFailed("all_urls_failed", res_list)
     result["routing"] = {"provider": selected, "requested_provider": selected, "fallback_used": False, "fallback_errors": []}
     if profile_deviation:
         result.setdefault("metadata", {})["profile_deviation"] = True
@@ -542,9 +552,13 @@ def _execute_extract_v3(
         str(CACHE_DIR), "v3", "state.sqlite3"
     )
     store = SQLiteStateStore(state_path)
+    # Like search: with another provider waiting, the next provider is a better
+    # second try than the same one again. A retry also spent one of the
+    # request's attempt units, so the chain used to end after two providers.
+    has_fallback = len(plan.candidate_order) > 1
     engine = AttemptEngine(
         store,
-        max_attempts=int(v3_config.get("max_attempts_per_provider", 2)),
+        max_attempts=1 if has_fallback else int(v3_config.get("max_attempts_per_provider", 2)),
     )
     budget_limit = int(
         request.budget.get(
@@ -567,6 +581,14 @@ def _execute_extract_v3(
     serving_providers = []
     provider_payloads: Dict[str, Dict[str, Any]] = {}
     unmatched_results: List[Dict[str, Any]] = []
+    # Error items of attempts where every URL failed, keyed by provider.
+    batch_failures: Dict[str, tuple] = {}
+
+    def note_failure(position: int, item: Optional[Dict[str, Any]]) -> None:
+        """Keep the most telling reason; a page that does not exist is final."""
+        best = extract_failures.better(failed.get(position), item)
+        if best is not None:
+            failed[position] = best
 
     for provider in plan.candidate_order:
         context = provider_attempt_context(
@@ -600,6 +622,9 @@ def _execute_extract_v3(
                 )
             except ProviderBatchStopped as exc:
                 stopped, result = exc, exc.payload
+            except ExtractUrlsFailed as exc:
+                batch_failures[current_provider] = (batch, exc.results)
+                raise
             if result.get("error"):
                 raise ProviderRequestError(str(result["error"]), transient=False)
             matched, unmatched = match_extract_items(batch, result.get("results") or [])
@@ -645,8 +670,9 @@ def _execute_extract_v3(
                     if provider not in serving_providers:
                         serving_providers.append(provider)
                 else:
-                    failed[position] = _extract_error_item(urls[position], _EMPTY_EXTRACT_ERROR, item)
-                    still_pending.append(position)
+                    note_failure(position, _extract_error_item(urls[position], _EMPTY_EXTRACT_ERROR, item))
+                    if not extract_failures.is_final(failed.get(position)):
+                        still_pending.append(position)
             pending = still_pending
             if attempted.receipt.error is not None:
                 # Partial attempt stopped by a provider-wide error.
@@ -663,6 +689,13 @@ def _execute_extract_v3(
             else "provider_failed"
         )
         fallback_errors.append({"provider": provider, "error": error_code})
+        if provider in batch_failures:
+            failed_batch, items = batch_failures.pop(provider)
+            matched_items, _unmatched = match_extract_items(failed_batch, items)
+            for position, item in zip(pending, matched_items):
+                if isinstance(item, dict):
+                    note_failure(position, _extract_error_item(urls[position], _EMPTY_EXTRACT_ERROR, item))
+            pending = [position for position in pending if not extract_failures.is_final(failed.get(position))]
 
     if serving_providers:
         # Provenance belongs to the last contributor, not the first provider
@@ -672,11 +705,29 @@ def _execute_extract_v3(
     elif payload is not None:
         payload = None
     if payload is None:
+        # One row per requested URL with the best reason known, so the model
+        # can tell the user "page not found" instead of a bare failure.
+        results = []
+        positions = iter(range(len(urls)))
+        for requested_url, _validated, error in checked:
+            if error is not None:
+                results.append(_extract_error_item(requested_url, error))
+                continue
+            position = next(positions)
+            item = failed.get(position) or _extract_error_item(urls[position], "could not read this page")
+            results.append(_failure_row(urls[position], item))
+        tried = [receipt.provider for receipt in receipts if receipt.decision == "attempted"]
+        not_tried = sum(
+            1 for receipt in receipts
+            if receipt.skip_reason is not None and receipt.skip_reason.value == "budget_blocked"
+        )
         payload = {
             "provider": plan.selected_provider,
-            "results": [],
-            "error": "All extraction providers failed",
+            "results": results,
+            "error": extract_failures.summary(results, tried, not_tried, budget_limit),
             "fallback_errors": fallback_errors,
+            # Marks the summary as WSP's own text for the v3 response.
+            "_v3_extract_failed": True,
         }
         refused_urls = [url for url, _validated, error in checked if error is not None]
         if refused_urls:
