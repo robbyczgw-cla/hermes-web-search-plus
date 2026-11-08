@@ -31,7 +31,7 @@ import os
 import queue
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import List, Dict, Any, Optional, Tuple
@@ -103,7 +103,17 @@ from .research import run_research_mode
 from .attempt_engine_v3 import AttemptEngine, provider_attempt_context, request_deadline
 from .cache_v3 import ResponseCacheV3
 from .compat_v3 import legacy_request_to_v3, v3_response_to_legacy_search
-from .contract_v3 import Capability, ErrorClass, RequestV3, ResponseV3, SkipReason
+from .contract_v3 import (
+    AttemptEndReason,
+    AttemptOutcome,
+    Capability,
+    ErrorClass,
+    FallbackReason,
+    RequestV3,
+    ResponseV3,
+    SkipReason,
+    fallback_reason_v3,
+)
 from .orchestrator_v3 import (
     CapabilityAdapter,
     CapabilityExecution,
@@ -1670,6 +1680,15 @@ def _remaining_ms(deadline: Optional[float]) -> Optional[int]:
     return max(1, int((deadline - time.monotonic()) * 1000))
 
 
+def _research_member_error(payload: Dict[str, Any], provider: str) -> Optional[str]:
+    """The research loop's diagnostic for one member, if it recorded one."""
+    for item in (payload.get("routing") or {}).get("provider_errors") or []:
+        if isinstance(item, dict) and item.get("provider") == provider and item.get("error"):
+            text = str(item["error"])
+            return None if text.startswith(("timed out:", "preempted")) else text
+    return None
+
+
 def _execute_research_v3(
     request: RequestV3, plan: ProviderPlan, config: Dict[str, Any]
 ) -> CapabilityExecution:
@@ -1696,6 +1715,7 @@ def _execute_research_v3(
     payloads_by_provider: Dict[str, Dict[str, Any]] = {}
     operation_started: Dict[str, Tuple[float, float]] = {}
     timed_out_providers: set[str] = set()
+    preempted_providers: set[str] = set()
     daily_budget = _daily_preflight_budget(config)
     args = _search_args_from_v3(request, config)
     time_budget_seconds = float(
@@ -1775,6 +1795,7 @@ def _execute_research_v3(
         max_extract_urls=int(getattr(args, "research_extract_count", 3) or 3),
         time_budget_seconds=time_budget_seconds,
         on_provider_timeout=timed_out_providers.add,
+        on_provider_preempted=preempted_providers.add,
         diversity_rerank=diversity_rerank,
         near_duplicate_threshold=near_duplicate_threshold,
         quorum_enabled=quorum_settings["enabled"],
@@ -1795,14 +1816,31 @@ def _execute_research_v3(
     )
     receipts = []
     for provider in providers:
-        receipt = (
-            None
-            if provider in timed_out_providers
-            else receipts_by_provider.get(provider)
-        )
+        # The receipt follows the answer, not the thread: a member whose
+        # results the quorum loop discarded is reported as preempted even when
+        # its daemon finished a moment later and wrote a success receipt, so
+        # the same input gives the same receipt and status whatever the
+        # timing. A member that had already failed keeps its failure: nothing
+        # of it was discarded, and the failure is what the user needs to see.
+        receipt = receipts_by_provider.get(provider)
+        if provider in timed_out_providers:
+            receipt = None
+        elif provider in preempted_providers and (
+            receipt is None
+            or receipt.outcome in {AttemptOutcome.SUCCESS, AttemptOutcome.PARTIAL}
+        ):
+            receipt = None
         if receipt is None:
             started = operation_started.get(provider)
-            if started is not None:
+            if provider in preempted_providers:
+                wall_started, monotonic_started = started or (time.time(), time.monotonic())
+                receipt = engine.cancel_started(
+                    contexts[provider],
+                    started_at=wall_started,
+                    duration_ms=int(max(0.0, time.monotonic() - monotonic_started) * 1000),
+                    reason=AttemptEndReason.PREEMPTED_AFTER_QUORUM,
+                ).receipt
+            elif started is not None:
                 wall_started, monotonic_started = started
                 receipt = engine.cancel_started(
                     contexts[provider],
@@ -1810,6 +1848,14 @@ def _execute_research_v3(
                     duration_ms=int(
                         max(0.0, time.monotonic() - monotonic_started) * 1000
                     ),
+                    reason=(
+                        AttemptEndReason.DEADLINE
+                        if provider in timed_out_providers
+                        # Started, not timed out, no receipt: the engine
+                        # raised after the call; the member error has it.
+                        else AttemptEndReason.ENGINE_ERROR
+                    ),
+                    message=_research_member_error(payload, provider),
                 ).receipt
             else:
                 receipt = engine.skip(
@@ -1983,8 +2029,6 @@ def _execute_search_v3(
         add_provider_setup_guidance(payload, "search", list(plan.candidate_order), config,
                                     requested_provider=str(request.routing.get("provider") or "auto"))
     else:
-        if race.superseded:
-            payload["_v3_superseded_providers"] = list(race.superseded)
         routing = payload.setdefault("routing", {})
         requested = str(request.routing.get("provider") or "auto")
         if requested == "auto":
@@ -1996,14 +2040,11 @@ def _execute_search_v3(
             routing["fallback_used"] = True
             routing["original_provider"] = plan.selected_provider
             routing["provider"] = successful_provider
-            # No value says "slower than usual and lost the race". For that
-            # case selected_failed is the closest: the receipt rules tie it to
-            # a cancelled or failed prior attempt, which is what is recorded.
-            routing["fallback_reason"] = (
-                "insufficient_results"
-                if plan.selected_provider in race.empty_providers
-                else "selected_failed"
-            )
+            # The same derivation as the v3 receipt (candidate decisions from
+            # the attempts' end reasons), so Hermes and MCP report one value.
+            # A hedge loser is a cancelled prior attempt: selected_failed.
+            reason = fallback_reason_v3(plan.candidate_order, successful_provider, receipts)
+            routing["fallback_reason"] = (reason or FallbackReason.SELECTED_FAILED).value
 
     stages = ["admission", "provider_attempt"]
     if any(receipt.error is not None for receipt in receipts):
@@ -2066,9 +2107,6 @@ class _Race:
     payload: Optional[Dict[str, Any]]
     receipts: List[Any]
     empty_providers: List[str]
-    # Still running when another provider's non-empty answer won; cancelled by
-    # that win, not by the request's time budget.
-    superseded: List[str] = field(default_factory=list)
 
 
 def _positive_float(value: Any, default: float) -> float:
@@ -2091,6 +2129,7 @@ def _race_providers(engine, candidates, contexts, operation_for, hedge_delay, de
     done: "queue.Queue[str]" = queue.Queue()
     tasks: Dict[str, Tuple[DaemonTask, float, float]] = {}
     finished: Dict[str, Any] = {}
+    crashed: Dict[str, str] = {}
     pending = list(candidates)
     winner = None
     hedge_at = None
@@ -2137,6 +2176,7 @@ def _race_providers(engine, candidates, contexts, operation_for, hedge_delay, de
             if is_secret_scope_error(exc):
                 raise
             execution = None
+            crashed[provider] = str(exc) or exc.__class__.__name__
         finished[provider] = execution
         payload = execution.payload if execution is not None else None
         if payload is not None and (payload.get("results") or []):
@@ -2153,19 +2193,26 @@ def _race_providers(engine, candidates, contexts, operation_for, hedge_delay, de
     if winner is None and empty_providers:
         winner = empty_providers[0]  # every answer was empty: report the truthful empty result
     receipts = []
-    superseded = []
     for provider in candidates:
         execution = finished.get(provider)
         if execution is not None:
             receipts.append(execution.receipt)
         elif provider in tasks:
-            if not deadline_hit:
-                superseded.append(provider)
+            # Still running when another answer won (superseded, not a budget
+            # limit), stopped at the deadline, or lost to an engine error.
+            if provider in crashed:
+                reason = AttemptEndReason.ENGINE_ERROR
+            elif deadline_hit:
+                reason = AttemptEndReason.DEADLINE
+            else:
+                reason = AttemptEndReason.SUPERSEDED_BY_WINNER
             _task, started_wall, started_monotonic = tasks[provider]
             receipts.append(engine.cancel_started(
                 contexts[provider],
                 started_at=started_wall,
                 duration_ms=int(max(0.0, time.monotonic() - started_monotonic) * 1000),
+                reason=reason,
+                message=crashed.get(provider),
             ).receipt)
         else:
             reason = SkipReason.DEADLINE_EXCEEDED if deadline_hit else SkipReason.POLICY_EXCLUDED
@@ -2178,7 +2225,7 @@ def _race_providers(engine, candidates, contexts, operation_for, hedge_delay, de
         ])
         if counts:
             payload.setdefault("metadata", {}).update(counts)
-    return _Race(winner, payload, receipts, empty_providers, superseded)
+    return _Race(winner, payload, receipts, empty_providers)
 
 
 def _search_cache_vary(

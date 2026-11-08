@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Mapping
 from urllib.parse import urlsplit
 
 from .contract_v3 import (
+    BUDGET_END_REASONS,
+    UNANSWERED_END_REASONS,
     AttemptOutcome,
     Capability,
     CircuitState,
@@ -22,7 +24,6 @@ from .contract_v3 import (
     RequestV3,
     ResponseStatus,
     ResponseV3,
-    SkipReason,
 )
 from .orchestrator_v3 import ProviderPlan
 from .result_redirects import COUNT_KEYS
@@ -663,16 +664,11 @@ def response_from_legacy(
     else:
         status = ResponseStatus.OK
 
-    # A hedge loser is cancelled because another attempt won, not by a budget.
-    superseded = set(payload.get("_v3_superseded_providers") or ())
+    # Only an attempt that the request's own budget or deadline stopped means
+    # "limited by budget". A hedge loser or a research member preempted after
+    # the quorum was cancelled by a win, whatever its timing.
     budget_limited = payload.get("_v3_budget_limited") is True or any(
-        (
-            attempt.outcome is AttemptOutcome.CANCELLED
-            and attempt.provider not in superseded
-        )
-        or attempt.skip_reason
-        in {SkipReason.BUDGET_BLOCKED, SkipReason.DEADLINE_EXCEEDED}
-        for attempt in provider_attempts
+        attempt.end_reason in BUDGET_END_REASONS for attempt in provider_attempts
     )
     if status is not ResponseStatus.FAILED and budget_limited:
         status = ResponseStatus.DEGRADED
@@ -697,7 +693,14 @@ def response_from_legacy(
             }
         )
 
-    fallback_used = bool(routing.get("fallback_used") or _error_items(payload))
+    if aggregate_research and isinstance(authoritative_attempts, (list, tuple)):
+        # Member diagnostics include "preempted_after_quorum"; only a member
+        # that did not answer on its own account is a fallback situation.
+        fallback_used = bool(routing.get("fallback_used")) or any(
+            attempt.end_reason in UNANSWERED_END_REASONS for attempt in provider_attempts
+        )
+    else:
+        fallback_used = bool(routing.get("fallback_used") or _error_items(payload))
     reported_reason = routing.get("fallback_reason")
     fallback_reason = (
         reported_reason
