@@ -1178,6 +1178,13 @@ def test_starter_setup_with_a_search_key_in_the_process_environment_does_not_off
 )
 def test_starter_setup_with_a_search_provider_in_the_config_does_not_offer_keyless(tmp_path, monkeypatch, config_text):
     # Host without Hermes: a key in config.json counts there (Hermes ignores it).
+    # search.example must pass the engine's SSRF check like a real public host.
+    import socket
+
+    real_getaddrinfo = socket.getaddrinfo
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, *a, **k: (
+        [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port or 0))]
+        if host == "search.example" else real_getaddrinfo(host, port, *a, **k)))
     monkeypatch.setitem(sys.modules, "agent", None)
     monkeypatch.setitem(sys.modules, "agent.secret_scope", None)
     env_path, config_path, prompts = _run_starter_setup(tmp_path, monkeypatch, tty=True, answer="y", config_text=config_text)

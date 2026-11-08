@@ -15,12 +15,28 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Callable, Mapping, Optional
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Callable, Iterator, Mapping, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 SecretResolver = Callable[[str, Optional[str]], Optional[str]]
 
 _resolver: Optional[SecretResolver] = None
+# A fixed set of values for the current call only (status/setup render a given
+# snapshot). A ContextVar, so threads and tasks never see each other's view and
+# the host policy (file_credentials_allowed) is unchanged.
+_secrets_override: ContextVar[Optional[Mapping[str, str]]] = ContextVar("wsp_secrets_override", default=None)
+
+
+@contextmanager
+def secrets_view(values: Mapping[str, str]) -> Iterator[None]:
+    """Answer :func:`get_secret` from ``values`` inside the block (this context only)."""
+    token = _secrets_override.set(dict(values))
+    try:
+        yield
+    finally:
+        _secrets_override.reset(token)
 
 
 def set_secret_resolver(resolver: Optional[SecretResolver]) -> None:
@@ -51,6 +67,10 @@ def get_secret(name: str, default: Optional[str] = None) -> Optional[str]:
     read (Hermes multiplexing) must fail the call, not fall back to another
     profile's value in ``os.environ``.
     """
+    override = _secrets_override.get()
+    if override is not None:
+        value = override.get(name)
+        return value if value is not None else default
     if _resolver is not None:
         try:
             return _resolver(name, default)

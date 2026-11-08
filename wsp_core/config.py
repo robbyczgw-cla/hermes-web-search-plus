@@ -1178,6 +1178,24 @@ def add_provider_setup_guidance(
                 "how_to_fix": [f'provider="{first}"', allow],
             })
             return
+    # The user set something up that cannot work (a flag Hermes ignores, a
+    # placeholder key, a disabled provider): name it and its fix. "Nothing is
+    # configured" sent users in a loop between setup and a failing search.
+    from .readiness import evaluate, most_relevant_problem
+
+    pool = [requested_provider] if explicit else [
+        name for name, spec in PROVIDER_SPECS.items() if getattr(spec, f"supports_{capability}", False)
+    ]
+    problem = most_relevant_problem(evaluate(config, pool), pool)
+    if problem is not None and problem.state.value != "explicit_only":
+        command = problem.fix[0] if problem.fix else ""
+        payload.update({
+            "error": f"{problem.reason}" + (f" Run: {command}" if command else ""),
+            "error_type": "requested_provider_not_configured" if explicit else "provider_setup_required",
+            "how_to_fix": list(problem.fix),
+            "readiness": [problem.to_public()],
+        })
+        return
     preset = "self-hosted" if is_self_hosted_profile(config) else ("extract" if capability == "extract" else "starter")
     target = requested_provider if explicit else f"--preset {preset}"
     command = f"hermes web-search-plus setup {target}"
