@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+## [v5.1.8] — 2026-11-08
+
+### Fixed
+
+- One answer to "can this provider run?". About thirty places (status, the tools' availability check, setup, the session hint, the engine, the native backend) each had their own rules and disagreed under Hermes. New `wsp_core/readiness.py` gives every provider one state — `ready`, `explicit_only`, `disabled`, `not_configured`, `ignored_source`, `invalid_value` or `scope_error` — with source, reason code, reason and the command that fixes it. It is built on the engine's own credential rules, so status, tool listing and searches cannot disagree any more.
+- `setup --keyless-public` and `--preset self-hosted` under Hermes no longer write `keenable.allow_public` into config.json, which Hermes ignores, and no longer print "✓ Enabled". They print `hermes config set KEENABLE_ALLOW_PUBLIC 1`. Before, status said configured, the tools were listed, every search failed with "serper: Missing API key", and running setup again said "Nothing changed". Users who already have the flag in config.json see the problem and the fix at the top of `status`, in the session hint and in tool errors.
+- Setup errors name the actual problem: a flag Hermes ignores, a template placeholder key, a private SearXNG URL, a disabled provider. They used to say "setup --preset starter" plus a "serper: Missing API key" line for a provider the user never chose. The v3 response carries the same text, `retryable: false` and `details.how_to_fix`/`readiness`.
+- A template placeholder key or a private SearXNG URL no longer counts as configured. The tool stays listed so a call can name the fix; values only in the shared config.json (which may belong to another profile) still keep the tools hidden.
+- DonSeTch: config.json `donsetch.binary` and the Hermes Desktop `donsetch_bin` field count as the binary (they were accepted by status and the adapter but refused by the engine). A binary path that does not exist is reported as such instead of "configured".
+- Native backend: with only a search key, extract answered "WSP extraction failed for this URL"; it now passes the setup message on.
+- `status` keeps every existing JSON key and adds `providers.<p>.state/reason_code/reason/fix/source` and `search_auto_ready`/`extract_auto_ready`.
+
 ## [v5.1.7] — 2026-10-30
 
 ### Fixed
