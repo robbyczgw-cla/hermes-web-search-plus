@@ -24,7 +24,12 @@ from .bounded_context_v3 import (
 from .config import DEFAULT_CONFIG, get_api_key, provider_configured
 from .operator_receipts_v3 import JOURNAL_OWNER, JOURNAL_SCHEMA_VERSION
 from .provider_registry import PROVIDER_SPECS
-from .state_store_v3 import SQLiteStateStore
+from .contract_v3 import CircuitState, ErrorClass
+from .state_store_v3 import (
+    BLOCKING_ERROR_CLASSES,
+    SQLiteStateStore,
+    effective_circuit_state,
+)
 
 
 SNAPSHOT_SCHEMA_VERSION = 1
@@ -488,9 +493,33 @@ def _circuit_snapshot(state_path: Path) -> tuple[bool, dict[str, int]]:
     try:
         uri = f"file:{state_path.resolve()}?mode=ro&immutable=1"
         connection = sqlite3.connect(uri, uri=True)
-        rows = connection.execute(
-            "SELECT state, COUNT(*) FROM circuit_state GROUP BY state"
-        ).fetchall()
+        try:
+            detail = connection.execute(
+                "SELECT state, error_class, failure_count FROM circuit_state"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            detail = None
+        if detail is None:
+            rows = connection.execute(
+                "SELECT state, COUNT(*) FROM circuit_state GROUP BY state"
+            ).fetchall()
+        else:
+            # Count what admission does: rows of non-blocking classes block
+            # nothing, and older files store "open" below the threshold.
+            blocking = {error.value for error in BLOCKING_ERROR_CLASSES}
+            effective: dict[str, int] = {}
+            for raw_state, raw_error, raw_failures in detail:
+                if str(raw_error) not in blocking:
+                    continue
+                state = str(raw_state)
+                if state in {item.value for item in CircuitState}:
+                    state = effective_circuit_state(
+                        ErrorClass(str(raw_error)),
+                        CircuitState(state),
+                        int(raw_failures or 0),
+                    ).value
+                effective[state] = effective.get(state, 0) + 1
+            rows = list(effective.items())
         for raw_state, raw_count in rows:
             state = str(raw_state)
             count = int(raw_count)

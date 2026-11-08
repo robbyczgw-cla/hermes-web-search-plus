@@ -26,14 +26,11 @@ from .http_client import (
     request_deadline_scope,
 )
 from .provider_health import MAX_RETRY_AFTER_WAIT_SECONDS, _retry_delay
-from .state_store_v3 import CircuitKey, SQLiteStateStore
+from .state_store_v3 import BLOCKING_ERROR_CLASSES, CircuitKey, SQLiteStateStore
 
 
 _MIN_RETRY_WINDOW_SECONDS = 1.0
-_HEALTH_ERROR_CLASSES = frozenset({
-    ErrorClass.AUTH, ErrorClass.QUOTA, ErrorClass.RATE_LIMIT,
-    ErrorClass.TRANSIENT, ErrorClass.TIMEOUT,
-})
+_HEALTH_ERROR_CLASSES = frozenset(BLOCKING_ERROR_CLASSES)
 
 
 @dataclass(frozen=True)
@@ -184,7 +181,10 @@ class AttemptEngine:
             and decision.blocking_error_class is not None
         ):
             self.store.release_half_open(
-                context.circuit_key, decision.blocking_error_class, now=now
+                context.circuit_key,
+                decision.blocking_error_class,
+                now=now,
+                lease_token=decision.lease_token,
             )
 
     def _failed(
@@ -207,7 +207,7 @@ class AttemptEngine:
         the batch) is kept and the attempt is reported as partial.
         """
         after = before
-        if not deadline_aborted:
+        if not deadline_aborted and error.error_class in _HEALTH_ERROR_CLASSES:
             after = self.store.record_failure(
                 context.circuit_key,
                 error.error_class,
