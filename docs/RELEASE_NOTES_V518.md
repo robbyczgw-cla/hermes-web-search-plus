@@ -10,6 +10,17 @@ Setup tells the truth. Whether a provider can run is now decided in one place, a
 - **DonSeTch binary from config.json or Hermes Desktop** now works; a path that does not exist is reported as such.
 - **Native backend** passes setup messages on instead of "WSP extraction failed for this URL".
 
+## Also in 5.1.8 (from the same analysis)
+
+- **Research status is stable.** A research answer whose third member was still running when the first two agreed was marked `degraded` with "limited by budget" — in 20 of 20 runs; now 0 of 20. A real time-budget overrun still reports `degraded`.
+- **Research says when it could not read its sources**, with the reason, instead of silently returning no page text.
+- **`fallback_reason` agrees** between the v3 receipt and the legacy routing (20/20 mismatches → 0/20).
+- **DonSeTch errors have real classes:** a hung binary is a timeout (retried once, then the circuit breaker stops further waits) instead of "Provider execution failed"; a binary that does not start names the fix; `freshness` and `format: html` run and report that they were not applied.
+- **`setup --no-jev`** switches an enabled Jev off.
+- **Engine import is retried** after 30 seconds instead of staying broken until Hermes restarts; the tools are hidden while it cannot load.
+- **Healthy providers no longer show as "open"** in the operator console (non-blocking errors no longer write circuit rows).
+- **Daily budget reservations left by a crashed process** are reclaimed after 600 s and counted as used (never refunded): 10 simulated crashes left 10 stuck reservations, now 0.
+
 ## For scripts and agents
 
 `hermes web-search-plus status --json` keeps every key and adds, per provider, `state` (`ready`, `explicit_only`, `disabled`, `not_configured`, `ignored_source`, `invalid_value`, `scope_error`), `reason_code`, `reason`, `fix` and `source`. v3 setup failures are `error_class: config`, `retryable: false`, with `details.readiness`.
