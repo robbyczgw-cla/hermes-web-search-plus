@@ -281,3 +281,28 @@ def test_human_status_starts_with_the_problem_and_its_fix(world, monkeypatch):
             "! Keenable: Keenable's public tier is switched on in config.json, which Hermes ignores. "
             "Run: hermes config set KEENABLE_ALLOW_PUBLIC 1"
         )
+
+
+def test_v3_contract_reports_setup_problems_as_config_errors(world, monkeypatch):
+    # MCP clients read this v3 response. 5.1.7: "Missing API key
+    # for serper" (the fallback filler), and setup errors could read transient.
+    from jsonschema import Draft202012Validator
+    from pathlib import Path
+    from wsp_core import search
+
+    _standalone(monkeypatch)
+    monkeypatch.setenv("BRAVE_API_KEY", "your_brave_key")
+
+    from wsp_core.compat_v3 import legacy_request_to_v3
+    from wsp_core.contract_v3 import Capability
+
+    request = legacy_request_to_v3(Capability.SEARCH, {"query": "python release notes", "no_cache": True})
+    payload = search.execute_v3_request(request, search._search_adapter(), wsp.load_config()).response.to_dict()
+
+    error = payload["error"]
+    assert payload["status"] == "failed"
+    assert (error["error_class"], error["retryable"]) == ("config", False)
+    assert error["message"].startswith("BRAVE_API_KEY still holds a template placeholder")
+    assert error["details"]["readiness"][0]["reason_code"] == "placeholder_value"
+    schema = json.loads((Path(__file__).resolve().parents[1] / "schemas/v3/response.schema.json").read_text())
+    assert list(Draft202012Validator(schema).iter_errors(payload)) == []

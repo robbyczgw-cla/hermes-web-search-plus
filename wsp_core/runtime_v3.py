@@ -46,6 +46,11 @@ def _valid_rfc3339(value: object) -> str | None:
     return value
 
 
+_SETUP_ERROR_TYPES = frozenset({
+    "provider_setup_required", "requested_provider_not_configured", "explicit_only_provider_configured",
+})
+
+
 def _error(message: str, provider: str | None = None) -> ErrorV3:
     lowered = message.lower()
     if "self_hosted profile" in lowered:
@@ -600,6 +605,27 @@ def response_from_legacy(
             ),
             None,
         ) or _error(str(top_error), str(selected) if selected else None)
+        if payload.get("error_type") in _SETUP_ERROR_TYPES:
+            # A setup failure, not a provider failure: the engine's own readiness
+            # text (what is missing or misconfigured, and the command that fixes
+            # it) instead of the error of the fallback filler ("Missing API key
+            # for serper", which named a provider the user never chose).
+            details: Dict[str, Any] = {"error_type": payload["error_type"]}
+            for key in ("how_to_fix", "env_vars", "readiness", "explicit_only_providers"):
+                if payload.get(key) is not None:
+                    details[key] = deepcopy(payload[key])
+            if error is not None and error.error_class is ErrorClass.CONFIG:
+                # Keep the attempt's class and code (part of the contract).
+                error = replace(error, message=str(top_error), retryable=False,
+                                details={**(error.details or {}), **details})
+            else:
+                error = ErrorV3(
+                    error_class=ErrorClass.CONFIG,
+                    code="wsp.config.not_configured",
+                    message=str(top_error),
+                    retryable=False,
+                    details=details,
+                )
         if request.capability is Capability.EXTRACT and payload.get("_v3_extract_failed") and failed_items:
             # The engine's own summary ("Could not read the page: page not found
             # (HTTP 404)") instead of the attempt's generic class message, and
