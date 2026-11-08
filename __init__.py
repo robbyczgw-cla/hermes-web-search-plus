@@ -1761,10 +1761,13 @@ def _web_search_plus_cli_command(args: Any) -> None:
         )
         if setup_hint:
             print("\n" + setup_hint)
+        jev_now = bool((config.get("jev") or {}).get("enabled")) if isinstance(config.get("jev"), dict) else False
+        jev_switch_off = False
         if getattr(args, "jev", False):
             want_jev = True
         elif getattr(args, "no_jev", False):
             want_jev = False
+            jev_switch_off = jev_now  # an explicit --no-jev turns an enabled Jev off
         else:
             want_jev = None
         try:
@@ -1777,6 +1780,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
                     want_enable=want_jev,
                     decisions=jev_decisions,
                     has_key=jev_setup.key_present(env_now, config),
+                    currently_enabled=jev_now,
                 )
             )
         )
@@ -1914,6 +1918,9 @@ def _web_search_plus_cli_command(args: Any) -> None:
         if want_jev:
             jev_setup.apply_jev_config(config, enabled=True, decisions=jev_decisions)
             jev_wrote = True
+        elif jev_switch_off:
+            jev_setup.apply_jev_config(config, enabled=False, decisions=())
+            jev_wrote = True
         routing_args_present = any(
             getattr(args, name, None) is not None
             for name in ["routing", "default_provider", "provider_priority", "disable_providers", "fallback_provider", "confidence_threshold"]
@@ -1935,7 +1942,9 @@ def _web_search_plus_cli_command(args: Any) -> None:
                     print(f"✓ Enabled keyless public search for {name} in {config_path}")
                 else:
                     print(f"! {name}: {state.reason} " + " ".join(state.fix))
-            if jev_wrote:
+            if jev_wrote and jev_switch_off:
+                print(f"✓ Optional Jev switched off in {config_path}.")
+            elif jev_wrote:
                 print(
                     f"✓ Optional Jev enabled in {config_path} "
                     f"(decisions: {', '.join(jev_decisions)})."
@@ -1966,34 +1975,60 @@ def _on_session_start(**kwargs: Any) -> Optional[Dict[str, str]]:
     return hint
 
 
-_ENGINE_UNAVAILABLE = "Web Search Plus engine failed to load; see the Hermes log"
+_ENGINE_UNAVAILABLE = (
+    "Web Search Plus engine failed to load; see the Hermes log. "
+    "The import is retried automatically; if it keeps failing, restart Hermes"
+)
+# A failed engine import is retried after this many seconds, not only after a
+# Hermes restart (a plugin update can replace files while the gateway runs).
+_ENGINE_RETRY_SECONDS = 30.0
 _search_module: Any = None
 _search_import_failed = False
+_search_import_failed_at: Optional[float] = None
 _search_import_lock = threading.Lock()
+
+
+def _engine_load_blocked() -> bool:
+    """True while the last engine import failed and its retry time has not come."""
+    if not _search_import_failed or _search_module is not None:
+        return False
+    failed_at = _search_import_failed_at
+    return failed_at is not None and time.monotonic() - failed_at < _ENGINE_RETRY_SECONDS
 
 
 def _load_search_module() -> Any:
     """Return the in-process search engine (``wsp_core.search``), or None.
 
     Loaded lazily on first use so plugin registration stays cheap. ``None``
-    means the import failed (logged once); tool calls then report an error.
+    means the import failed; tool calls then report an error. A failure is
+    remembered for ``_ENGINE_RETRY_SECONDS`` and then tried again (the
+    traceback is logged on the first failure only, so a broken install does
+    not fill the log).
     """
-    global _search_module, _search_import_failed
+    global _search_module, _search_import_failed, _search_import_failed_at
     if _search_module is not None:
         return _search_module
-    if _search_import_failed:
+    if _engine_load_blocked():
         return None
     with _search_import_lock:
         if _search_module is not None:
             return _search_module
-        if _search_import_failed:
+        if _engine_load_blocked():
             return None
         try:
             _search_module = importlib.import_module(".wsp_core.search", __package__ or __name__)
         except Exception:  # pragma: no cover - defensive
-            logger.exception("web-search-plus: search engine import failed")
+            if _search_import_failed:
+                logger.warning("web-search-plus: search engine import failed again")
+            else:
+                logger.exception("web-search-plus: search engine import failed")
             _search_import_failed = True
+            _search_import_failed_at = time.monotonic()
             return None
+        if _search_import_failed:
+            logger.info("web-search-plus: search engine import succeeded after an earlier failure")
+        _search_import_failed = False
+        _search_import_failed_at = None
         return _search_module
 
 
@@ -2598,6 +2633,9 @@ def _format_extract_results(data: dict) -> str:
         lines = [f"Extract error: {data['error']}"]
     else:
         lines = [_UNTRUSTED_WEB_DATA_NOTICE, f"[Provider: {provider}]"]
+        applied_formats = {r.get("format_applied") for r in data.get("results", []) if r.get("format_applied")}
+        if applied_formats:
+            lines.append(f"[Format: {', '.join(sorted(applied_formats))} (the provider returns only this format)]")
     limit = _extract_char_limit()
     for i, r in enumerate(data.get("results", []), 1):
         # Page titles and URLs are web data: a line break would start a fake item.
@@ -2858,9 +2896,15 @@ def register(ctx: Any) -> None:
         return bool(_legacy_env_files()) and not search_configured() and not extract_configured()
 
     def check_fn() -> bool:
+        # An engine that cannot load cannot run any call: do not list the tool
+        # until the retry window opens (the migration message needs no engine).
+        if _engine_load_blocked():
+            return _legacy_env_only()
         return search_configured() or _legacy_env_only() or _capability_fixable(list(SEARCH_PROVIDER_IDS))
 
     def extract_check_fn() -> bool:
+        if _engine_load_blocked():
+            return _legacy_env_only()
         return (extract_configured() or _legacy_env_only()
                 or _capability_fixable(list(EXTRACT_PROVIDER_IDS)))
 

@@ -35,6 +35,7 @@ from urllib.parse import urlsplit
 
 import wsp_sdk
 from wsp_sdk import (
+    ProviderConfigError,
     ProviderSpec,
     RequestDeadlineExceeded,
     deadline_passed,
@@ -48,6 +49,25 @@ _ALLOWED_OUTPUT_FORMATS = {"markdown"}
 _ALLOWED_SEARCH_TYPES = {"search", "news"}
 _ALLOWED_INTENTS = {"auto", "web", "code", "paper", "news", "entity"}
 TESTED_VERSION = "4.10.3"
+
+
+class DonsetchTimeout(TimeoutError, RuntimeError):
+    """The binary did not answer in time; the engine classifies it as a timeout.
+
+    Still a RuntimeError whose text is the stable ``donsetch_timeout`` code.
+    """
+
+
+class DonsetchSetupError(ProviderConfigError, RuntimeError):
+    """The binary cannot be started: a setup problem with a fix, not an internal error.
+
+    The ``setup_*`` fields are read by the engine's error classifier, which turns
+    them into WSP's own reason and the command that fixes it (never exception text).
+    """
+
+    setup_reason = "The DonSeTch binary was not found or cannot be started."
+    setup_env_var = "DONSETCH_BIN"
+    setup_value = "/path/to/donsetch"
 
 
 def _wsp_version() -> str:
@@ -199,7 +219,7 @@ def _candidate_binary(key: str | None, config: dict[str, Any]) -> str:
 def _resolve_binary(key: str | None, config: dict[str, Any]) -> str:
     candidate = _candidate_binary(key, config)
     if not candidate or not os.path.isfile(candidate) or not os.access(candidate, os.X_OK):
-        raise RuntimeError("donsetch_binary_not_configured")
+        raise DonsetchSetupError("donsetch_binary_not_configured")
     return candidate
 
 
@@ -772,18 +792,16 @@ def _call_donsetch_tool(
     try:
         with DonsetchSession(binary, timeout_seconds) as session:
             return session.call(tool, arguments)
-    except FileNotFoundError:
-        raise RuntimeError("donsetch_binary_not_configured") from None
+    except (FileNotFoundError, PermissionError):
+        raise DonsetchSetupError("donsetch_binary_not_configured") from None
     except TimeoutError:
-        raise RuntimeError("donsetch_timeout") from None
+        raise DonsetchTimeout("donsetch_timeout") from None
     except (BrokenPipeError, OSError):
         raise RuntimeError("donsetch_process_failed") from None
 
 
 def _search_intent(args: Any) -> str:
     search_type = getattr(args, "search_type", "search") or "search"
-    if search_type not in _ALLOWED_SEARCH_TYPES:
-        raise RuntimeError("donsetch_search_type_unsupported")
     if search_type == "news":
         return "news"
     category = getattr(args, "category", None)
@@ -796,11 +814,15 @@ def execute_search(search_module, prov, args, key, config, routing_info):
     if not isinstance(section, dict):
         section = {}
     timeout_seconds = _bounded_int(section.get("timeout"), 180, 5, 600)
-    freshness = getattr(args, "time_range", None) or getattr(args, "freshness", None)
-    if freshness:
-        raise RuntimeError("donsetch_freshness_unsupported")
+    # DonSeTch has no recency filter, image search or result verticals beyond
+    # news. The search still runs as a plain web search (the tool schema
+    # promises "run, report"): the engine reports freshness.applied=false, and
+    # the options only the CLI can send are listed in metadata.unsupported_options.
+    unsupported_options = []
     if bool(getattr(args, "images", False)):
-        raise RuntimeError("donsetch_image_search_unsupported")
+        unsupported_options.append("images")
+    if (getattr(args, "search_type", "search") or "search") not in _ALLOWED_SEARCH_TYPES:
+        unsupported_options.append("search_type")
 
     include_domains = _clean_string_list(getattr(args, "include_domains", None))
     exclude_domains = _clean_string_list(getattr(args, "exclude_domains", None))
@@ -910,6 +932,8 @@ def execute_search(search_module, prov, args, key, config, routing_info):
         "duration_ms": _safe_float(elapsed),
         "provider": "donsetch",
     }
+    if unsupported_options:
+        metadata["unsupported_options"] = unsupported_options
     return search_result(
         prov,
         str(getattr(args, "query", "")),
@@ -995,8 +1019,9 @@ def execute_extract(
     config,
     keyless_allowed,
 ):
-    if str(output_format or "markdown") not in _ALLOWED_OUTPUT_FORMATS:
-        raise RuntimeError("donsetch_output_format_unsupported")
+    # DonSeTch only returns Markdown. A request for another format is answered
+    # in Markdown and every page row says so (format_applied), instead of failing.
+    format_applied = "markdown" if str(output_format or "markdown") not in _ALLOWED_OUTPUT_FORMATS else None
     binary = _resolve_binary(key, config)
     section = config.get("donsetch", {}) if isinstance(config, dict) else {}
     if not isinstance(section, dict):
@@ -1063,11 +1088,13 @@ def execute_extract(
                 if include_raw_html and not result.get("error"):
                     # DonSeTch deliberately returns Markdown; do not label it HTML.
                     result["raw_error"] = "donsetch_raw_html_unsupported"
+                if format_applied and not result.get("error"):
+                    result["format_applied"] = format_applied
                 projected.append(result)
-    except FileNotFoundError:
-        raise RuntimeError("donsetch_binary_not_configured") from None
+    except (FileNotFoundError, PermissionError):
+        raise DonsetchSetupError("donsetch_binary_not_configured") from None
     except TimeoutError:
-        raise RuntimeError("donsetch_timeout") from None
+        raise DonsetchTimeout("donsetch_timeout") from None
     except (BrokenPipeError, OSError):
         raise RuntimeError("donsetch_process_failed") from None
     return extract_result(prov, projected)

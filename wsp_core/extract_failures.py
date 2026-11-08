@@ -25,12 +25,18 @@ BLOCKED = "blocked"
 UNSUPPORTED_SITE = "unsupported_site"
 UNREACHABLE = "unreachable"
 SITE_ERROR = "site_error"
+# The provider itself failed for every URL (not the pages): it did not answer
+# in time, or it cannot start and needs setup. Not final: another provider may read the page.
+PROVIDER_TIMEOUT = "provider_timeout"
+PROVIDER_SETUP = "provider_setup"
+PROVIDER_REASONS = frozenset({PROVIDER_TIMEOUT, PROVIDER_SETUP})
 
 # A provider cannot read a page that the site says does not exist.
 FINAL_REASONS = frozenset({NOT_FOUND, GONE})
 
 # When several providers fail one URL, the most telling reason is kept.
-_RANK = {NOT_FOUND: 6, GONE: 6, BLOCKED: 4, UNSUPPORTED_SITE: 3, UNREACHABLE: 2, SITE_ERROR: 1}
+_RANK = {NOT_FOUND: 6, GONE: 6, BLOCKED: 4, UNSUPPORTED_SITE: 3, UNREACHABLE: 2, SITE_ERROR: 1,
+         PROVIDER_TIMEOUT: 1, PROVIDER_SETUP: 1}
 
 # Linkup /fetch answers HTTP 400 with these codes for target problems.
 TARGET_ERROR_CODES = {
@@ -62,6 +68,23 @@ def message(reason: str, status: Optional[int] = None, provider: Optional[str] =
     if reason == SITE_ERROR:
         return f"the site answered with an error{code}"
     return "could not read this page"
+
+
+def provider_failure_fields(error: Any, provider: str) -> Dict[str, Any]:
+    """Error-item fields for a provider-wide failure (every URL of the batch), or {}.
+
+    Only a timeout and a provider that cannot start (with its fix) are named;
+    other classes keep the generic row. ``error`` is the classified ErrorV3, so
+    the text is WSP's own, never the provider's.
+    """
+    error_class = getattr(getattr(error, "error_class", None), "value", None)
+    if error_class == "timeout":
+        return {"error": f"{provider} timed out; try again, or raise its timeout setting",
+                "error_reason": PROVIDER_TIMEOUT, "provider": provider}
+    details = getattr(error, "details", None)
+    if error_class == "config" and isinstance(details, dict) and details.get("provider_setup"):
+        return {"error": str(error.message), "error_reason": PROVIDER_SETUP, "provider": provider}
+    return {}
 
 
 def reason_for_status(status: Any) -> Optional[str]:
@@ -152,6 +175,9 @@ def summary(results: list, tried: list, not_tried: int, attempt_limit: int) -> s
     else:
         head = f"Could not read any of the {count} pages"
     if reasons and all(reason in FINAL_REASONS for reason in reasons):
+        return head
+    if count > 1 and reasons and len(set(reasons)) == 1 and reasons[0] in PROVIDER_REASONS:
+        head += f": {results[0].get('error')}"
         return head
     parts = [head]
     if tried:

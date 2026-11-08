@@ -129,6 +129,20 @@ def _setup_guidance(error: BaseException) -> tuple[str, dict] | None:
     qualifies. Any other configuration error, including one whose text looks
     like WSP guidance, stays redacted.
     """
+    reason = getattr(error, "setup_reason", None)
+    if isinstance(error, ProviderConfigError) and isinstance(reason, str) and reason:
+        # A provider's own fixed setup problem (DonSeTch binary not startable):
+        # WSP-authored class attributes, never the exception text.
+        from .readiness import _set_command  # lazy: readiness imports config
+
+        env_var = str(getattr(error, "setup_env_var", "") or "")
+        fix = _set_command(env_var, str(getattr(error, "setup_value", "<value>"))) if env_var else ""
+        return reason + (f" To fix: {fix}" if fix else ""), {
+            "env_var": env_var,
+            "how_to_fix": [fix] if fix else [],
+            "setup_required": True,
+            "provider_setup": True,
+        }
     if not isinstance(error, MissingProviderKeyError):
         return None
     try:
