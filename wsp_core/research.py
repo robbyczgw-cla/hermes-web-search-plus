@@ -430,6 +430,13 @@ def run_research_mode(
                 extraction_error = str(e)
                 extracted = {"provider": None, "results": []}
 
+    # Extraction can return a failure payload without raising. Keep its reason
+    # alongside exceptions and deadline failures for the public v3 projection.
+    if urls and not extraction_error:
+        extraction_error = extracted.get("error")
+        if not extracted.get("results") and not extraction_error:
+            extraction_error = "Extraction returned no source text."
+
     routing = {
         "providers_queried": [p for p, _ in provider_results],
         "provider_errors": provider_errors,
@@ -450,7 +457,9 @@ def run_research_mode(
         "providers_merged": [p for p, _ in provider_results],
         # Pages actually read; failed URLs keep a row with their reason.
         "extracted_url_count": sum(
-            1 for summary in source_summaries if not (isinstance(summary, dict) and summary.get("error"))
+            1 for summary in source_summaries
+            if isinstance(summary, dict) and not summary.get("error")
+            and (summary.get("content") or summary.get("raw_content"))
         ),
         "research_quorum": _quorum_metadata(
             provider_results,

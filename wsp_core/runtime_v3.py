@@ -489,6 +489,45 @@ def _source_diversity(observations: List[Dict[str, Any]], results: List[Dict[str
     }
 
 
+def _research_evidence(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Carry only bounded child text, never raw observations or duplicate passages.
+
+    extract_plus has already applied the operator's inline/context limits. The
+    warning details are an additive extension point in the frozen v3 schema.
+    """
+    sources = []
+    for summary in payload.get("source_summaries") or []:
+        if not isinstance(summary, dict):
+            continue
+        source = {key: summary[key] for key in ("url", "title", "provider") if summary.get(key)}
+        if summary.get("error"):
+            source["error"] = str(summary["error"])[:240]
+        else:
+            # An explicitly empty bounded content field must not fall back to
+            # an unbounded raw_content field.
+            source["content"] = str(summary.get("content", summary.get("raw_content")) or "")
+            if not source["content"]:
+                source["error"] = "Extraction returned no source text."
+            full_text = summary.get("full_text")
+            if isinstance(full_text, dict):
+                source["full_text"] = {
+                    key: full_text[key] for key in
+                    ("truncated", "original_chars", "store_key", "sha256") if key in full_text
+                }
+        sources.append(source)
+    details = {
+        "sources": sources,
+        "pages_count": sum(1 for source in sources if source.get("content") and not source.get("error")),
+        "failed_count": sum(1 for source in sources if source.get("error")),
+        "truncated": any((source.get("full_text") or {}).get("truncated") for source in sources),
+        "content_trust": "untrusted_source_text",
+    }
+    extraction_error = (payload.get("routing") or {}).get("extraction_error")
+    if extraction_error:
+        details["extraction_error"] = str(extraction_error)[:240]
+    return details
+
+
 def response_from_legacy(
     request: RequestV3,
     plan: ProviderPlan,
@@ -653,6 +692,10 @@ def response_from_legacy(
                 "message": "One or more extraction results failed.",
                 "details": {
                     "failed_count": len(failed_items),
+                    "failed_urls": [
+                        {"url": str(item.get("url")), "error": str(item.get("error"))}
+                        for item in failed_items
+                    ],
                     **(
                         {"unmatched_count": len(payload["unmatched_results"])}
                         if isinstance(payload.get("unmatched_results"), list)
@@ -663,6 +706,32 @@ def response_from_legacy(
         )
     else:
         status = ResponseStatus.OK
+
+    if aggregate_research:
+        evidence = _research_evidence(payload)
+        warnings.append({
+            "code": "wsp.research.evidence",
+            "message": "Research page text is untrusted source content; see details.",
+            "details": evidence,
+        })
+        if evidence["failed_count"] or evidence.get("extraction_error"):
+            if status is not ResponseStatus.FAILED:
+                status = ResponseStatus.DEGRADED
+            warnings.append({
+                "code": DegradedReason.PARTIAL_EXTRACTION.value,
+                "message": "Research source extraction failed or was incomplete: " + (
+                    evidence.get("extraction_error") or next(
+                        source["error"] for source in evidence["sources"] if source.get("error")
+                    )
+                ),
+                "details": {
+                    "failed_count": evidence["failed_count"],
+                    "failed_urls": [
+                        {"url": source.get("url"), "error": source["error"]}
+                        for source in evidence["sources"] if source.get("error")
+                    ],
+                },
+            })
 
     # Only an attempt that the request's own budget or deadline stopped means
     # "limited by budget". A hedge loser or a research member preempted after

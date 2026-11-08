@@ -102,8 +102,12 @@ def providers_at_http(monkeypatch, tmp_path):
         return handler(url)
 
     monkeypatch.setattr(http_client, "urlopen", fake_urlopen)
-    # Research reads its top sources after the member search; that is not under test.
-    monkeypatch.setattr(search, "extract_plus", lambda **_kw: {"provider": None, "results": []})
+    # Research reads its top sources after the member search; that is not under
+    # test, so every source reads fine (an empty read is degraded on its own).
+    monkeypatch.setattr(search, "extract_plus", lambda urls=(), **_kw: {
+        "provider": "fixture-extract",
+        "results": [{"url": url, "title": "page", "content": f"page text of {url}"} for url in urls],
+    })
     monkeypatch.setattr(search, "auto_route_provider", lambda query, config: {
         "provider": "serper", "confidence": 0.9, "confidence_level": "high", "reason": "test",
         "routing_policy": "routing-v3", "scores": {"serper": 9.0}, "top_signals": [],
@@ -147,7 +151,8 @@ def test_research_member_preempted_after_quorum_keeps_status_ok(providers_at_htt
     assert len(response["results"]) == 5
     # Complete results, so no budget was hit: status is ok, whatever the timing.
     assert response["status"] == "ok"
-    assert [w["code"] for w in response["warnings"]] == []
+    # The research evidence entry carries the read sources; it is not a problem.
+    assert [w["code"] for w in response["warnings"] if w["code"] != "wsp.research.evidence"] == []
     assert response["routing_receipt"]["fallback_reason"] == "none"
     exa = _attempt(execution, "exa")
     assert exa.end_reason is AttemptEndReason.PREEMPTED_AFTER_QUORUM
@@ -228,7 +233,8 @@ def test_hedge_loser_is_superseded_not_timed_out(providers_at_http, tmp_path):
     response = execution.response.to_dict()
 
     assert response["status"] == "ok"
-    assert [w["code"] for w in response["warnings"]] == []
+    # The research evidence entry carries the read sources; it is not a problem.
+    assert [w["code"] for w in response["warnings"] if w["code"] != "wsp.research.evidence"] == []
     serper = _attempt(execution, "serper")
     assert serper.end_reason is AttemptEndReason.SUPERSEDED_BY_WINNER
     assert serper.outcome is AttemptOutcome.CANCELLED
