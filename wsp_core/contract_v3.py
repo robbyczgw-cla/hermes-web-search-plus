@@ -71,6 +71,26 @@ class AttemptOutcome(StrEnum):
     CANCELLED = "cancelled"
 
 
+class AttemptEndReason(StrEnum):
+    """The one reason a provider attempt ended; set where it is decided.
+
+    Not a wire field of its own (the frozen attempt schema allows no new
+    keys): ``outcome`` is derived from it, and the three cancellation kinds
+    that ``outcome`` cannot tell apart travel in ``error.details.end_reason``.
+    Status, warnings and ``fallback_reason`` are derived from it alone.
+    """
+
+    ANSWERED = "answered"
+    ANSWERED_EMPTY = "answered_empty"
+    PROVIDER_ERROR = "provider_error"
+    NOT_ADMITTED = "not_admitted"
+    BUDGET_DENIED = "budget_denied"
+    DEADLINE = "deadline"
+    SUPERSEDED_BY_WINNER = "superseded_by_winner"
+    PREEMPTED_AFTER_QUORUM = "preempted_after_quorum"
+    ENGINE_ERROR = "engine_error"
+
+
 class SkipReason(StrEnum):
     DISABLED = "disabled"
     UNSUPPORTED_CAPABILITY = "unsupported_capability"
@@ -205,10 +225,23 @@ class ProviderAttemptV3:
     endpoint_id: str = ""
     decision: str = "attempted"
     tries: List[Dict[str, Any]] = field(default_factory=list)
+    # Derived from outcome/skip_reason/result_count when not given, so every
+    # attempt (including one loaded from an older cache entry) has one.
+    end_reason: Optional[AttemptEndReason] = None
 
     def __post_init__(self) -> None:
         if self.retry_count < 0 or self.result_count < 0:
             raise ValueError("retry_count and result_count must be non-negative")
+        if self.end_reason is None:
+            object.__setattr__(
+                self,
+                "end_reason",
+                derive_attempt_end_reason(
+                    self.outcome, self.skip_reason, self.result_count, self.error
+                ),
+            )
+        elif self.outcome not in _END_REASON_OUTCOMES[self.end_reason]:
+            raise ValueError("end_reason contradicts attempt outcome")
         if self.outcome is AttemptOutcome.SKIPPED and self.skip_reason is None:
             raise ValueError("skipped attempts require skip_reason")
         if self.outcome is AttemptOutcome.FAILED and self.error is None:
@@ -235,11 +268,19 @@ class ProviderAttemptV3:
 
     def to_dict(self) -> Dict[str, Any]:
         payload = _wire_plain(self.__dict__)
+        payload.pop("end_reason", None)
         return {key: value for key, value in payload.items() if value is not None}
 
     @classmethod
     def from_dict(cls, payload: Dict[str, Any]) -> "ProviderAttemptV3":
+        error = ErrorV3.from_dict(payload["error"]) if payload.get("error") else None
+        stated = (error.details or {}).get("end_reason") if error is not None else None
+        try:
+            end_reason = AttemptEndReason(stated) if stated else None
+        except ValueError:
+            end_reason = None
         return cls(
+            end_reason=end_reason,
             attempt_id=str(payload["attempt_id"]),
             provider=str(payload["provider"]),
             capability=Capability(payload["capability"]),
@@ -248,7 +289,7 @@ class ProviderAttemptV3:
             result_count=int(payload.get("result_count", 0)),
             started_at=payload.get("started_at"),
             duration_ms=payload.get("duration_ms"),
-            error=ErrorV3.from_dict(payload["error"]) if payload.get("error") else None,
+            error=error,
             skip_reason=SkipReason(payload["skip_reason"])
             if payload.get("skip_reason")
             else None,
@@ -263,6 +304,60 @@ class ProviderAttemptV3:
             decision=str(payload.get("decision") or "attempted"),
             tries=[dict(item) for item in payload.get("tries", [])],
         )
+
+
+# Which outcomes an end reason may carry on the wire; ``outcome`` stays the
+# compatible projection of the reason.
+_END_REASON_OUTCOMES = {
+    AttemptEndReason.ANSWERED: {AttemptOutcome.SUCCESS, AttemptOutcome.PARTIAL},
+    AttemptEndReason.ANSWERED_EMPTY: {AttemptOutcome.SUCCESS},
+    AttemptEndReason.PROVIDER_ERROR: {AttemptOutcome.FAILED},
+    AttemptEndReason.NOT_ADMITTED: {AttemptOutcome.SKIPPED},
+    AttemptEndReason.BUDGET_DENIED: {AttemptOutcome.SKIPPED},
+    AttemptEndReason.DEADLINE: {AttemptOutcome.SKIPPED, AttemptOutcome.CANCELLED},
+    AttemptEndReason.SUPERSEDED_BY_WINNER: {AttemptOutcome.CANCELLED},
+    AttemptEndReason.PREEMPTED_AFTER_QUORUM: {AttemptOutcome.CANCELLED},
+    AttemptEndReason.ENGINE_ERROR: {AttemptOutcome.CANCELLED, AttemptOutcome.FAILED},
+}
+# Ends that mean "the request's attempt or time budget stopped this attempt".
+BUDGET_END_REASONS = frozenset({AttemptEndReason.BUDGET_DENIED, AttemptEndReason.DEADLINE})
+# Ends that mean "this provider did not answer and that was not our choice":
+# a fallback situation, as opposed to a hedge loser or a preempted member.
+UNANSWERED_END_REASONS = frozenset({
+    AttemptEndReason.PROVIDER_ERROR,
+    AttemptEndReason.NOT_ADMITTED,
+    AttemptEndReason.BUDGET_DENIED,
+    AttemptEndReason.DEADLINE,
+    AttemptEndReason.ENGINE_ERROR,
+})
+
+
+def derive_attempt_end_reason(
+    outcome: AttemptOutcome,
+    skip_reason: Optional[SkipReason],
+    result_count: int,
+    error: Optional[ErrorV3],
+) -> AttemptEndReason:
+    """End reason for an attempt that did not state one (older cache entries).
+
+    ``cancelled`` without a stated reason was the caller's deadline, the only
+    cancellation the engine produced before the reason was recorded.
+    """
+    if outcome in {AttemptOutcome.SUCCESS, AttemptOutcome.PARTIAL}:
+        if outcome is AttemptOutcome.SUCCESS and result_count == 0:
+            return AttemptEndReason.ANSWERED_EMPTY
+        return AttemptEndReason.ANSWERED
+    if outcome is AttemptOutcome.SKIPPED:
+        if skip_reason is SkipReason.BUDGET_BLOCKED:
+            return AttemptEndReason.BUDGET_DENIED
+        if skip_reason is SkipReason.DEADLINE_EXCEEDED:
+            return AttemptEndReason.DEADLINE
+        return AttemptEndReason.NOT_ADMITTED
+    if outcome is AttemptOutcome.CANCELLED:
+        return AttemptEndReason.DEADLINE
+    if error is not None and error.error_class is ErrorClass.INTERNAL:
+        return AttemptEndReason.ENGINE_ERROR
+    return AttemptEndReason.PROVIDER_ERROR
 
 
 _SKIP_REASON_TO_CANDIDATE_REASON = {
@@ -324,20 +419,13 @@ def _candidate_decision(
     }
 
 
-def complete_routing_receipt_v3(
-    receipt: Dict[str, Any],
+def _candidate_decisions(
+    order: List[str],
+    selected: Any,
     attempts: List[ProviderAttemptV3],
     *,
-    shadow_observation: Dict[str, Any] | None = None,
-) -> Dict[str, Any]:
-    """Complete a classic receipt without changing the authoritative plan."""
-    completed = dict(receipt)
-    order = [str(provider) for provider in receipt.get("candidate_order") or []]
-    selected = receipt.get("selected_provider")
-    preflight = receipt.get("budget_preflight")
-    preflight_aborted = (
-        isinstance(preflight, dict) and preflight.get("action") == "abort"
-    )
+    preflight_aborted: bool = False,
+) -> List[Dict[str, Any]]:
     attempts_by_provider = {item.provider: item for item in attempts}
     decisions = []
     selected_seen = False
@@ -377,23 +465,60 @@ def complete_routing_receipt_v3(
                 else CandidateReasonCode.PROVIDER_UNAVAILABLE
             )
         decisions.append(_candidate_decision(provider, position, decision, reason, attempt_id))
-    if selected in order and order.index(selected) > 0:
-        prior_decisions = decisions[: order.index(selected)]
-        if any(
-            item["decision"] == CandidateDecision.ATTEMPTED_NO_SELECTION.value
-            for item in prior_decisions
-        ):
-            completed["fallback_reason"] = FallbackReason.INSUFFICIENT_RESULTS.value
-        elif any(
-            item["decision"] == CandidateDecision.ATTEMPTED_FAILED.value
-            for item in prior_decisions
-        ):
-            completed["fallback_reason"] = FallbackReason.SELECTED_FAILED.value
-        elif any(
-            item["decision"] == CandidateDecision.SKIPPED.value
-            for item in prior_decisions
-        ):
-            completed["fallback_reason"] = FallbackReason.SELECTED_SKIPPED.value
+    return decisions
+
+
+def _fallback_reason_from_decisions(
+    order: List[str], selected: Any, decisions: List[Dict[str, Any]]
+) -> Optional[FallbackReason]:
+    """The receipt rule for a fallback selection; None when it does not apply."""
+    if selected not in order or order.index(selected) == 0:
+        return None
+    prior = {item["decision"] for item in decisions[: order.index(selected)]}
+    if CandidateDecision.ATTEMPTED_NO_SELECTION.value in prior:
+        return FallbackReason.INSUFFICIENT_RESULTS
+    if CandidateDecision.ATTEMPTED_FAILED.value in prior:
+        return FallbackReason.SELECTED_FAILED
+    if CandidateDecision.SKIPPED.value in prior:
+        return FallbackReason.SELECTED_SKIPPED
+    return None
+
+
+def fallback_reason_v3(
+    candidate_order: List[str], selected: Any, attempts: List[ProviderAttemptV3]
+) -> Optional[FallbackReason]:
+    """Why a later candidate was selected, from the attempts' end reasons.
+
+    The single derivation for the v3 receipt and the legacy routing block,
+    so both hosts report the same value. None when the first candidate was
+    selected or no candidate was.
+    """
+    order = [str(provider) for provider in candidate_order]
+    return _fallback_reason_from_decisions(
+        order, selected, _candidate_decisions(order, selected, list(attempts))
+    )
+
+
+def complete_routing_receipt_v3(
+    receipt: Dict[str, Any],
+    attempts: List[ProviderAttemptV3],
+    *,
+    shadow_observation: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    """Complete a classic receipt without changing the authoritative plan."""
+    completed = dict(receipt)
+    order = [str(provider) for provider in receipt.get("candidate_order") or []]
+    selected = receipt.get("selected_provider")
+    preflight = receipt.get("budget_preflight")
+    preflight_aborted = (
+        isinstance(preflight, dict) and preflight.get("action") == "abort"
+    )
+    decisions = _candidate_decisions(
+        order, selected, attempts, preflight_aborted=preflight_aborted
+    )
+    fallback_reason = _fallback_reason_from_decisions(order, selected, decisions)
+    if fallback_reason is not None:
+        completed["fallback_reason"] = fallback_reason.value
     completed.update(
         {
             "authority": "classic",

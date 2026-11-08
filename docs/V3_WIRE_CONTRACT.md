@@ -281,6 +281,16 @@ Provider-native codes may appear only under `details.provider_code`; they never 
 
 A failed attempt requires `error`. A skipped attempt requires `skip_reason`.
 
+A `cancelled` attempt is one the caller stopped waiting for. Its `error` says
+why: a `timeout`-class error when the request's own deadline ended it (the
+only cancellation that is a budget limit and makes the response `degraded`
+with `wsp.budget.limited`); a `cancelled`-class error with
+`error.details.end_reason` of `superseded_by_winner` (a hedged candidate that
+was still running when another answer won) or `preempted_after_quorum` (a
+research member discarded once the quorum was reached); an `internal`-class
+error with `end_reason` `engine_error` when the engine lost the call's own
+receipt. Those three never degrade the response, whatever their timing.
+
 ### SkipReason
 
 - `disabled`

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A research answer whose third member was still running when the first two formed the quorum was `degraded` with the warning "Execution was limited by its attempt or time budget", although the results were complete; whether that happened depended on milliseconds (MCP clients saw the false warning, and the status was cached with the answer). Every provider attempt now ends for exactly one recorded reason (`answered`, `answered_empty`, `provider_error`, `not_admitted`, `budget_denied`, `deadline`, `superseded_by_winner`, `preempted_after_quorum`, `engine_error`); status, warnings and `fallback_reason` are derived from it alone. A member preempted after the quorum or a hedge loser is `cancelled` with a `cancelled`-class error ("Cancelled: another provider answered first") and `error.details.end_reason`, not "Provider request timed out", and never degrades the response. A member stopped by the research time budget still does. No new wire keys, enum values or schema changes.
+- `fallback_reason` was derived in three places and disagreed: when the primary provider was skipped (for example blocked after an authentication failure) and the next one answered, the v3 receipt said `selected_skipped` and the legacy routing block (Hermes JSON) said `selected_failed`. Both now come from one derivation.
+
 ## [v5.1.8] — 2026-11-08
 
 ### Fixed
