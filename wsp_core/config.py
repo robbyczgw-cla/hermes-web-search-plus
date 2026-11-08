@@ -1088,7 +1088,16 @@ def get_api_key(provider: str, config: Dict[str, Any] = None) -> Optional[str]:
     spec = PROVIDER_SPECS.get(provider)
     if spec is None:
         return None
-    return _clean_env_value(get_secret(spec.env_var) or "")
+    value = _clean_env_value(get_secret(spec.env_var) or "")
+    if not value and provider == "donsetch" and config:
+        # A binary path, not a secret: config.json `donsetch.binary` and the
+        # Hermes Desktop `donsetch_bin` field count on every host. The adapter
+        # always used it; readiness refused it, so the setting never worked.
+        section = config.get("donsetch")
+        binary = section.get("binary") if isinstance(section, dict) else None
+        if isinstance(binary, str) and binary.strip():
+            return binary.strip()
+    return value
 
 
 def keyless_public_allowed(provider: str, config: Dict[str, Any] = None) -> bool:
@@ -1107,20 +1116,15 @@ def keyless_public_allowed(provider: str, config: Dict[str, Any] = None) -> bool
 
 
 def provider_configured(provider: str, config: Dict[str, Any] = None) -> bool:
-    """Whether a provider can run: it has a key, or its keyless public endpoint is opted in.
+    """Whether a provider can run: the engine accepts its key, URL, binary or keyless opt-in.
 
-    Distinct from ``get_api_key`` truthiness so key-status logic never treats a
-    keyless provider as keyed.
+    One answer for every caller, from ``readiness``. A host refusal to read the
+    credential is re-raised, so it reaches the tool output instead of reading as
+    "no keys configured".
     """
-    try:
-        if get_api_key(provider, config):
-            return True
-    except ValueError:
-        # An invalid or blocked SearXNG URL (see _validate_searxng_url) counts as
-        # "not configured" so it cannot break eligibility for other providers.
-        # validate_api_key still raises the clear error for provider="searxng".
-        return False
-    return keyless_public_allowed(provider, config)
+    from .readiness import evaluate_provider
+
+    return evaluate_provider(provider, config, raise_scope_errors=True).accepted
 
 
 def _configured_explicit_only_providers(

@@ -14,7 +14,7 @@ from urllib.error import HTTPError
 
 import pytest
 
-from wsp_core import search, routing as routing_module
+from wsp_core import search
 
 SEARCH_PATH = Path(__file__).resolve().parents[1] / "search.py"
 
@@ -113,7 +113,7 @@ class SerpBaseProviderTests(unittest.TestCase):
                 "confidence_threshold": 0.3,
             }
         }
-        with mock.patch.object(routing_module, "get_api_key", return_value="dummy-key"):
+        with mock.patch.object(config_module, "get_api_key", return_value="dummy-key"):
             explanation = search.explain_routing("best price sony wh-1000xm6 Austria", config)
         excluded = explanation["routing_decision"]["auto_allow_excluded"]
         self.assertIn("serpbase", excluded)
