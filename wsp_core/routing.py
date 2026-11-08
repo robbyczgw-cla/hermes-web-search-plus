@@ -12,27 +12,16 @@ from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 from .config import (
     DEFAULT_CONFIG,
     apply_profile_effects,
-    get_api_key,
-    keyless_public_allowed,
     self_hosted_profile_error,
 )
+from .config import provider_configured as _config_provider_configured
 from .intents import classify_intent
 from .provider_registry import DEFAULT_AUTO_ALLOW, DEFAULT_PROVIDER_PRIORITY, PROVIDER_SPECS
 
 
 def provider_configured(provider: str, config: Dict[str, Any] | None = None) -> bool:
-    """Whether a provider can run: keyed via this module's (sync-patchable)
-    ``get_api_key`` binding, or keyless with its public endpoint opted in."""
-    try:
-        if get_api_key(provider, config):
-            return True
-    except ValueError:
-        # A SearXNG URL that fails validation (private address without
-        # SEARXNG_ALLOW_PRIVATE=1, bad scheme) means "not configured" here, so
-        # one bad URL cannot break eligibility for every other provider. An
-        # explicit provider="searxng" call still raises the blocked-URL error.
-        return False
-    return keyless_public_allowed(provider, config)
+    """Whether a provider can run; the one answer from ``readiness`` (via config)."""
+    return _config_provider_configured(provider, config)
 
 
 ROUTING_POLICY = "routing-v3"

@@ -135,15 +135,17 @@ def test_nothing_configured_returns_false(config_path):
     assert _check(ctx, "web_extract_plus") is False
 
 
-def test_private_searxng_url_is_not_configured_and_does_not_raise(config_path):
-    # Loopback is refused by the engine's SSRF guard; check_fn must treat it as unconfigured.
+def test_private_searxng_url_lists_search_so_the_call_can_name_the_fix(config_path):
+    # Loopback is refused by the engine's SSRF guard. Since 5.1.8 the tool stays
+    # listed (invalid_value): a call says why and how to allow it, instead of the
+    # tool silently missing. Extraction has no SearXNG, so it stays off.
     config_path.write_text(
         json.dumps({"searxng": {"base_url": "http://127.0.0.1:8888"}}), encoding="utf-8"
     )
 
     ctx = _register()
 
-    assert _check(ctx, "web_search_plus") is False
+    assert _check(ctx, "web_search_plus") is True
     assert _check(ctx, "web_extract_plus") is False
 
 

@@ -286,11 +286,19 @@ class WSPNativeBackend(WebSearchProvider):
             },
         }
 
+    # Setup errors are WSP's own text built from readiness (what is missing or
+    # misconfigured and the command that fixes it); provider text never is.
+    _SETUP_ERROR_TYPES = frozenset({
+        "provider_setup_required", "requested_provider_not_configured", "explicit_only_provider_configured",
+    })
+
     def _failure_message(self, data: Dict[str, Any], generic: str) -> str:
-        """Generic text, except a Hermes credential-scope error, which says what to do."""
+        """Generic text, except errors that say what to do: a Hermes scope error or a setup error."""
         scope_type = getattr(self.plugin, "_SECRET_SCOPE_ERROR_TYPE", None)
         if scope_type and data.get("error_type") == scope_type:
             return str(data.get("error") or generic)
+        if data.get("error_type") in self._SETUP_ERROR_TYPES and data.get("error"):
+            return f"WSP: {data['error']}"
         return generic
 
     # -- extract ------------------------------------------------------------
@@ -338,6 +346,12 @@ class WSPNativeBackend(WebSearchProvider):
                 {"url": url, "error": "WSP native extract returned malformed payload"}
                 for url in url_list
             ]
+
+        if data.get("error") and data.get("error_type") in self._SETUP_ERROR_TYPES:
+            # Nothing can extract (e.g. only a search key): every URL gets the
+            # setup message, not a bare "extraction failed".
+            message = self._failure_message(data, "WSP native extraction failed; check provider readiness and configuration")
+            return [{"url": url, "error": message} for url in url_list]
 
         if data.get("error") and not data.get("results"):
             if _URL_REFUSED_PREFIX in str(data["error"]):

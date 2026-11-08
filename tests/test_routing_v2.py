@@ -2,12 +2,12 @@ from wsp_core import config as config_module
 from wsp_core import quality
 from unittest import mock
 
-from wsp_core import search, routing as routing_module
+from wsp_core import search
 
 
 def _route(query):
     config = config_module._deepcopy_default_config()
-    with mock.patch.object(routing_module, "get_api_key", return_value="test-key"):
+    with mock.patch.object(config_module, "get_api_key", return_value="test-key"):
         return search.auto_route_provider(query, config)
 
 

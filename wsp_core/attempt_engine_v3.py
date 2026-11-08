@@ -10,10 +10,12 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
 from .contract_v3 import (
+    AttemptEndReason,
     AttemptOutcome,
     Capability,
     CircuitState,
     ErrorClass,
+    ErrorV3,
     ProviderAttemptV3,
     SkipReason,
 )
@@ -26,14 +28,11 @@ from .http_client import (
     request_deadline_scope,
 )
 from .provider_health import MAX_RETRY_AFTER_WAIT_SECONDS, _retry_delay
-from .state_store_v3 import CircuitKey, SQLiteStateStore
+from .state_store_v3 import BLOCKING_ERROR_CLASSES, CircuitKey, SQLiteStateStore
 
 
 _MIN_RETRY_WINDOW_SECONDS = 1.0
-_HEALTH_ERROR_CLASSES = frozenset({
-    ErrorClass.AUTH, ErrorClass.QUOTA, ErrorClass.RATE_LIMIT,
-    ErrorClass.TRANSIENT, ErrorClass.TIMEOUT,
-})
+_HEALTH_ERROR_CLASSES = frozenset(BLOCKING_ERROR_CLASSES)
 
 
 @dataclass(frozen=True)
@@ -184,7 +183,10 @@ class AttemptEngine:
             and decision.blocking_error_class is not None
         ):
             self.store.release_half_open(
-                context.circuit_key, decision.blocking_error_class, now=now
+                context.circuit_key,
+                decision.blocking_error_class,
+                now=now,
+                lease_token=decision.lease_token,
             )
 
     def _failed(
@@ -207,7 +209,7 @@ class AttemptEngine:
         the batch) is kept and the attempt is reported as partial.
         """
         after = before
-        if not deadline_aborted:
+        if not deadline_aborted and error.error_class in _HEALTH_ERROR_CLASSES:
             after = self.store.record_failure(
                 context.circuit_key,
                 error.error_class,
@@ -215,10 +217,13 @@ class AttemptEngine:
                 retry_after_seconds=error.retry_after_seconds,
             ).state
         outcome = AttemptOutcome.FAILED
+        end_reason = AttemptEndReason.PROVIDER_ERROR
         if deadline_aborted:
             outcome = AttemptOutcome.CANCELLED
+            end_reason = AttemptEndReason.DEADLINE
         elif payload is not None:
             outcome = AttemptOutcome.PARTIAL
+            end_reason = AttemptEndReason.ANSWERED
         return AttemptExecution(
             payload,
             ProviderAttemptV3(
@@ -226,6 +231,7 @@ class AttemptEngine:
                 provider=context.provider,
                 capability=context.capability,
                 outcome=outcome,
+                end_reason=end_reason,
                 retry_count=len(tries) - 1,
                 result_count=len((payload or {}).get("results") or []),
                 started_at=self._started_at(started),
@@ -309,14 +315,26 @@ class AttemptEngine:
         *,
         started_at: float,
         duration_ms: int,
+        reason: AttemptEndReason = AttemptEndReason.DEADLINE,
+        message: str | None = None,
     ) -> AttemptExecution:
-        """Describe a launched provider call whose caller stopped at its deadline."""
+        """Describe a launched provider call that its caller did not wait for.
+
+        ``reason`` says why: the caller's deadline (the default, a budget
+        limit), another candidate's win, the research quorum, or an engine
+        error that lost the call's own receipt. Only the deadline is a budget
+        limit; the receipt carries the reason in ``error.details`` so that
+        status derivation never has to guess it from timing.
+        """
         started = int(started_at)
         elapsed_ms = max(0, int(duration_ms))
-        error = classify_provider_error(
-            TimeoutError("provider call exceeded the caller deadline"),
-            provider=context.provider,
-        )
+        if reason is AttemptEndReason.DEADLINE:
+            error = classify_provider_error(
+                TimeoutError("provider call exceeded the caller deadline"),
+                provider=context.provider,
+            )
+        else:
+            error = _cancellation_error(reason, context.provider, message)
         return AttemptExecution(
             None,
             ProviderAttemptV3(
@@ -324,6 +342,7 @@ class AttemptEngine:
                 provider=context.provider,
                 capability=context.capability,
                 outcome=AttemptOutcome.CANCELLED,
+                end_reason=reason,
                 retry_count=0,
                 result_count=0,
                 started_at=self._started_at(started),
@@ -621,6 +640,11 @@ class AttemptEngine:
                     provider=context.provider,
                     capability=context.capability,
                     outcome=AttemptOutcome.SUCCESS,
+                    end_reason=(
+                        AttemptEndReason.ANSWERED
+                        if result_count
+                        else AttemptEndReason.ANSWERED_EMPTY
+                    ),
                     retry_count=index,
                     result_count=result_count,
                     started_at=self._started_at(started),
@@ -639,6 +663,39 @@ class AttemptEngine:
             )
 
         raise RuntimeError(last_error or "attempt loop exhausted")
+
+
+_CANCELLATION_TEXT = {
+    AttemptEndReason.SUPERSEDED_BY_WINNER: (
+        "wsp.attempt.superseded",
+        "Cancelled: another provider answered first",
+    ),
+    AttemptEndReason.PREEMPTED_AFTER_QUORUM: (
+        "wsp.attempt.preempted",
+        "Cancelled: the research quorum was reached without it",
+    ),
+    AttemptEndReason.ENGINE_ERROR: (
+        "wsp.internal.attempt_lost",
+        "Provider execution failed before its receipt was written",
+    ),
+}
+
+
+def _cancellation_error(reason: AttemptEndReason, provider: str, message: str | None) -> ErrorV3:
+    """The error of a cancelled attempt that was not stopped by a deadline."""
+    code, default_message = _CANCELLATION_TEXT[reason]
+    return ErrorV3(
+        error_class=(
+            ErrorClass.INTERNAL
+            if reason is AttemptEndReason.ENGINE_ERROR
+            else ErrorClass.CANCELLED
+        ),
+        code=code,
+        message=message or default_message,
+        retryable=False,
+        provider=provider,
+        details={"end_reason": reason.value},
+    )
 
 
 def request_deadline(budget: Dict[str, Any]) -> float | None:

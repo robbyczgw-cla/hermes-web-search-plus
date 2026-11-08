@@ -188,6 +188,7 @@ def run_research_mode(
     now_fn=None,
     max_workers: int | None = None,
     on_provider_timeout=None,
+    on_provider_preempted=None,
     diversity_rerank: bool = False,
     near_duplicate_threshold: float = DEFAULT_NEAR_DUPLICATE_THRESHOLD,
     quorum_enabled: bool = True,
@@ -340,6 +341,8 @@ def run_research_mode(
             # above, preserving recall whenever it is already available.
             for index in sorted(pending_by_index):
                 provider = pending_by_index.pop(index)
+                if on_provider_preempted is not None:
+                    on_provider_preempted(provider)
                 provider_errors.append({"provider": provider, "error": "preempted_after_quorum"})
             quorum_triggered = True
             break
@@ -427,6 +430,13 @@ def run_research_mode(
                 extraction_error = str(e)
                 extracted = {"provider": None, "results": []}
 
+    # Extraction can return a failure payload without raising. Keep its reason
+    # alongside exceptions and deadline failures for the public v3 projection.
+    if urls and not extraction_error:
+        extraction_error = extracted.get("error")
+        if not extracted.get("results") and not extraction_error:
+            extraction_error = "Extraction returned no source text."
+
     routing = {
         "providers_queried": [p for p, _ in provider_results],
         "provider_errors": provider_errors,
@@ -447,7 +457,9 @@ def run_research_mode(
         "providers_merged": [p for p, _ in provider_results],
         # Pages actually read; failed URLs keep a row with their reason.
         "extracted_url_count": sum(
-            1 for summary in source_summaries if not (isinstance(summary, dict) and summary.get("error"))
+            1 for summary in source_summaries
+            if isinstance(summary, dict) and not summary.get("error")
+            and (summary.get("content") or summary.get("raw_content"))
         ),
         "research_quorum": _quorum_metadata(
             provider_results,
