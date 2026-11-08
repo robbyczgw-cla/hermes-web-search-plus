@@ -7,10 +7,12 @@ import hmac
 import math
 import os
 import secrets
+import socket
 import sqlite3
 import stat
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -37,6 +39,25 @@ CONSECUTIVE_FAILURES_TO_OPEN = {
     ErrorClass.TRANSIENT: 3,
     ErrorClass.TIMEOUT: 3,
 }
+# Only these error classes can block admission, so only they own circuit
+# rows. Internal, contract and config errors say nothing about provider
+# health; a row for them would never be read or cleared.
+BLOCKING_ERROR_CLASSES = (
+    ErrorClass.AUTH,
+    ErrorClass.QUOTA,
+    ErrorClass.RATE_LIMIT,
+    ErrorClass.TRANSIENT,
+    ErrorClass.TIMEOUT,
+)
+
+# A daily reservation whose owner is gone (dead process on this host) or that
+# outlived this many seconds is reclaimed. Reclaiming charges the units as
+# used: the provider call may have been sent and billed, so it is never
+# refunded unless its owner comes back and says it was not dispatched.
+RESERVATION_TTL_SECONDS = 600
+# Reclaimed reservations are kept this long so a late owner can still settle.
+RECLAIMED_RESERVATION_RETENTION_SECONDS = 2 * 86400
+_HOSTNAME = socket.gethostname()
 
 # After an I/O error the store reports itself unavailable; it is probed again
 # once this many seconds have passed, so one transient error (a locked
@@ -100,6 +121,9 @@ class AdmissionDecision:
     skip_reason: Optional[SkipReason] = None
     store_available: bool = True
     blocking_error_class: Optional[ErrorClass] = None
+    # Identifies this caller's half-open probe lease; only its holder may
+    # give it back.
+    lease_token: Optional[str] = None
     # Transient and timeout buckets that hold failures below the open
     # threshold; a success must clear them or blips add up across requests.
     failing_error_classes: tuple[ErrorClass, ...] = ()
@@ -112,12 +136,47 @@ class BudgetRecord:
     limit_units: int
     used_units: int
     reserved_units: int
+    # Part of used_units: reservations of dead or hung callers, charged
+    # because nobody can say whether their provider call was billed.
+    orphaned_units: int = 0
+
+
+def effective_circuit_state(
+    error_class: ErrorClass, state: CircuitState, failure_count: int
+) -> CircuitState:
+    """The state admission acts on; rows written before 5.1.8 stored ``open``
+    for buckets still below their consecutive-failure threshold."""
+    if (
+        state is CircuitState.OPEN
+        and failure_count < CONSECUTIVE_FAILURES_TO_OPEN.get(error_class, 1)
+    ):
+        return CircuitState.CLOSED
+    return state
+
+
+def _columns(connection: sqlite3.Connection, table: str) -> set[str]:
+    return {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+
+
+def _owner_alive(host: str, pid: int) -> bool:
+    """Whether a reservation owner may still be running; unknown counts as alive."""
+    if host != _HOSTNAME or pid == os.getpid() or os.name == "nt":
+        # Other hosts are invisible and os.kill on Windows terminates the
+        # process: the reservation lifetime decides there.
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
 
 
 def initialize_state_schema(connection: sqlite3.Connection) -> None:
     """Create or upgrade the additive v3 operational-state schema."""
     connection.executescript(
-        f"""
+        """
         CREATE TABLE IF NOT EXISTS circuit_state (
             provider TEXT NOT NULL,
             capability TEXT NOT NULL,
@@ -141,6 +200,21 @@ def initialize_state_schema(connection: sqlite3.Connection) -> None:
             reserved_units INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (scope, window_key)
         );
+        CREATE TABLE IF NOT EXISTS budget_reservations (
+            reservation_id TEXT PRIMARY KEY,
+            scope TEXT NOT NULL,
+            window_key TEXT NOT NULL,
+            units INTEGER NOT NULL CHECK (units >= 0),
+            owner_host TEXT NOT NULL,
+            owner_pid INTEGER NOT NULL,
+            owner_token TEXT NOT NULL,
+            phase TEXT NOT NULL CHECK (phase IN ('reserved', 'orphan_charged')),
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            settled_at INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS budget_reservations_window
+            ON budget_reservations(scope, window_key, phase);
         CREATE TABLE IF NOT EXISTS legacy_provider_health (
             provider TEXT PRIMARY KEY,
             failure_count INTEGER NOT NULL CHECK (failure_count >= 0),
@@ -171,9 +245,41 @@ def initialize_state_schema(connection: sqlite3.Connection) -> None:
             adaptive_providers INTEGER NOT NULL,
             adaptive_samples INTEGER NOT NULL
         );
-        PRAGMA user_version={SCHEMA_VERSION};
         """
     )
+    # Additive (5.1.8): owners for daily reservations, probe-lease tokens, and
+    # circuit rows that store the state admission acts on.
+    blocking = tuple(error.value for error in BLOCKING_ERROR_CLASSES)
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        if "orphaned_units" not in _columns(connection, "budget_ledger"):
+            connection.execute(
+                "ALTER TABLE budget_ledger"
+                " ADD COLUMN orphaned_units INTEGER NOT NULL DEFAULT 0"
+            )
+        if "lease_token" not in _columns(connection, "circuit_state"):
+            connection.execute("ALTER TABLE circuit_state ADD COLUMN lease_token TEXT")
+        connection.execute(
+            "DELETE FROM circuit_state WHERE error_class NOT IN"
+            f" ({', '.join('?' for _ in blocking)})",
+            blocking,
+        )
+        for error_class, threshold in CONSECUTIVE_FAILURES_TO_OPEN.items():
+            connection.execute(
+                "UPDATE circuit_state SET state=?"
+                " WHERE error_class=? AND state=? AND failure_count < ?",
+                (
+                    CircuitState.CLOSED.value,
+                    error_class.value,
+                    CircuitState.OPEN.value,
+                    threshold,
+                ),
+            )
+        connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
 
 
 class SQLiteStateStore:
@@ -191,6 +297,7 @@ class SQLiteStateStore:
         self._available = False
         self._request_budgets: dict[tuple[str, str], list[int]] = {}
         self._request_budgets_lock = threading.Lock()
+        self._owner_token = secrets.token_hex(8)
         self._initialize_local_secret()
         self._initialize()
         if not self._secret_available:
@@ -211,6 +318,7 @@ class SQLiteStateStore:
         store._available = False
         store._request_budgets = {}
         store._request_budgets_lock = threading.Lock()
+        store._owner_token = secrets.token_hex(8)
         try:
             absolute = Path(os.path.abspath(os.fspath(store.path)))
             current = Path(os.path.sep)
@@ -377,9 +485,13 @@ class SQLiteStateStore:
         now: int,
         retry_after_seconds: float | None = None,
     ) -> CircuitRecord:
+        if error_class not in BLOCKING_ERROR_CLASSES:
+            # Not a health signal: nothing is written, nothing is blocked.
+            return CircuitRecord()
         if not self._available:
             return CircuitRecord(CircuitState.UNKNOWN)
         state = self._state_for(error_class)
+        threshold = CONSECUTIVE_FAILURES_TO_OPEN.get(error_class, 1)
         if retry_after_seconds is not None and math.isfinite(retry_after_seconds):
             seconds = int(min(retry_after_seconds, MAX_OPEN_SECONDS))
         else:
@@ -399,12 +511,24 @@ class SQLiteStateStore:
                         provider, capability, endpoint,
                         credential_fingerprint, error_class
                     ) DO UPDATE SET
-                        state=excluded.state,
+                        state=CASE
+                            WHEN circuit_state.failure_count + 1 >= ?
+                            THEN ? ELSE ? END,
                         failure_count=circuit_state.failure_count + 1,
                         open_until=excluded.open_until,
-                        updated_at=excluded.updated_at
+                        updated_at=excluded.updated_at,
+                        lease_token=NULL
                     """,
-                    (*key.values(), error_class.value, state.value, open_until, now),
+                    (
+                        *key.values(),
+                        error_class.value,
+                        (state if threshold <= 1 else CircuitState.CLOSED).value,
+                        open_until,
+                        now,
+                        threshold,
+                        state.value,
+                        CircuitState.CLOSED.value,
+                    ),
                 )
                 connection.commit()
             finally:
@@ -473,10 +597,14 @@ class SQLiteStateStore:
 
     def _claim_half_open(
         self, key: CircuitKey, error_class: ErrorClass, *, now: int
-    ) -> bool:
-        """Atomically lease one probe for an expired circuit bucket."""
+    ) -> Optional[str]:
+        """Atomically lease one probe for an expired circuit bucket.
+
+        Returns the lease token, or None when another caller holds the probe.
+        """
         if not self._available:
-            return False
+            return None
+        token = secrets.token_hex(8)
         try:
             connection = self._connect()
             try:
@@ -484,7 +612,7 @@ class SQLiteStateStore:
                 cursor = connection.execute(
                     """
                     UPDATE circuit_state
-                    SET state=?, open_until=?, updated_at=?
+                    SET state=?, open_until=?, updated_at=?, lease_token=?
                     WHERE provider=? AND capability=? AND endpoint=?
                       AND credential_fingerprint=? AND error_class=?
                       AND state IN (?, ?, ?, ?)
@@ -494,6 +622,7 @@ class SQLiteStateStore:
                         CircuitState.HALF_OPEN.value,
                         now + 60,
                         now,
+                        token,
                         *key.values(),
                         error_class.value,
                         CircuitState.BLOCKED_AUTH.value,
@@ -504,12 +633,12 @@ class SQLiteStateStore:
                     ),
                 )
                 connection.commit()
-                return cursor.rowcount == 1
+                return token if cursor.rowcount == 1 else None
             finally:
                 connection.close()
         except sqlite3.Error:
             self._available = False
-            return False
+            return None
 
     def expire_circuit(
         self, key: CircuitKey, error_class: ErrorClass, *, now: int
@@ -548,9 +677,19 @@ class SQLiteStateStore:
             return False
 
     def release_half_open(
-        self, key: CircuitKey, error_class: ErrorClass, *, now: int
+        self,
+        key: CircuitKey,
+        error_class: ErrorClass,
+        *,
+        now: int,
+        lease_token: Optional[str] = None,
     ) -> bool:
-        """Give back a probe lease that was claimed but never used."""
+        """Give back a probe lease that was claimed but never used.
+
+        With ``lease_token`` only the current holder may release: a caller
+        whose lease already expired and was handed to a newer probe must not
+        open the bucket for a third one.
+        """
         if not self._available:
             return False
         try:
@@ -562,7 +701,7 @@ class SQLiteStateStore:
                     UPDATE circuit_state SET open_until=?, updated_at=?
                     WHERE provider=? AND capability=? AND endpoint=?
                       AND credential_fingerprint=? AND error_class=?
-                      AND state=?
+                      AND state=? AND (? IS NULL OR lease_token=?)
                     """,
                     (
                         now,
@@ -570,6 +709,8 @@ class SQLiteStateStore:
                         *key.values(),
                         error_class.value,
                         CircuitState.HALF_OPEN.value,
+                        lease_token,
+                        lease_token,
                     ),
                 )
                 connection.commit()
@@ -588,6 +729,7 @@ class SQLiteStateStore:
                 None,
                 store_available=False,
             )
+        # Same classes as BLOCKING_ERROR_CLASSES, in blocking priority.
         checks = (
             (ErrorClass.AUTH, SkipReason.AUTH_BLOCKED),
             (ErrorClass.QUOTA, SkipReason.QUOTA_BLOCKED),
@@ -608,13 +750,9 @@ class SQLiteStateStore:
         expired = []
         for error_class, skip_reason in checks:
             record = records[error_class]
-            if record.state is CircuitState.CLOSED:
-                continue
-            threshold = CONSECUTIVE_FAILURES_TO_OPEN.get(error_class, 1)
-            if (
-                record.state is CircuitState.OPEN
-                and record.failure_count < threshold
-            ):
+            if effective_circuit_state(
+                error_class, record.state, record.failure_count
+            ) is CircuitState.CLOSED:
                 continue
             active = record.open_until is None or record.open_until > now
             if active:
@@ -627,11 +765,13 @@ class SQLiteStateStore:
             expired.append((error_class, skip_reason))
 
         for error_class, skip_reason in expired:
-            if self._claim_half_open(key, error_class, now=now):
+            lease_token = self._claim_half_open(key, error_class, now=now)
+            if lease_token is not None:
                 return AdmissionDecision(
                     True,
                     CircuitState.HALF_OPEN,
                     blocking_error_class=error_class,
+                    lease_token=lease_token,
                     failing_error_classes=failing,
                 )
             if not self._available:
@@ -711,7 +851,66 @@ class SQLiteStateStore:
         except sqlite3.Error:
             self._available = False
 
-    def reserve_budget(self, scope: str, window_key: str, *, units: int) -> bool:
+    def _reclaim_orphans(
+        self, connection: sqlite3.Connection, scope: str, window_key: str, now: int
+    ) -> None:
+        """Charge reservations of dead or expired owners as used (in a transaction).
+
+        A crashed caller may have sent its provider request, so its units stay
+        spent; they move from ``reserved_units`` to ``used_units`` and are
+        counted in ``orphaned_units`` instead of looking in flight all day.
+        """
+        rows = connection.execute(
+            """
+            SELECT reservation_id, units, owner_host, owner_pid, expires_at
+            FROM budget_reservations
+            WHERE scope=? AND window_key=? AND phase='reserved'
+            """,
+            (scope, window_key),
+        ).fetchall()
+        orphans = [
+            row
+            for row in rows
+            if int(row["expires_at"]) <= now
+            or not _owner_alive(str(row["owner_host"]), int(row["owner_pid"]))
+        ]
+        units = sum(int(row["units"]) for row in orphans)
+        if orphans:
+            cursor = connection.execute(
+                """
+                UPDATE budget_ledger
+                SET used_units=used_units + ?,
+                    reserved_units=reserved_units - ?,
+                    orphaned_units=orphaned_units + ?
+                WHERE scope=? AND window_key=? AND reserved_units >= ?
+                """,
+                (units, units, units, scope, window_key, units),
+            )
+            if cursor.rowcount == 1:
+                connection.executemany(
+                    """
+                    UPDATE budget_reservations
+                    SET phase='orphan_charged', settled_at=?
+                    WHERE reservation_id=?
+                    """,
+                    [(now, row["reservation_id"]) for row in orphans],
+                )
+        connection.execute(
+            """
+            DELETE FROM budget_reservations
+            WHERE phase='orphan_charged' AND settled_at < ?
+            """,
+            (now - RECLAIMED_RESERVATION_RETENTION_SECONDS,),
+        )
+
+    def reserve_budget(
+        self,
+        scope: str,
+        window_key: str,
+        *,
+        units: int,
+        now: int | None = None,
+    ) -> bool:
         if units < 0:
             raise ValueError("budget units must be non-negative")
         if window_key == "request":
@@ -723,10 +922,12 @@ class SQLiteStateStore:
                 return True
         if not self._available:
             return False
+        current = int(time.time()) if now is None else int(now)
         try:
             connection = self._connect()
             try:
                 connection.execute("BEGIN IMMEDIATE")
+                self._reclaim_orphans(connection, scope, window_key, current)
                 cursor = connection.execute(
                     """
                     UPDATE budget_ledger
@@ -737,6 +938,27 @@ class SQLiteStateStore:
                     (units, scope, window_key, units),
                 )
                 allowed = cursor.rowcount == 1
+                if allowed:
+                    connection.execute(
+                        """
+                        INSERT INTO budget_reservations (
+                            reservation_id, scope, window_key, units,
+                            owner_host, owner_pid, owner_token, phase,
+                            created_at, expires_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'reserved', ?, ?)
+                        """,
+                        (
+                            uuid.uuid4().hex,
+                            scope,
+                            window_key,
+                            units,
+                            _HOSTNAME,
+                            os.getpid(),
+                            self._owner_token,
+                            current,
+                            current + RESERVATION_TTL_SECONDS,
+                        ),
+                    )
                 connection.commit()
                 return allowed
             finally:
@@ -782,22 +1004,57 @@ class SQLiteStateStore:
             connection = self._connect()
             try:
                 connection.execute("BEGIN IMMEDIATE")
-                cursor = connection.execute(
+                own = connection.execute(
                     """
-                    UPDATE budget_ledger
-                    SET used_units=used_units + ?,
-                        reserved_units=reserved_units - ?
-                    WHERE scope=? AND window_key=?
-                      AND reserved_units >= ?
+                    SELECT reservation_id, phase FROM budget_reservations
+                    WHERE scope=? AND window_key=? AND owner_token=?
+                      AND owner_pid=? AND units=?
+                    ORDER BY created_at LIMIT 1
                     """,
-                    (
-                        actual_units,
-                        reserved_units,
-                        scope,
-                        window_key,
-                        reserved_units,
-                    ),
-                )
+                    (scope, window_key, self._owner_token, os.getpid(), reserved_units),
+                ).fetchone()
+                if own is not None and own["phase"] == "orphan_charged":
+                    # Reclaimed while this call was still running and already
+                    # charged in full; only an undispatched call gets it back.
+                    cursor = connection.execute(
+                        """
+                        UPDATE budget_ledger
+                        SET used_units=used_units - ?,
+                            orphaned_units=orphaned_units - ?
+                        WHERE scope=? AND window_key=?
+                          AND used_units >= ? AND orphaned_units >= ?
+                        """,
+                        (
+                            reserved_units - actual_units,
+                            reserved_units,
+                            scope,
+                            window_key,
+                            reserved_units - actual_units,
+                            reserved_units,
+                        ),
+                    )
+                else:
+                    cursor = connection.execute(
+                        """
+                        UPDATE budget_ledger
+                        SET used_units=used_units + ?,
+                            reserved_units=reserved_units - ?
+                        WHERE scope=? AND window_key=?
+                          AND reserved_units >= ?
+                        """,
+                        (
+                            actual_units,
+                            reserved_units,
+                            scope,
+                            window_key,
+                            reserved_units,
+                        ),
+                    )
+                if own is not None and cursor.rowcount == 1:
+                    connection.execute(
+                        "DELETE FROM budget_reservations WHERE reservation_id=?",
+                        (own["reservation_id"],),
+                    )
                 if cursor.rowcount != 1:
                     connection.rollback()
                     raise RuntimeError("budget reservation missing during reconciliation")
@@ -808,6 +1065,19 @@ class SQLiteStateStore:
         except sqlite3.Error:
             self._available = False
             return False
+
+    @staticmethod
+    def _budget_record(scope: str, window_key: str, row: sqlite3.Row) -> BudgetRecord:
+        # Read-only consumers may open a pre-5.1.8 file without orphaned_units.
+        orphaned = row["orphaned_units"] if "orphaned_units" in row.keys() else 0
+        return BudgetRecord(
+            scope,
+            window_key,
+            int(row["limit_units"]),
+            int(row["used_units"]),
+            int(row["reserved_units"]),
+            int(orphaned or 0),
+        )
 
     def get_budget(self, scope: str, window_key: str) -> BudgetRecord:
         if window_key == "request":
@@ -822,10 +1092,7 @@ class SQLiteStateStore:
             connection = self._connect()
             try:
                 row = connection.execute(
-                    """
-                    SELECT limit_units, used_units, reserved_units
-                    FROM budget_ledger WHERE scope=? AND window_key=?
-                    """,
+                    "SELECT * FROM budget_ledger WHERE scope=? AND window_key=?",
                     (scope, window_key),
                 ).fetchone()
             finally:
@@ -835,13 +1102,7 @@ class SQLiteStateStore:
             raise RuntimeError("state store unavailable") from exc
         if row is None:
             raise KeyError((scope, window_key))
-        return BudgetRecord(
-            scope,
-            window_key,
-            int(row["limit_units"]),
-            int(row["used_units"]),
-            int(row["reserved_units"]),
-        )
+        return self._budget_record(scope, window_key, row)
 
     def read_budget_snapshot(
         self, scope: str, window_key: str
@@ -862,10 +1123,7 @@ class SQLiteStateStore:
             connection = self._connect()
             try:
                 row = connection.execute(
-                    """
-                    SELECT limit_units, used_units, reserved_units
-                    FROM budget_ledger WHERE scope=? AND window_key=?
-                    """,
+                    "SELECT * FROM budget_ledger WHERE scope=? AND window_key=?",
                     (scope, window_key),
                 ).fetchone()
             finally:
@@ -875,13 +1133,7 @@ class SQLiteStateStore:
             return None
         if row is None:
             return None
-        return BudgetRecord(
-            scope,
-            window_key,
-            int(row["limit_units"]),
-            int(row["used_units"]),
-            int(row["reserved_units"]),
-        )
+        return self._budget_record(scope, window_key, row)
 
     def adaptive_sample_rows(self) -> list[tuple[str, int, int, int, int]]:
         """Return (provider, sample_time, latency_ms, result_count, error) rows."""
