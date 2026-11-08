@@ -1197,11 +1197,23 @@ def _capability_badge(enabled: bool, label: str, *, color: Optional[bool] = None
     return _style(rendered, "32;1" if enabled else "2", color=color)
 
 
+def _readiness_problem_lines(status: Mapping[str, Any]) -> List[str]:
+    """One line per provider the user set up that cannot work, with its fix (first in the output)."""
+    lines = []
+    for name, meta in (status.get("providers") or {}).items():
+        if meta.get("state") in ("ignored_source", "invalid_value", "scope_error"):
+            fix = meta.get("fix") or []
+            lines.append(f"! {meta.get('display_name', name)}: {meta.get('reason')}" + (f" Run: {fix[0]}" if fix else ""))
+    return lines
+
+
 def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bool = False, config: Optional[Mapping[str, Any]] = None) -> str:
     """Return concise user-facing onboarding guidance."""
     status = _provider_config_status(env, config)
+    problems = _readiness_problem_lines(status)
     if fancy:
-        return _render_status_dashboard(status)
+        dashboard = _render_status_dashboard(status)
+        return "\n".join([*problems, dashboard]) if problems else dashboard
 
     if status["configured"]:
         configured = [
@@ -1209,7 +1221,7 @@ def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bo
             for meta in status["providers"].values()
             if meta["configured"]
         ]
-        lines = ["web-search-plus is configured. Providers: " + ", ".join(configured)]
+        lines = [*problems, "web-search-plus is configured. Providers: " + ", ".join(configured)]
         lines.append(
             "Capabilities: "
             f"search={'yes' if status['search_configured'] else 'no'}, "
@@ -1222,6 +1234,7 @@ def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bo
         return "\n".join(lines)
 
     lines = [
+        *problems,
         "web-search-plus is installed but no provider keys are configured.",
         "No single key is mandatory, but at least one search-capable provider is needed for web_search_plus.",
         "Add LINKUP_API_KEY or another extraction-capable provider for web_extract_plus.",

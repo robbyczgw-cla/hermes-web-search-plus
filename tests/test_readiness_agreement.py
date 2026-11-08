@@ -269,3 +269,15 @@ def test_native_extract_with_only_a_search_key_says_what_to_set_up(world, monkey
 
     assert rows[0]["error"].startswith("WSP: No configured extract provider is available")
     assert "hermes web-search-plus setup --preset extract" in rows[0]["error"]
+
+
+def test_human_status_starts_with_the_problem_and_its_fix(world, monkeypatch):
+    world.write_text(json.dumps({"keenable": {"allow_public": True}}))
+    _hermes_profile(monkeypatch, {})
+
+    for fancy in (False, True):
+        text = wsp._render_setup_guidance(config=wsp.load_config(), fancy=fancy)
+        assert text.splitlines()[0] == (
+            "! Keenable: Keenable's public tier is switched on in config.json, which Hermes ignores. "
+            "Run: hermes config set KEENABLE_ALLOW_PUBLIC 1"
+        )
