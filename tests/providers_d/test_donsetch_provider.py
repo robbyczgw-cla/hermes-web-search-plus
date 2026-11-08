@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import sys
 from types import SimpleNamespace
 
 import pytest
@@ -160,18 +159,29 @@ def test_search_projects_donsetch_results_and_metadata(monkeypatch):
     assert result["metadata"]["duration_ms"] == 321.0
 
 
-def test_search_rejects_unsupported_freshness_before_network(monkeypatch):
+def test_search_with_freshness_runs_without_it_and_sends_no_recency_to_donsetch(monkeypatch):
     spec, module = _provider()
-    monkeypatch.setitem(module, "_call_donsetch_tool", lambda *_args: pytest.fail("network"))
-    with pytest.raises(RuntimeError, match="donsetch_freshness_unsupported"):
-        spec.execute_search(
-            None,
-            "donsetch",
-            _search_args(freshness="day"),
-            TRUE_BIN,
-            {},
-            {},
-        )
+    calls = []
+
+    def fake_call(*args):
+        calls.append(args)
+        return {"structured": {"results": []}, "text": ""}
+
+    monkeypatch.setitem(module, "_call_donsetch_tool", fake_call)
+    result = spec.execute_search(None, "donsetch", _search_args(freshness="day"), TRUE_BIN, {}, {})
+    assert result["provider"] == "donsetch"
+    assert set(calls[0][2]) == {"query", "max_results", "intent"}  # no recency argument exists
+
+
+def test_search_images_and_unknown_vertical_run_as_web_search_and_are_listed(monkeypatch):
+    spec, module = _provider()
+    monkeypatch.setitem(
+        module, "_call_donsetch_tool", lambda *_args: {"structured": {"results": []}, "text": ""}
+    )
+    result = spec.execute_search(
+        None, "donsetch", _search_args(images=True, search_type="videos"), TRUE_BIN, {}, {}
+    )
+    assert result["metadata"]["unsupported_options"] == ["images", "search_type"]
 
 
 def test_extract_projects_markdown_and_marks_raw_html_as_unsupported(monkeypatch):
@@ -270,22 +280,31 @@ def test_extract_render_js_requests_browser_tier(monkeypatch):
     assert seen[0]["tier"] == "2"
 
 
-def test_extract_rejects_non_markdown_without_network(monkeypatch):
+def test_extract_html_format_is_answered_in_markdown_and_marked(monkeypatch):
     spec, module = _provider()
-    monkeypatch.setitem(module, "_call_donsetch_tool", lambda *_args: pytest.fail("network"))
-    with pytest.raises(RuntimeError, match="donsetch_output_format_unsupported"):
-        spec.execute_extract(
-            None,
-            "donsetch",
-            ["https://example.org/page"],
-            sys.executable,
-            "html",
-            False,
-            False,
-            False,
-            {},
-            False,
-        )
+
+    class FakeSession:
+        def __init__(self, _binary, _timeout):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+        def call(self, _tool, arguments):
+            return {
+                "structured": {"url": arguments["url"], "status": 200, "content_ok": True, "verdict": "ContentOk"},
+                "text": "content",
+            }
+
+    monkeypatch.setitem(module, "DonsetchSession", FakeSession)
+    result = spec.execute_extract(
+        None, "donsetch", ["https://example.org/page"], TRUE_BIN, "html", False, False, False, {}, False,
+    )
+    assert result["results"][0]["content"] == "content"
+    assert result["results"][0]["format_applied"] == "markdown"
 
 
 _FAKE_MCP = r'''#!/usr/bin/env python3

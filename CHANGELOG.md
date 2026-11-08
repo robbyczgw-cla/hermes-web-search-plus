@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- DonSeTch failures say what happened. A hung binary was "Provider execution failed" (`internal`: no retry, no circuit breaker, a 180 s wait on every request); it is now a `timeout` (retried once, then the circuit opens after three failures), and extract rows read "donsetch timed out; try again, or raise its timeout setting". A binary that cannot be started (bare name not on PATH, not executable) is a `config` error with "To fix: hermes config set DONSETCH_BIN /path/to/donsetch" instead of "could not read this page".
+- DonSeTch no longer refuses options it cannot apply. A search with `freshness`/`time_range` runs and reports `[Freshness: day | not applied]` as the tool schema promises (it failed with "All providers failed"); `format: html` returns Markdown and says so (`[Format: markdown ...]`, `format_applied`); CLI-only `--images` and unknown search types run as a web search and are listed in `metadata.unsupported_options`.
+- `hermes web-search-plus setup --no-jev` now switches an enabled Jev off (it printed "leave Jev disabled" and changed nothing). Without a flag, an enabled Jev is still left alone.
+- A failed engine import is retried after 30 seconds instead of staying broken until Hermes restarts, and the tools are not listed while the engine cannot load. The error text says the import is retried and that a restart helps if it persists; the traceback is logged on the first failure only.
+
 ## [v5.1.8] — 2026-11-08
 
 ### Fixed

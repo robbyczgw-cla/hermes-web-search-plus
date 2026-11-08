@@ -689,6 +689,13 @@ def _execute_extract_v3(
             else "provider_failed"
         )
         fallback_errors.append({"provider": provider, "error": error_code})
+        if provider not in batch_failures and attempted.receipt.error is not None:
+            # The provider failed for the whole batch (timeout, cannot start):
+            # say so on each open URL instead of "could not read this page".
+            fields = extract_failures.provider_failure_fields(attempted.receipt.error, provider)
+            if fields:
+                for position in pending:
+                    note_failure(position, _extract_error_item(urls[position], fields["error"], fields))
         if provider in batch_failures:
             failed_batch, items = batch_failures.pop(provider)
             matched_items, _unmatched = match_extract_items(failed_batch, items)

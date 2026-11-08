@@ -71,13 +71,17 @@ def status_payload(env: Optional[Mapping[str, str]] = None, config: Optional[Map
     }
 
 
-def plan_lines(*, want_enable: Optional[bool], decisions: Sequence[str], has_key: bool) -> list[str]:
+def plan_lines(*, want_enable: Optional[bool], decisions: Sequence[str], has_key: bool,
+               currently_enabled: bool = False) -> list[str]:
     lines = [
         "Optional Jev — default off. Not a search provider.",
         f"  Signup: {JEV_SIGNUP}",
         "  Reads TYPESAFE_API_KEY through Hermes. Secrets are never printed.",
         "  Decisions: search_type overlay, extract_quality, language_fill.",
     ]
+    if want_enable is False and currently_enabled:
+        lines.append("  Plan: switch Jev off (it is on now); your stored key stays untouched.")
+        return lines
     if want_enable is False:
         lines.append("  Plan: leave Jev disabled.")
         return lines
