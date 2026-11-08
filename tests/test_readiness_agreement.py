@@ -241,3 +241,31 @@ def test_a_real_key_is_ready_on_every_surface(world, monkeypatch):
     assert status["providers"]["brave"]["state"] == "ready"
     assert status["search_configured"] is True and listed is True and "brave" in engine_pool
     assert "brave-real-looking-key-123" not in json.dumps(status)
+
+
+def test_native_extract_with_only_a_search_key_says_what_to_set_up(world, monkeypatch):
+    # Sonnet repro (2026-11-08): web.backend wsp + only a Brave key -> every
+    # extract read "WSP extraction failed for this URL" with no hint.
+    import importlib.util
+    from pathlib import Path
+    from types import ModuleType
+
+    abc = ModuleType("agent.web_search_provider")
+    abc.WebSearchProvider = object
+    web = ModuleType("hermes_cli.config")
+    web.load_config = lambda: {"web": {"backend": "wsp"}}
+    monkeypatch.setitem(sys.modules, "agent.web_search_provider", abc)
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", web)
+    _hermes_profile(monkeypatch, {"BRAVE_API_KEY": "brave-real-looking-key-123"})
+    spec = importlib.util.spec_from_file_location(
+        "_wsp_native_readiness", Path(__file__).resolve().parents[1] / "native_backend.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, port, *a, **k: [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port or 0))])
+
+    rows = module.WSPNativeBackend(wsp).extract(["https://example.org/page"])
+
+    assert rows[0]["error"].startswith("WSP: No configured extract provider is available")
+    assert "hermes web-search-plus setup --preset extract" in rows[0]["error"]
