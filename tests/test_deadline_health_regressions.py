@@ -226,5 +226,5 @@ def test_all_not_tried_extract_batch_is_timeout_not_contract(monkeypatch):
     urls = ["https://example.test/a", "https://example.test/b"]
     with request_deadline_scope(time.monotonic() - 1):
         with pytest.raises(RequestDeadlineExceeded) as caught:
-            extract._extract_plus_core(urls, provider="firecrawl", config=cfg, urls_validated=True)
+            extract._extract_plus_core(urls, provider="firecrawl", config=cfg)
     assert classify_provider_error(caught.value, provider="firecrawl").error_class is ErrorClass.TIMEOUT

@@ -1047,19 +1047,9 @@ _PROVIDER_WIDE_ERROR_CAUSES = {
 }
 
 
-def _not_tried_extract_result(provider: str, url: str) -> Dict[str, Any]:
-    """Error item for a batch URL skipped because the request deadline passed."""
-    return _normalize_extract_result(provider, url, error=NOT_TRIED_DEADLINE_ERROR)
-
-
 def _provider_wide_cause(provider: str, exc: BaseException) -> Optional[str]:
     """Short cause for an account-wide error, or None for a per-URL error."""
     return _PROVIDER_WIDE_ERROR_CAUSES.get(classify_provider_error(exc, provider=provider).error_class)
-
-
-def _batch_stopped_extract_result(provider: str, url: str, cause: str) -> Dict[str, Any]:
-    """Error item for a batch URL skipped after a provider-wide error."""
-    return _normalize_extract_result(provider, url, error=f"not tried: {cause}")
 
 
 def _per_url_extract_error(provider: str, url: str, label: str, exc: ProviderRequestError) -> Dict[str, Any]:
@@ -1124,11 +1114,13 @@ def extract_firecrawl(
     stop_error: Optional[ProviderRequestError] = None
     for url in urls:
         if stop_error is not None:
-            results.append(_batch_stopped_extract_result("firecrawl", url, _provider_wide_cause("firecrawl", stop_error)))
+            results.append(_normalize_extract_result(
+                "firecrawl", url, error=f"not tried: {_provider_wide_cause('firecrawl', stop_error)}",
+            ))
             continue
         if deadline_passed():
             # Pages already fetched are kept; no new request after the deadline.
-            results.append(_not_tried_extract_result("firecrawl", url))
+            results.append(_normalize_extract_result("firecrawl", url, error=NOT_TRIED_DEADLINE_ERROR))
             continue
         body: Dict[str, Any] = {"url": url, "formats": formats}
         if render_js:
@@ -1202,10 +1194,10 @@ def extract_linkup(
 
     def fetch_one(url: str) -> Dict[str, Any]:
         if stopped:
-            return _batch_stopped_extract_result("linkup", url, _provider_wide_cause("linkup", stopped[0]))
+            return _normalize_extract_result("linkup", url, error=f"not tried: {_provider_wide_cause('linkup', stopped[0])}")
         if deadline_passed():
             # DaemonTask copies the context, so queued fetches see the deadline.
-            return _not_tried_extract_result("linkup", url)
+            return _normalize_extract_result("linkup", url, error=NOT_TRIED_DEADLINE_ERROR)
         body = {
             "url": url,
             "extractImages": include_images,
@@ -1305,25 +1297,22 @@ def extract_tavily(
         ))
     for failed in data.get("failed_results", []) or []:
         failed_url = failed.get("url", "")
-        reason = extract_failures.reason_for_text(failed.get("error")) if isinstance(failed, dict) else None
+        text = failed.get("error") if isinstance(failed, dict) else None
+        lowered = text.lower() if isinstance(text, str) else ""
+        reason = None
+        # Only a status code counts as "does not exist": that reason ends the
+        # fallback chain, and "content not found" can mean an unreadable page.
+        if re.search(r"\b404\b", lowered):
+            reason = extract_failures.NOT_FOUND
+        elif re.search(r"\b410\b", lowered):
+            reason = extract_failures.GONE
+        elif re.search(r"\b40[13]\b|forbidden|blocked|captcha|access denied", lowered):
+            reason = extract_failures.BLOCKED
+        elif re.search(r"time(?:d)? ?out|unreachable|could not connect|connection", lowered):
+            reason = extract_failures.UNREACHABLE
         fields = extract_failures.failure_fields(reason) or {"error": "Tavily extract failed"}
         results.append(_normalize_extract_result("tavily", failed_url, **fields))
     return {"provider": "tavily", "results": results}
-
-_EXA_TIMEOUT_TAGS = {"CRAWL_LIVECRAWL_TIMEOUT", "CRAWL_TIMEOUT"}
-
-
-def _exa_failure_fields(error: Any) -> Dict[str, Any]:
-    """Exa ``statuses[].error`` ({httpStatusCode, tag}) as error-item fields."""
-    error = error if isinstance(error, dict) else {}
-    tag = str(error.get("tag") or "").upper()
-    reason, status = extract_failures.split_status(error.get("httpStatusCode"))
-    if tag == "CRAWL_NOT_FOUND":
-        reason, status = extract_failures.NOT_FOUND, status or 404
-    elif tag in _EXA_TIMEOUT_TAGS:
-        reason, status = extract_failures.UNREACHABLE, None
-    return extract_failures.failure_fields(reason, status) or {"error": "Exa could not fetch this URL"}
-
 
 def extract_exa(
     urls: List[str],
@@ -1363,9 +1352,19 @@ def extract_exa(
         if not isinstance(status, dict) or status.get("status") in (None, "success"):
             continue
         failed_url = status.get("id")
-        if isinstance(failed_url, str) and failed_url and failed_url not in returned:
-            results.append(_normalize_extract_result("exa", failed_url, **_exa_failure_fields(status.get("error"))))
-            returned.add(failed_url)
+        if not (isinstance(failed_url, str) and failed_url) or failed_url in returned:
+            continue
+        # statuses[].error is {httpStatusCode, tag}.
+        error = status.get("error") if isinstance(status.get("error"), dict) else {}
+        tag = str(error.get("tag") or "").upper()
+        reason, code = extract_failures.split_status(error.get("httpStatusCode"))
+        if tag == "CRAWL_NOT_FOUND":
+            reason, code = extract_failures.NOT_FOUND, code or 404
+        elif tag in {"CRAWL_LIVECRAWL_TIMEOUT", "CRAWL_TIMEOUT"}:
+            reason, code = extract_failures.UNREACHABLE, None
+        fields = extract_failures.failure_fields(reason, code) or {"error": "Exa could not fetch this URL"}
+        results.append(_normalize_extract_result("exa", failed_url, **fields))
+        returned.add(failed_url)
     return {
         "provider": "exa",
         "results": results,
@@ -2023,10 +2022,12 @@ def extract_keenable(
     stop_error: Optional[ProviderRequestError] = None
     for url in urls:
         if stop_error is not None:
-            results.append(_batch_stopped_extract_result("keenable", url, _provider_wide_cause("keenable", stop_error)))
+            results.append(_normalize_extract_result(
+                "keenable", url, error=f"not tried: {_provider_wide_cause('keenable', stop_error)}",
+            ))
             continue
         if deadline_passed():
-            results.append(_not_tried_extract_result("keenable", url))
+            results.append(_normalize_extract_result("keenable", url, error=NOT_TRIED_DEADLINE_ERROR))
             continue
         try:
             endpoint = f"{base_url}?url={quote(url, safe='')}"
@@ -2079,10 +2080,12 @@ def extract_serper(
     stop_error: Optional[ProviderRequestError] = None
     for url in urls:
         if stop_error is not None:
-            results.append(_batch_stopped_extract_result("serper", url, _provider_wide_cause("serper", stop_error)))
+            results.append(_normalize_extract_result(
+                "serper", url, error=f"not tried: {_provider_wide_cause('serper', stop_error)}",
+            ))
             continue
         if deadline_passed():
-            results.append(_not_tried_extract_result("serper", url))
+            results.append(_normalize_extract_result("serper", url, error=NOT_TRIED_DEADLINE_ERROR))
             continue
         try:
             data = make_request(api_url, headers, {"url": url, "includeMarkdown": True}, timeout=timeout)
