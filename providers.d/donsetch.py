@@ -79,24 +79,23 @@ def _wsp_version() -> str:
     client name; a failure here must never break a session.
     """
     try:
-        engine = wsp_sdk.__name__.rpartition(".")[0] or "wsp_core"
-        agent = importlib.import_module(engine + ".http_client").DEFAULT_USER_AGENT
+        agent = _engine_module("http_client").DEFAULT_USER_AGENT
         version = str(agent).rpartition("/")[2]
         return version if re.fullmatch(r"\d+\.\d+\.\d+", version) else "unknown"
     except (ImportError, AttributeError):  # a missing engine surface must never break a session
         return "unknown"
 
 
-def _engine_credentials():
-    """The credentials module of the engine that loaded this provider.
+def _engine_module(name: str):
+    """A sibling module of the engine that loaded this provider.
 
-    Hermes imports the plugin as ``hermes_plugins.<slug>``, so ``wsp_core`` is
-    not a top-level module there and ``import wsp_core.credentials`` fails the
-    whole provider file. ``wsp_sdk`` is bound to the loading engine's SDK
-    (``<engine>.sdk``); its sibling module holds the active secret resolver.
+    The engine package differs per host: ``hermes_plugins.<slug>.wsp_core`` in
+    Hermes, ``web_search_plus_mcp`` in the MCP server, nothing in the flat test
+    layout. ``wsp_sdk`` re-exports the engine's HTTP helpers in every host, so
+    their module names the package. Hermes and the MCP ship this file unchanged.
     """
-    engine = wsp_sdk.__name__.rpartition(".")[0] or "wsp_core"
-    return importlib.import_module(engine + ".credentials")
+    engine = wsp_sdk.dispatch_timeout.__module__.rpartition(".")[0]
+    return importlib.import_module(f"{engine}.{name}" if engine else name)
 
 
 
@@ -191,7 +190,7 @@ def _section(config: Any) -> dict[str, Any]:
 def _candidate_binary(key: str | None, config: dict[str, Any]) -> str:
     section = _section(config)
     candidate = key or section.get("binary")
-    if not candidate and _engine_credentials().file_credentials_allowed():
+    if not candidate and _engine_module("credentials").file_credentials_allowed():
         candidate = section.get("api_key")
     if not isinstance(candidate, str) or not candidate.strip():
         return shutil.which("donsetch") or ""
@@ -282,7 +281,7 @@ def _child_env() -> dict[str, str]:
     # process, but read their values only from the active scope (never fallback).
     names = {name for name in os.environ if name.startswith("DONSETCH_")}
     names.add("DONSETCH_BIN")
-    credentials = _engine_credentials()
+    credentials = _engine_module("credentials")
     for name in names:
         value = credentials.get_secret(name)
         if value is not None:
