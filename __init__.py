@@ -24,7 +24,6 @@ from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
-from urllib.parse import urlparse
 
 # Hermes imports this directory as the package ``hermes_plugins.<slug>``; the
 # engine is the subpackage ``wsp_core`` and is imported relatively, so it can
@@ -54,7 +53,7 @@ from .wsp_core.credentials import (
     set_secret_resolver,
 )
 from .wsp_core import readiness
-from .wsp_core.env_loader import clean_env_value as _shared_clean_env_value, is_truthy
+from .wsp_core.env_loader import clean_env_value as _shared_clean_env_value
 from .wsp_core.cache import MAX_STORED_TEXT_CHARS, store_web_text
 from .wsp_core.config import (
     ORDER_AUTO_WORDS,
@@ -998,16 +997,13 @@ def _routing_summary(config: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _is_well_formed_http_url(value: Any) -> bool:
-    """Validate the shape of an operator URL without DNS or provider traffic."""
-    if not isinstance(value, str) or not value.strip():
-        return False
-    parsed = urlparse(value.strip())
-    return parsed.scheme in {"http", "https"} and bool(parsed.hostname)
+def _profile_status(config: Mapping[str, Any], providers: Mapping[str, Any]) -> Dict[str, Any]:
+    """Report self-hosted prerequisites from the readiness in ``providers``.
 
-
-def _profile_status(config: Mapping[str, Any], env: Mapping[str, str]) -> Dict[str, Any]:
-    """Report self-hosted prerequisites locally; status must stay network-free."""
+    The same answer as the provider rows and the engine: a SearXNG URL or a
+    Keenable opt-in that this host ignores (config.json under a Hermes profile)
+    or that cannot work is "needs setup" here too.
+    """
     profile = config.get("profile", "standard")
     auto = config.get("auto_routing", {}) if isinstance(config.get("auto_routing"), Mapping) else {}
     effective_pool = [
@@ -1015,27 +1011,15 @@ def _profile_status(config: Mapping[str, Any], env: Mapping[str, str]) -> Dict[s
         for provider in auto.get("provider_priority", _DEFAULT_PROVIDER_PRIORITY)
         if (auto.get("auto_allow") or {}).get(provider, True)
     ]
-    searxng = config.get("searxng", {}) if isinstance(config.get("searxng"), Mapping) else {}
-    searxng_url = (
-        searxng.get("base_url")
-        or searxng.get("instance_url")
-        or env.get("SEARXNG_INSTANCE_URL")
-    )
-    keenable = config.get("keenable", {}) if isinstance(config.get("keenable"), Mapping) else {}
-    keenable_ready = bool(
-        _clean_env_value(env.get("KEENABLE_API_KEY") or "")
-        or _clean_env_value(_section_file_key(keenable))
-        or is_truthy(keenable.get("allow_public"))
-        or is_truthy(env.get(keyless_public_env_var("keenable")))
-    )
-    searxng_ready = _is_well_formed_http_url(searxng_url)
+    searxng_ready = bool(providers["providers"]["searxng"]["configured"])
+    keenable_ready = bool(providers["providers"]["keenable"]["configured"])
     checks = []
     if profile == "self_hosted":
         checks = [
             {
                 "id": "searxng_base_url",
                 "ok": searxng_ready,
-                "detail": "searxng.base_url (or legacy instance_url) is present and well formed",
+                "detail": "searxng.base_url or SEARXNG_INSTANCE_URL is set and usable",
             },
             {
                 "id": "keenable_keyless",
@@ -1043,12 +1027,12 @@ def _profile_status(config: Mapping[str, Any], env: Mapping[str, str]) -> Dict[s
                 "detail": "Keenable has an API key or its keyless public endpoint is enabled",
             },
         ]
+    policy_ready = profile != "self_hosted" or searxng_ready or keenable_ready
     return {
         "active": profile,
         "effective_auto_pool": effective_pool,
-        "policy_ready": profile != "self_hosted" or searxng_ready or keenable_ready,
-        "ready": (profile != "self_hosted" or searxng_ready or keenable_ready)
-        and _provider_config_status(env, config)["search_configured"],
+        "policy_ready": policy_ready,
+        "ready": policy_ready and providers["search_configured"],
         "checks": checks,
     }
 
@@ -1085,7 +1069,7 @@ def _status_payload(
     hermes_native = _hermes_keyless_rescue_state(hermes_config_path)
     return {
         "providers": providers,
-        "profile": _profile_status(active_config, active_env),
+        "profile": _profile_status(active_config, providers),
         "routing": redact_secrets(active_config),
         "ignored_file_keys": _ignored_file_credential_lines(raw_config if raw_config is not None else active_config),
         "ignored_file_settings": _ignored_file_setting_lines(raw_config if raw_config is not None else active_config),

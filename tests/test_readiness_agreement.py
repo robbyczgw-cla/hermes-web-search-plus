@@ -103,6 +103,33 @@ def test_keyless_flag_in_config_json_under_hermes_is_named_not_reported_ready(wo
     assert "serper" not in text.lower()
 
 
+def test_self_hosted_profile_checks_follow_readiness_under_hermes(world, monkeypatch):
+    """The profile block had its own rules: with the SearXNG URL and the Keenable
+    opt-in only in config.json, which a Hermes profile ignores, it reported both
+    checks ok and policy_ready while the provider rows said ignored_source."""
+    _hermes_profile(monkeypatch, {})
+    config = {
+        "profile": "self_hosted",
+        "searxng": {"base_url": "https://8.8.8.8"},
+        "keenable": {"allow_public": True},
+    }
+
+    payload = wsp._status_payload(env={}, config=config)
+
+    rows = payload["providers"]["providers"]
+    assert (rows["searxng"]["state"], rows["keenable"]["state"]) == ("ignored_source", "ignored_source")
+    assert {check["id"]: check["ok"] for check in payload["profile"]["checks"]} == {
+        "searxng_base_url": False, "keenable_keyless": False,
+    }
+    assert payload["profile"]["policy_ready"] is False and payload["profile"]["ready"] is False
+
+    # Set where Hermes reads it, the same block is ready.
+    in_profile = wsp._status_payload(env={"SEARXNG_INSTANCE_URL": "https://8.8.8.8"}, config={"profile": "self_hosted"})
+    assert in_profile["providers"]["providers"]["searxng"]["state"] == "ready"
+    assert in_profile["profile"]["checks"][0]["ok"] is True
+    assert in_profile["profile"]["policy_ready"] is True and in_profile["profile"]["ready"] is True
+
+
 def test_profile_opt_in_makes_keenable_ready_everywhere(world, monkeypatch):
     _hermes_profile(monkeypatch, {"KEENABLE_ALLOW_PUBLIC": "1"})
     ctx = _register(monkeypatch)
