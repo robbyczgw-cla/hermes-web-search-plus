@@ -563,7 +563,7 @@ def build_overview(
     bounded = bounded if isinstance(bounded, Mapping) else {}
     providers = list(provider_ids) if provider_ids is not None else list(PROVIDER_SPECS)
     circuits_available, circuits, circuit_blocked = _circuit_snapshot(
-        Path(state_path) if state_path is not None else root / "state" / "v3.sqlite3",
+        Path(state_path) if state_path is not None else root / "v3" / "state.sqlite3",
         float(now()),
     )
     receipts = build_receipts(cache_root=root, limit=100)["receipts"]

@@ -378,6 +378,10 @@ def execute_v3_request(
     plan = adapter.plan(request, runtime_config)
     if plan.mode != policy_mode:
         plan = replace(plan, mode=policy_mode)
+    v3_config = runtime_config.get("v3") or {}
+    response_cache = ResponseCacheV3(
+        v3_config.get("cache_dir") or legacy_cache.CACHE_DIR
+    )
     preflight = PreflightDecision("proceed")
     if not _budget_preflight_off(runtime_config):
         preflight = run_budget_preflight(
@@ -385,10 +389,6 @@ def execute_v3_request(
             plan,
             runtime_config,
             _daily_provider_ledger_snapshot(runtime_config),
-        )
-        v3_config = runtime_config.get("v3") or {}
-        response_cache = ResponseCacheV3(
-            v3_config.get("cache_dir") or legacy_cache.CACHE_DIR
         )
         if preflight.action == "abort":
             return _budget_preflight_failure(
@@ -414,10 +414,6 @@ def execute_v3_request(
     )
     if not isinstance(cache_vary, dict):
         raise ValueError("cache vary material must be an object")
-    v3_config = runtime_config.get("v3") or {}
-    response_cache = ResponseCacheV3(
-        v3_config.get("cache_dir") or legacy_cache.CACHE_DIR
-    )
     if cache_enabled:
         lookup = response_cache.get(
             cache_request,

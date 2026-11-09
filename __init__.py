@@ -138,13 +138,6 @@ def _ensure_hermes_secret_resolver() -> None:
         _install_hermes_secret_resolver()
 
 
-def _section_file_key(section: Mapping[str, Any]) -> str:
-    """The ``api_key``/``apiKey`` from a config.json section, or "" when a host resolver owns credentials."""
-    if not file_credentials_allowed():
-        return ""
-    return str(section.get("api_key") or section.get("apiKey") or "")
-
-
 def _raw_config_json(path: Path) -> Dict[str, Any]:
     """config.json as written (any section), or {} when missing or unreadable; used only to detect ignored keys."""
     try:

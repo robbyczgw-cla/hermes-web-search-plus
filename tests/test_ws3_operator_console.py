@@ -165,6 +165,20 @@ def test_overview_auto_column_follows_the_users_auto_allow(tmp_path: Path) -> No
     }
 
 
+def test_overview_finds_the_engine_state_without_a_state_path(tmp_path: Path) -> None:
+    """The default was <cache>/state/v3.sqlite3, a path nothing writes; the
+    engine keeps its state in <cache>/v3/state.sqlite3."""
+    console = importlib.import_module("wsp_core.operator_console_v3")
+    store_module = importlib.import_module("wsp_core.state_store_v3")
+    store_module.SQLiteStateStore(tmp_path / "v3" / "state.sqlite3")
+    with sqlite3.connect(tmp_path / "v3" / "state.sqlite3") as connection:
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+    payload = console.build_overview(cache_root=tmp_path, config=deepcopy(DEFAULT_CONFIG))
+
+    assert payload["engine"]["state_available"] is True
+
+
 def test_overview_refuses_symlinked_cache_and_state_ancestors(
     tmp_path: Path,
 ) -> None:
