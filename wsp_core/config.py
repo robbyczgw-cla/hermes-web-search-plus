@@ -391,16 +391,19 @@ def apply_profile_effects(config: Dict[str, Any]) -> Dict[str, Any]:
 def self_hosted_profile_error(config: Dict[str, Any]) -> Optional[SelfHostedProfileError]:
     """Return a typed readiness error when self-hosted AUTO has no provider.
 
-    This deliberately checks only local configuration state. URL reachability
-    belongs to request execution; status/doctor must never make a provider call.
+    Readiness decides: the profile is unavailable only when no SearXNG URL is
+    set anywhere this host reads one and Keenable cannot run. A URL that is
+    set but blocked or ignored is not this error; the setup guidance names it.
+    URL reachability belongs to request execution.
     """
     if not is_self_hosted_profile(config):
         return None
-    searxng = config.get("searxng", {})
-    has_searxng_url = isinstance(searxng, dict) and bool(
-        searxng.get("base_url") or searxng.get("instance_url")
-    )
-    if has_searxng_url or provider_configured("keenable", config):
+    from .readiness import Readiness, evaluate_provider
+
+    if (
+        evaluate_provider("searxng", config).state is not Readiness.NOT_CONFIGURED
+        or provider_configured("keenable", config)
+    ):
         return None
     return SelfHostedProfileError(
         "self_hosted profile requires searxng.base_url or an enabled Keenable keyless/public endpoint"
