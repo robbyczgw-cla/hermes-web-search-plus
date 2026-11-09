@@ -139,6 +139,20 @@ class CacheLifecycleTests(unittest.TestCase):
                 self.assertEqual(result["cleared"], 1)
                 self.assertEqual(invalid.read_bytes(), invalid_bytes)
 
+    def test_damaged_search_cache_file_is_a_miss_and_is_removed(self):
+        """A file that was JSON but not an entry (or not text at all) raised on
+        every read and was never removed, so the same query kept crashing."""
+        for damaged in (b"[]", b'{"_cache_timestamp": "yesterday"}', b"\xff\xfe", b"{not json"):
+            with self.subTest(damaged=damaged), tempfile.TemporaryDirectory() as tmpdir:
+                with mock.patch.object(cache, "CACHE_DIR", Path(tmpdir)):
+                    cache.cache_put("query", "brave", 5, {"results": ["ok"]})
+                    path = cache._get_cache_path(cache._get_cache_key("query", "brave", 5, None))
+                    self.assertEqual(cache.cache_get("query", "brave", 5)["results"], ["ok"])
+                    path.write_bytes(damaged)
+
+                    self.assertIsNone(cache.cache_get("query", "brave", 5))
+                    self.assertFalse(path.exists())
+
     def test_web_text_stats_ignore_but_clear_orphan_tmp_files(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             cache_dir = Path(tmpdir)

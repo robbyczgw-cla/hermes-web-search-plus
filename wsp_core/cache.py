@@ -244,21 +244,14 @@ def cache_get(query: str, provider: str, max_results: int, ttl: int = DEFAULT_CA
     if not cache_path.exists():
         return None
 
-    try:
-        with open(cache_path, "r", encoding="utf-8") as f:
-            cached = json.load(f)
-
-        cached_time = cached.get("_cache_timestamp", 0)
-        if time.time() - cached_time > ttl:
-            # Cache expired, remove it
-            cache_path.unlink(missing_ok=True)
-            return None
-
-        return cached
-    except (json.JSONDecodeError, IOError, KeyError):
-        # Corrupted cache file, remove it
+    cached = _read_search_cache_envelope(cache_path)
+    written = cached["_cache_timestamp"] if cached is not None else None
+    if not isinstance(written, (int, float)) or time.time() - written > ttl:
+        # Expired or damaged (not JSON, not an entry, no usable timestamp):
+        # remove it, or the same query would hit the same file every time.
         cache_path.unlink(missing_ok=True)
         return None
+    return cached
 
 
 def cache_put(query: str, provider: str, max_results: int, result: Dict[str, Any], params: Optional[Dict[str, Any]] = None) -> None:

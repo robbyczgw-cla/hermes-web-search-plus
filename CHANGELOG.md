@@ -8,6 +8,7 @@
 - `status` under the self-hosted profile: the two profile checks and `policy_ready` come from the same readiness as the provider rows. With the URL or the Keenable opt-in only in config.json, which a Hermes profile ignores, they said "ok" while the rows above said "ignored".
 - Operator console, Auto column: follows `auto_routing.auto_allow` as routing does. It read a setting that does not exist and always showed the defaults; a provider you had allowed read "manual only" and one you had blocked read "allowed".
 - Operator console, Cooldown column: shows a provider the engine is holding back (out of credits, authentication failure, rate limit, repeated errors). It read only the standalone command line's cooldown file, which tool and MCP searches never write, so it always said "none".
+- Standalone command line: a damaged search-cache file (cut off, overwritten, not text) made the same query fail with a traceback on every run, because the file was read without a check and never removed. It now counts as a miss and is removed.
 - Docs: the architecture and user guides gave the standalone command line's cooldown steps (1, 5, 25, 60 minutes) for the tools. They now give the windows the tools use and name the file each path keeps.
 
 ## [v5.1.8] — 2026-11-08
