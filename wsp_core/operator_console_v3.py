@@ -24,6 +24,7 @@ from .bounded_context_v3 import (
 from .config import DEFAULT_CONFIG, get_api_key, provider_configured
 from .operator_receipts_v3 import JOURNAL_OWNER, JOURNAL_SCHEMA_VERSION
 from .provider_registry import PROVIDER_SPECS
+from .routing import _provider_auto_allowed
 from .contract_v3 import CircuitState, ErrorClass
 from .state_store_v3 import (
     BLOCKING_ERROR_CLASSES,
@@ -388,8 +389,6 @@ def _provider_rows(
     auto = config.get("auto_routing")
     auto = auto if isinstance(auto, Mapping) else {}
     disabled = set(auto.get("disabled_providers") or [])
-    allowed_override = auto.get("allowed_providers")
-    allowed = set(allowed_override) if isinstance(allowed_override, list) else None
     health_path = cache_root / "provider_health.json"
     health: Mapping[str, Any] = {}
     try:
@@ -423,9 +422,8 @@ def _provider_rows(
                 "configured": provider_configured(provider, dict(config)),
                 "key_present": _key_present(provider, config),
                 "disabled": provider in disabled,
-                "auto_allowed": (
-                    provider in allowed if allowed is not None else spec.auto_allowed_by_default
-                ),
+                # Routing's own rule (auto_routing.auto_allow over the default).
+                "auto_allowed": _provider_auto_allowed(provider, dict(auto)),
                 "cooldown_active": float(pstate.get("cooldown_until", 0) or 0) > now,
             }
         )
