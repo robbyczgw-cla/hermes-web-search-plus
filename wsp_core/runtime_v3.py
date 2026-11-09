@@ -26,6 +26,7 @@ from .contract_v3 import (
     ResponseV3,
 )
 from .orchestrator_v3 import ProviderPlan
+from .readiness import SETUP_ERROR_TYPES
 from .result_redirects import COUNT_KEYS
 from .urls import canonical_url
 
@@ -45,11 +46,6 @@ def _valid_rfc3339(value: object) -> str | None:
     if parsed.tzinfo is None:
         return None
     return value
-
-
-_SETUP_ERROR_TYPES = frozenset({
-    "provider_setup_required", "requested_provider_not_configured", "explicit_only_provider_configured",
-})
 
 
 def _error(message: str, provider: str | None = None) -> ErrorV3:
@@ -645,7 +641,7 @@ def response_from_legacy(
             ),
             None,
         ) or _error(str(top_error), str(selected) if selected else None)
-        if payload.get("error_type") in _SETUP_ERROR_TYPES:
+        if payload.get("error_type") in SETUP_ERROR_TYPES:
             # A setup failure, not a provider failure: the engine's own readiness
             # text (what is missing or misconfigured, and the command that fixes
             # it) instead of the error of the fallback filler ("Missing API key

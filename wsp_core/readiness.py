@@ -34,7 +34,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 from . import config as _config
 from .credentials import file_credentials_allowed, get_secret, is_secret_scope_error
@@ -57,13 +57,12 @@ class Readiness(str, Enum):
 
 # States whose value the engine accepts (an explicit provider="X" call can run).
 ACCEPTED = frozenset({Readiness.READY, Readiness.EXPLICIT_ONLY, Readiness.DISABLED})
-# States where the user did something that does not work: say so instead of
-# "nothing is configured".
-ACTIONABLE = frozenset({
-    Readiness.IGNORED_SOURCE, Readiness.INVALID_VALUE, Readiness.SCOPE_ERROR,
-    Readiness.DISABLED, Readiness.EXPLICIT_ONLY,
-})
 
+# error_type values of the engine's setup errors (config.add_provider_setup_guidance):
+# WSP's own text, safe to pass on, never a provider failure.
+SETUP_ERROR_TYPES = frozenset({
+    "provider_setup_required", "requested_provider_not_configured", "explicit_only_provider_configured",
+})
 
 
 @dataclass(frozen=True)
@@ -82,10 +81,6 @@ class ProviderReadiness:
         """The engine accepts the value: an explicit call can run."""
         return self.state in ACCEPTED
 
-    @property
-    def auto_ready(self) -> bool:
-        return self.state is Readiness.READY
-
     def to_public(self) -> Dict[str, Any]:
         """Redacted view for status JSON and tool errors: no credential, no URL."""
         public: Dict[str, Any] = {
@@ -101,218 +96,151 @@ class ProviderReadiness:
         return public
 
 
-def _display(provider: str) -> str:
-    spec = PROVIDER_SPECS.get(provider)
-    return spec.display_name if spec else provider
-
-
-def _set_command(env_var: str, value: str = "<value>") -> str:
+def _set_command(env_var: str, value: str) -> str:
     if HOST == "mcp":
         return f"set {env_var}={value} in the MCP client's env block or the server's .env"
     return f"hermes config set {env_var} {value}"
 
 
-def _setup_command(provider: str) -> str:
-    if HOST == "mcp":
-        return f"web-search-plus-mcp setup {provider}"
-    return f"hermes web-search-plus setup {provider}"
+def _cli(command: str) -> str:
+    return f"web-search-plus-mcp {command}" if HOST == "mcp" else f"hermes web-search-plus {command}"
 
 
-def _source_of_key(provider: str, config: Mapping[str, Any]) -> str:
-    if file_credentials_allowed() and _config.file_api_key(provider, dict(config)):
-        return "config_json"
-    return "environment" if file_credentials_allowed() else "hermes_profile"
-
-
-def _raw_secret(name: str) -> Optional[str]:
-    value = get_secret(name)
-    return value if isinstance(value, str) and value.strip() else None
-
-
-def _searxng_file_url(config: Mapping[str, Any]) -> Optional[str]:
-    section = config.get("searxng") if isinstance(config, Mapping) else None
-    if isinstance(section, Mapping):
-        url = section.get("base_url") or section.get("instance_url")
-        if isinstance(url, str) and url.strip():
-            return url
-    return None
-
-
-def _donsetch_file_binary(config: Mapping[str, Any]) -> Optional[str]:
-    section = config.get("donsetch") if isinstance(config, Mapping) else None
-    if isinstance(section, Mapping):
-        binary = section.get("binary")
-        if isinstance(binary, str) and binary.strip():
-            return binary.strip()
-    return None
-
-
-def _accepted_state(provider: str, config: Mapping[str, Any]) -> Tuple[Readiness, str, str, Tuple[str, ...]]:
-    """State for an accepted value: ready, explicit-only or disabled."""
-    from .routing import _provider_auto_allowed
-
-    auto = config.get("auto_routing") if isinstance(config, Mapping) else None
-    auto = auto if isinstance(auto, Mapping) else {}
-    disabled = auto.get("disabled_providers") or []
-    name = _display(provider)
-    if isinstance(disabled, (list, tuple)) and provider in disabled:
-        command = (f"web-search-plus-mcp config enable {provider}" if HOST == "mcp"
-                   else f"hermes web-search-plus config enable {provider}")
-        return (Readiness.DISABLED, "disabled_in_config",
-                f"{name} is set up but disabled in auto_routing.disabled_providers.", (command,))
-    if not _provider_auto_allowed(provider, dict(auto)):
-        command = (f"web-search-plus-mcp config set-auto-allow {provider} on" if HOST == "mcp"
-                   else f"hermes web-search-plus config set-auto-allow {provider} on")
-        return (Readiness.EXPLICIT_ONLY, "explicit_only",
-                f"{name} is set up but only runs when asked for (provider=\"{provider}\").",
-                (f'provider="{provider}"', command))
-    return Readiness.READY, "ready", f"{name} is ready.", ()
-
-
-def evaluate_provider(provider: str, config: Optional[Mapping[str, Any]] = None, *,
-                      raise_scope_errors: bool = False) -> ProviderReadiness:
+def evaluate_provider(provider: str, config: Optional[Mapping[str, Any]] = None) -> ProviderReadiness:
     """The readiness of one provider under the current host's credential rules.
 
-    ``raise_scope_errors`` keeps the engine contract: a host refusal propagates
-    instead of turning into a state (status and setup want the state).
+    A host refusal to read a credential propagates (the engine reports it as
+    such); :func:`evaluate` turns it into ``scope_error`` for status views.
     """
-    config = config if isinstance(config, Mapping) else {}
-    spec = PROVIDER_SPECS.get(provider)
-    if spec is None:
-        return ProviderReadiness(provider, Readiness.NOT_CONFIGURED, "unknown_provider",
-                                 f"{provider} is not a known provider.")
+    from .routing import _provider_auto_allowed
+
+    cfg = dict(config or {})
+    spec = PROVIDER_SPECS[provider]
     name = spec.display_name
-    try:
-        return _evaluate(provider, spec, name, config)
-    except Exception as exc:  # noqa: BLE001 - a host refusal must not look like "not configured"
-        if is_secret_scope_error(exc) and not raise_scope_errors:
-            return ProviderReadiness(
-                provider, Readiness.SCOPE_ERROR, "credential_scope_refused",
-                f"Hermes refused to read the credential for {name} in this profile.",
-                ("hermes config show", "check the active Hermes profile"),
-            )
-        raise
-
-
-def _evaluate(provider: str, spec: Any, name: str, config: Mapping[str, Any]) -> ProviderReadiness:
-    cfg = dict(config)
     env_var = spec.env_var
+    files_count = file_credentials_allowed()  # False under a Hermes profile resolver
+    auto = cfg.get("auto_routing") if isinstance(cfg.get("auto_routing"), Mapping) else {}
 
-    # SearXNG: an instance URL, validated against SSRF.
+    def accepted(source: Optional[str], credential: Optional[str] = None,
+                 ready_code: str = "ready", ready_reason: str = "") -> ProviderReadiness:
+        disabled = auto.get("disabled_providers") or []
+        if isinstance(disabled, (list, tuple)) and provider in disabled:
+            return ProviderReadiness(
+                provider, Readiness.DISABLED, "disabled_in_config",
+                f"{name} is set up but disabled in auto_routing.disabled_providers.",
+                (_cli(f"config enable {provider}"),), source, credential)
+        if not _provider_auto_allowed(provider, dict(auto)):
+            return ProviderReadiness(
+                provider, Readiness.EXPLICIT_ONLY, "explicit_only",
+                f"{name} is set up but only runs when asked for (provider=\"{provider}\").",
+                (f'provider="{provider}"', _cli(f"config set-auto-allow {provider} on")), source, credential)
+        return ProviderReadiness(provider, Readiness.READY, ready_code,
+                                 ready_reason or f"{name} is ready.", (), source, credential)
+
+    def placeholder(name_of_var: str) -> ProviderReadiness:
+        return ProviderReadiness(
+            provider, Readiness.INVALID_VALUE, "placeholder_value",
+            f"{name_of_var} still holds a template placeholder, not a real value for {name}.",
+            (_set_command(name_of_var, "<real value>"),))
+
+    def raw(name_of_var: str) -> str:
+        return str(get_secret(name_of_var) or "").strip()
+
+    env_source = "environment" if files_count else "hermes_profile"
+
+    # SearXNG: an instance URL, validated against SSRF by the engine.
     if provider == "searxng":
+        section = cfg.get("searxng") if isinstance(cfg.get("searxng"), Mapping) else {}
+        file_url = section.get("base_url") or section.get("instance_url")
         try:
             url = _config.get_searxng_instance_url(cfg)
-        except ValueError as exc:
-            text = str(exc)
-            private = "private/internal" in text
-            fix = ((_set_command("SEARXNG_ALLOW_PRIVATE", "1"),) if private
-                   else (_set_command("SEARXNG_INSTANCE_URL", "https://your-searxng.example"),))
-            reason = ("The SearXNG URL points to a private or internal address, which is blocked by default."
-                      if private else "The SearXNG URL is not usable (wrong scheme, missing host or unresolvable).")
-            return ProviderReadiness(provider, Readiness.INVALID_VALUE,
-                                     "searxng_url_private" if private else "searxng_url_invalid", reason, fix)
+        except ValueError as exc:  # the engine's SSRF verdict, raised as ValueError
+            private = "private/internal" in str(exc)
+            return ProviderReadiness(
+                provider, Readiness.INVALID_VALUE,
+                "searxng_url_private" if private else "searxng_url_invalid",
+                "The SearXNG URL points to a private or internal address, which is blocked by default."
+                if private else "The SearXNG URL is not usable (wrong scheme, missing host or unresolvable).",
+                (_set_command("SEARXNG_ALLOW_PRIVATE", "1") if private
+                 else _set_command("SEARXNG_INSTANCE_URL", "https://your-searxng.example"),))
         if url:
-            state, code, reason, fix = _accepted_state(provider, cfg)
-            source = "config_json" if file_credentials_allowed() and _searxng_file_url(cfg) else (
-                "environment" if file_credentials_allowed() else "hermes_profile")
-            return ProviderReadiness(provider, state, code, reason, fix, source, credential=url)
-        if _searxng_file_url(cfg) and not file_credentials_allowed():
+            return accepted("config_json" if files_count and file_url else env_source, url)
+        if file_url and not files_count:
             return ProviderReadiness(
                 provider, Readiness.IGNORED_SOURCE, "searxng_url_in_ignored_config",
                 "A SearXNG URL is set in config.json or Hermes Desktop, which a Hermes profile does not read "
                 "(the URL may carry credentials).",
-                (_set_command("SEARXNG_INSTANCE_URL", "<url>"), "/reload"),
-            )
-        raw = _raw_secret("SEARXNG_INSTANCE_URL")
-        if raw and not clean_env_value(raw):
-            return _placeholder(provider, name, "SEARXNG_INSTANCE_URL")
+                (_set_command("SEARXNG_INSTANCE_URL", "<url>"), "/reload"))
+        if raw("SEARXNG_INSTANCE_URL"):
+            return placeholder("SEARXNG_INSTANCE_URL")
         return ProviderReadiness(provider, Readiness.NOT_CONFIGURED, "missing_instance_url",
-                                 "No SearXNG instance URL is set.",
-                                 (_setup_command(provider),))
+                                 "No SearXNG instance URL is set.", (_cli(f"setup {provider}"),))
 
     key = _config.get_api_key(provider, cfg)
+    key_source = "config_json" if files_count and _config.file_api_key(provider, cfg) else env_source
 
-    # DonSeTch: the "key" is the path of a local binary.
-    if provider == "donsetch":
-        if key:
-            path = key if os.path.isabs(key) else None
-            if path is not None and not (os.path.isfile(path) and os.access(path, os.X_OK)):
-                return ProviderReadiness(
-                    provider, Readiness.INVALID_VALUE, "binary_not_executable",
-                    "The configured DonSeTch binary does not exist or is not executable.",
-                    (_set_command(env_var, "/path/to/donsetch"),),
-                )
-            state, code, reason, fix = _accepted_state(provider, cfg)
-            source = ("config_json" if _donsetch_file_binary(cfg) and not _raw_secret(env_var)
-                      else _source_of_key(provider, cfg))
-            return ProviderReadiness(provider, state, code, reason, fix, source, credential=key)
+    if key and provider == "donsetch":
+        # The "key" is the path of a local binary; config.json `binary` counts on every host.
+        if os.path.isabs(key) and not (os.path.isfile(key) and os.access(key, os.X_OK)):
+            return ProviderReadiness(
+                provider, Readiness.INVALID_VALUE, "binary_not_executable",
+                "The configured DonSeTch binary does not exist or is not executable.",
+                (_set_command(env_var, "/path/to/donsetch"),))
+        from_binary_field = isinstance(cfg.get("donsetch"), Mapping) and cfg["donsetch"].get("binary") and not raw(env_var)
+        return accepted("config_json" if from_binary_field else key_source, key)
 
     if key:
-        # Key format is the vendor's business (search still rejects < 10 chars at
-        # dispatch); readiness only answers whether a value is there.
-        state, code, reason, fix = _accepted_state(provider, cfg)
-        return ProviderReadiness(provider, state, code, reason, fix, _source_of_key(provider, cfg), credential=key)
+        # Key format is the vendor's business (search still rejects < 10 chars
+        # at dispatch); readiness only answers whether a value is there.
+        return accepted(key_source, key)
 
     if spec.keyless and _config.keyless_public_allowed(provider, cfg):
-        state, code, reason, fix = _accepted_state(provider, cfg)
-        if state is Readiness.READY:
-            code, reason = "keyless_public", f"{name} uses its public endpoint (no key)."
-        source = "environment" if is_truthy(get_secret(keyless_public_env_var(provider))) else "config_json"
-        if source == "environment" and not file_credentials_allowed():
-            source = "hermes_profile"
-        return ProviderReadiness(provider, state, code, reason, fix, source)
+        from_env = is_truthy(get_secret(keyless_public_env_var(provider)))
+        return accepted(env_source if from_env else "config_json",
+                        ready_code="keyless_public", ready_reason=f"{name} uses its public endpoint (no key).")
 
-    # Not accepted: find out why.
-    raw = _raw_secret(env_var)
-    if raw and not clean_env_value(raw):
-        return _placeholder(provider, name, env_var)
-    if not file_credentials_allowed():
-        if _config.file_api_key(provider, cfg):
-            return ProviderReadiness(
-                provider, Readiness.IGNORED_SOURCE, "api_key_in_ignored_config",
-                f"config.json holds an API key for {name}, but Hermes reads keys only from the profile.",
-                (_set_command(env_var, "<key>"), "/reload"),
-            )
-        section = cfg.get(spec.config_section)
-        if spec.keyless and isinstance(section, Mapping) and is_truthy(section.get("allow_public")):
-            return ProviderReadiness(
-                provider, Readiness.IGNORED_SOURCE, "keyless_flag_in_ignored_config",
-                f"{name}'s public tier is switched on in config.json, which Hermes ignores.",
-                (_set_command(keyless_public_env_var(provider), "1"), "/reload"),
-            )
+    # Not accepted: say why.
+    if raw(env_var) and not clean_env_value(raw(env_var)):
+        return placeholder(env_var)
+    if not files_count and _config.file_api_key(provider, cfg):
+        return ProviderReadiness(
+            provider, Readiness.IGNORED_SOURCE, "api_key_in_ignored_config",
+            f"config.json holds an API key for {name}, but Hermes reads keys only from the profile.",
+            (_set_command(env_var, "<key>"), "/reload"))
+    section = cfg.get(spec.config_section)
+    if not files_count and spec.keyless and isinstance(section, Mapping) and is_truthy(section.get("allow_public")):
+        return ProviderReadiness(
+            provider, Readiness.IGNORED_SOURCE, "keyless_flag_in_ignored_config",
+            f"{name}'s public tier is switched on in config.json, which Hermes ignores.",
+            (_set_command(keyless_public_env_var(provider), "1"), "/reload"))
     if spec.keyless:
         return ProviderReadiness(
             provider, Readiness.NOT_CONFIGURED, "keyless_not_opted_in",
             f"{name} has no key and its public tier is not switched on.",
-            (_set_command(env_var, "<key>"), _set_command(keyless_public_env_var(provider), "1")),
-        )
+            (_set_command(env_var, "<key>"), _set_command(keyless_public_env_var(provider), "1")))
     return ProviderReadiness(provider, Readiness.NOT_CONFIGURED, "missing_api_key",
-                             f"No API key for {name} is set.",
-                             (_setup_command(provider),))
-
-
-def _placeholder(provider: str, name: str, env_var: str) -> ProviderReadiness:
-    return ProviderReadiness(
-        provider, Readiness.INVALID_VALUE, "placeholder_value",
-        f"{env_var} still holds a template placeholder, not a real value for {name}.",
-        (_set_command(env_var, "<real value>"),),
-    )
+                             f"No API key for {name} is set.", (_cli(f"setup {provider}"),))
 
 
 def evaluate(config: Optional[Mapping[str, Any]] = None,
              providers: Optional[Iterable[str]] = None) -> Dict[str, ProviderReadiness]:
-    """Readiness for every (or the given) provider, in registry order."""
-    names = list(providers) if providers is not None else list(PROVIDER_SPECS)
-    return {name: evaluate_provider(name, config) for name in names}
+    """Readiness for every (or the given) provider, in registry order.
 
-
-def capability_providers(capability: str) -> List[str]:
-    return [name for name, spec in PROVIDER_SPECS.items() if getattr(spec, f"supports_{capability}", False)]
-
-
-def capability_ready(report: Mapping[str, ProviderReadiness], capability: str) -> bool:
-    """Whether a tool for ``capability`` can run at all (any accepted provider)."""
-    return any(report[name].accepted for name in capability_providers(capability) if name in report)
+    The one place a host refusal becomes a state: status and hints show
+    ``scope_error`` instead of failing on the first refused read.
+    """
+    report: Dict[str, ProviderReadiness] = {}
+    for name in (providers if providers is not None else PROVIDER_SPECS):
+        try:
+            report[name] = evaluate_provider(name, config)
+        except Exception as exc:  # noqa: BLE001 - only scope refusals are turned into a state
+            if not is_secret_scope_error(exc):
+                raise
+            report[name] = ProviderReadiness(
+                name, Readiness.SCOPE_ERROR, "credential_scope_refused",
+                f"Hermes refused to read the credential for {PROVIDER_SPECS[name].display_name} in this profile.",
+                ("hermes config show", "check the active Hermes profile"))
+    return report
 
 
 def most_relevant_problem(report: Mapping[str, ProviderReadiness],
@@ -322,10 +250,9 @@ def most_relevant_problem(report: Mapping[str, ProviderReadiness],
     "Nothing configured" is the least helpful answer when the user did configure
     something (ignored, invalid, disabled or explicit-only).
     """
-    order = (Readiness.IGNORED_SOURCE, Readiness.INVALID_VALUE, Readiness.SCOPE_ERROR,
-             Readiness.DISABLED, Readiness.EXPLICIT_ONLY)
     picked = [report[name] for name in candidates if name in report]
-    for state in order:
+    for state in (Readiness.IGNORED_SOURCE, Readiness.INVALID_VALUE, Readiness.SCOPE_ERROR,
+                  Readiness.DISABLED, Readiness.EXPLICIT_ONLY):
         for item in picked:
             if item.state is state:
                 return item

@@ -92,14 +92,34 @@ class KeenablePublicOptInStrictnessTests(unittest.TestCase):
             for v in [False, "false", "no", "off", "0", 0, ""]:
                 self.assertFalse(keyless_public_allowed("keenable", {"keenable": {"allow_public": v}}), f"cfg={v!r}")
 
+    def _search_tool_listed(self):
+        """What Hermes sees: the registered web_search_plus tool's availability check."""
+        from wsp_core import credentials
+
+        class Ctx:
+            tools = {}
+
+            def register_tool(self, **kwargs):
+                self.tools[kwargs["name"]] = kwargs
+
+            def __getattr__(self, _name):
+                return lambda *a, **k: None
+
+        ctx = Ctx()
+        with mock.patch.object(plugin, "_install_hermes_secret_resolver", lambda: None), \
+                mock.patch.object(credentials, "_resolver", None), \
+                mock.patch.object(plugin, "_legacy_env_files", lambda: []):
+            plugin.register(ctx)
+            return ctx.tools["web_search_plus"]["check_fn"]()
+
     def test_registration_env_opt_in_is_strict(self):
         base = {"WEB_SEARCH_PLUS_CONFIG": "/nonexistent-strict.json"}
         for v in self.TRUE_VALUES:
             with mock.patch.dict(os.environ, {**base, "KEENABLE_ALLOW_PUBLIC": v}, clear=True):
-                self.assertTrue(plugin._keyless_public_opted_in("keenable"), f"env={v!r}")
+                self.assertTrue(self._search_tool_listed(), f"env={v!r}")
         for v in self.FALSE_VALUES:
             with mock.patch.dict(os.environ, {**base, "KEENABLE_ALLOW_PUBLIC": v}, clear=True):
-                self.assertFalse(plugin._keyless_public_opted_in("keenable"), f"env={v!r}")
+                self.assertFalse(self._search_tool_listed(), f"env={v!r}")
 
     def test_registration_config_file_opt_in_is_strict(self):
         for v, expected in [(True, True), ("yes", True), ("false", False), (False, False), (0, False)]:
@@ -108,7 +128,7 @@ class KeenablePublicOptInStrictnessTests(unittest.TestCase):
                 path = f.name
             try:
                 with mock.patch.dict(os.environ, {"WEB_SEARCH_PLUS_CONFIG": path}, clear=True):
-                    self.assertEqual(plugin._keyless_public_opted_in("keenable"), expected, f"cfg={v!r}")
+                    self.assertEqual(self._search_tool_listed(), expected, f"cfg={v!r}")
             finally:
                 os.unlink(path)
 

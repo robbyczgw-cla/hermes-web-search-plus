@@ -967,19 +967,24 @@ def _apply_desktop_settings(config: Dict[str, Any], settings: Dict[str, Any]) ->
 def load_config() -> Dict[str, Any]:
     """Load configuration from config.json if it exists, with defaults."""
     config = _deepcopy_default_config()
-    config_path = Path(os.environ.get("WEB_SEARCH_PLUS_CONFIG") or (HOST_DIR.parent / "config.json"))
+    # Same path as the plugin and status, with "~" resolved once here.
+    config_path = Path(os.environ.get("WEB_SEARCH_PLUS_CONFIG") or (HOST_DIR.parent / "config.json")).expanduser()
 
     if config_path.exists():
         try:
             with open(config_path, encoding="utf-8") as f:
                 user_config = json.load(f)
-                for key, value in user_config.items():
-                    if key in REMOVED_PROVIDER_IDS:
-                        continue
-                    if isinstance(value, dict) and key in config:
-                        config[key] = {**config.get(key, {}), **value}
-                    else:
-                        config[key] = value
+            # Checked once here: any file that is not a valid config object is
+            # quarantined, so every caller gets a dict and needs no guard.
+            if not isinstance(user_config, dict):
+                raise ValueError("config must be a JSON object")
+            for key, value in user_config.items():
+                if key in REMOVED_PROVIDER_IDS:
+                    continue
+                if isinstance(value, dict) and isinstance(config.get(key), dict):
+                    config[key] = {**config[key], **value}
+                else:
+                    config[key] = value
             config = _validate_runtime_config(config)
         except (json.JSONDecodeError, IOError, ValueError, TypeError) as e:
             _quarantine_runtime_config(config_path, str(e))
@@ -1124,7 +1129,8 @@ def provider_configured(provider: str, config: Dict[str, Any] = None) -> bool:
     """
     from .readiness import evaluate_provider
 
-    return evaluate_provider(provider, config, raise_scope_errors=True).accepted
+    # Callers pass arbitrary names (config values, removed ids such as "monid").
+    return provider in PROVIDER_SPECS and evaluate_provider(provider, config).accepted
 
 
 def _configured_explicit_only_providers(
