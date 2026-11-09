@@ -22,9 +22,13 @@ from agent.web_search_provider import WebSearchProvider
 logger = logging.getLogger(__name__)
 
 try:  # package import (Hermes); the standalone unit-test load has no parent
-    from .wsp_core.extract_match import match_extract_items as _match_extract_items
+    from .wsp_core.extract_match import match_extract_items
 except ImportError:  # pragma: no cover - exercised only outside the package
-    _match_extract_items = None
+    def match_extract_items(urls: List[str], rows: List[Dict[str, Any]]):
+        by_url: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            by_url.setdefault(row["url"], row)
+        return [by_url.get(url) for url in urls], []
 
 
 def _load_web_config() -> Dict[str, Any]:
@@ -38,27 +42,9 @@ def _load_web_config() -> Dict[str, Any]:
         return {}
 
 
-def _match_rows(urls: List[str], rows: List[Dict[str, Any]]) -> List[Optional[Dict[str, Any]]]:
-    """Pair engine rows with requested URLs (exact, canonical, reported source URL)."""
-    if _match_extract_items is not None:
-        return _match_extract_items(urls, rows)[0]
-    by_url: Dict[str, Dict[str, Any]] = {}
-    for row in rows:
-        by_url.setdefault(row["url"], row)
-    return [by_url.get(url) for url in urls]
-
-# WSP engine hard-cap (matches web_search_plus schema maximum).
-_WSP_MAX_RESULTS = 20
-
-_NATIVE_BACKEND_NAME = "wsp"
-_NATIVE_DISPLAY_NAME = "Web Search Plus (native)"
-
 # Prefix of every error the engine's URL guard raises for a target it refused on
 # purpose (private/internal address, blocked name, unresolvable host).
 _URL_REFUSED_PREFIX = "Extraction URL blocked"
-_URL_REFUSED_MESSAGE = (
-    "Blocked by Web Search Plus URL policy: private/internal or unresolvable address"
-)
 
 
 def _refused_entry(url: str) -> Dict[str, Any]:
@@ -76,55 +62,31 @@ def _refused_entry(url: str) -> Dict[str, Any]:
         host = ""
     return {
         "url": url,
-        "error": _URL_REFUSED_MESSAGE,
+        "error": "Blocked by Web Search Plus URL policy: private/internal or unresolvable address",
         "blocked_by_policy": {"host": host, "rule": "wsp-url-guard", "source": "web-search-plus"},
     }
 
 
 
-# Same limit as the plugin's own web_search_plus display: some providers return
-# whole page sections as a snippet (Exa: 5,113 characters for one result).
-_DESCRIPTION_CHARS = 1200
-
-
-def _capped_description(text: str) -> str:
-    """Cut a long snippet at a word boundary, with a visible truncation marker."""
-    flat = " ".join(text.split())
-    if len(flat) <= _DESCRIPTION_CHARS:
-        return text
-    cut = flat[: _DESCRIPTION_CHARS + 1].rpartition(" ")[0]
-    if len(cut) < _DESCRIPTION_CHARS // 2:
-        cut = flat[:_DESCRIPTION_CHARS]
-    return f"{cut} … [TRUNCATED: showing first {len(cut)} of {len(text)} characters]"
-
-
 class WSPNativeBackend(WebSearchProvider):
     """In-process bridge from Hermes ``web_search``/``web_extract`` to WSP."""
 
-    def __init__(
-        self,
-        plugin: Any = None,
-        *,
-        search_provider: str = "auto",
-        extract_provider: str = "auto",
-    ) -> None:
+    def __init__(self, plugin: Any = None) -> None:
         if plugin is None:
             raise RuntimeError(
                 "WSPNativeBackend requires the web-search-plus plugin module"
             )
         self.plugin = plugin
-        self.search_provider = search_provider or "auto"
-        self.extract_provider = extract_provider or "auto"
 
     # -- identity -----------------------------------------------------------
 
     @property
     def name(self) -> str:
-        return _NATIVE_BACKEND_NAME
+        return "wsp"
 
     @property
     def display_name(self) -> str:
-        return _NATIVE_DISPLAY_NAME
+        return "Web Search Plus (native)"
 
     # -- selection / capability gates ---------------------------------------
 
@@ -134,31 +96,34 @@ class WSPNativeBackend(WebSearchProvider):
         Mirrors Hermes resolution order for a single name check:
         ``web.{capability}_backend`` then shared ``web.backend``.
         """
-        try:
-            cfg = _load_web_config() or {}
-        except Exception:  # noqa: BLE001 — config optional at probe time
-            cfg = {}
-        if not isinstance(cfg, dict):
-            return False
+        cfg = _load_web_config()
         selected = cfg.get(f"{capability}_backend") or cfg.get("backend") or ""
         return isinstance(selected, str) and selected.strip().lower() == self.name
+
+    def _engine(self) -> Any:
+        """The in-process engine, or None (no sidecar fallback exists)."""
+        try:
+            return self.plugin._load_search_module()
+        except Exception:  # noqa: BLE001 — the host plugin's lazy import may fail in any way
+            logger.warning("WSP native backend: engine load failed")
+            return None
 
     def is_available(self) -> bool:
         # Strictly opt-in. Must stay False unless explicitly selected so the
         # registry single-provider shortcut and _get_backend plugin walk never
         # auto-route onto wsp.
-        if not (self._selected("search") or self._selected("extract")) or not self._inprocess_ready():
+        selected = [cap for cap in ("search", "extract") if self._selected(cap)]
+        engine = self._engine() if selected else None
+        if engine is None:
             return False
         try:
-            engine = self.plugin._load_search_module()
             config = engine.load_config()
             auto = config.get("auto_routing", {})
             disabled = set(auto.get("disabled_providers", []) or [])
-            for capability, pin in (("search", self.search_provider), ("extract", self.extract_provider)):
-                if not self._selected(capability):
-                    continue
+            for capability in selected:
                 ids = getattr(engine, capability.upper() + "_PROVIDER_IDS")
-                if capability == "search" and pin == "auto" and auto.get("enabled") is False:
+                pin = "auto"
+                if capability == "search" and auto.get("enabled") is False:
                     pin = config.get("default_provider") or "auto"
                 candidates = ids if pin == "auto" else (pin,)
                 for provider in candidates:
@@ -168,18 +133,14 @@ class WSPNativeBackend(WebSearchProvider):
                         continue
                     if engine.provider_configured(provider, config):
                         return True
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — user config and the credential resolver may fail in any way
             # A refused credential read (Hermes multiplexing without a profile
             # scope) is Hermes' to report, not "unavailable".
-            if self._is_secret_scope_error(exc):
+            check = getattr(self.plugin, "is_secret_scope_error", None)
+            if callable(check) and check(exc):
                 raise
             # Offline config inspection only; never probe vendor I/O here.
-            return False
         return False
-
-    def _is_secret_scope_error(self, exc: BaseException) -> bool:
-        check = getattr(self.plugin, "is_secret_scope_error", None)
-        return bool(callable(check) and check(exc))
 
     def supports_search(self) -> bool:
         return self._selected("search")
@@ -191,64 +152,31 @@ class WSPNativeBackend(WebSearchProvider):
         # Never participate in the keyless free-tier walk.
         return False
 
-    # -- in-process readiness (no sidecar) ----------------------------------
-
-    def _inprocess_ready(self) -> bool:
-        load = getattr(self.plugin, "_load_search_module", None)
-        if not callable(load):
-            return False
-        try:
-            return load() is not None
-        except Exception:  # noqa: BLE001
-            logger.warning("WSP native backend: engine load failed")
-            return False
-
-    @staticmethod
-    def _clamp_count(limit: Any) -> int:
-        try:
-            n = int(limit)
-        except (TypeError, ValueError):
-            n = 5
-        return min(_WSP_MAX_RESULTS, max(1, n))
-
     # -- search -------------------------------------------------------------
 
     def search(self, query: str, limit: int = 5) -> Dict[str, Any]:
-        if not self._inprocess_ready():
-            return {
-                "success": False,
-                "error": "WSP in-process engine unavailable; no sidecar fallback",
-                "data": {"web": []},
-            }
-        count = self._clamp_count(limit)
-        run = getattr(self.plugin, "_run_search")
+        def failed(error: str) -> Dict[str, Any]:
+            return {"success": False, "error": error, "data": {"web": []}}
+
+        if self._engine() is None:
+            return failed("WSP in-process engine unavailable; no sidecar fallback")
         try:
-            data = run(
-                query=query,
-                provider=self.search_provider,
-                count=count,
-            )
+            count = int(limit)
+        except (TypeError, ValueError):  # Hermes passes the model's raw tool argument
+            count = 5
+        count = min(20, max(1, count))  # the web_search_plus schema maximum
+        try:
+            data = self.plugin._run_search(query=query, provider="auto", count=count)
         except Exception:  # noqa: BLE001 — do not expose vendor exception details
             logger.warning("WSP native search failed")
-            return {
-                "success": False,
-                "error": "WSP native search failed",
-                "data": {"web": []},
-            }
+            return failed("WSP native search failed")
 
         if not isinstance(data, dict):
-            return {
-                "success": False,
-                "error": "WSP native search returned malformed payload",
-                "data": {"web": []},
-            }
+            return failed("WSP native search returned malformed payload")
 
         if data.get("error"):
-            return {
-                "success": False,
-                "error": self._failure_message(data, "WSP native search failed; check provider readiness and configuration"),
-                "data": {"web": []},
-            }
+            return failed(self._failure_message(
+                data, "WSP native search failed; check provider readiness and configuration"))
 
         items = data.get("results")
         if items is None:
@@ -256,22 +184,26 @@ class WSPNativeBackend(WebSearchProvider):
             if isinstance(nested, dict):
                 items = nested.get("web")
         if not isinstance(items, list):
-            return {"success": False, "error": "WSP native search returned malformed results", "data": {"web": []}}
+            return failed("WSP native search returned malformed results")
 
         rows: List[Dict[str, Any]] = []
         for i, item in enumerate(items[:count]):
             if not isinstance(item, dict):
                 continue
+            description = str(item.get("snippet") or item.get("description") or item.get("content") or "")
+            # Same limit as the plugin's own web_search_plus display: some providers
+            # return whole page sections as a snippet (Exa: 5,113 characters).
+            flat = " ".join(description.split())
+            if len(flat) > 1200:
+                cut = flat[:1201].rpartition(" ")[0]
+                if len(cut) < 600:
+                    cut = flat[:1200]
+                description = f"{cut} … [TRUNCATED: showing first {len(cut)} of {len(description)} characters]"
             rows.append(
                 {
                     "url": str(item.get("url") or ""),
                     "title": str(item.get("title") or ""),
-                    "description": _capped_description(str(
-                        item.get("snippet")
-                        or item.get("description")
-                        or item.get("content")
-                        or ""
-                    )),
+                    "description": description,
                     "position": i + 1,
                 }
             )
@@ -305,7 +237,8 @@ class WSPNativeBackend(WebSearchProvider):
 
     def extract(self, urls: List[str], **kwargs: Any) -> List[Dict[str, Any]]:
         url_list = [u for u in (urls or []) if isinstance(u, str) and u.strip()]
-        if not self._inprocess_ready():
+        engine = self._engine()
+        if engine is None:
             return [
                 {
                     "url": url,
@@ -317,7 +250,6 @@ class WSPNativeBackend(WebSearchProvider):
         # Keep policy refusals outside provider execution: even a timeout or
         # malformed engine response must not make these URLs rescuable.
         try:
-            engine = self.plugin._load_search_module()
             checked = engine._extract._check_extract_urls(url_list, engine.load_config())
         except Exception:  # noqa: BLE001 — never dispatch without URL validation
             return [{"url": url, "error": "WSP native URL validation failed"} for url in url_list]
@@ -329,15 +261,13 @@ class WSPNativeBackend(WebSearchProvider):
         ]
 
     def _extract_accepted(self, url_list: List[str], kwargs: Dict[str, Any]) -> List[Dict[str, Any]]:
-        run = getattr(self.plugin, "_run_extract")
-        output_format = kwargs.get("format") or "markdown"
         try:
-            data = run(
+            data = self.plugin._run_extract(
                 url_list,
-                provider=self.extract_provider,
-                output_format=output_format,
+                provider="auto",
+                output_format=kwargs.get("format") or "markdown",
             )
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — do not expose vendor exception details
             logger.warning("WSP native extract failed")
             return [{"url": url, "error": "WSP native extraction failed"} for url in url_list]
 
@@ -347,17 +277,14 @@ class WSPNativeBackend(WebSearchProvider):
                 for url in url_list
             ]
 
-        if data.get("error") and data.get("error_type") in self._SETUP_ERROR_TYPES:
-            # Nothing can extract (e.g. only a search key): every URL gets the
-            # setup message, not a bare "extraction failed".
-            message = self._failure_message(data, "WSP native extraction failed; check provider readiness and configuration")
-            return [{"url": url, "error": message} for url in url_list]
-
-        if data.get("error") and not data.get("results"):
-            if _URL_REFUSED_PREFIX in str(data["error"]):
+        setup_error = data.get("error_type") in self._SETUP_ERROR_TYPES
+        if data.get("error") and (setup_error or not data.get("results")):
+            if not setup_error and _URL_REFUSED_PREFIX in str(data["error"]):
                 # Every URL failed the engine's pre-flight check; the joined error
                 # cannot be mapped back to single URLs, so none may be rescued.
                 return [_refused_entry(url) for url in url_list]
+            # Nothing can extract (e.g. only a search key): every URL gets the
+            # setup message, not a bare "extraction failed".
             message = self._failure_message(data, "WSP native extraction failed; check provider readiness and configuration")
             return [{"url": url, "error": message} for url in url_list]
 
@@ -370,7 +297,7 @@ class WSPNativeBackend(WebSearchProvider):
         # Never relabel unrelated content or silently drop requested failures;
         # exactly one result per requested URL, in request order.
         rows = [row for row in results if isinstance(row, dict) and isinstance(row.get("url"), str)]
-        matched = _match_rows(url_list, rows)
+        matched = match_extract_items(url_list, rows)[0]
         return [
             self._normalize_row(url, row) if row is not None
             else {"url": url, "error": "WSP native extract returned no matching result"}
