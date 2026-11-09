@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import List, MutableMapping, Optional, Set, Union
+from typing import List, MutableMapping, Optional, Union
 
 
 # Template values copied from .env.example files or setup docs, for example
@@ -29,20 +29,15 @@ _TEMPLATE_PLACEHOLDER = re.compile(
 )
 
 
-def is_placeholder_env_value(value: str) -> bool:
-    """Return True for empty/template placeholders that are not credentials."""
-    stripped = (value or "").strip().strip('"').strip("'")
-    return (
-        not stripped
-        or set(stripped) == {"*"}
-        or bool(_TEMPLATE_PLACEHOLDER.match(stripped))
-    )
-
-
 def clean_env_value(value: str) -> Optional[str]:
     """Return a real env value, or None for empty/template placeholders."""
     stripped = (value or "").strip().strip('"').strip("'")
-    return None if is_placeholder_env_value(stripped) else stripped
+    # Keep the historical second quote pass for placeholder recognition while
+    # retaining the first pass's value for real credentials.
+    placeholder = stripped.strip().strip('"').strip("'")
+    if not placeholder or set(placeholder) == {"*"} or _TEMPLATE_PLACEHOLDER.match(placeholder):
+        return None
+    return stripped
 
 
 _TRUTHY_VALUES = {"1", "true", "yes", "on"}
@@ -50,39 +45,25 @@ _TRUTHY_VALUES = {"1", "true", "yes", "on"}
 
 def is_truthy(value: object) -> bool:
     """Strict opt-in parse: only 1/true/yes/on are truthy, so a present-but-false value never enables an egress flag."""
-    if isinstance(value, bool):
-        return value
-    if value is None:
-        return False
     return str(value).strip().strip('"').strip("'").lower() in _TRUTHY_VALUES
 
 
-def get_hermes_env_path() -> Path:
-    """Return Hermes' profile-aware .env path when available."""
+def candidate_env_paths(anchor_file: Union[str, Path]) -> List[Path]:
+    """Return local, parent and profile .env paths in precedence order."""
+    plugin_dir = Path(anchor_file).resolve().parent
     try:
         from hermes_constants import get_hermes_home  # type: ignore
 
-        return Path(get_hermes_home()) / ".env"
+        profile_env = Path(get_hermes_home()) / ".env"
     except Exception:
-        return Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / ".env"
-
-
-def candidate_env_paths(anchor_file: Union[str, Path]) -> List[Path]:
-    """Return .env files checked for a module anchored in the plugin dir."""
-    plugin_dir = Path(anchor_file).resolve().parent
-    paths = [
-        plugin_dir / ".env",
-        plugin_dir.parent / ".env",
-        get_hermes_env_path(),
-    ]
-    deduped: List[Path] = []
-    seen: Set[str] = set()
+        # Optional host code can fail with any exception while resolving a
+        # profile; standalone MCP must retain its environment/home fallback.
+        profile_env = Path(os.environ.get("HERMES_HOME", Path.home() / ".hermes")) / ".env"
+    paths = [plugin_dir / ".env", plugin_dir.parent / ".env", profile_env]
+    deduped: dict[str, Path] = {}
     for path in paths:
-        key = str(path.expanduser())
-        if key not in seen:
-            deduped.append(path)
-            seen.add(key)
-    return deduped
+        deduped.setdefault(str(path.expanduser()), path)
+    return list(deduped.values())
 
 
 def load_env_files(anchor_file: Union[str, Path], environ: Optional[MutableMapping[str, str]] = None) -> List[Path]:
