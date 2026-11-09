@@ -98,32 +98,6 @@ class AttemptEngine:
         self.sleep = sleep
 
     @staticmethod
-    def _attempt_id(context: AttemptContext, started: int) -> str:
-        del context, started
-        return "attempt_" + uuid.uuid4().hex[:16]
-
-    @staticmethod
-    def _started_at(timestamp: int) -> str:
-        return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat().replace(
-            "+00:00", "Z"
-        )
-
-    @staticmethod
-    def _try_error(error) -> Dict:
-        retry_after_ms = None
-        if error.retry_after_seconds is not None and math.isfinite(
-            error.retry_after_seconds
-        ):
-            retry_after_ms = max(0, int(error.retry_after_seconds * 1000))
-        return {
-            "error_class": error.error_class.value,
-            "code": error.code,
-            "http_status": error.http_status,
-            "retryable": error.retryable,
-            "retry_after_ms": retry_after_ms,
-        }
-
-    @staticmethod
     def _retry_wait(
         context: AttemptContext, error, attempt_index: int
     ) -> Optional[float]:
@@ -147,136 +121,21 @@ class AttemptEngine:
             return None
         return wait
 
-    def _skipped(
-        self,
-        context: AttemptContext,
-        *,
-        started: int,
-        retry_count: int,
-        state: CircuitState,
-        reason: SkipReason,
-        budget_decision: str,
+    @staticmethod
+    def _receipt(
+        context: AttemptContext, started: int, payload: Optional[Dict] = None, **fields: Any
     ) -> AttemptExecution:
-        return AttemptExecution(
-            None,
-            ProviderAttemptV3(
-                attempt_id=self._attempt_id(context, started),
-                provider=context.provider,
-                capability=context.capability,
-                outcome=AttemptOutcome.SKIPPED,
-                retry_count=retry_count,
-                started_at=self._started_at(started),
-                skip_reason=reason,
-                budget_decision=budget_decision,
-                circuit_state_before=state,
-                circuit_state_after=state,
-                endpoint_id=f"{context.provider}:{context.capability.value}",
-                decision="skipped",
-                tries=[],
-            ),
-        )
-
-    def _release_lease(self, context: AttemptContext, decision, now: int) -> None:
-        """Return an unused half-open probe lease so the next caller can probe."""
-        if (
-            decision.circuit_state is CircuitState.HALF_OPEN
-            and decision.blocking_error_class is not None
-        ):
-            self.store.release_half_open(
-                context.circuit_key,
-                decision.blocking_error_class,
-                now=now,
-                lease_token=decision.lease_token,
-            )
-
-    def _failed(
-        self,
-        context: AttemptContext,
-        *,
-        started: int,
-        attempt_started_monotonic: float,
-        error,
-        tries: list,
-        budget_decision: str,
-        before: CircuitState,
-        now: Callable[[], int],
-        deadline_aborted: bool = False,
-        payload: Optional[Dict] = None,
-    ) -> AttemptExecution:
-        """Report a real try, recording only provider-owned failures as health.
-
-        A ``payload`` (results fetched before a provider-wide error stopped
-        the batch) is kept and the attempt is reported as partial.
-        """
-        after = before
-        if not deadline_aborted and error.error_class in _HEALTH_ERROR_CLASSES:
-            after = self.store.record_failure(
-                context.circuit_key,
-                error.error_class,
-                now=int(now()),
-                retry_after_seconds=error.retry_after_seconds,
-            ).state
-        outcome = AttemptOutcome.FAILED
-        end_reason = AttemptEndReason.PROVIDER_ERROR
-        if deadline_aborted:
-            outcome = AttemptOutcome.CANCELLED
-            end_reason = AttemptEndReason.DEADLINE
-        elif payload is not None:
-            outcome = AttemptOutcome.PARTIAL
-            end_reason = AttemptEndReason.ANSWERED
         return AttemptExecution(
             payload,
             ProviderAttemptV3(
-                attempt_id=self._attempt_id(context, started),
+                attempt_id="attempt_" + uuid.uuid4().hex[:16],
                 provider=context.provider,
                 capability=context.capability,
-                outcome=outcome,
-                end_reason=end_reason,
-                retry_count=len(tries) - 1,
-                result_count=len((payload or {}).get("results") or []),
-                started_at=self._started_at(started),
-                duration_ms=max(
-                    0, int((time.monotonic() - attempt_started_monotonic) * 1000)
-                ),
-                error=error,
-                budget_decision=budget_decision,
-                circuit_state_before=before,
-                circuit_state_after=after,
+                started_at=_utc(started),
                 endpoint_id=f"{context.provider}:{context.capability.value}",
-                decision="attempted",
-                tries=tries,
+                **fields,
             ),
         )
-
-    def _stopped(
-        self,
-        context: AttemptContext,
-        *,
-        tries: list,
-        last_error,
-        attempt_started_monotonic: float,
-        before: CircuitState,
-        now: Callable[[], int],
-        **skip: Any,
-    ) -> AttemptExecution:
-        """Skip an attempt that never ran, or fail one whose earlier tries did.
-
-        A retry blocked by the budget, the circuit or the deadline must not
-        erase the paid first try from the receipt: it is reported as the
-        failure it was.
-        """
-        if tries and last_error is not None:
-            return self._failed(
-                context,
-                started=skip["started"],
-                attempt_started_monotonic=attempt_started_monotonic,
-                error=last_error,
-                tries=tries,
-                budget_decision=skip["budget_decision"],
-                before=before,
-                now=now,
-            )
-        return self._skipped(context, **skip)
 
     def skip(
         self,
@@ -286,27 +145,16 @@ class AttemptEngine:
         now: Callable[[], float] = time.time,
     ) -> AttemptExecution:
         """Emit an explicit receipt for a candidate excluded before admission."""
-        started = int(now())
-        return AttemptExecution(
-            None,
-            ProviderAttemptV3(
-                attempt_id=self._attempt_id(context, started),
-                provider=context.provider,
-                capability=context.capability,
-                outcome=AttemptOutcome.SKIPPED,
-                started_at=self._started_at(started),
-                duration_ms=0,
-                retry_count=0,
-                result_count=0,
-                skip_reason=reason,
-                error=None,
-                budget_decision="unknown",
-                circuit_state_before=CircuitState.CLOSED,
-                circuit_state_after=CircuitState.CLOSED,
-                endpoint_id=f"{context.provider}:{context.capability.value}",
-                decision="skipped",
-                tries=[],
-            ),
+        return self._receipt(
+            context,
+            int(now()),
+            outcome=AttemptOutcome.SKIPPED,
+            duration_ms=0,
+            skip_reason=reason,
+            budget_decision="unknown",
+            circuit_state_before=CircuitState.CLOSED,
+            circuit_state_after=CircuitState.CLOSED,
+            decision="skipped",
         )
 
     def cancel_started(
@@ -334,35 +182,28 @@ class AttemptEngine:
                 provider=context.provider,
             )
         else:
-            error = _cancellation_error(reason, context.provider, message)
-        return AttemptExecution(
-            None,
-            ProviderAttemptV3(
-                attempt_id=self._attempt_id(context, started),
+            code, default_message = _CANCELLATION_TEXT[reason]
+            error = ErrorV3(
+                error_class=(
+                    ErrorClass.INTERNAL
+                    if reason is AttemptEndReason.ENGINE_ERROR
+                    else ErrorClass.CANCELLED
+                ),
+                code=code,
+                message=message or default_message,
+                retryable=False,
                 provider=context.provider,
-                capability=context.capability,
-                outcome=AttemptOutcome.CANCELLED,
-                end_reason=reason,
-                retry_count=0,
-                result_count=0,
-                started_at=self._started_at(started),
-                duration_ms=elapsed_ms,
-                error=error,
-                budget_decision="unknown",
-                circuit_state_before=CircuitState.UNKNOWN,
-                circuit_state_after=CircuitState.UNKNOWN,
-                endpoint_id=f"{context.provider}:{context.capability.value}",
-                decision="attempted",
-                tries=[
-                    {
-                        "try_number": 1,
-                        "started_at": self._started_at(started),
-                        "duration_ms": elapsed_ms,
-                        "outcome": "error",
-                        "error": self._try_error(error),
-                    }
-                ],
-            ),
+                details={"end_reason": reason.value},
+            )
+        return self._receipt(
+            context,
+            started,
+            outcome=AttemptOutcome.CANCELLED,
+            end_reason=reason,
+            duration_ms=elapsed_ms,
+            error=error,
+            budget_decision="unknown",
+            tries=[_try(1, started, elapsed_ms, error)],
         )
 
     def execute(
@@ -372,18 +213,124 @@ class AttemptEngine:
         *,
         now: Callable[[], int] = lambda: int(time.time()),
     ) -> AttemptExecution:
+        """Run one provider attempt, up to ``max_attempts`` tries, to one receipt.
+
+        Every try takes the same steps and ends in exactly one of three ways::
+
+            admitted -> budgets reserved -> dispatched -> answered | failed
+                 \\______________\\_______________\\____ not dispatched
+
+        Between admission and its end a try holds its budget reservations
+        and, when admission granted one, the half-open probe lease. Each
+        ending settles both, and nothing else does:
+
+        ==============  ============  ========================================
+        the try ended   reservations  probe lease
+        ==============  ============  ========================================
+        not dispatched  given back    given back
+        answered        charged       used: the success closes the circuit
+        failed          charged       kept for the retry, or used by the
+                                      recorded failure; given back when the
+                                      error says nothing about provider health
+        ==============  ============  ========================================
+        """
         started = int(now())
         attempt_started_monotonic = time.monotonic()
         before = CircuitState.CLOSED
         last_error = None
         encountered: set[ErrorClass] = set()
-        tries = []
+        tries: list = []
         lease = None
+        units = context.budget_units
+        request_budget = (context.budget_scope, context.budget_window)
+        daily_budget = (
+            None
+            if context.daily_budget_scope is None
+            else (context.daily_budget_scope, context.daily_budget_window or "")
+        )
+
+        def release_lease(decision) -> None:
+            """Give back a probe lease so that the next caller can probe."""
+            if (
+                decision.circuit_state is CircuitState.HALF_OPEN
+                and decision.blocking_error_class is not None
+            ):
+                self.store.release_half_open(
+                    context.circuit_key,
+                    decision.blocking_error_class,
+                    now=int(now()),
+                    lease_token=decision.lease_token,
+                )
+
+        def failed(
+            error, budget_decision: str, *, deadline_aborted: bool = False,
+            payload: Optional[Dict] = None,
+        ) -> AttemptExecution:
+            """The receipt of an attempt whose last dispatched try failed.
+
+            Only a provider-owned failure is recorded as health. A ``payload``
+            (results fetched before a provider-wide error stopped the batch) is
+            kept and the attempt is reported as partial.
+            """
+            after = before
+            if not deadline_aborted and error.error_class in _HEALTH_ERROR_CLASSES:
+                after = self.store.record_failure(
+                    context.circuit_key,
+                    error.error_class,
+                    now=int(now()),
+                    retry_after_seconds=error.retry_after_seconds,
+                ).state
+            outcome = AttemptOutcome.FAILED
+            end_reason = AttemptEndReason.PROVIDER_ERROR
+            if deadline_aborted:
+                outcome = AttemptOutcome.CANCELLED
+                end_reason = AttemptEndReason.DEADLINE
+            elif payload is not None:
+                outcome = AttemptOutcome.PARTIAL
+                end_reason = AttemptEndReason.ANSWERED
+            return self._receipt(
+                context,
+                started,
+                payload,
+                outcome=outcome,
+                end_reason=end_reason,
+                retry_count=len(tries) - 1,
+                result_count=len((payload or {}).get("results") or []),
+                duration_ms=max(
+                    0, int((time.monotonic() - attempt_started_monotonic) * 1000)
+                ),
+                error=error,
+                budget_decision=budget_decision,
+                circuit_state_before=before,
+                circuit_state_after=after,
+                tries=tries,
+            )
+
+        def not_dispatched(
+            reason: SkipReason, state: CircuitState, budget_decision: str
+        ) -> AttemptExecution:
+            """The receipt of an attempt whose current try was stopped before its call.
+
+            A retry stopped by the budget, the circuit or the deadline must not
+            erase the paid earlier try from the receipt: the attempt is
+            reported as the failure it was. Only an attempt that never ran is
+            skipped.
+            """
+            if tries:
+                return failed(last_error, budget_decision)
+            return self._receipt(
+                context,
+                started,
+                outcome=AttemptOutcome.SKIPPED,
+                skip_reason=reason,
+                budget_decision=budget_decision,
+                circuit_state_before=state,
+                circuit_state_after=state,
+                decision="skipped",
+            )
 
         self.store.configure_budget(
-            context.budget_scope,
-            context.budget_window,
-            limit_units=context.budget_limit_units,
+            *request_budget, limit_units=context.budget_limit_units
         )
 
         for index in range(self.max_attempts):
@@ -394,19 +341,11 @@ class AttemptEngine:
                     or (index > 0 and time.monotonic() + _MIN_RETRY_WINDOW_SECONDS > context.deadline_monotonic)
                 )
             ):
-                return self._stopped(
-                    context,
-                    tries=tries,
-                    last_error=last_error,
-                    attempt_started_monotonic=attempt_started_monotonic,
-                    before=before,
-                    now=now,
-                    started=started,
-                    retry_count=index,
-                    state=CircuitState.CLOSED,
-                    reason=SkipReason.DEADLINE_EXCEEDED,
-                    budget_decision="not_reserved",
+                return not_dispatched(
+                    SkipReason.DEADLINE_EXCEEDED, CircuitState.CLOSED, "not_reserved"
                 )
+
+            # Admitted?
             if index > 0 and lease is not None:
                 # This call holds the half-open probe lease; re-admitting would
                 # find its own lease and block the retry it is entitled to.
@@ -421,84 +360,39 @@ class AttemptEngine:
                 encountered.add(decision.blocking_error_class)
             encountered.update(decision.failing_error_classes)
             if not decision.allowed:
-                return self._stopped(
-                    context,
-                    tries=tries,
-                    last_error=last_error,
-                    attempt_started_monotonic=attempt_started_monotonic,
-                    before=before,
-                    now=now,
-                    started=started,
-                    retry_count=index,
-                    state=decision.circuit_state,
-                    reason=decision.skip_reason or SkipReason.CIRCUIT_OPEN,
-                    budget_decision="not_reserved",
+                return not_dispatched(
+                    decision.skip_reason or SkipReason.CIRCUIT_OPEN,
+                    decision.circuit_state,
+                    "not_reserved",
                 )
 
-            # The per-request budget lives in memory and is enforced even when
-            # SQLite is down.  Budgets that need the ledger (a non-request
-            # window such as the daily provider-call limit) fail closed when the
-            # store cannot be read: an unverifiable limit blocks the call
-            # instead of allowing unlimited paid operations.
+            # Budgets reserved? The per-request budget lives in memory and is
+            # enforced even when SQLite is down. Budgets that need the ledger
+            # (a non-request window such as the daily provider-call limit) fail
+            # closed when the store cannot be read: an unverifiable limit blocks
+            # the call instead of allowing unlimited paid operations.
             budget_decision = "reserved" if decision.store_available else "store_unavailable"
-            daily_reserved = False
-            budget_allowed = self.store.reserve_budget(
-                context.budget_scope,
-                context.budget_window,
-                units=context.budget_units,
-            )
-            if not budget_allowed:
-                self._release_lease(context, decision, int(now()))
-                return self._stopped(
-                    context,
-                    tries=tries,
-                    last_error=last_error,
-                    attempt_started_monotonic=attempt_started_monotonic,
-                    before=before,
-                    now=now,
-                    started=started,
-                    retry_count=index,
-                    state=decision.circuit_state,
-                    reason=SkipReason.BUDGET_BLOCKED,
-                    budget_decision=(
-                        "blocked" if self.store.available else "store_unavailable"
-                    ),
-                )
-            if context.daily_budget_scope is not None:
-                self.store.configure_budget(
-                    context.daily_budget_scope,
-                    context.daily_budget_window or "",
-                    limit_units=int(context.daily_budget_limit_units or 0),
-                )
-                daily_allowed = self.store.reserve_budget(
-                    context.daily_budget_scope,
-                    context.daily_budget_window or "",
-                    units=context.budget_units,
-                )
-                if not daily_allowed:
-                    self.store.release_budget(
-                        context.budget_scope,
-                        context.budget_window,
-                        units=context.budget_units,
+            reserved = []
+            if self.store.reserve_budget(*request_budget, units=units):
+                reserved.append(request_budget)
+                if daily_budget is not None:
+                    self.store.configure_budget(
+                        *daily_budget,
+                        limit_units=int(context.daily_budget_limit_units or 0),
                     )
-                    self._release_lease(context, decision, int(now()))
-                    return self._stopped(
-                        context,
-                        tries=tries,
-                        last_error=last_error,
-                        attempt_started_monotonic=attempt_started_monotonic,
-                        before=before,
-                        now=now,
-                        started=started,
-                        retry_count=index,
-                        state=decision.circuit_state,
-                        reason=SkipReason.BUDGET_BLOCKED,
-                        budget_decision=(
-                            "blocked" if self.store.available else "store_unavailable"
-                        ),
-                    )
-                daily_reserved = True
+                    if self.store.reserve_budget(*daily_budget, units=units):
+                        reserved.append(daily_budget)
+            if len(reserved) < (1 if daily_budget is None else 2):
+                for budget in reserved:
+                    self.store.release_budget(*budget, units=units)
+                release_lease(decision)
+                return not_dispatched(
+                    SkipReason.BUDGET_BLOCKED,
+                    decision.circuit_state,
+                    "blocked" if self.store.available else "store_unavailable",
+                )
 
+            # Dispatched.
             try_started = int(now())
             call_started = time.monotonic()
             try:
@@ -508,161 +402,138 @@ class AttemptEngine:
                     payload = operation()
             except BaseException as exc:
                 if isinstance(exc, RequestDeadlineExceeded) and not is_secret_scope_error(exc):
-                    # No dispatch on this try: return both reservations, but
-                    # keep any earlier paid failure in the attempt receipt.
-                    self.store.release_budget(
-                        context.budget_scope, context.budget_window,
-                        units=context.budget_units,
+                    # The adapter sent nothing on this try: not dispatched.
+                    for budget in reserved:
+                        self.store.release_budget(*budget, units=units)
+                    release_lease(decision)
+                    return not_dispatched(
+                        SkipReason.DEADLINE_EXCEEDED,
+                        decision.circuit_state,
+                        "not_reserved" if self.store.available else "store_unavailable",
                     )
-                    if daily_reserved:
-                        self.store.release_budget(
-                            context.daily_budget_scope or "", context.daily_budget_window or "",
-                            units=context.budget_units,
-                        )
-                    self._release_lease(context, decision, int(now()))
-                    return self._stopped(
-                        context, tries=tries, last_error=last_error,
-                        attempt_started_monotonic=attempt_started_monotonic,
-                        before=before, now=now, started=started, retry_count=len(tries),
-                        state=decision.circuit_state, reason=SkipReason.DEADLINE_EXCEEDED,
-                        budget_decision="not_reserved" if self.store.available else "store_unavailable",
-                    )
-                reconciled = self.store.commit_budget(
-                    context.budget_scope,
-                    context.budget_window,
-                    units=context.budget_units,
-                )
-                if not reconciled:
+                if not all([self.store.commit_budget(*budget, units=units) for budget in reserved]):
                     budget_decision = "store_unavailable"
-                if daily_reserved:
-                    reconciled_daily = self.store.commit_budget(
-                        context.daily_budget_scope or "",
-                        context.daily_budget_window or "",
-                        units=context.budget_units,
-                    )
-                    if not reconciled_daily:
-                        budget_decision = "store_unavailable"
                 if not isinstance(exc, Exception) or is_secret_scope_error(exc):
                     # Control-flow and host-scope errors must reach the caller,
                     # without retaining a probe that produced no health verdict.
-                    self._release_lease(context, decision, int(now()))
+                    release_lease(decision)
                     raise
                 stopped = exc if isinstance(exc, ProviderBatchStopped) else None
                 if stopped is not None:
                     exc = stopped.cause
-                classified = classify_provider_error(exc, provider=context.provider)
-                if classified.error_class not in _HEALTH_ERROR_CLASSES:
-                    self._release_lease(context, decision, int(now()))
-                last_error = classified
-                encountered.add(classified.error_class)
+                last_error = classify_provider_error(exc, provider=context.provider)
+                encountered.add(last_error.error_class)
                 tries.append(
-                    {
-                        "try_number": index + 1,
-                        "started_at": self._started_at(try_started),
-                        "duration_ms": max(
-                            0, int((time.monotonic() - call_started) * 1000)
-                        ),
-                        "outcome": "error",
-                        "error": self._try_error(classified),
-                    }
+                    _try(
+                        index + 1,
+                        try_started,
+                        max(0, int((time.monotonic() - call_started) * 1000)),
+                        last_error,
+                    )
                 )
                 deadline_aborted = is_request_deadline_abort(
                     exc, deadline_monotonic=context.deadline_monotonic
                 )
-                if deadline_aborted:
-                    self._release_lease(context, decision, int(now()))
+                if deadline_aborted or last_error.error_class not in _HEALTH_ERROR_CLASSES:
+                    # The caller's deadline or a request, contract or config
+                    # error: no verdict on provider health, the probe goes back.
+                    release_lease(decision)
                 retry_wait = (
-                    self._retry_wait(context, classified, index)
-                    if not deadline_aborted and stopped is None and classified.retryable
+                    self._retry_wait(context, last_error, index)
+                    if not deadline_aborted and stopped is None and last_error.retryable
                     and index < self.max_attempts - 1
                     else None
                 )
-                if retry_wait is not None:
-                    try:
-                        self.sleep(retry_wait)
-                    except BaseException:
-                        self._release_lease(context, decision, int(now()))
-                        raise
-                    continue
-                return self._failed(
-                    context,
-                    started=started,
-                    attempt_started_monotonic=attempt_started_monotonic,
-                    error=classified,
-                    tries=tries,
-                    budget_decision=budget_decision,
-                    before=before,
-                    now=now,
-                    deadline_aborted=deadline_aborted,
-                    payload=stopped.payload if stopped is not None else None,
-                )
+                if retry_wait is None:
+                    return failed(
+                        last_error,
+                        budget_decision,
+                        deadline_aborted=deadline_aborted,
+                        payload=stopped.payload if stopped is not None else None,
+                    )
+                try:
+                    self.sleep(retry_wait)
+                except BaseException:
+                    release_lease(decision)
+                    raise
+                continue
 
-            reconciled = self.store.commit_budget(
-                context.budget_scope,
-                context.budget_window,
-                units=context.budget_units,
-            )
-            if not reconciled:
+            # Answered.
+            if not all([self.store.commit_budget(*budget, units=units) for budget in reserved]):
                 budget_decision = "store_unavailable"
-            if daily_reserved:
-                reconciled_daily = self.store.commit_budget(
-                    context.daily_budget_scope or "",
-                    context.daily_budget_window or "",
-                    units=context.budget_units,
-                )
-                if not reconciled_daily:
-                    budget_decision = "store_unavailable"
             for error_class in encountered:
                 self.store.record_success(
                     context.circuit_key, error_class, now=int(now())
                 )
             result_count = len(payload.get("results") or [])
-            try_duration_ms = max(
-                0, int((time.monotonic() - call_started) * 1000)
-            )
             tries.append(
-                {
-                    "try_number": index + 1,
-                    "started_at": self._started_at(try_started),
-                    "duration_ms": try_duration_ms,
-                    "outcome": "success",
-                    "error": None,
-                }
+                _try(
+                    index + 1,
+                    try_started,
+                    max(0, int((time.monotonic() - call_started) * 1000)),
+                    None,
+                )
             )
-            duration_ms = max(
-                0, int((time.monotonic() - attempt_started_monotonic) * 1000)
-            )
-            endpoint_id = f"{context.provider}:{context.capability.value}"
-            return AttemptExecution(
+            return self._receipt(
+                context,
+                started,
                 payload,
-                ProviderAttemptV3(
-                    attempt_id=self._attempt_id(context, started),
-                    provider=context.provider,
-                    capability=context.capability,
-                    outcome=AttemptOutcome.SUCCESS,
-                    end_reason=(
-                        AttemptEndReason.ANSWERED
-                        if result_count
-                        else AttemptEndReason.ANSWERED_EMPTY
-                    ),
-                    retry_count=index,
-                    result_count=result_count,
-                    started_at=self._started_at(started),
-                    duration_ms=duration_ms,
-                    budget_decision=budget_decision,
-                    circuit_state_before=before,
-                    circuit_state_after=(
-                        CircuitState.CLOSED
-                        if self.store.available
-                        else CircuitState.UNKNOWN
-                    ),
-                    endpoint_id=endpoint_id,
-                    decision="attempted",
-                    tries=tries,
+                outcome=AttemptOutcome.SUCCESS,
+                end_reason=(
+                    AttemptEndReason.ANSWERED
+                    if result_count
+                    else AttemptEndReason.ANSWERED_EMPTY
                 ),
+                retry_count=index,
+                result_count=result_count,
+                duration_ms=max(
+                    0, int((time.monotonic() - attempt_started_monotonic) * 1000)
+                ),
+                budget_decision=budget_decision,
+                circuit_state_before=before,
+                circuit_state_after=(
+                    CircuitState.CLOSED
+                    if self.store.available
+                    else CircuitState.UNKNOWN
+                ),
+                tries=tries,
             )
 
         raise RuntimeError(last_error or "attempt loop exhausted")
+
+
+def _utc(timestamp: int) -> str:
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat().replace(
+        "+00:00", "Z"
+    )
+
+
+def _try(number: int, started: int, duration_ms: int, error: Optional[ErrorV3]) -> Dict:
+    """One entry of a receipt's ``tries``: a dispatched provider call."""
+    if error is None:
+        return {
+            "try_number": number,
+            "started_at": _utc(started),
+            "duration_ms": duration_ms,
+            "outcome": "success",
+            "error": None,
+        }
+    retry_after_ms = None
+    if error.retry_after_seconds is not None and math.isfinite(error.retry_after_seconds):
+        retry_after_ms = max(0, int(error.retry_after_seconds * 1000))
+    return {
+        "try_number": number,
+        "started_at": _utc(started),
+        "duration_ms": duration_ms,
+        "outcome": "error",
+        "error": {
+            "error_class": error.error_class.value,
+            "code": error.code,
+            "http_status": error.http_status,
+            "retryable": error.retryable,
+            "retry_after_ms": retry_after_ms,
+        },
+    }
 
 
 _CANCELLATION_TEXT = {
@@ -679,23 +550,6 @@ _CANCELLATION_TEXT = {
         "Provider execution failed before its receipt was written",
     ),
 }
-
-
-def _cancellation_error(reason: AttemptEndReason, provider: str, message: str | None) -> ErrorV3:
-    """The error of a cancelled attempt that was not stopped by a deadline."""
-    code, default_message = _CANCELLATION_TEXT[reason]
-    return ErrorV3(
-        error_class=(
-            ErrorClass.INTERNAL
-            if reason is AttemptEndReason.ENGINE_ERROR
-            else ErrorClass.CANCELLED
-        ),
-        code=code,
-        message=message or default_message,
-        retryable=False,
-        provider=provider,
-        details={"end_reason": reason.value},
-    )
 
 
 def request_deadline(budget: Dict[str, Any]) -> float | None:
