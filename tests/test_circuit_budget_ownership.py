@@ -94,6 +94,32 @@ def test_healthy_provider_is_not_open_in_console_after_non_blocking_errors(tmp_p
     assert _console_circuits(tmp_path, state_path)["open"] == 0
 
 
+def test_console_cooldown_column_says_what_admission_does(tmp_path):
+    """The column read only the standalone CLI's cooldown file, which tool and
+    MCP searches never write: a provider blocked for an hour showed "none"."""
+    state_path = tmp_path / "state.sqlite3"
+    store = SQLiteStateStore(state_path)
+    context = _context(store)
+    AttemptEngine(store, max_attempts=1).execute(
+        context, _raise(ProviderRequestError("no credits", status_code=402)), now=lambda: 1000
+    )
+
+    def cooldown(now: int) -> dict:
+        with sqlite3.connect(state_path) as connection:
+            connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        rows = build_overview(
+            cache_root=tmp_path / "cache", config={}, provider_ids=["serper", "brave"],
+            state_path=state_path, now=lambda: float(now),
+        )["providers"]
+        return {row["provider"]: row["cooldown_active"] for row in rows}
+
+    assert store.admit(context.circuit_key, now=1001).allowed is False
+    assert cooldown(1001) == {"serper": True, "brave": False}
+    # The window is over: admission lets a probe through, the column agrees.
+    assert cooldown(1000 + 3600) == {"serper": False, "brave": False}
+    assert store.admit(context.circuit_key, now=1000 + 3600).allowed is True
+
+
 def test_old_database_junk_rows_are_ignored_and_cleaned(tmp_path):
     state_path = tmp_path / "state.sqlite3"
     SQLiteStateStore(state_path)
