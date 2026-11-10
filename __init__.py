@@ -116,7 +116,9 @@ def _credential_env() -> Dict[str, str]:
 
     Values come from ``wsp_core.credentials.get_secret`` (Hermes' profile-scoped
     resolver inside Hermes). Setup and status never read ``.env`` files.
-    Template placeholders and empty values are left out.
+    Template placeholders and empty values are left out: this answers "is a
+    usable value set" (setup, Jev, DonSeTch). Readiness reads the live profile
+    instead, so it can name a placeholder.
     """
     env: Dict[str, str] = {}
     for name in _credential_env_names():
@@ -1058,7 +1060,9 @@ def _status_payload(
 ) -> Dict[str, Any]:
     active_env = env if env is not None else _credential_env()
     active_config = dict(config or _default_behavior_config())
-    providers = _provider_config_status(active_env, active_config)
+    # Readiness reads the live profile itself: _credential_env() drops template
+    # placeholders, which readiness has to see to name them.
+    providers = _provider_config_status(env, active_config)
     hermes_native = _hermes_keyless_rescue_state(hermes_config_path)
     return {
         "providers": providers,
@@ -1588,18 +1592,17 @@ def _web_search_plus_cli_command(args: Any) -> None:
     if command == "status":
         _note_ignored_env_path(args)
         config_path = getattr(args, "config_path", None)
-        # What the running Hermes profile sees, resolved through Hermes; no .env reads.
-        env = _credential_env()
+        # Readiness reads what the running Hermes profile sees, resolved through Hermes; no .env reads.
         path = Path(config_path) if config_path else _get_plugin_config_path()
         # Status shows what searches use: config.json plus the Hermes Desktop
         # settings, which the engine lays over it at load time. Never written back.
         desktop = _desktop_settings(path)
         config = _apply_desktop_settings(json.loads(json.dumps(_load_behavior_config(path))), desktop)
-        payload = _status_payload(env, config, raw_config=_raw_config_json(path))
+        payload = _status_payload(None, config, raw_config=_raw_config_json(path))
         if getattr(args, "json", False):
             print(json.dumps(redact_secrets(payload), indent=2, sort_keys=True))
         else:
-            print(_render_setup_guidance(env=env, fancy=not getattr(args, "plain", False), config=config))
+            print(_render_setup_guidance(fancy=not getattr(args, "plain", False), config=config))
             print("\n" + _routing_summary(config))
             for notice in [*(payload.get("ignored_file_keys") or []), *(payload.get("ignored_file_settings") or [])]:
                 print("  ! " + notice)
@@ -1641,7 +1644,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
         config_path = Path(getattr(args, "config_path", None) or _get_plugin_config_path())
         config = _apply_setup_routing_args(_load_behavior_config(config_path), args)
         profile_preset = str(getattr(args, "preset", "") or "").lower().strip().replace("_", "-") == "self-hosted"
-        print(_render_status_dashboard(_provider_config_status(env_now, config)))
+        print(_render_status_dashboard(_provider_config_status(config=config)))
         print("\nSetup plan:")
         key_commands: List[str] = []
         for item in catalog:
@@ -1658,7 +1661,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
         raw_for_notices = _raw_config_json(config_path)
         for notice in [*_ignored_file_credential_lines(raw_for_notices), *_ignored_file_setting_lines(raw_for_notices)]:
             print("  ! " + notice)
-        setup_providers = _provider_config_status(env_now, config)
+        setup_providers = _provider_config_status(config=config)
         setup_keys = bool(setup_providers.get("search_configured") or setup_providers.get("extract_configured"))
         for notice in _legacy_env_lines(setup_keys):
             print("  ! " + notice)
@@ -1723,7 +1726,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
         if (
             "keenable" not in keyless_enable
             and not readiness.evaluate_provider("keenable", {**load_config(), **config}).accepted
-            and not _provider_config_status(env_now, config)["search_configured"]
+            and not _provider_config_status(config=config)["search_configured"]
         ):
             if force_keyless:
                 answer = "y"

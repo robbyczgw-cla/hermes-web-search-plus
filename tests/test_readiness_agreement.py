@@ -336,3 +336,32 @@ def test_v3_contract_reports_setup_problems_as_config_errors(world, monkeypatch)
     schema = json.loads((Path(__file__).resolve().parents[1] / "schemas/v3/response.schema.json").read_text())
     assert list(Draft202012Validator(schema).iter_errors(payload)) == []
 
+
+def _cli(world, *argv):
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args([*argv, "--config-path", str(world)])
+    args.func(args)
+
+
+def test_status_command_names_a_placeholder_key_in_the_profile(world, monkeypatch, capsys):
+    # 5.1.8 `hermes web-search-plus status --json` with BRAVE_API_KEY=your_brave_key
+    # in the profile said brave not_configured / missing_api_key, fix "setup brave":
+    # the CLI handed readiness a snapshot with placeholders already removed.
+    _hermes_profile(monkeypatch, {"BRAVE_API_KEY": "your_brave_key"})
+
+    _cli(world, "status", "--json")
+    brave = json.loads(capsys.readouterr().out)["providers"]["providers"]["brave"]
+    assert (brave["state"], brave["reason_code"]) == ("invalid_value", "placeholder_value")
+    assert brave["configured"] is False
+    assert brave["fix"] != ["hermes web-search-plus setup brave"]
+
+    _cli(world, "status", "--plain")
+    text = capsys.readouterr().out
+    assert "! Brave Search: BRAVE_API_KEY still holds a template placeholder" in text
+
+    # Setup still treats the placeholder as no key: it prints the key command.
+    _cli(world, "setup", "brave", "--no-jev", "--dry-run")
+    out = capsys.readouterr().out
+    assert "BRAVE_API_KEY [not set]" in out
+    assert "hermes config set BRAVE_API_KEY" in out
