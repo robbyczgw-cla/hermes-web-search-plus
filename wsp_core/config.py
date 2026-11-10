@@ -587,7 +587,9 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     jev = config.get("jev", DEFAULT_CONFIG["jev"])
     if not isinstance(jev, dict):
         raise ValueError("jev must be an object")
-    if "api_key" in jev and str(jev.get("api_key") or "").strip():
+    # Neither a key nor a key file in config.json is read (keys come from the
+    # host or the environment); say so once instead of running Jev without one.
+    if str(jev.get("api_key") or "").strip() or str(jev.get("api_key_file") or "").strip():
         _warn_ignored_file_key("jev")
     for flag in ("enabled", "search_type", "extract_quality", "language_fill"):
         if not isinstance(jev.get(flag, False), bool):
