@@ -1,6 +1,6 @@
 # Web Search Plus 5.1.9
 
-Settings mean what they say. A provider you allow for automatic search is used, `status` names a placeholder key and says when nothing runs automatically, and a self-hosted SearXNG URL set the Hermes way is picked up. Found by an audit of the MCP server against this plugin and decided with the maintainer; checked with the real Hermes v0.22.5 CLI in a throwaway home and on a test run on Hermi. No configuration changes are needed.
+Settings mean what they say. A provider you allow for automatic search is used, `status` names a placeholder key and says when nothing runs automatically, and a self-hosted SearXNG URL set the Hermes way is picked up. Found by an audit of the MCP server against this plugin and decided with the maintainer; checked with the real Hermes v0.22.5 CLI in a throwaway home. No configuration changes are needed.
 
 ## Fixed
 
@@ -19,7 +19,7 @@ Fewer, deeper modules with smaller interfaces (readiness, extract, native backen
 
 ## Checked before release
 
-- Hermi test run on a throwaway checkout (Python 3.14): all scenarios pass, including DonSeTch joining automatic search after the single `set-auto-allow` command, and a real search, research call and 404 extract with production keys.
+- Separate test installation (Python 3.14): all scenarios pass, including DonSeTch joining automatic search after the single `set-auto-allow` command, and a real search, research call and 404 extract.
 - Each fix has a test that fails without it; full suite green (the one red test needs the Node module `ajv`, not installed locally).
 
 Full list: [CHANGELOG](../CHANGELOG.md).
