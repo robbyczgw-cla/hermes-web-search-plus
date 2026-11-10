@@ -414,6 +414,14 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
     auto = config.get("auto_routing", {})
     if not isinstance(auto, dict):
         raise ValueError("auto_routing must be an object")
+    # One reading of the routing switch, here: the engine tests `is False`, so
+    # 0 or "false" kept auto routing on while the MCP status showed it off.
+    enabled = auto.get("enabled", True)
+    if not isinstance(enabled, bool):
+        word = str(enabled).strip().lower()
+        if word not in {"0", "1", "false", "true", "off", "on", "no", "yes"}:
+            raise ValueError("auto_routing.enabled must be true or false")
+        auto["enabled"] = word in {"1", "true", "on", "yes"}
     if config.get("default_provider"):
         if _is_removed_provider_id(config["default_provider"]):
             config["default_provider"] = DEFAULT_CONFIG["default_provider"]
