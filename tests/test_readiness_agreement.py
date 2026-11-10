@@ -365,3 +365,38 @@ def test_status_command_names_a_placeholder_key_in_the_profile(world, monkeypatc
     out = capsys.readouterr().out
     assert "BRAVE_API_KEY [not set]" in out
     assert "hermes config set BRAVE_API_KEY" in out
+
+
+@pytest.mark.parametrize("auto_routing,fix", [
+    ({"auto_allow": {"brave": False}}, 'provider="brave" or hermes web-search-plus config set-auto-allow brave on'),
+    ({"disabled_providers": ["brave"]}, "hermes web-search-plus config enable brave"),
+    ({}, None),
+], ids=["explicit-only", "disabled", "ready"])
+def test_status_text_says_when_no_provider_runs_automatically(auto_routing, fix, world, monkeypatch, capsys):
+    # 5.1.8 with only Brave and auto_allow.brave false: the dashboard said
+    # "✓ search" and "Active: Brave Search", --plain "web-search-plus is configured"
+    # and "search=yes", while status --json had search_auto_ready false and the
+    # first search without provider="brave" failed.
+    world.write_text(json.dumps({"auto_routing": auto_routing}))
+    _hermes_profile(monkeypatch, {"BRAVE_API_KEY": "brave-real-key-123456"})
+    monkeypatch.setenv("NO_COLOR", "1")
+    warning = '! Automatic search: no provider runs without provider="name".'
+
+    _cli(world, "status", "--json")
+    assert json.loads(capsys.readouterr().out)["providers"]["search_auto_ready"] is (fix is None)
+
+    _cli(world, "status")
+    dashboard = capsys.readouterr().out
+    _cli(world, "status", "--plain")
+    plain = capsys.readouterr().out
+    if fix is None:
+        assert "✓ search" in dashboard and "│ Active: Brave Search" in dashboard
+        assert "search=yes" in plain
+        assert warning not in dashboard + plain
+        return
+    assert "✓ search" not in dashboard and "~ search" in dashboard
+    assert "│ Active: none automatically" in dashboard
+    assert '│ Only with provider="name": Brave Search' in dashboard
+    assert "search=explicit only" in plain
+    for text in (dashboard, plain):
+        assert f"{warning} Fix: {fix}" in text

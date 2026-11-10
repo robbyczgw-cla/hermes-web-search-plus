@@ -1110,10 +1110,22 @@ def _style(text: str, code: str, *, color: Optional[bool] = None) -> str:
     return f"\033[{code}m{text}\033[0m" if color else text
 
 
-def _capability_badge(enabled: bool, label: str, *, color: Optional[bool] = None) -> str:
-    mark = "✓" if enabled else "•"
-    rendered = f"{mark} {label}"
-    return _style(rendered, "32;1" if enabled else "2", color=color)
+def _capability_badge(enabled: bool, label: str, *, auto: bool = True, color: Optional[bool] = None) -> str:
+    """✓ set up and used automatically, ~ set up but only with provider="name", • not set up."""
+    mark, code = ("✓", "32;1") if enabled and auto else ("~", "33;1") if enabled else ("•", "2")
+    return _style(f"{mark} {label}", code, color=color)
+
+
+def _auto_search_warning(status: Mapping[str, Any]) -> Optional[str]:
+    """One line when search is set up but no provider runs without provider="name"."""
+    if not status["search_configured"] or status["search_auto_ready"]:
+        return None
+    fixes = [
+        " or ".join(meta.get("fix") or [])
+        for meta in status["providers"].values()
+        if "search" in meta["capabilities"] and meta["configured"]
+    ]
+    return '! Automatic search: no provider runs without provider="name". Fix: ' + "; ".join(fixes)
 
 
 def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bool = False, config: Optional[Mapping[str, Any]] = None) -> str:
@@ -1136,11 +1148,15 @@ def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bo
             if meta["configured"]
         ]
         lines = [*problems, "web-search-plus is configured. Providers: " + ", ".join(configured)]
+        auto_warning = _auto_search_warning(status)
+        search = "explicit only" if auto_warning else "yes" if status["search_configured"] else "no"
         lines.append(
             "Capabilities: "
-            f"search={'yes' if status['search_configured'] else 'no'}, "
+            f"search={search}, "
             f"extraction={'yes' if status['extract_configured'] else 'no'}"
         )
+        if auto_warning:
+            lines.append(auto_warning)
         if status["search_configured"] and not status["extract_configured"]:
             lines.append(
                 "Tip: add LINKUP_API_KEY or another extraction key for web_extract_plus."
@@ -1198,18 +1214,30 @@ def _render_status_dashboard(status: Optional[Dict[str, Any]] = None, *, color: 
         for meta in status["providers"].values()
         if meta["configured"]
     ]
+    # Only these run without provider="name"; explicit-only and disabled ones are listed apart.
+    automatic = [
+        meta["display_name"]
+        for meta in status["providers"].values()
+        if meta["state"] == readiness.Readiness.READY.value
+    ]
+    on_request = [name for name in configured if name not in automatic]
     title = _style("web-search-plus", "36;1", color=color)
     subtitle = "provider setup"
     lines = [
         f"╭─ {title} {subtitle} " + "─" * 28,
         "│ " + "  ".join([
-            _capability_badge(status["search_configured"], "search", color=color),
-            _capability_badge(status["extract_configured"], "extraction", color=color),
+            _capability_badge(status["search_configured"], "search", auto=status["search_auto_ready"], color=color),
+            _capability_badge(status["extract_configured"], "extraction", auto=status["extract_auto_ready"], color=color),
         ]),
         f"│ Providers: {status['configured_count']}/{status['total']} configured",
     ]
     if configured:
-        lines.append("│ Active: " + ", ".join(configured))
+        lines.append("│ Active: " + (", ".join(automatic) or "none automatically"))
+        if on_request:
+            lines.append('│ Only with provider="name": ' + ", ".join(on_request))
+        auto_warning = _auto_search_warning(status)
+        if auto_warning:
+            lines.append("│ " + auto_warning)
     else:
         lines.append("│ Active: none yet — add one search provider to unlock the tools")
     if status["search_configured"] and not status["extract_configured"]:
