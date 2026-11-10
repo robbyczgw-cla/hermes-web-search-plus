@@ -651,9 +651,14 @@ def response_from_legacy(
                 if payload.get(key) is not None:
                     details[key] = deepcopy(payload[key])
             if error is not None and error.error_class is ErrorClass.CONFIG:
-                # Keep the attempt's class and code (part of the contract).
+                # Keep the attempt's class and code (part of the contract). Only
+                # an explicit request's attempt is the user's provider; under
+                # auto routing its provider and details describe the fallback
+                # filler (serper: "SERPER_API_KEY"), which the user never chose.
+                explicit = payload["error_type"] == "requested_provider_not_configured"
                 error = replace(error, message=str(top_error), retryable=False,
-                                details={**(error.details or {}), **details})
+                                provider=error.provider if explicit else None,
+                                details={**(error.details or {}), **details} if explicit else details)
             else:
                 error = ErrorV3(
                     error_class=ErrorClass.CONFIG,

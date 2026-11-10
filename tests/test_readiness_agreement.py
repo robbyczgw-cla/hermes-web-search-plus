@@ -331,5 +331,8 @@ def test_v3_contract_reports_setup_problems_as_config_errors(world, monkeypatch)
     assert (error["error_class"], error["retryable"]) == ("config", False)
     assert error["message"].startswith("BRAVE_API_KEY still holds a template placeholder")
     assert error["details"]["readiness"][0]["reason_code"] == "placeholder_value"
+    # Nothing from the serper filler attempt the user never chose.
+    assert "provider" not in error and "env_var" not in error["details"]
     schema = json.loads((Path(__file__).resolve().parents[1] / "schemas/v3/response.schema.json").read_text())
     assert list(Draft202012Validator(schema).iter_errors(payload)) == []
+
