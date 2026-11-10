@@ -174,7 +174,10 @@ def evaluate_provider(provider: str, config: Optional[Mapping[str, Any]] = None)
         if raw("SEARXNG_INSTANCE_URL"):
             return placeholder("SEARXNG_INSTANCE_URL")
         return ProviderReadiness(provider, Readiness.NOT_CONFIGURED, "missing_instance_url",
-                                 "No SearXNG instance URL is set.", (_cli(f"setup {provider}"),))
+                                 "No SearXNG instance URL is set.",
+                                 # The MCP CLI has no per-provider setup.
+                                 (_set_command("SEARXNG_INSTANCE_URL", "https://your-searxng.example")
+                                  if HOST == "mcp" else _cli(f"setup {provider}"),))
 
     key = _config.get_api_key(provider, cfg)
     key_source = "config_json" if files_count and _config.file_api_key(provider, cfg) else env_source
@@ -219,7 +222,9 @@ def evaluate_provider(provider: str, config: Optional[Mapping[str, Any]] = None)
             f"{name} has no key and its public tier is not switched on.",
             (_set_command(env_var, "<key>"), _set_command(keyless_public_env_var(provider), "1")))
     return ProviderReadiness(provider, Readiness.NOT_CONFIGURED, "missing_api_key",
-                             f"No API key for {name} is set.", (_cli(f"setup {provider}"),))
+                             f"No API key for {name} is set.",
+                             (_set_command(env_var, "/path/to/donsetch" if provider == "donsetch" else "<key>")
+                              if HOST == "mcp" else _cli(f"setup {provider}"),))
 
 
 def evaluate(config: Optional[Mapping[str, Any]] = None,
