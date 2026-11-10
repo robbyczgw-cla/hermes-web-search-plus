@@ -561,7 +561,7 @@ def test_exa_failed_statuses_become_error_items():
 
 
 def test_urls_past_the_fan_out_cap_get_their_own_not_tried_row(dns):
-    # Live on hermi: 12 URLs requested, 10 extracted, the last two vanished from
+    # Live: 12 URLs requested, 10 extracted, the last two vanished from
     # the tool output with only an internal warning.
     urls = [f"https://example.com/page-{index}" for index in range(12)]
 
