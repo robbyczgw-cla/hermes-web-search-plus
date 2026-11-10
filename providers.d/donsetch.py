@@ -21,6 +21,7 @@ if the fold arrives anyway, the strict ``[meta]`` fallback recovers the payload.
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import json
 import os
@@ -78,33 +79,27 @@ def _wsp_version() -> str:
     client name; a failure here must never break a session.
     """
     try:
-        engine = wsp_sdk.__name__.rpartition(".")[0] or "wsp_core"
-        agent = importlib.import_module(engine + ".http_client").DEFAULT_USER_AGENT
+        agent = _engine_module("http_client").DEFAULT_USER_AGENT
         version = str(agent).rpartition("/")[2]
         return version if re.fullmatch(r"\d+\.\d+\.\d+", version) else "unknown"
-    except Exception:  # noqa: BLE001
+    except (ImportError, AttributeError):  # a missing engine surface must never break a session
         return "unknown"
 
 
-def _engine_credentials():
-    """The credentials module of the engine that loaded this provider.
+def _engine_module(name: str):
+    """A sibling module of the engine that loaded this provider.
 
-    Hermes imports the plugin as ``hermes_plugins.<slug>``, so ``wsp_core`` is
-    not a top-level module there and ``import wsp_core.credentials`` fails the
-    whole provider file. ``wsp_sdk`` is bound to the loading engine's SDK
-    (``<engine>.sdk``); its sibling module holds the active secret resolver.
+    The engine package differs per host: ``hermes_plugins.<slug>.wsp_core`` in
+    Hermes, ``web_search_plus_mcp`` in the MCP server, nothing in the flat test
+    layout. ``wsp_sdk`` re-exports the engine's HTTP helpers in every host, so
+    their module names the package. Hermes and the MCP ship this file unchanged.
     """
-    engine = wsp_sdk.__name__.rpartition(".")[0] or "wsp_core"
-    return importlib.import_module(engine + ".credentials")
+    engine = wsp_sdk.dispatch_timeout.__module__.rpartition(".")[0]
+    return importlib.import_module(f"{engine}.{name}" if engine else name)
 
 
-def file_credentials_allowed() -> bool:
-    return _engine_credentials().file_credentials_allowed()
 
 
-def get_secret(name: str, default: str | None = None) -> str | None:
-    return _engine_credentials().get_secret(name, default)
-STDERR_LIMIT = 2048
 _VERSION_RE = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 _SECRET_RE = re.compile(
     r"(?i)\b(api[_-]?key|token|secret|password|authorization|bearer)\b\s*[:=]\s*\S+"
@@ -122,23 +117,16 @@ _SEARCH_FOOTER_PREFIXES = (
 _SEARCH_DEBUG_KEY = "com.donsetch/search-debug"
 _FETCH_DEBUG_KEY = "com.donsetch/fetch-debug"
 
-_last_stderr = ""
-_stderr_lock = threading.Lock()
-
-
-def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
-    try:
-        parsed = int(value)
-    except (TypeError, ValueError):
-        return default
-    return max(minimum, min(maximum, parsed))
-
 
 def _safe_int(value: Any, default: int = 0) -> int:
     try:
         return int(value)
     except (TypeError, ValueError, OverflowError):
         return default
+
+
+def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
+    return max(minimum, min(maximum, _safe_int(value, default)))
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -194,19 +182,15 @@ def _url_allowed_by_domains(
     )
 
 
-def _hostname_of(url: str) -> str:
-    try:
-        return (urlsplit(url).hostname or "").lower().rstrip(".")
-    except (TypeError, ValueError):
-        return ""
+def _section(config: Any) -> dict[str, Any]:
+    section = config.get("donsetch") if isinstance(config, dict) else None
+    return section if isinstance(section, dict) else {}
 
 
 def _candidate_binary(key: str | None, config: dict[str, Any]) -> str:
-    section = config.get("donsetch", {}) if isinstance(config, dict) else {}
-    if not isinstance(section, dict):
-        section = {}
+    section = _section(config)
     candidate = key or section.get("binary")
-    if not candidate and file_credentials_allowed():
+    if not candidate and _engine_module("credentials").file_credentials_allowed():
         candidate = section.get("api_key")
     if not isinstance(candidate, str) or not candidate.strip():
         return shutil.which("donsetch") or ""
@@ -221,42 +205,6 @@ def _resolve_binary(key: str | None, config: dict[str, Any]) -> str:
     if not candidate or not os.path.isfile(candidate) or not os.access(candidate, os.X_OK):
         raise DonsetchSetupError("donsetch_binary_not_configured")
     return candidate
-
-
-def sanitize_stderr(text: str, limit: int = STDERR_LIMIT) -> str:
-    if not isinstance(text, str) or not text:
-        return ""
-    cleaned = _SECRET_RE.sub(lambda match: f"{match.group(1)}=[redacted]", text)
-    cleaned = _HOME_RE.sub("[path]", cleaned)
-    if len(cleaned) > limit:
-        return cleaned[:limit] + "…"
-    return cleaned
-
-
-def _remember_stderr(text: str) -> None:
-    global _last_stderr
-    with _stderr_lock:
-        _last_stderr = sanitize_stderr(text)
-
-
-def _last_stderr_excerpt() -> str:
-    with _stderr_lock:
-        return _last_stderr
-
-
-def _parse_version(text: str) -> str | None:
-    match = _VERSION_RE.search(text or "")
-    if not match:
-        return None
-    return f"{int(match.group(1))}.{int(match.group(2))}.{int(match.group(3))}"
-
-
-def _compatibility(version: str | None) -> str:
-    if not version:
-        return "unknown"
-    if version == TESTED_VERSION:
-        return "tested"
-    return "compatible_unverified"
 
 
 def inspect_donsetch_readiness(
@@ -296,9 +244,11 @@ def inspect_donsetch_readiness(
         )
     except (OSError, subprocess.TimeoutExpired):
         return report
-    version = _parse_version((completed.stdout or "") + "\n" + (completed.stderr or ""))
-    report["version"] = version
-    report["compatibility"] = _compatibility(version)
+    match = _VERSION_RE.search((completed.stdout or "") + "\n" + (completed.stderr or ""))
+    if match:
+        version = ".".join(str(int(part)) for part in match.groups())
+        report["version"] = version
+        report["compatibility"] = "tested" if version == TESTED_VERSION else "compatible_unverified"
     return report
 
 
@@ -331,8 +281,9 @@ def _child_env() -> dict[str, str]:
     # process, but read their values only from the active scope (never fallback).
     names = {name for name in os.environ if name.startswith("DONSETCH_")}
     names.add("DONSETCH_BIN")
+    credentials = _engine_module("credentials")
     for name in names:
-        value = get_secret(name)
+        value = credentials.get_secret(name)
         if value is not None:
             env[name] = value
     env["DONSETCH_TRANSPORT"] = "stdio"
@@ -342,13 +293,6 @@ def _child_env() -> dict[str, str]:
     # process DONSETCH_MCP__TEXT_ONLY cannot override it: the adapter depends on it.
     env["DONSETCH_MCP__TEXT_ONLY"] = "false"
     return env
-
-
-def _namespaced_meta(meta: Any, key: str) -> dict[str, Any]:
-    if not isinstance(meta, dict):
-        return {}
-    value = meta.get(key)
-    return value if isinstance(value, dict) else {}
 
 
 _META_PREFIX = "[meta] "
@@ -396,27 +340,8 @@ def _payload_from_tool_result(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _mcp_response_from_stdout(stdout: str, request_id: int) -> dict[str, Any]:
-    for line in stdout.splitlines():
-        try:
-            message = json.loads(line)
-        except (TypeError, json.JSONDecodeError):
-            continue
-        if not isinstance(message, dict) or message.get("id") != request_id:
-            continue
-        if message.get("error"):
-            raise RuntimeError("donsetch_mcp_call_failed")
-        result = message.get("result")
-        if not isinstance(result, dict):
-            raise RuntimeError("donsetch_mcp_contract_failed")
-        return _payload_from_tool_result(result)
-    raise RuntimeError("donsetch_mcp_contract_failed")
-
-
 def _read_mcp_message(lines: queue.Queue[str], request_id: int, deadline: float) -> dict[str, Any]:
     """Read the next matching JSON-RPC message from the session's queue."""
-    if lines is None:
-        raise RuntimeError("donsetch_process_failed")
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
@@ -434,16 +359,6 @@ def _read_mcp_message(lines: queue.Queue[str], request_id: int, deadline: float)
             continue
         if isinstance(message, dict) and message.get("id") == request_id:
             return message
-
-
-def _mcp_result(message: dict[str, Any], request_id: int) -> dict[str, Any]:
-    if message.get("error"):
-        code = "donsetch_mcp_initialize_failed" if request_id == 1 else "donsetch_mcp_call_failed"
-        raise RuntimeError(code)
-    result = message.get("result")
-    if not isinstance(result, dict):
-        raise RuntimeError("donsetch_mcp_contract_failed")
-    return result
 
 
 def _split_search_title_host(after_dot: str, expected_host: str | None) -> tuple[str, str]:
@@ -491,7 +406,10 @@ def parse_search_evidence(text: str, structured_results: list[dict[str, Any]] | 
             urls_by_rank[rank] = url
             if handle:
                 handles_by_rank[rank] = handle
-            host = _hostname_of(url)
+            try:
+                host = (urlsplit(url).hostname or "").lower().rstrip(".")
+            except ValueError:  # an unparsable URL binds no host
+                host = ""
             if host:
                 hosts_by_rank[rank] = host
 
@@ -567,8 +485,8 @@ def parse_search_evidence(text: str, structured_results: list[dict[str, Any]] | 
 
 
 def _whitelist_search_debug(meta: dict[str, Any]) -> dict[str, Any]:
-    debug = _namespaced_meta(meta, _SEARCH_DEBUG_KEY)
-    if not debug:
+    debug = meta.get(_SEARCH_DEBUG_KEY)
+    if not isinstance(debug, dict) or not debug:
         return {}
     out: dict[str, Any] = {}
     if "intent" in debug:
@@ -601,17 +519,6 @@ def _whitelist_search_debug(meta: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _whitelist_fetch_debug(meta: dict[str, Any]) -> dict[str, Any]:
-    debug = _namespaced_meta(meta, _FETCH_DEBUG_KEY)
-    if not debug:
-        return {}
-    out: dict[str, Any] = {}
-    for key in ("status", "title", "quality", "site", "verdict", "tier"):
-        if key in debug:
-            out[key] = debug.get(key)
-    return out
-
-
 class DonsetchSession:
     """One initialized DonSeTch stdio MCP process for one WSP request."""
 
@@ -621,18 +528,23 @@ class DonsetchSession:
         self._process: subprocess.Popen[str] | None = None
         self._next_id = 1
         self._deadline = 0.0
-        self._stderr = ""
-        self._stderr_thread: threading.Thread | None = None
-        self._stdout_lines: queue.Queue[str] | None = None
-        self._stdout_thread: threading.Thread | None = None
+        self._stdout_lines: queue.Queue[str] = queue.Queue()
         self._closed = False
 
     def __enter__(self) -> DonsetchSession:
         try:
             self._start()
-            self._initialize()
+            self._rpc(
+                "initialize",
+                {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": {"name": "web-search-plus", "version": _wsp_version()},
+                },
+            )
+            self._write({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
             return self
-        except Exception:
+        except Exception:  # noqa: BLE001 — reap the child on any failed start, then re-raise unchanged
             self.close()
             raise
 
@@ -642,66 +554,37 @@ class DonsetchSession:
 
     def _start(self) -> None:
         self._deadline = time.monotonic() + self.timeout_seconds
-        self._process = subprocess.Popen(
+        process = self._process = subprocess.Popen(
             [self.binary, "mcp"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            # Nothing reads the child's diagnostics; DEVNULL keeps a chatty
+            # child from blocking on a full pipe without a drain thread.
+            stderr=subprocess.DEVNULL,
             text=True,
             encoding="utf-8",
             errors="replace",
             bufsize=1,
             env=_child_env(),
         )
-        self._stdout_lines = queue.Queue()
-        self._stdout_thread = threading.Thread(target=self._collect_stdout, daemon=True)
-        self._stdout_thread.start()
-        self._stderr_thread = threading.Thread(target=self._collect_stderr, daemon=True)
-        self._stderr_thread.start()
-        if self._process.stdin is None or self._process.stdout is None:
-            raise RuntimeError("donsetch_process_failed")
-
-    def _collect_stderr(self) -> None:
-        process = self._process
-        if process is None or process.stderr is None:
-            return
-        chunks: list[str] = []
-        try:
-            while True:
-                piece = process.stderr.read(256)
-                if not piece:
-                    break
-                chunks.append(piece)
-                joined = "".join(chunks)
-                if len(joined) > STDERR_LIMIT:
-                    chunks = [joined[:STDERR_LIMIT]]
-                    # Keep draining so the child cannot block on a full pipe.
-        except (OSError, ValueError):
-            # ValueError: close() shut the pipe while a read was in flight.
-            pass
-        self._stderr = "".join(chunks)[:STDERR_LIMIT]
-        _remember_stderr(self._stderr)
-
-    def _collect_stdout(self) -> None:
         # select() cannot wait on a stdio pipe on Windows (WinError 10038),
         # so one reader thread per process feeds every response line to the
         # queue that _read_mcp_message waits on.
-        process = self._process
-        lines = self._stdout_lines
-        if process is None or process.stdout is None or lines is None:
-            return
+        threading.Thread(target=self._collect_stdout, args=(process,), daemon=True).start()
+
+    def _collect_stdout(self, process: subprocess.Popen[str]) -> None:
         try:
             for raw in process.stdout:
-                lines.put(raw)
+                self._stdout_lines.put(raw)
         except (OSError, ValueError):
             # ValueError: close() shut the pipe while a read was in flight.
             pass
         finally:
-            lines.put("")  # End-of-stream marker, like readline() returning "".
+            self._stdout_lines.put("")  # End-of-stream marker, like readline() returning "".
 
     def _write(self, payload: dict[str, Any]) -> None:
         process = self._process
-        if process is None or process.stdin is None:
+        if process is None:
             raise RuntimeError("donsetch_process_failed")
         try:
             process.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
@@ -709,41 +592,23 @@ class DonsetchSession:
         except (BrokenPipeError, OSError) as exc:
             raise RuntimeError("donsetch_process_failed") from exc
 
-    def _initialize(self) -> None:
+    def _rpc(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Send one JSON-RPC request and return its ``result`` object."""
         request_id = self._next_id
         self._next_id += 1
-        self._write(
-            {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "method": "initialize",
-                "params": {
-                    "protocolVersion": "2025-11-25",
-                    "capabilities": {},
-                    "clientInfo": {"name": "web-search-plus", "version": _wsp_version()},
-                },
-            }
-        )
-        assert self._process is not None
-        assert self._stdout_lines is not None
-        _mcp_result(_read_mcp_message(self._stdout_lines, request_id, self._deadline), request_id)
-        self._write({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}})
+        self._write({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
+        message = _read_mcp_message(self._stdout_lines, request_id, self._deadline)
+        if message.get("error"):
+            raise RuntimeError(
+                "donsetch_mcp_initialize_failed" if request_id == 1 else "donsetch_mcp_call_failed"
+            )
+        result = message.get("result")
+        if not isinstance(result, dict):
+            raise RuntimeError("donsetch_mcp_contract_failed")
+        return result
 
     def call(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
-        request_id = self._next_id
-        self._next_id += 1
-        self._write(
-            {
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "method": "tools/call",
-                "params": {"name": tool, "arguments": arguments},
-            }
-        )
-        assert self._process is not None
-        assert self._stdout_lines is not None
-        result = _mcp_result(_read_mcp_message(self._stdout_lines, request_id, self._deadline), request_id)
-        return _payload_from_tool_result(result)
+        return _payload_from_tool_result(self._rpc("tools/call", {"name": tool, "arguments": arguments}))
 
     def close(self) -> None:
         if self._closed:
@@ -751,13 +616,12 @@ class DonsetchSession:
         self._closed = True
         process = self._process
         if process is None:
-            _remember_stderr(self._stderr)
             return
-        if process.stdin is not None:
-            try:
-                process.stdin.close()
-            except OSError:
-                pass
+        self._process = None
+        try:
+            process.stdin.close()
+        except OSError:
+            pass
         if process.poll() is None:
             process.terminate()
             try:
@@ -768,19 +632,19 @@ class DonsetchSession:
                     process.wait(timeout=1)
                 except subprocess.TimeoutExpired:
                     pass
-        # The child has exited, so the reader sees EOF; let it drain before the
-        # pipe is closed, otherwise the captured stderr can be lost.
-        if self._stderr_thread is not None:
-            self._stderr_thread.join(timeout=1)
-        if process.stderr is not None:
-            try:
-                process.stderr.close()
-            except OSError:
-                pass
-        if self._stderr_thread is not None:
-            self._stderr_thread.join(timeout=0.5)
-        _remember_stderr(self._stderr)
-        self._process = None
+
+
+@contextlib.contextmanager
+def _donsetch_errors():
+    """Map process and transport failures to the codes the engine classifies."""
+    try:
+        yield
+    except (FileNotFoundError, PermissionError):
+        raise DonsetchSetupError("donsetch_binary_not_configured") from None
+    except TimeoutError:
+        raise DonsetchTimeout("donsetch_timeout") from None
+    except (BrokenPipeError, OSError):
+        raise RuntimeError("donsetch_process_failed") from None
 
 
 def _call_donsetch_tool(
@@ -789,15 +653,8 @@ def _call_donsetch_tool(
     arguments: dict[str, Any],
     timeout_seconds: int,
 ) -> dict[str, Any]:
-    try:
-        with DonsetchSession(binary, timeout_seconds) as session:
-            return session.call(tool, arguments)
-    except (FileNotFoundError, PermissionError):
-        raise DonsetchSetupError("donsetch_binary_not_configured") from None
-    except TimeoutError:
-        raise DonsetchTimeout("donsetch_timeout") from None
-    except (BrokenPipeError, OSError):
-        raise RuntimeError("donsetch_process_failed") from None
+    with _donsetch_errors(), DonsetchSession(binary, timeout_seconds) as session:
+        return session.call(tool, arguments)
 
 
 def _search_intent(args: Any) -> str:
@@ -810,10 +667,7 @@ def _search_intent(args: Any) -> str:
 
 def execute_search(search_module, prov, args, key, config, routing_info):
     binary = _resolve_binary(key, config)
-    section = config.get("donsetch", {}) if isinstance(config, dict) else {}
-    if not isinstance(section, dict):
-        section = {}
-    timeout_seconds = _bounded_int(section.get("timeout"), 180, 5, 600)
+    timeout_seconds = _bounded_int(_section(config).get("timeout"), 180, 5, 600)
     # DonSeTch has no recency filter, image search or result verticals beyond
     # news. The search still runs as a plain web search (the tool schema
     # promises "run, report"): the engine reports freshness.applied=false, and
@@ -848,7 +702,7 @@ def execute_search(search_module, prov, args, key, config, routing_info):
     # any domain filtering so dropped hits cannot steal another row's fields.
     evidence = parse_search_evidence(payload.get("text") or "", upstream_results)
     debug = _whitelist_search_debug(payload.get("meta") or {})
-    debug_results = debug.get("results") if isinstance(debug.get("results"), list) else []
+    debug_results = debug.get("results", [])
 
     projected = []
     for index, item in enumerate(upstream_results):
@@ -861,7 +715,7 @@ def execute_search(search_module, prov, args, key, config, routing_info):
         if rank <= 0:
             rank = index + 1
         bound = evidence.get(rank) or {}
-        debug_item = debug_results[index] if index < len(debug_results) and isinstance(debug_results[index], dict) else {}
+        debug_item = debug_results[index] if index < len(debug_results) else {}
 
         # Compact contract: title/snippet live in text. Legacy: still on item.
         title = str(bound.get("title") or item.get("title") or "")
@@ -895,20 +749,19 @@ def execute_search(search_module, prov, args, key, config, routing_info):
 
     engines = structured.get("engines")
     if not isinstance(engines, list):
-        engines = debug.get("engines") if isinstance(debug.get("engines"), list) else []
+        engines = debug.get("engines", [])
     engines_used = []
     engines_blocked = []
-    if isinstance(engines, list):
-        for engine_item in engines:
-            if not isinstance(engine_item, dict):
-                continue
-            name = engine_item.get("engine")
-            if not isinstance(name, str) or not name:
-                continue
-            if str(engine_item.get("status", "")).lower() == "ok":
-                engines_used.append(name)
-            else:
-                engines_blocked.append(name)
+    for engine_item in engines:
+        if not isinstance(engine_item, dict):
+            continue
+        name = engine_item.get("engine")
+        if not isinstance(name, str) or not name:
+            continue
+        if str(engine_item.get("status", "")).lower() == "ok":
+            engines_used.append(name)
+        else:
+            engines_blocked.append(name)
 
     intent = structured.get("intent")
     if intent in (None, ""):
@@ -954,15 +807,26 @@ def _fetch_failure(structured: dict[str, Any], url: str, status: int) -> dict[st
             failure[key] = value
     hint = structured.get("next_action")
     if isinstance(hint, str) and hint.strip():
-        failure["next_action"] = sanitize_stderr(" ".join(hint.split()), limit=200)
+        hint = _HOME_RE.sub("[path]", _SECRET_RE.sub(lambda m: f"{m.group(1)}=[redacted]", " ".join(hint.split())))
+        failure["next_action"] = hint[:200] + "…" if len(hint) > 200 else hint
     return failure
+
+
+def _failed_row(url: str, error: str) -> dict[str, Any]:
+    return {"url": url, "requested_url": url, "error": error, "status": 0}
 
 
 def _project_fetch_item(payload: dict[str, Any], fallback_url: str) -> dict[str, Any]:
     structured = payload.get("structured")
     if not isinstance(structured, dict):
-        return {"url": fallback_url, "requested_url": fallback_url, "error": "donsetch_fetch_contract_failed", "status": 0}
-    debug = _whitelist_fetch_debug(payload.get("meta") or {})
+        return _failed_row(fallback_url, "donsetch_fetch_contract_failed")
+    # Whitelisted ``com.donsetch/fetch-debug`` diagnostics from the transport meta.
+    debug = ((payload.get("meta") or {}).get(_FETCH_DEBUG_KEY))
+    debug = {
+        key: debug[key]
+        for key in ("status", "title", "quality", "site", "verdict", "tier")
+        if key in debug
+    } if isinstance(debug, dict) else {}
     observed_url = structured.get("url")
     url = observed_url if isinstance(observed_url, str) and observed_url else fallback_url
 
@@ -1023,9 +887,7 @@ def execute_extract(
     # in Markdown and every page row says so (format_applied), instead of failing.
     format_applied = "markdown" if str(output_format or "markdown") not in _ALLOWED_OUTPUT_FORMATS else None
     binary = _resolve_binary(key, config)
-    section = config.get("donsetch", {}) if isinstance(config, dict) else {}
-    if not isinstance(section, dict):
-        section = {}
+    section = _section(config)
     timeout_seconds = _bounded_int(section.get("timeout"), 180, 5, 600)
     max_chars = _bounded_int(
         section.get("max_content_chars", config.get("web", {}).get("extract_char_limit", 15000)
@@ -1042,61 +904,46 @@ def execute_extract(
     projected = []
     # The session deadline follows the engine's attempt cap and request deadline.
     timeout_seconds = dispatch_timeout(timeout_seconds)
-    try:
-        with DonsetchSession(binary, timeout_seconds) as session:
-            requested_urls = [str(url) for url in urls]
-            for index, requested_url in enumerate(requested_urls):
-                if deadline_passed():
-                    # Fetched pages are kept; no new fetch after the deadline.
-                    projected.append(
-                        {"url": requested_url, "requested_url": requested_url, "error": str(RequestDeadlineExceeded()), "status": 0}
-                    )
-                    continue
-                try:
-                    payload = session.call(
-                        "web_fetch",
-                        {
-                            "url": requested_url,
-                            "max_chars": max_chars,
-                            "media": bool(include_images),
-                            "tier": tier,
-                        },
-                    )
-                except TimeoutError:
-                    if not any(not item.get("error") for item in projected):
-                        raise
-                    projected.append({"url": requested_url, "requested_url": requested_url, "error": "donsetch_timeout", "status": 0})
-                    projected.extend(
-                        {"url": url, "requested_url": url, "error": str(RequestDeadlineExceeded()), "status": 0}
-                        for url in requested_urls[index + 1:]
-                    )
-                    # A late MCP reply can no longer be paired safely. Exit the
-                    # session (and reap its child) without discarding earlier pages.
-                    break
-                except RuntimeError as exc:
-                    if not any(not item.get("error") for item in projected):
-                        raise
-                    # The session failed midway: keep the fetched pages and
-                    # stop instead of sending more calls into a broken process.
-                    projected.append({"url": requested_url, "requested_url": requested_url, "error": str(exc), "status": 0})
-                    projected.extend(
-                        {"url": url, "requested_url": url, "error": f"not tried: {exc}", "status": 0}
-                        for url in requested_urls[index + 1:]
-                    )
-                    break
-                result = _project_fetch_item(payload, requested_url)
-                if include_raw_html and not result.get("error"):
-                    # DonSeTch deliberately returns Markdown; do not label it HTML.
-                    result["raw_error"] = "donsetch_raw_html_unsupported"
-                if format_applied and not result.get("error"):
-                    result["format_applied"] = format_applied
-                projected.append(result)
-    except (FileNotFoundError, PermissionError):
-        raise DonsetchSetupError("donsetch_binary_not_configured") from None
-    except TimeoutError:
-        raise DonsetchTimeout("donsetch_timeout") from None
-    except (BrokenPipeError, OSError):
-        raise RuntimeError("donsetch_process_failed") from None
+    with _donsetch_errors(), DonsetchSession(binary, timeout_seconds) as session:
+        requested_urls = [str(url) for url in urls]
+        for index, requested_url in enumerate(requested_urls):
+            if deadline_passed():
+                # Fetched pages are kept; no new fetch after the deadline.
+                projected.append(_failed_row(requested_url, str(RequestDeadlineExceeded())))
+                continue
+            try:
+                payload = session.call(
+                    "web_fetch",
+                    {
+                        "url": requested_url,
+                        "max_chars": max_chars,
+                        "media": bool(include_images),
+                        "tier": tier,
+                    },
+                )
+            except TimeoutError:
+                if not any(not item.get("error") for item in projected):
+                    raise
+                projected.append(_failed_row(requested_url, "donsetch_timeout"))
+                projected.extend(_failed_row(url, str(RequestDeadlineExceeded())) for url in requested_urls[index + 1:])
+                # A late MCP reply can no longer be paired safely. Exit the
+                # session (and reap its child) without discarding earlier pages.
+                break
+            except RuntimeError as exc:
+                if not any(not item.get("error") for item in projected):
+                    raise
+                # The session failed midway: keep the fetched pages and
+                # stop instead of sending more calls into a broken process.
+                projected.append(_failed_row(requested_url, str(exc)))
+                projected.extend(_failed_row(url, f"not tried: {exc}") for url in requested_urls[index + 1:])
+                break
+            result = _project_fetch_item(payload, requested_url)
+            if include_raw_html and not result.get("error"):
+                # DonSeTch deliberately returns Markdown; do not label it HTML.
+                result["raw_error"] = "donsetch_raw_html_unsupported"
+            if format_applied and not result.get("error"):
+                result["format_applied"] = format_applied
+            projected.append(result)
     return extract_result(prov, projected)
 
 

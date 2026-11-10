@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v5.1.8
+web-search-plus — Hermes Plugin v5.1.9
 Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "5.1.8"
+__version__ = "5.1.9"
 
 import argparse
 import importlib
@@ -24,7 +24,6 @@ from contextlib import nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional
-from urllib.parse import urlparse
 
 # Hermes imports this directory as the package ``hermes_plugins.<slug>``; the
 # engine is the subpackage ``wsp_core`` and is imported relatively, so it can
@@ -54,7 +53,7 @@ from .wsp_core.credentials import (
     set_secret_resolver,
 )
 from .wsp_core import readiness
-from .wsp_core.env_loader import clean_env_value as _shared_clean_env_value, is_truthy
+from .wsp_core.env_loader import clean_env_value as _shared_clean_env_value
 from .wsp_core.cache import MAX_STORED_TEXT_CHARS, store_web_text
 from .wsp_core.config import (
     ORDER_AUTO_WORDS,
@@ -117,7 +116,9 @@ def _credential_env() -> Dict[str, str]:
 
     Values come from ``wsp_core.credentials.get_secret`` (Hermes' profile-scoped
     resolver inside Hermes). Setup and status never read ``.env`` files.
-    Template placeholders and empty values are left out.
+    Template placeholders and empty values are left out: this answers "is a
+    usable value set" (setup, Jev, DonSeTch). Readiness reads the live profile
+    instead, so it can name a placeholder.
     """
     env: Dict[str, str] = {}
     for name in _credential_env_names():
@@ -137,13 +138,6 @@ def _ensure_hermes_secret_resolver() -> None:
     """
     if get_secret_resolver() is None:
         _install_hermes_secret_resolver()
-
-
-def _section_file_key(section: Mapping[str, Any]) -> str:
-    """The ``api_key``/``apiKey`` from a config.json section, or "" when a host resolver owns credentials."""
-    if not file_credentials_allowed():
-        return ""
-    return str(section.get("api_key") or section.get("apiKey") or "")
 
 
 def _raw_config_json(path: Path) -> Dict[str, Any]:
@@ -311,7 +305,7 @@ def _provider_config_status(env: Optional[Mapping[str, str]] = None, config: Opt
         for capability in ("search", "extract"):
             if capability in capabilities:
                 counts[capability] += int(configured)
-                auto[capability] += int(state.auto_ready)
+                auto[capability] += int(state.state is readiness.Readiness.READY)
         providers[name] = {
             "env": str(item["env"]),
             "display_name": item["display_name"],
@@ -352,7 +346,7 @@ def _get_plugin_config_path() -> Path:
     """Return the behavior config path shared with search.py."""
     override = os.environ.get("WEB_SEARCH_PLUS_CONFIG")
     if override:
-        return Path(override)
+        return Path(override).expanduser()
     return Path(__file__).parent.parent / "config.json"
 
 
@@ -661,82 +655,20 @@ def _render_fastpath_report(report: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _keyless_public_opted_in(provider: str, config_path: Optional[Path] = None) -> bool:
-    """Registration-path mirror of config.keyless_public_allowed (env var or config.json, default off)."""
-    if is_truthy(get_secret(keyless_public_env_var(provider))):
-        return True
-    try:
-        config_path = config_path or _get_plugin_config_path()
-        if config_path.exists():
-            with open(config_path) as f:
-                section = json.load(f).get(PROVIDER_SPECS[provider].config_section, {})
-            return isinstance(section, dict) and is_truthy(section.get("allow_public"))
-    except (json.JSONDecodeError, OSError, TypeError, ValueError, AttributeError):
-        pass
-    return False
+def _readiness_states(providers: List[str]) -> set:
+    """The readiness states of ``providers`` under the config the tools use.
 
-
-def _effective_config_or_none() -> Optional[Dict[str, Any]]:
-    """The config the tools use (config.json, Desktop settings), or None if it cannot be loaded."""
-    try:
-        return load_config()
-    except Exception:
-        return None
-
-
-def _keyless_public_ready(provider: str, config: Optional[Mapping[str, Any]] = None) -> bool:
-    """Whether the engine already accepts ``provider`` (key or keyless opt-in) on this host."""
-    try:
-        base = _effective_config_or_none() or {}
-        merged = {**base, **dict(config or {})}
-        return readiness.evaluate_provider(provider, merged).accepted
-    except Exception:
-        return False
-
-
-def _capability_fixable(providers: List[str]) -> bool:
-    """A value this profile set cannot work (placeholder key, blocked SearXNG URL, missing binary).
-
-    The tool stays listed so a call can tell the model the reason and the fix,
-    the same way a pre-5.1 .env keeps the tools answering with migration steps.
-    Values only in the shared config.json/Desktop file (``ignored_source``) do
-    not count: they may belong to another profile that should not see the tools.
+    One answer with the engine and ``status``. A refused credential read
+    propagates to Hermes instead of reading as "no keys".
     """
-    config = _effective_config_or_none() or {}
-    for provider in providers:
-        try:
-            state = readiness.evaluate_provider(provider, config).state
-        except Exception:
-            continue
-        if state is readiness.Readiness.INVALID_VALUE:
-            return True
-    return False
+    try:  # host boundary: the tool listing must not crash on a broken config
+        config = load_config()
+    except Exception as exc:  # noqa: BLE001
+        if is_secret_scope_error(exc):
+            raise
+        return set()
+    return {readiness.evaluate_provider(provider, config).state for provider in providers}
 
-
-def _capability_runnable(providers: List[str]) -> bool:
-    """Whether a tool can run: any of ``providers`` is accepted by the engine.
-
-    The same answer as the engine and ``status`` (``readiness``). A raw env
-    value no longer counts by itself: a template placeholder or a config.json
-    flag that Hermes ignores used to list the tool, and every call then failed.
-    A broken config counts as nothing configured. A refused credential read
-    propagates, as before: it must reach Hermes, not read as "no keys".
-    """
-    config = _effective_config_or_none() or {}
-    for provider in providers:
-        try:
-            if readiness.evaluate_provider(provider, config, raise_scope_errors=True).accepted:
-                return True
-        except Exception as exc:
-            if is_secret_scope_error(exc):
-                raise
-            continue
-    return False
-
-
-def _config_provider_configured(providers: List[str]) -> bool:
-    """Compatibility name for :func:`_capability_runnable`."""
-    return _capability_runnable(providers)
 
 def _default_behavior_config() -> Dict[str, Any]:
     return {
@@ -1060,16 +992,13 @@ def _routing_summary(config: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _is_well_formed_http_url(value: Any) -> bool:
-    """Validate the shape of an operator URL without DNS or provider traffic."""
-    if not isinstance(value, str) or not value.strip():
-        return False
-    parsed = urlparse(value.strip())
-    return parsed.scheme in {"http", "https"} and bool(parsed.hostname)
+def _profile_status(config: Mapping[str, Any], providers: Mapping[str, Any]) -> Dict[str, Any]:
+    """Report self-hosted prerequisites from the readiness in ``providers``.
 
-
-def _profile_status(config: Mapping[str, Any], env: Mapping[str, str]) -> Dict[str, Any]:
-    """Report self-hosted prerequisites locally; status must stay network-free."""
+    The same answer as the provider rows and the engine: a SearXNG URL or a
+    Keenable opt-in that this host ignores (config.json under a Hermes profile)
+    or that cannot work is "needs setup" here too.
+    """
     profile = config.get("profile", "standard")
     auto = config.get("auto_routing", {}) if isinstance(config.get("auto_routing"), Mapping) else {}
     effective_pool = [
@@ -1077,27 +1006,15 @@ def _profile_status(config: Mapping[str, Any], env: Mapping[str, str]) -> Dict[s
         for provider in auto.get("provider_priority", _DEFAULT_PROVIDER_PRIORITY)
         if (auto.get("auto_allow") or {}).get(provider, True)
     ]
-    searxng = config.get("searxng", {}) if isinstance(config.get("searxng"), Mapping) else {}
-    searxng_url = (
-        searxng.get("base_url")
-        or searxng.get("instance_url")
-        or env.get("SEARXNG_INSTANCE_URL")
-    )
-    keenable = config.get("keenable", {}) if isinstance(config.get("keenable"), Mapping) else {}
-    keenable_ready = bool(
-        _clean_env_value(env.get("KEENABLE_API_KEY") or "")
-        or _clean_env_value(_section_file_key(keenable))
-        or is_truthy(keenable.get("allow_public"))
-        or is_truthy(env.get(keyless_public_env_var("keenable")))
-    )
-    searxng_ready = _is_well_formed_http_url(searxng_url)
+    searxng_ready = bool(providers["providers"]["searxng"]["configured"])
+    keenable_ready = bool(providers["providers"]["keenable"]["configured"])
     checks = []
     if profile == "self_hosted":
         checks = [
             {
                 "id": "searxng_base_url",
                 "ok": searxng_ready,
-                "detail": "searxng.base_url (or legacy instance_url) is present and well formed",
+                "detail": "searxng.base_url or SEARXNG_INSTANCE_URL is set and usable",
             },
             {
                 "id": "keenable_keyless",
@@ -1105,12 +1022,12 @@ def _profile_status(config: Mapping[str, Any], env: Mapping[str, str]) -> Dict[s
                 "detail": "Keenable has an API key or its keyless public endpoint is enabled",
             },
         ]
+    policy_ready = profile != "self_hosted" or searxng_ready or keenable_ready
     return {
         "active": profile,
         "effective_auto_pool": effective_pool,
-        "policy_ready": profile != "self_hosted" or searxng_ready or keenable_ready,
-        "ready": (profile != "self_hosted" or searxng_ready or keenable_ready)
-        and _provider_config_status(env, config)["search_configured"],
+        "policy_ready": policy_ready,
+        "ready": policy_ready and providers["search_configured"],
         "checks": checks,
     }
 
@@ -1143,11 +1060,13 @@ def _status_payload(
 ) -> Dict[str, Any]:
     active_env = env if env is not None else _credential_env()
     active_config = dict(config or _default_behavior_config())
-    providers = _provider_config_status(active_env, active_config)
+    # Readiness reads the live profile itself: _credential_env() drops template
+    # placeholders, which readiness has to see to name them.
+    providers = _provider_config_status(env, active_config)
     hermes_native = _hermes_keyless_rescue_state(hermes_config_path)
     return {
         "providers": providers,
-        "profile": _profile_status(active_config, active_env),
+        "profile": _profile_status(active_config, providers),
         "routing": redact_secrets(active_config),
         "ignored_file_keys": _ignored_file_credential_lines(raw_config if raw_config is not None else active_config),
         "ignored_file_settings": _ignored_file_setting_lines(raw_config if raw_config is not None else active_config),
@@ -1191,26 +1110,33 @@ def _style(text: str, code: str, *, color: Optional[bool] = None) -> str:
     return f"\033[{code}m{text}\033[0m" if color else text
 
 
-def _capability_badge(enabled: bool, label: str, *, color: Optional[bool] = None) -> str:
-    mark = "✓" if enabled else "•"
-    rendered = f"{mark} {label}"
-    return _style(rendered, "32;1" if enabled else "2", color=color)
+def _capability_badge(enabled: bool, label: str, *, auto: bool = True, color: Optional[bool] = None) -> str:
+    """✓ set up and used automatically, ~ set up but only with provider="name", • not set up."""
+    mark, code = ("✓", "32;1") if enabled and auto else ("~", "33;1") if enabled else ("•", "2")
+    return _style(f"{mark} {label}", code, color=color)
 
 
-def _readiness_problem_lines(status: Mapping[str, Any]) -> List[str]:
-    """One line per provider the user set up that cannot work, with its fix (first in the output)."""
-    lines = []
-    for name, meta in (status.get("providers") or {}).items():
-        if meta.get("state") in ("ignored_source", "invalid_value", "scope_error"):
-            fix = meta.get("fix") or []
-            lines.append(f"! {meta.get('display_name', name)}: {meta.get('reason')}" + (f" Run: {fix[0]}" if fix else ""))
-    return lines
+def _auto_search_warning(status: Mapping[str, Any]) -> Optional[str]:
+    """One line when search is set up but no provider runs without provider="name"."""
+    if not status["search_configured"] or status["search_auto_ready"]:
+        return None
+    fixes = [
+        " or ".join(meta.get("fix") or [])
+        for meta in status["providers"].values()
+        if "search" in meta["capabilities"] and meta["configured"]
+    ]
+    return '! Automatic search: no provider runs without provider="name". Fix: ' + "; ".join(fixes)
 
 
 def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bool = False, config: Optional[Mapping[str, Any]] = None) -> str:
     """Return concise user-facing onboarding guidance."""
     status = _provider_config_status(env, config)
-    problems = _readiness_problem_lines(status)
+    # A provider the user set up that cannot work comes first, with its fix.
+    problems = [
+        f"! {meta['display_name']}: {meta['reason']}" + (f" Run: {meta['fix'][0]}" if meta.get("fix") else "")
+        for meta in status["providers"].values()
+        if meta["state"] in ("ignored_source", "invalid_value", "scope_error")
+    ]
     if fancy:
         dashboard = _render_status_dashboard(status)
         return "\n".join([*problems, dashboard]) if problems else dashboard
@@ -1222,11 +1148,15 @@ def _render_setup_guidance(env: Optional[Mapping[str, str]] = None, *, fancy: bo
             if meta["configured"]
         ]
         lines = [*problems, "web-search-plus is configured. Providers: " + ", ".join(configured)]
+        auto_warning = _auto_search_warning(status)
+        search = "explicit only" if auto_warning else "yes" if status["search_configured"] else "no"
         lines.append(
             "Capabilities: "
-            f"search={'yes' if status['search_configured'] else 'no'}, "
+            f"search={search}, "
             f"extraction={'yes' if status['extract_configured'] else 'no'}"
         )
+        if auto_warning:
+            lines.append(auto_warning)
         if status["search_configured"] and not status["extract_configured"]:
             lines.append(
                 "Tip: add LINKUP_API_KEY or another extraction key for web_extract_plus."
@@ -1284,18 +1214,30 @@ def _render_status_dashboard(status: Optional[Dict[str, Any]] = None, *, color: 
         for meta in status["providers"].values()
         if meta["configured"]
     ]
+    # Only these run without provider="name"; explicit-only and disabled ones are listed apart.
+    automatic = [
+        meta["display_name"]
+        for meta in status["providers"].values()
+        if meta["state"] == readiness.Readiness.READY.value
+    ]
+    on_request = [name for name in configured if name not in automatic]
     title = _style("web-search-plus", "36;1", color=color)
     subtitle = "provider setup"
     lines = [
         f"╭─ {title} {subtitle} " + "─" * 28,
         "│ " + "  ".join([
-            _capability_badge(status["search_configured"], "search", color=color),
-            _capability_badge(status["extract_configured"], "extraction", color=color),
+            _capability_badge(status["search_configured"], "search", auto=status["search_auto_ready"], color=color),
+            _capability_badge(status["extract_configured"], "extraction", auto=status["extract_auto_ready"], color=color),
         ]),
         f"│ Providers: {status['configured_count']}/{status['total']} configured",
     ]
     if configured:
-        lines.append("│ Active: " + ", ".join(configured))
+        lines.append("│ Active: " + (", ".join(automatic) or "none automatically"))
+        if on_request:
+            lines.append('│ Only with provider="name": ' + ", ".join(on_request))
+        auto_warning = _auto_search_warning(status)
+        if auto_warning:
+            lines.append("│ " + auto_warning)
     else:
         lines.append("│ Active: none yet — add one search provider to unlock the tools")
     if status["search_configured"] and not status["extract_configured"]:
@@ -1357,21 +1299,18 @@ def _unconfigured_session_hint(
     state_path: Optional[Path] = None,
 ) -> Optional[Dict[str, str]]:
     """Return a one-shot unconfigured hint payload, recording acknowledgement in state."""
-    try:
-        # The config the tools use (config.json + Desktop), not just the keys.
-        status = _provider_config_status(env, _effective_config_or_none() or {})
-        states = [item.get("state") for item in status["providers"].values()]
-        if status["configured"] or "scope_error" in states:
-            # Configured, or the profile could not be read: no "no keys" claim.
-            return None
-        problem = readiness.most_relevant_problem(
-            {name: readiness.evaluate_provider(name, _effective_config_or_none() or {}) for name in status["providers"]},
-            list(status["providers"]),
-        )
-    except Exception as exc:
-        # A hook must never break the session; an unreadable profile gets no hint.
+    names = [str(item["provider"]) for item in _PROVIDER_CATALOG]
+    try:  # a session hook must never break the session
+        with secrets_view(env) if env is not None else nullcontext():
+            # The config the tools use (config.json + Desktop), not just the keys.
+            report = readiness.evaluate(load_config(), names)
+    except Exception as exc:  # noqa: BLE001
         logger.debug("web-search-plus onboarding hint skipped: %s", exc)
         return None
+    if any(item.accepted or item.state is readiness.Readiness.SCOPE_ERROR for item in report.values()):
+        # Configured, or the profile could not be read: no "no keys" claim.
+        return None
+    problem = readiness.most_relevant_problem(report, names)
     state_path = state_path or _setup_state_path()
     try:
         if state_path.exists():
@@ -1681,18 +1620,17 @@ def _web_search_plus_cli_command(args: Any) -> None:
     if command == "status":
         _note_ignored_env_path(args)
         config_path = getattr(args, "config_path", None)
-        # What the running Hermes profile sees, resolved through Hermes; no .env reads.
-        env = _credential_env()
+        # Readiness reads what the running Hermes profile sees, resolved through Hermes; no .env reads.
         path = Path(config_path) if config_path else _get_plugin_config_path()
         # Status shows what searches use: config.json plus the Hermes Desktop
         # settings, which the engine lays over it at load time. Never written back.
         desktop = _desktop_settings(path)
         config = _apply_desktop_settings(json.loads(json.dumps(_load_behavior_config(path))), desktop)
-        payload = _status_payload(env, config, raw_config=_raw_config_json(path))
+        payload = _status_payload(None, config, raw_config=_raw_config_json(path))
         if getattr(args, "json", False):
             print(json.dumps(redact_secrets(payload), indent=2, sort_keys=True))
         else:
-            print(_render_setup_guidance(env=env, fancy=not getattr(args, "plain", False), config=config))
+            print(_render_setup_guidance(fancy=not getattr(args, "plain", False), config=config))
             print("\n" + _routing_summary(config))
             for notice in [*(payload.get("ignored_file_keys") or []), *(payload.get("ignored_file_settings") or [])]:
                 print("  ! " + notice)
@@ -1734,7 +1672,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
         config_path = Path(getattr(args, "config_path", None) or _get_plugin_config_path())
         config = _apply_setup_routing_args(_load_behavior_config(config_path), args)
         profile_preset = str(getattr(args, "preset", "") or "").lower().strip().replace("_", "-") == "self-hosted"
-        print(_render_status_dashboard(_provider_config_status(env_now, config)))
+        print(_render_status_dashboard(_provider_config_status(config=config)))
         print("\nSetup plan:")
         key_commands: List[str] = []
         for item in catalog:
@@ -1751,7 +1689,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
         raw_for_notices = _raw_config_json(config_path)
         for notice in [*_ignored_file_credential_lines(raw_for_notices), *_ignored_file_setting_lines(raw_for_notices)]:
             print("  ! " + notice)
-        setup_providers = _provider_config_status(env_now, config)
+        setup_providers = _provider_config_status(config=config)
         setup_keys = bool(setup_providers.get("search_configured") or setup_providers.get("extract_configured"))
         for notice in _legacy_env_lines(setup_keys):
             print("  ! " + notice)
@@ -1798,7 +1736,8 @@ def _web_search_plus_cli_command(args: Any) -> None:
         for item in catalog:
             if env_now.get(item["env"]):
                 continue
-            if item["provider"] not in _KEYLESS_PROVIDER_IDS or _keyless_public_ready(item["provider"], config):
+            if item["provider"] not in _KEYLESS_PROVIDER_IDS or readiness.evaluate_provider(
+                    item["provider"], {**load_config(), **config}).accepted:
                 continue
             if force_keyless:
                 answer = "y"
@@ -1814,8 +1753,8 @@ def _web_search_plus_cli_command(args: Any) -> None:
         # Keyless use is an explicit opt-in: asked only at a terminal, default no.
         if (
             "keenable" not in keyless_enable
-            and not _keyless_public_ready("keenable", config)
-            and not _provider_config_status(env_now, config)["search_configured"]
+            and not readiness.evaluate_provider("keenable", {**load_config(), **config}).accepted
+            and not _provider_config_status(config=config)["search_configured"]
         ):
             if force_keyless:
                 answer = "y"
@@ -1936,7 +1875,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
                 print(f"✓ Saved routing preferences in {config_path}")
             for provider in keyless_written:
                 # Confirm what the engine will actually use, not what was written.
-                state = readiness.evaluate_provider(provider, _effective_config_or_none() or config)
+                state = readiness.evaluate_provider(provider, load_config())
                 name = PROVIDER_SPECS[provider].display_name
                 if state.accepted:
                     print(f"✓ Enabled keyless public search for {name} in {config_path}")
@@ -1965,7 +1904,7 @@ def _web_search_plus_cli_command(args: Any) -> None:
 
 def _web_search_plus_slash_setup(raw_args: str = "") -> str:
     """In-session lightweight status/help command."""
-    return _render_setup_guidance(config=_effective_config_or_none())
+    return _render_setup_guidance(config=load_config())
 
 
 def _on_session_start(**kwargs: Any) -> Optional[Dict[str, str]]:
@@ -2281,12 +2220,6 @@ def _routing_header_bits(routing: Any) -> List[str]:
     return bits
 
 
-_SETUP_ERROR_TYPES = frozenset({
-    "provider_setup_required", "requested_provider_not_configured", "explicit_only_provider_configured",
-})
-_MISSING_SETUP_RE = re.compile(r"missing api key|is not configured|not configured", re.I)
-
-
 def _format_results(data: dict, *, now: Optional[datetime] = None) -> str:
     """Format search results for LLM consumption.
 
@@ -2294,16 +2227,14 @@ def _format_results(data: dict, *, now: Optional[datetime] = None) -> str:
     """
     if "error" in data and not data.get("results"):
         lines = [f"Search error: {data['error']}"]
-        # A setup error already says what to do; a "serper: Missing API key"
-        # line for a provider the user never chose only misled the model.
-        setup_error = data.get("error_type") in _SETUP_ERROR_TYPES
         # Say why each provider failed (e.g. "linkup: Provider quota is
-        # exhausted"), so an empty account is not a mystery.
-        for item in (data.get("provider_errors") or [])[:6]:
+        # exhausted"), so an empty account is not a mystery. A setup error has
+        # no provider failures: its candidates are all unconfigured, and their
+        # "Missing API key" lines (usually the serper filler) only misled.
+        setup_error = data.get("error_type") in readiness.SETUP_ERROR_TYPES
+        for item in [] if setup_error else (data.get("provider_errors") or [])[:6]:
             if isinstance(item, dict) and item.get("provider"):
                 reason = " ".join(str(item.get("error") or "failed").split())[:160]
-                if setup_error and _MISSING_SETUP_RE.search(reason):
-                    continue
                 lines.append(f"- {item['provider']}: {reason}")
         return "\n".join(lines)
 
@@ -2886,27 +2817,32 @@ def register(ctx: Any) -> None:
         return _format_results(data)
 
     def search_configured() -> bool:
-        return _capability_runnable(list(SEARCH_PROVIDER_IDS))
+        return bool(_readiness_states(list(SEARCH_PROVIDER_IDS)) & readiness.ACCEPTED)
 
     def extract_configured() -> bool:
-        return _capability_runnable(list(EXTRACT_PROVIDER_IDS))
+        return bool(_readiness_states(list(EXTRACT_PROVIDER_IDS)) & readiness.ACCEPTED)
 
     def _legacy_env_only() -> bool:
         """No provider configured, but a pre-5.1 .env (no longer read) exists: tools answer with the migration steps."""
         return bool(_legacy_env_files()) and not search_configured() and not extract_configured()
 
+    # Listed when a provider can run, or when this profile set a value that
+    # cannot work (invalid_value: placeholder key, blocked SearXNG URL, missing
+    # binary) so the call names the fix. Values only in the shared config.json/
+    # Desktop file (ignored_source) do not list the tools: they may belong to
+    # another profile. An engine that cannot load cannot run any call: the tool
+    # stays hidden until the retry window opens (the migration message needs no engine).
     def check_fn() -> bool:
-        # An engine that cannot load cannot run any call: do not list the tool
-        # until the retry window opens (the migration message needs no engine).
         if _engine_load_blocked():
             return _legacy_env_only()
-        return search_configured() or _legacy_env_only() or _capability_fixable(list(SEARCH_PROVIDER_IDS))
+        states = _readiness_states(list(SEARCH_PROVIDER_IDS))
+        return bool(states & readiness.ACCEPTED) or readiness.Readiness.INVALID_VALUE in states or _legacy_env_only()
 
     def extract_check_fn() -> bool:
         if _engine_load_blocked():
             return _legacy_env_only()
-        return (extract_configured() or _legacy_env_only()
-                or _capability_fixable(list(EXTRACT_PROVIDER_IDS)))
+        states = _readiness_states(list(EXTRACT_PROVIDER_IDS))
+        return bool(states & readiness.ACCEPTED) or readiness.Readiness.INVALID_VALUE in states or _legacy_env_only()
 
     try:
         if _legacy_env_only():

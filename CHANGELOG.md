@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [v5.1.9] — 2026-11-10
+
+### Fixed
+
+- Self-hosted profile: a SearXNG URL set with `hermes config set SEARXNG_INSTANCE_URL <url>` (or the environment variable standalone) is used. Status said SearXNG was ready, yet every automatic search failed with "self_hosted profile requires searxng.base_url", because that one check read config.json only. It now takes the readiness answer.
+- `status` under the self-hosted profile: the two profile checks and `policy_ready` come from the same readiness as the provider rows. With the URL or the Keenable opt-in only in config.json, which a Hermes profile ignores, they said "ok" while the rows above said "ignored".
+- Operator console, Auto column: follows `auto_routing.auto_allow` as routing does. It read a setting that does not exist and always showed the defaults; a provider you had allowed read "manual only" and one you had blocked read "allowed".
+- Operator console, Cooldown column: shows a provider the engine is holding back (out of credits, authentication failure, rate limit, repeated errors). It read only the standalone command line's cooldown file, which tool and MCP searches never write, so it always said "none".
+- Standalone command line: a damaged search-cache file (cut off, overwritten, not text) made the same query fail with a traceback on every run, because the file was read without a check and never removed. It now counts as a miss and is removed.
+- `hermes web-search-plus status` names a template placeholder in the profile (`BRAVE_API_KEY=your_brave_key`): `invalid_value`/`placeholder_value` with "Run: hermes config set BRAVE_API_KEY <real value>". It said `not_configured`/`missing_api_key` with "setup brave", because status handed readiness a snapshot with placeholders already removed; searches named the placeholder correctly.
+- `hermes web-search-plus status` says when no provider runs automatically. With only Brave and `auto_routing.auto_allow.brave: false` (or Brave disabled), the dashboard said "✓ search" and "Active: Brave Search" and `--plain` "search=yes", while `status --json` had `search_auto_ready: false` and the first search without `provider="brave"` failed. Both now print `! Automatic search: no provider runs without provider="name". Fix: provider="brave" or hermes web-search-plus config set-auto-allow brave on`; the dashboard marks such a capability `~` and lists explicit-only or disabled providers under `Only with provider="name"` instead of `Active`. Exit codes are unchanged.
+- `config set-auto-allow <provider> on` is enough. It only wrote the flag, and automatic search tries the providers in `provider_priority`, where DonSeTch, Octen and TinyFish are not: the search still went to the Serper fallback while status said "ready". A provider you allow for automatic search is now added to the end of the order when the config is read; the order by query type stays, and `off` takes it out again.
+- `auto_routing.enabled: 0` (or `"false"`, `"off"`) turns automatic routing off. Only the literal `false` did; other "off" values kept it on. Values that are neither on nor off make the config invalid, like any other bad value.
+- A `config.json` with a number too large for a float (or nesting too deep) no longer fails every search: it is moved aside and the defaults are used, like any other invalid config.
+- `jev.api_key_file` in config.json is named once in the log, like `jev.api_key`: neither is read, and Jev ran without a key without saying why.
+- Setup errors from automatic searches (MCP clients reading the v3 response) no longer carry the Serper fallback attempt's provider and `SERPER_API_KEY`; they carry the readiness answer only.
+- Docs: the architecture and user guides gave the standalone command line's cooldown steps (1, 5, 25, 60 minutes) for the tools. They now give the windows the tools use and name the file each path keeps.
+
 ## [v5.1.8] — 2026-11-08
 
 ### Fixed

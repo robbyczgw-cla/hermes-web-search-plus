@@ -155,7 +155,7 @@ def test_pacer_never_waits_without_a_per_second_policy():
     "changeme", "REPLACE_ME", "${BRAVE_API_KEY}", "api-key-here", "****",
 ])
 def test_template_placeholders_are_not_credentials(value):
-    assert env_loader.is_placeholder_env_value(value)
+    assert env_loader.clean_env_value(value) is None
     with mock.patch.dict(os.environ, {"BRAVE_API_KEY": value}):
         assert config_module.get_api_key("brave", {}) is None
         assert not config_module.provider_configured("brave", {})
@@ -166,4 +166,4 @@ def test_template_placeholders_are_not_credentials(value):
     "yourcompany-key-77ab",
 ])
 def test_real_looking_keys_are_kept(value):
-    assert not env_loader.is_placeholder_env_value(value)
+    assert env_loader.clean_env_value(value) == value

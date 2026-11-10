@@ -62,16 +62,12 @@ def test_donsetch_binary_resolution_is_explicit_and_fail_closed(tmp_path, monkey
 
 def test_mcp_response_parser_extracts_structured_content():
     _spec, module = _provider()
-    response = {
-        "jsonrpc": "2.0",
-        "id": 2,
-        "result": {
-            "content": [{"type": "text", "text": "body"}],
-            "structuredContent": {"content_ok": True, "status": 200},
-            "_meta": {"com.donsetch/fetch-debug": {"title": "Example", "status": 200}},
-        },
+    result = {
+        "content": [{"type": "text", "text": "body"}],
+        "structuredContent": {"content_ok": True, "status": 200},
+        "_meta": {"com.donsetch/fetch-debug": {"title": "Example", "status": 200}},
     }
-    parsed = module["_mcp_response_from_stdout"](json.dumps(response), 2)
+    parsed = module["_payload_from_tool_result"](result)
     assert parsed == {
         "structured": {"content_ok": True, "status": 200},
         "text": "body",
@@ -497,7 +493,7 @@ def test_failed_mcp_paths_raise_typed_errors_and_reap_child(tmp_path, monkeypatc
     assert _alive(pid) is False
 
 
-def test_stderr_capture_is_bounded_sanitized_and_absent_from_success(tmp_path, monkeypatch):
+def test_child_stderr_noise_neither_blocks_nor_reaches_the_result(tmp_path, monkeypatch):
     spec, module = _provider()
     binary, state, env = _write_fake(tmp_path, mode="stderr")
     monkeypatch.setenv("DONSETCH_FAKE_MODE", "stderr")
@@ -512,10 +508,8 @@ def test_stderr_capture_is_bounded_sanitized_and_absent_from_success(tmp_path, m
     )
     dumped = json.dumps(result)
     assert "supersecretvalue" not in dumped
-    excerpt = module["sanitize_stderr"](module["_last_stderr_excerpt"]())
-    assert len(excerpt) <= module["STDERR_LIMIT"] + 1
-    assert "supersecretvalue" not in excerpt
-    assert "token=[redacted]" in excerpt
+    assert "xxxxxxxx" not in dumped
+    assert result["results"]
 
 
 def test_version_detection_classifies_missing_tested_compatible_and_incompatible(tmp_path):
@@ -885,6 +879,16 @@ def test_donsetch_470_fetch_failure_keeps_code_and_next_action():
     assert item["donsetch_code"] == "ssrf_blocked"
     assert item["donsetch_error_kind"] == "invalid_input"
     assert item["next_action"] == "pass a public http(s) URL without embedded credentials"
+
+
+def test_donsetch_fetch_failure_next_action_is_redacted_and_bounded():
+    _spec, module = _provider()
+    hint = "retry with token=supersecretvalue from /home/someone/.cache " + "x" * 400
+    payload = {"structured": {"content_ok": False, "next_action": hint}, "text": "", "meta": {}}
+    action = module["_project_fetch_item"](payload, "https://example.com/")["next_action"]
+    assert "supersecretvalue" not in action and "/home/someone" not in action
+    assert "token=[redacted]" in action and "[path]" in action
+    assert len(action) == 201 and action.endswith("…")
 
 
 def test_donsetch_fetch_failure_drops_malformed_codes():

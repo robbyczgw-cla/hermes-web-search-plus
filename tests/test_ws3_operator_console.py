@@ -144,6 +144,41 @@ def test_overview_is_truthful_when_owned_state_is_absent(
     assert console.serialize_endpoint_payload(payload).endswith(b"\n")
 
 
+def test_overview_auto_column_follows_the_users_auto_allow(tmp_path: Path) -> None:
+    """The console read `auto_routing.allowed_providers`, a key nothing writes,
+    and so showed the defaults whatever the user had allowed or blocked."""
+    console = importlib.import_module("wsp_core.operator_console_v3")
+    routing = importlib.import_module("wsp_core.routing")
+    config = deepcopy(DEFAULT_CONFIG)
+    config["auto_routing"]["auto_allow"] = {"serpbase": True, "brave": False}
+
+    rows = {
+        row["provider"]: row["auto_allowed"]
+        for row in console.build_overview(cache_root=tmp_path, config=config)["providers"]
+    }
+
+    assert rows["serpbase"] is True
+    assert rows["brave"] is False
+    assert rows == {
+        provider: routing._provider_auto_allowed(provider, config["auto_routing"])
+        for provider in rows
+    }
+
+
+def test_overview_finds_the_engine_state_without_a_state_path(tmp_path: Path) -> None:
+    """The default was <cache>/state/v3.sqlite3, a path nothing writes; the
+    engine keeps its state in <cache>/v3/state.sqlite3."""
+    console = importlib.import_module("wsp_core.operator_console_v3")
+    store_module = importlib.import_module("wsp_core.state_store_v3")
+    store_module.SQLiteStateStore(tmp_path / "v3" / "state.sqlite3")
+    with sqlite3.connect(tmp_path / "v3" / "state.sqlite3") as connection:
+        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+    payload = console.build_overview(cache_root=tmp_path, config=deepcopy(DEFAULT_CONFIG))
+
+    assert payload["engine"]["state_available"] is True
+
+
 def test_overview_refuses_symlinked_cache_and_state_ancestors(
     tmp_path: Path,
 ) -> None:

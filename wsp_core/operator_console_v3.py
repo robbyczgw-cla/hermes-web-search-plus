@@ -24,6 +24,7 @@ from .bounded_context_v3 import (
 from .config import DEFAULT_CONFIG, get_api_key, provider_configured
 from .operator_receipts_v3 import JOURNAL_OWNER, JOURNAL_SCHEMA_VERSION
 from .provider_registry import PROVIDER_SPECS
+from .routing import _provider_auto_allowed
 from .contract_v3 import CircuitState, ErrorClass
 from .state_store_v3 import (
     BLOCKING_ERROR_CLASSES,
@@ -384,12 +385,11 @@ def _provider_rows(
     *,
     cache_root: Path,
     now: float,
+    circuit_blocked: frozenset[str] = frozenset(),
 ) -> list[dict[str, Any]]:
     auto = config.get("auto_routing")
     auto = auto if isinstance(auto, Mapping) else {}
     disabled = set(auto.get("disabled_providers") or [])
-    allowed_override = auto.get("allowed_providers")
-    allowed = set(allowed_override) if isinstance(allowed_override, list) else None
     health_path = cache_root / "provider_health.json"
     health: Mapping[str, Any] = {}
     try:
@@ -423,10 +423,12 @@ def _provider_rows(
                 "configured": provider_configured(provider, dict(config)),
                 "key_present": _key_present(provider, config),
                 "disabled": provider in disabled,
-                "auto_allowed": (
-                    provider in allowed if allowed is not None else spec.auto_allowed_by_default
-                ),
-                "cooldown_active": float(pstate.get("cooldown_until", 0) or 0) > now,
+                # Routing's own rule (auto_routing.auto_allow over the default).
+                "auto_allowed": _provider_auto_allowed(provider, dict(auto)),
+                # Either health record may hold the provider back: the engine's
+                # circuit (tools, MCP) or the standalone CLI's cooldown file.
+                "cooldown_active": provider in circuit_blocked
+                or float(pstate.get("cooldown_until", 0) or 0) > now,
             }
         )
     return rows
@@ -485,17 +487,22 @@ def _cache_snapshot(cache_root: Path) -> dict[str, Any]:
     }
 
 
-def _circuit_snapshot(state_path: Path) -> tuple[bool, dict[str, int]]:
+def _circuit_snapshot(
+    state_path: Path, now: float
+) -> tuple[bool, dict[str, int], frozenset[str]]:
+    """Circuit rows by state, and the providers admission holds back at ``now``."""
     counts = {"closed": 0, "open": 0, "blocked_auth": 0, "blocked_quota": 0, "unknown": 0}
+    blocked: set[str] = set()
     if _has_symlink_component(state_path) or not state_path.is_file():
-        return False, counts
+        return False, counts, frozenset()
     connection: sqlite3.Connection | None = None
     try:
         uri = f"file:{state_path.resolve()}?mode=ro&immutable=1"
         connection = sqlite3.connect(uri, uri=True)
         try:
             detail = connection.execute(
-                "SELECT state, error_class, failure_count FROM circuit_state"
+                "SELECT state, error_class, failure_count, provider, open_until"
+                " FROM circuit_state"
             ).fetchall()
         except sqlite3.OperationalError:
             detail = None
@@ -508,7 +515,7 @@ def _circuit_snapshot(state_path: Path) -> tuple[bool, dict[str, int]]:
             # nothing, and older files store "open" below the threshold.
             blocking = {error.value for error in BLOCKING_ERROR_CLASSES}
             effective: dict[str, int] = {}
-            for raw_state, raw_error, raw_failures in detail:
+            for raw_state, raw_error, raw_failures, provider, open_until in detail:
                 if str(raw_error) not in blocking:
                     continue
                 state = str(raw_state)
@@ -518,6 +525,10 @@ def _circuit_snapshot(state_path: Path) -> tuple[bool, dict[str, int]]:
                         CircuitState(state),
                         int(raw_failures or 0),
                     ).value
+                    if state != CircuitState.CLOSED.value and (
+                        open_until is None or float(open_until) > now
+                    ):
+                        blocked.add(str(provider))
                 effective[state] = effective.get(state, 0) + 1
             rows = list(effective.items())
         for raw_state, raw_count in rows:
@@ -529,9 +540,9 @@ def _circuit_snapshot(state_path: Path) -> tuple[bool, dict[str, int]]:
                 counts["open"] += count
             else:
                 counts["unknown"] += count
-        return True, counts
+        return True, counts, frozenset(blocked)
     except (OSError, sqlite3.Error, ValueError):
-        return False, counts
+        return False, counts, frozenset()
     finally:
         if connection is not None:
             connection.close()
@@ -543,7 +554,7 @@ def build_overview(
     config: Mapping[str, Any] | None = None,
     provider_ids: Sequence[str] | None = None,
     state_path: str | Path | None = None,
-    plugin_version: str = "5.1.8",
+    plugin_version: str = "5.1.9",
     now: Callable[[], float] = time.time,
 ) -> dict[str, Any]:
     root = Path(cache_root)
@@ -551,8 +562,9 @@ def build_overview(
     bounded = active_config.get("bounded_context")
     bounded = bounded if isinstance(bounded, Mapping) else {}
     providers = list(provider_ids) if provider_ids is not None else list(PROVIDER_SPECS)
-    circuits_available, circuits = _circuit_snapshot(
-        Path(state_path) if state_path is not None else root / "state" / "v3.sqlite3"
+    circuits_available, circuits, circuit_blocked = _circuit_snapshot(
+        Path(state_path) if state_path is not None else root / "v3" / "state.sqlite3",
+        float(now()),
     )
     receipts = build_receipts(cache_root=root, limit=100)["receipts"]
     benchmarks = build_benchmark_history(cache_root=root, limit=100)["runs"]
@@ -565,7 +577,8 @@ def build_overview(
             "state_available": circuits_available,
         },
         "providers": _provider_rows(
-            active_config, providers, cache_root=root, now=float(now())
+            active_config, providers, cache_root=root, now=float(now()),
+            circuit_blocked=circuit_blocked,
         ),
         "bounds": {
             "max_urls_default": int(bounded.get("max_urls", DEFAULT_MAX_URLS)),

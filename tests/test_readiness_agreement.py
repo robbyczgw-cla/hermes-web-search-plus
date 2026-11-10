@@ -103,6 +103,33 @@ def test_keyless_flag_in_config_json_under_hermes_is_named_not_reported_ready(wo
     assert "serper" not in text.lower()
 
 
+def test_self_hosted_profile_checks_follow_readiness_under_hermes(world, monkeypatch):
+    """The profile block had its own rules: with the SearXNG URL and the Keenable
+    opt-in only in config.json, which a Hermes profile ignores, it reported both
+    checks ok and policy_ready while the provider rows said ignored_source."""
+    _hermes_profile(monkeypatch, {})
+    config = {
+        "profile": "self_hosted",
+        "searxng": {"base_url": "https://8.8.8.8"},
+        "keenable": {"allow_public": True},
+    }
+
+    payload = wsp._status_payload(env={}, config=config)
+
+    rows = payload["providers"]["providers"]
+    assert (rows["searxng"]["state"], rows["keenable"]["state"]) == ("ignored_source", "ignored_source")
+    assert {check["id"]: check["ok"] for check in payload["profile"]["checks"]} == {
+        "searxng_base_url": False, "keenable_keyless": False,
+    }
+    assert payload["profile"]["policy_ready"] is False and payload["profile"]["ready"] is False
+
+    # Set where Hermes reads it, the same block is ready.
+    in_profile = wsp._status_payload(env={"SEARXNG_INSTANCE_URL": "https://8.8.8.8"}, config={"profile": "self_hosted"})
+    assert in_profile["providers"]["providers"]["searxng"]["state"] == "ready"
+    assert in_profile["profile"]["checks"][0]["ok"] is True
+    assert in_profile["profile"]["policy_ready"] is True and in_profile["profile"]["ready"] is True
+
+
 def test_profile_opt_in_makes_keenable_ready_everywhere(world, monkeypatch):
     _hermes_profile(monkeypatch, {"KEENABLE_ALLOW_PUBLIC": "1"})
     ctx = _register(monkeypatch)
@@ -304,5 +331,72 @@ def test_v3_contract_reports_setup_problems_as_config_errors(world, monkeypatch)
     assert (error["error_class"], error["retryable"]) == ("config", False)
     assert error["message"].startswith("BRAVE_API_KEY still holds a template placeholder")
     assert error["details"]["readiness"][0]["reason_code"] == "placeholder_value"
+    # Nothing from the serper filler attempt the user never chose.
+    assert "provider" not in error and "env_var" not in error["details"]
     schema = json.loads((Path(__file__).resolve().parents[1] / "schemas/v3/response.schema.json").read_text())
     assert list(Draft202012Validator(schema).iter_errors(payload)) == []
+
+
+def _cli(world, *argv):
+    parser = wsp.argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args([*argv, "--config-path", str(world)])
+    args.func(args)
+
+
+def test_status_command_names_a_placeholder_key_in_the_profile(world, monkeypatch, capsys):
+    # 5.1.8 `hermes web-search-plus status --json` with BRAVE_API_KEY=your_brave_key
+    # in the profile said brave not_configured / missing_api_key, fix "setup brave":
+    # the CLI handed readiness a snapshot with placeholders already removed.
+    _hermes_profile(monkeypatch, {"BRAVE_API_KEY": "your_brave_key"})
+
+    _cli(world, "status", "--json")
+    brave = json.loads(capsys.readouterr().out)["providers"]["providers"]["brave"]
+    assert (brave["state"], brave["reason_code"]) == ("invalid_value", "placeholder_value")
+    assert brave["configured"] is False
+    assert brave["fix"] != ["hermes web-search-plus setup brave"]
+
+    _cli(world, "status", "--plain")
+    text = capsys.readouterr().out
+    assert "! Brave Search: BRAVE_API_KEY still holds a template placeholder" in text
+
+    # Setup still treats the placeholder as no key: it prints the key command.
+    _cli(world, "setup", "brave", "--no-jev", "--dry-run")
+    out = capsys.readouterr().out
+    assert "BRAVE_API_KEY [not set]" in out
+    assert "hermes config set BRAVE_API_KEY" in out
+
+
+@pytest.mark.parametrize("auto_routing,fix", [
+    ({"auto_allow": {"brave": False}}, 'provider="brave" or hermes web-search-plus config set-auto-allow brave on'),
+    ({"disabled_providers": ["brave"]}, "hermes web-search-plus config enable brave"),
+    ({}, None),
+], ids=["explicit-only", "disabled", "ready"])
+def test_status_text_says_when_no_provider_runs_automatically(auto_routing, fix, world, monkeypatch, capsys):
+    # 5.1.8 with only Brave and auto_allow.brave false: the dashboard said
+    # "✓ search" and "Active: Brave Search", --plain "web-search-plus is configured"
+    # and "search=yes", while status --json had search_auto_ready false and the
+    # first search without provider="brave" failed.
+    world.write_text(json.dumps({"auto_routing": auto_routing}))
+    _hermes_profile(monkeypatch, {"BRAVE_API_KEY": "brave-real-key-123456"})
+    monkeypatch.setenv("NO_COLOR", "1")
+    warning = '! Automatic search: no provider runs without provider="name".'
+
+    _cli(world, "status", "--json")
+    assert json.loads(capsys.readouterr().out)["providers"]["search_auto_ready"] is (fix is None)
+
+    _cli(world, "status")
+    dashboard = capsys.readouterr().out
+    _cli(world, "status", "--plain")
+    plain = capsys.readouterr().out
+    if fix is None:
+        assert "✓ search" in dashboard and "│ Active: Brave Search" in dashboard
+        assert "search=yes" in plain
+        assert warning not in dashboard + plain
+        return
+    assert "✓ search" not in dashboard and "~ search" in dashboard
+    assert "│ Active: none automatically" in dashboard
+    assert '│ Only with provider="name": Brave Search' in dashboard
+    assert "search=explicit only" in plain
+    for text in (dashboard, plain):
+        assert f"{warning} Fix: {fix}" in text

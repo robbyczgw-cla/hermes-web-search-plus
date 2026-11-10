@@ -146,9 +146,9 @@ The plugin favors partial truth over fake certainty.
 
 - Automatic search tries the routed provider first and keeps the other eligible providers as fallbacks. The next one starts as soon as the current one fails or answers with no results, or when it is slower than its usual latency (the 75th percentile of its recent calls, at least `v3.hedge_min_delay_seconds`, default 2.5 s). At most two run at once; the first non-empty answer wins. If every provider answers empty, the empty answer of the routed provider is returned.
 - While a fallback exists, each provider gets one try with a socket timeout of `v3.attempt_timeout_seconds` (default 10 s). An explicitly requested provider without fallback keeps one retry for transient errors (`429`, `503`, timeouts) and its own timeout.
-- Repeated provider failures open a circuit for that provider and update provider health state and cooldown.
-- Cooldowns step through 1 minute, 5 minutes, 25 minutes, and 1 hour.
-- Cooldown state is local and stored in `provider_health.json` under the cache directory.
+- A provider that cannot answer is held back and skipped, and the receipt names the reason: 5 minutes after an authentication failure, up to an hour when the account is out of credits or quota, until the provider's `Retry-After` after a rate limit (60 s without one, at most an hour), and 60 s after three consecutive transient errors or timeouts. When the window ends, one call probes the provider; a success clears the record, a failure holds it back again.
+- This state is kept per provider, endpoint and key in `v3/state.sqlite3` under the cache directory. The operator console shows it per provider.
+- The standalone `search.py` command line has its own, older record: `provider_health.json` under the cache directory, with cooldowns stepping through 1 minute, 5 minutes, 25 minutes and 1 hour. The tools neither read nor write that file.
 - Research mode keeps partial provider results when later extraction or provider calls fail.
 
 

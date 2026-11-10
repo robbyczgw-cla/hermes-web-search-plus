@@ -424,7 +424,7 @@ def urlopen(req, timeout: float = 30):
     return _pooled_open(req, timeout)
 
 
-DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/5.1.8"
+DEFAULT_USER_AGENT = "ClawdBot-WebSearchPlus/5.1.9"
 
 
 def redirect_location(url: str, timeout: float = 2.0) -> str | None:
@@ -661,6 +661,18 @@ _OUT_OF_CREDIT_CODES = frozenset({
 # A 429 carrying one of these is a rate limit that clears by itself, whatever
 # its body says.
 _RATE_LIMIT_HINT_HEADERS = ("Retry-After", "RateLimit-Reset", "X-RateLimit-Reset")
+# A page-level failure in a 400/403 body: the provider worked, the page did not.
+# Linkup /fetch answers HTTP 400 with these codes for target problems.
+_TARGET_ERROR_CODES = {
+    "fetch_target_not_found": extract_failures.NOT_FOUND,
+    "fetch_target_unreachable": extract_failures.UNREACHABLE,
+    "fetch_target_forbidden": extract_failures.BLOCKED,
+    "fetch_target_blocked": extract_failures.BLOCKED,
+}
+# Firecrawl answers HTTP 403 "we do not support this site" for sites it refuses.
+_UNSUPPORTED_SITE_WORDING = re.compile(
+    r"(?:do not|don't|does not|doesn't|cannot|can't) (?:support|scrape|crawl) this (?:site|website|domain|url|page)"
+)
 
 
 def _error_body_text(error: HTTPError) -> str:
@@ -711,14 +723,6 @@ def _out_of_credit(error: HTTPError) -> bool:
     return _OUT_OF_CREDIT_WORDING.search(text.lower()) is not None
 
 
-def _target_failure(error: HTTPError) -> str | None:
-    """A page-level failure carried in a 400/403 error body, or None."""
-    if error.code not in {400, 403}:
-        return None
-    text = _error_body_text(error)
-    return extract_failures.reason_for_error_body(error.code, text, _json_error_codes(text))
-
-
 def _raise_provider_http_error(error: HTTPError) -> None:
     if _out_of_credit(error):
         raise ProviderRequestError(
@@ -728,7 +732,14 @@ def _raise_provider_http_error(error: HTTPError) -> None:
             transient=False,
             out_of_credit=True,
         )
-    target = _target_failure(error)
+    target = None
+    if error.code in {400, 403}:
+        # A target failure is not an account problem: it must not open the
+        # provider's circuit.
+        text = _error_body_text(error)
+        target = next((_TARGET_ERROR_CODES[code] for code in _json_error_codes(text) if code in _TARGET_ERROR_CODES), None)
+        if target is None and error.code == 403 and _UNSUPPORTED_SITE_WORDING.search(text.lower()):
+            target = extract_failures.UNSUPPORTED_SITE
     if target is not None:
         raise ProviderRequestError(
             f"{extract_failures.message(target)} (provider answered HTTP {error.code})",

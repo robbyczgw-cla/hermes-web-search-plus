@@ -60,3 +60,32 @@ def test_explicit_request_for_an_unconfigured_provider_is_unchanged(monkeypatch,
     monkeypatch.setenv("DONSETCH_BIN", donsetch_bin)
     payload = _guidance("search", ["serper"], requested="serper")
     assert payload["error_type"] == "requested_provider_not_configured"
+
+
+def test_set_auto_allow_alone_puts_donsetch_into_auto_search(monkeypatch, tmp_path, donsetch_bin):
+    # The hint names one command. Before, set-auto-allow only wrote the flag:
+    # auto routing tries provider_priority alone, so DonSeTch stayed out and the
+    # search went to the serper filler.
+    import argparse
+    import json
+
+    from plugin_loader import load_plugin
+    from wsp_core import routing
+
+    config_path = tmp_path / "config.json"
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
+    monkeypatch.setenv("DONSETCH_BIN", donsetch_bin)
+    payload = _guidance("search", ["serper", "brave", "tavily"], wsp_config.load_config())
+    assert payload["how_to_fix"] == ['provider="donsetch"', "hermes web-search-plus config set-auto-allow donsetch on"]
+
+    wsp = load_plugin()
+    parser = argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    for state, routed in (("on", "donsetch"), ("off", "serper")):
+        args = parser.parse_args(["config", "set-auto-allow", "donsetch", state, "--config-path", str(config_path)])
+        args.func(args)
+        config = wsp_config.load_config()
+        assert config["auto_routing"]["order"] == "measured"
+        assert ("donsetch" in config["auto_routing"]["provider_priority"]) is (state == "on")
+        assert routing.route_query("python asyncio taskgroup", config)["provider"] == routed
+    assert "donsetch" not in json.loads(config_path.read_text())["auto_routing"].get("provider_priority", [])
