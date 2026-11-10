@@ -454,6 +454,13 @@ def _validate_runtime_config(config: Dict[str, Any]) -> Dict[str, Any]:
                 continue
             provider = _normalize_routing_provider_config(str(raw_provider))
             normalized_allow[provider] = bool(allowed)
+            # Allowed for automatic search means it joins the order: auto
+            # routing only tries provider_priority, so the flag alone left an
+            # explicit-only provider (donsetch) out. It goes last.
+            priority = auto.get("provider_priority")
+            if (normalized_allow[provider] and priority and provider not in priority and auto.get("enabled", True) is not False
+                    and PROVIDER_SPECS[provider].supports_search):
+                priority.append(provider)
         auto["auto_allow"] = normalized_allow
     else:
         auto["auto_allow"] = dict(DEFAULT_CONFIG["auto_routing"].get("auto_allow", {}))
