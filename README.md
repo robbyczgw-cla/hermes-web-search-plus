@@ -21,10 +21,11 @@ Run Hermes from your phone? See [HUI+](https://hermesui.xyz).
 
 > Ported from [web-search-plus-plugin](https://github.com/robbyczgw-cla/web-search-plus-plugin) for the [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin API.
 
-Current release: **v5.1.8**. Version history: [Changelog](CHANGELOG.md).
+Current release: **v5.1.9**. Version history: [Changelog](CHANGELOG.md).
 
 ### What's new in 5.1
 
+- **5.1.9:** settings mean what they say: `set-auto-allow` alone adds a provider to automatic search, `status` names placeholder keys and says when nothing runs automatically, and the self-hosted profile picks up a SearXNG URL set with `hermes config set`. See the [5.1.9 release notes](docs/RELEASE_NOTES_V519.md).
 - **5.1.8:** status, setup, the tools and the engine agree on whether a provider can run, and say why not with the command that fixes it. Under Hermes, keyless setup no longer reports success for a setting Hermes ignores. See the [5.1.8 release notes](docs/RELEASE_NOTES_V518.md).
 - **5.1.7:** failed page extractions say why (page not found, site refused, unreachable, provider does not support the site), a missing page no longer triggers paid fallbacks, and Firecrawl is no longer blocked after a site it does not support. See the [5.1.7 release notes](docs/RELEASE_NOTES_V517.md).
 - **5.1.6:** better sources. Google `goto` redirect links (Serper passes them through for most results since Google's mid-2026 change) are dropped instead of shown, SerpBase returns working links, broken URLs are filtered out, and security and shopping searches start with Brave. See the [5.1.6 release notes](docs/RELEASE_NOTES_V516.md).

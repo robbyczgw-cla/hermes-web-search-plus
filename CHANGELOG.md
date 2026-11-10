@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [v5.1.9] — 2026-11-10
+
 ### Fixed
 
 - Self-hosted profile: a SearXNG URL set with `hermes config set SEARXNG_INSTANCE_URL <url>` (or the environment variable standalone) is used. Status said SearXNG was ready, yet every automatic search failed with "self_hosted profile requires searxng.base_url", because that one check read config.json only. It now takes the readiness answer.
