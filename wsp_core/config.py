@@ -989,8 +989,10 @@ def load_config() -> Dict[str, Any]:
                 else:
                     config[key] = value
             config = _validate_runtime_config(config)
-        except (json.JSONDecodeError, IOError, ValueError, TypeError) as e:
-            _quarantine_runtime_config(config_path, str(e))
+        # A number too large for a float or nesting too deep for the parser is
+        # as invalid as a type error; uncaught, it failed every search.
+        except (json.JSONDecodeError, IOError, ValueError, TypeError, OverflowError, RecursionError) as e:
+            _quarantine_runtime_config(config_path, str(e) or type(e).__name__)
             config = _deepcopy_default_config()
 
     config = _apply_desktop_settings(config, _desktop_settings(config_path))

@@ -1437,3 +1437,20 @@ def test_status_command_shows_rescue_state_from_fake_config(tmp_path, monkeypatc
     assert "Hermes keyless rescue: ON" in capsys.readouterr().out
     assert hermes.read_bytes() == before
     assert sorted(p.name for p in tmp_path.iterdir()) == ["config.json", "hermes.yaml"]
+
+
+@pytest.mark.parametrize("raw_config", [
+    '{"auto_routing": {"confidence_threshold": ' + "9" * 1000 + "}}",
+    "[" * 100_000 + "]" * 100_000,
+], ids=["number-too-large", "nesting-too-deep"])
+def test_engine_moves_a_config_it_cannot_read_instead_of_failing_every_search(tmp_path, monkeypatch, raw_config):
+    # OverflowError / RecursionError escaped load_config: every search failed
+    # and the file stayed in place.
+    from wsp_core import config as wsp_config
+
+    config_path = tmp_path / "config.json"
+    config_path.write_text(raw_config)
+    monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
+    wsp_config.load_config()
+    assert not config_path.exists()
+    assert len(list(tmp_path.glob("config.json.broken-*"))) == 1
