@@ -28,8 +28,8 @@ def test_cli_redacts_url_credentials_and_previews_only_changes(tmp_path, monkeyp
     config = plugin._default_behavior_config()
     config.update({"searxng": {"base_url": "https://fixture-user:fixture-password@example.com/path?token=fixture-token"}, "custom": {"credentials": {"value": "fixture-secret"}}})
     config["auto_routing"]["fallback_provider"] = "brave"
-    path.write_text(json.dumps(config))
-    before = path.read_text()
+    path.write_text(json.dumps(config), encoding="utf-8")
+    before = path.read_text(encoding="utf-8")
     parser = plugin.argparse.ArgumentParser()
     plugin._web_search_plus_cli_setup(parser)
     args = parser.parse_args([*argv, "--config-path", str(path)])
@@ -44,4 +44,4 @@ def test_cli_redacts_url_credentials_and_previews_only_changes(tmp_path, monkeyp
     else:
         data = payload.get("routing", payload)
         assert data["searxng"]["base_url"] == "https://example.com/path"
-    assert path.read_text() == before
+    assert path.read_text(encoding="utf-8") == before

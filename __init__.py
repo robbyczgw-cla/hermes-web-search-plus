@@ -143,7 +143,7 @@ def _ensure_hermes_secret_resolver() -> None:
 def _raw_config_json(path: Path) -> Dict[str, Any]:
     """config.json as written (any section), or {} when missing or unreadable; used only to detect ignored keys."""
     try:
-        raw = json.loads(path.read_text() or "{}")
+        raw = json.loads(path.read_text(encoding="utf-8-sig") or "{}")
     except (OSError, ValueError):
         return {}
     return raw if isinstance(raw, dict) else {}
@@ -526,7 +526,7 @@ def _keyless_rescue_state(text: str) -> Dict[str, Any]:
 def _hermes_keyless_rescue_state(config_path: Optional[Path] = None) -> Dict[str, Any]:
     """:func:`_keyless_rescue_state` for the Hermes config.yaml on disk; never writes it."""
     try:
-        text = (config_path or _get_hermes_config_path()).read_text()
+        text = (config_path or _get_hermes_config_path()).read_text(encoding="utf-8", errors="replace")
     except OSError:
         text = ""
     return _keyless_rescue_state(text)
@@ -541,7 +541,7 @@ def _build_fastpath_report(config_path: Optional[Path] = None) -> Dict[str, Any]
 
     plugin_text = ""
     try:
-        plugin_text = plugin_yaml.read_text()
+        plugin_text = plugin_yaml.read_text(encoding="utf-8", errors="replace")
     except OSError:
         pass
     checks.append({
@@ -559,7 +559,7 @@ def _build_fastpath_report(config_path: Optional[Path] = None) -> Dict[str, Any]
     config_exists = config_path.exists()
     if config_exists:
         try:
-            config_text = config_path.read_text()
+            config_text = config_path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             config_text = ""
     legacy_web_disabled = _yamlish_nested_list_item(config_text, "agent", "disabled_toolsets", "web")
@@ -887,7 +887,7 @@ def _load_behavior_config(path: Optional[Path] = None) -> Dict[str, Any]:
     if not path.exists():
         return _default_behavior_config()
     try:
-        raw = json.loads(path.read_text() or "{}")
+        raw = json.loads(path.read_text(encoding="utf-8-sig") or "{}")
         return _merge_behavior_config(raw)
     except json.JSONDecodeError as exc:
         _quarantine_behavior_config(path, str(exc))
@@ -901,7 +901,7 @@ def _atomic_write_json(path: Path, data: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
     try:
-        with os.fdopen(fd, "w") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, sort_keys=True)
             f.write("\n")
         os.replace(tmp_name, path)
@@ -917,7 +917,7 @@ def _write_behavior_config(path: Path, data: Mapping[str, Any], *, dry_run: bool
     merged: Dict[str, Any] = {}
     if path.exists():
         try:
-            existing = json.loads(path.read_text() or "{}")
+            existing = json.loads(path.read_text(encoding="utf-8-sig") or "{}")
             if isinstance(existing, Mapping):
                 merged = dict(existing)
         except (json.JSONDecodeError, OSError):
@@ -1314,11 +1314,11 @@ def _unconfigured_session_hint(
     state_path = state_path or _setup_state_path()
     try:
         if state_path.exists():
-            data = json.loads(state_path.read_text() or "{}")
+            data = json.loads(state_path.read_text(encoding="utf-8-sig") or "{}")
             if data.get("unconfigured_hint_shown"):
                 return None
         state_path.parent.mkdir(parents=True, exist_ok=True)
-        state_path.write_text(json.dumps({"unconfigured_hint_shown": True}, indent=2) + "\n")
+        state_path.write_text(json.dumps({"unconfigured_hint_shown": True}, indent=2) + "\n", encoding="utf-8")
     except Exception as exc:
         logger.debug("web-search-plus onboarding state write failed: %s", exc)
     if problem is not None:

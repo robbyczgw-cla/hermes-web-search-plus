@@ -21,7 +21,7 @@ def test_cache_put_writes_json_via_atomic_replace(tmp_path, monkeypatch):
     assert replaced[0][1].parent == tmp_path
     assert replaced[0][1].exists()
     assert replaced[0][1].suffix == ".json"
-    assert json.loads(replaced[0][1].read_text())["results"] == []
+    assert json.loads(replaced[0][1].read_text(encoding="utf-8"))["results"] == []
 
 
 def test_provider_health_writes_json_via_atomic_replace(tmp_path, monkeypatch):
@@ -40,4 +40,4 @@ def test_provider_health_writes_json_via_atomic_replace(tmp_path, monkeypatch):
 
     assert replaced
     assert replaced[0][1] == health_path
-    assert json.loads(health_path.read_text())["serper"]["last_error"] == "boom"
+    assert json.loads(health_path.read_text(encoding="utf-8"))["serper"]["last_error"] == "boom"

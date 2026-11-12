@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows: the plugin reads `config.json`, its onboarding state file and the Hermes `config.yaml` as UTF-8, not in the locale encoding (usually cp1252). A valid `config.json` that held a character such as `”` was moved aside as invalid and replaced by the defaults. A UTF-8 byte-order mark is accepted, and writes name UTF-8 explicitly.
+- Tests: every test file read and write names UTF-8, so no test fails on a cp1252 locale only because of the file encoding.
+
 ## [v5.1.9] — 2026-11-10
 
 ### Fixed

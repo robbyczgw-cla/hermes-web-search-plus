@@ -316,9 +316,9 @@ def _response(request: RequestV3, plan: ProviderPlan, _payload: dict) -> Respons
 
 def _age_stored_entries(root, seconds: int) -> None:
     for path in (root / "v3" / "response" / "search").glob("*.json"):
-        envelope = json.loads(path.read_text())
+        envelope = json.loads(path.read_text(encoding="utf-8"))
         envelope["created_at"] -= seconds
-        path.write_text(json.dumps(envelope))
+        path.write_text(json.dumps(envelope), encoding="utf-8")
 
 
 @pytest.mark.parametrize(

@@ -84,10 +84,10 @@ class GoldenEvalTests(unittest.TestCase):
             golden_eval.write_jsonl(rows, out)
             golden_eval.write_markdown_report(rows, report)
 
-            lines = out.read_text().splitlines()
+            lines = out.read_text(encoding="utf-8").splitlines()
             self.assertEqual(len(lines), 2)
             self.assertEqual(json.loads(lines[0])["id"], "q1")
-            text = report.read_text()
+            text = report.read_text(encoding="utf-8")
             self.assertIn("# web-search-plus Golden Query Evaluation", text)
             self.assertIn("normal", text)
             self.assertIn("research", text)

@@ -46,7 +46,7 @@ def hermes(tmp_path, monkeypatch):
     plugin_dir = home / ".hermes" / "plugins" / "web-search-plus"
     plugin_dir.mkdir(parents=True)
     config_yaml = home / ".hermes" / "config.yaml"
-    config_yaml.write_text("model: x\n")
+    config_yaml.write_text("model: x\n", encoding="utf-8")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setenv("HERMES_HOME", str(home / ".hermes"))
     monkeypatch.setenv("HERMES_CONFIG", str(config_yaml))
@@ -108,7 +108,7 @@ def _guard_path(real, forbidden):
 def test_upgrader_is_told_where_the_old_env_is_and_what_to_run(hermes, monkeypatch, capsys, where, caplog):
     folder = wsp._test_plugin_dir if where == "plugin_dir" else wsp._test_plugin_dir.parent
     env_file = folder / ".env"
-    env_file.write_text(f"BRAVE_API_KEY={KEY}\n")
+    env_file.write_text(f"BRAVE_API_KEY={KEY}\n", encoding="utf-8")
     env_file.chmod(0)
     _forbid_reading(monkeypatch, env_file)
 
@@ -137,7 +137,7 @@ def test_upgrader_is_told_where_the_old_env_is_and_what_to_run(hermes, monkeypat
 
 
 def test_upgrader_setup_shows_the_same_notice(hermes, capsys):
-    (wsp._test_plugin_dir / ".env").write_text(f"BRAVE_API_KEY={KEY}\n")
+    (wsp._test_plugin_dir / ".env").write_text(f"BRAVE_API_KEY={KEY}\n", encoding="utf-8")
     _run_cli(["setup", "--dry-run"])
     out = capsys.readouterr().out
     assert "is no longer read since 5.1" in out
@@ -145,7 +145,7 @@ def test_upgrader_setup_shows_the_same_notice(hermes, capsys):
 
 
 def test_once_the_key_is_in_the_profile_the_old_env_no_longer_blocks_calls(hermes, monkeypatch):
-    (wsp._test_plugin_dir / ".env").write_text(f"BRAVE_API_KEY={KEY}\n")
+    (wsp._test_plugin_dir / ".env").write_text(f"BRAVE_API_KEY={KEY}\n", encoding="utf-8")
     hermes["BRAVE_API_KEY"] = "profile-key"
     monkeypatch.setattr(wsp, "_run_search", lambda **kwargs: {"results": [], "provider": "brave", "query": kwargs["query"]})
     tools = _register()
@@ -194,7 +194,7 @@ def test_wsp_extract_backend_without_an_extraction_key_is_flagged(hermes, capsys
     # Seen live: Brave only + extract_backend wsp -> every extract failed in WSP and
     # Hermes' keyless rescue sent the URL to anonymous services, silently.
     hermes["BRAVE_API_KEY"] = KEY
-    wsp._test_config_yaml.write_text("web:\n  search_backend: wsp\n  extract_backend: wsp\n")
+    wsp._test_config_yaml.write_text("web:\n  search_backend: wsp\n  extract_backend: wsp\n", encoding="utf-8")
     out = _status(capsys)
     assert "none of your Web Search Plus keys can extract pages" in out
     assert "keyless rescue" in out
@@ -205,7 +205,7 @@ def test_wsp_extract_backend_without_an_extraction_key_is_flagged(hermes, capsys
 def test_brave_user_with_wsp_backend_gets_no_hint(hermes, capsys):
     hermes["BRAVE_API_KEY"] = KEY
     hermes["TAVILY_API_KEY"] = KEY
-    wsp._test_config_yaml.write_text("web:\n  search_backend: wsp\n  extract_backend: wsp\n")
+    wsp._test_config_yaml.write_text("web:\n  search_backend: wsp\n  extract_backend: wsp\n", encoding="utf-8")
     out = _status(capsys)
     assert "does not use your Web Search Plus keys" not in out
     assert json.loads(_status(capsys, "--json"))["native_backend_hint"] is None
@@ -214,7 +214,7 @@ def test_brave_user_with_wsp_backend_gets_no_hint(hermes, capsys):
 def test_search_on_wsp_but_extract_not_gets_only_the_extract_hint(hermes, capsys):
     hermes["BRAVE_API_KEY"] = KEY
     hermes["LINKUP_API_KEY"] = KEY
-    wsp._test_config_yaml.write_text("web:\n  search_backend: wsp\n")
+    wsp._test_config_yaml.write_text("web:\n  search_backend: wsp\n", encoding="utf-8")
     hint = json.loads(_status(capsys, "--json"))["native_backend_hint"]
     assert "web_extract" in hint and "hermes config set web.extract_backend wsp" in hint
     assert "web.search_backend" not in hint
@@ -229,7 +229,7 @@ def test_brave_user_setup_shows_the_hint(hermes, capsys):
 def test_mcp_standalone_still_loads_env_and_shows_no_legacy_hint(tmp_path, monkeypatch, capsys):
     plugin_dir = tmp_path / "plugin"
     plugin_dir.mkdir()
-    (plugin_dir / ".env").write_text(f"BRAVE_API_KEY={KEY}\n")
+    (plugin_dir / ".env").write_text(f"BRAVE_API_KEY={KEY}\n", encoding="utf-8")
     monkeypatch.setattr(wsp, "_plugin_dir", lambda: plugin_dir)
     monkeypatch.setattr(credentials, "_resolver", None)
     assert wsp._legacy_env_files() == []
@@ -251,7 +251,7 @@ def test_descriptions_no_longer_steer_the_model_away_from_wsp(hermes):
 
 
 def test_old_env_notice_changes_once_the_profile_has_keys(hermes, capsys):
-    (wsp._test_plugin_dir / ".env").write_text(f"BRAVE_API_KEY={KEY}\n")
+    (wsp._test_plugin_dir / ".env").write_text(f"BRAVE_API_KEY={KEY}\n", encoding="utf-8")
     assert "Move each key into your Hermes profile" in _status(capsys)
     hermes["BRAVE_API_KEY"] = "profile-key"
     out = _status(capsys)
@@ -260,7 +260,7 @@ def test_old_env_notice_changes_once_the_profile_has_keys(hermes, capsys):
 
 
 def test_extract_migration_message_says_nothing_was_extracted(hermes):
-    (wsp._test_plugin_dir / ".env").write_text(f"BRAVE_API_KEY={KEY}\n")
+    (wsp._test_plugin_dir / ".env").write_text(f"BRAVE_API_KEY={KEY}\n", encoding="utf-8")
     tools = _register()
     message = tools["web_extract_plus"]["handler"]({"urls": ["https://example.org"]})
     assert "nothing was extracted" in message and "nothing was searched" not in message
@@ -270,7 +270,7 @@ def test_search_on_wsp_without_extract_pin_and_without_extraction_key_is_flagged
     # Seen live: following "search_backend wsp" alone, Hermes picked wsp for web_extract
     # too ("search-only backend and cannot extract URL content") and extraction broke.
     hermes["BRAVE_API_KEY"] = KEY
-    wsp._test_config_yaml.write_text("web:\n  search_backend: wsp\n")
+    wsp._test_config_yaml.write_text("web:\n  search_backend: wsp\n", encoding="utf-8")
     hint = json.loads(_status(capsys, "--json"))["native_backend_hint"]
     assert "Hermes picks wsp for web_extract" in hint
     assert "`hermes config set web.extract_backend exa`" in hint
@@ -278,5 +278,5 @@ def test_search_on_wsp_without_extract_pin_and_without_extraction_key_is_flagged
 
 def test_search_on_wsp_with_a_hermes_extract_backend_is_fine(hermes, capsys):
     hermes["BRAVE_API_KEY"] = KEY
-    wsp._test_config_yaml.write_text("web:\n  search_backend: wsp\n  extract_backend: exa\n")
+    wsp._test_config_yaml.write_text("web:\n  search_backend: wsp\n  extract_backend: exa\n", encoding="utf-8")
     assert json.loads(_status(capsys, "--json"))["native_backend_hint"] is None

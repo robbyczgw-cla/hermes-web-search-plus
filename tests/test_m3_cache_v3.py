@@ -80,7 +80,7 @@ def test_v3_cache_write_and_fresh_stale_lookup_are_namespaced(tmp_path):
     assert stale.age_seconds == 30
     assert expired.disposition == "miss"
     path = tmp_path / "v3" / "response" / "search" / f"{entry_id}.json"
-    envelope = json.loads(path.read_text()) if path.exists() else None
+    envelope = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
     # Expired owned entries may be removed; fresh/stale reads above prove the path.
     assert envelope is None or envelope["contract_version"] == "3.0"
 
@@ -90,10 +90,10 @@ def test_v3_clear_and_stats_never_touch_legacy_or_foreign_files(tmp_path):
     request = _request(request_id="current")
     cache.put(request, _response_payload(), now=100)
     legacy = tmp_path / "legacy-v2.json"
-    legacy.write_text('{"_cache_timestamp": 100}\n')
+    legacy.write_text('{"_cache_timestamp": 100}\n', encoding="utf-8")
     foreign = tmp_path / "v3" / "response" / "foreign.json"
     foreign.parent.mkdir(parents=True, exist_ok=True)
-    foreign.write_text('{"owner": "someone-else"}\n')
+    foreign.write_text('{"owner": "someone-else"}\n', encoding="utf-8")
 
     before = cache.stats()
     cleared = cache.clear()
@@ -111,7 +111,7 @@ def test_corrupt_or_foreign_v3_entry_is_a_miss_and_not_deleted(tmp_path):
     request = _request(request_id="current")
     path = cache.path_for(request)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text('{"owner": "someone-else", "broken": true}\n')
+    path.write_text('{"owner": "someone-else", "broken": true}\n', encoding="utf-8")
 
     lookup = cache.get(request, ttl_seconds=20, allow_stale_seconds=0, now=110)
 

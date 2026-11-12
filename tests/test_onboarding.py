@@ -371,7 +371,7 @@ def test_setup_never_writes_an_env_file_or_credential_file(tmp_path, monkeypatch
         "setup", "--preset", "all", "--jev", "--jev-key-file", str(tmp_path / "typesafe.key"),
         "--keyless-public", "--env-path", str(home / ".env"), "--show-values", "--config-path", str(config_path),
     ])
-    (tmp_path / "typesafe.key").write_text("file-secret-value\n")
+    (tmp_path / "typesafe.key").write_text("file-secret-value\n", encoding="utf-8")
     before = sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*"))
     monkeypatch.setattr("builtins.input", lambda _prompt="": "")
 
@@ -491,7 +491,7 @@ def test_removed_provider_keys_do_not_configure_search_tool_or_setup_status(monk
 
 def test_config_show_json_uses_config_path_without_secrets(tmp_path, capsys):
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "default_provider": "brave", "auto_routing": {"enabled": false}}\n')
+    config_path.write_text('{"version": 1, "default_provider": "brave", "auto_routing": {"enabled": false}}\n', encoding="utf-8")
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["config", "show", "--json", "--config-path", str(config_path)])
@@ -511,7 +511,7 @@ def test_config_set_default_writes_fixed_provider_and_disables_auto(tmp_path):
 
     args.func(args)
 
-    data = json.loads(config_path.read_text())
+    data = json.loads(config_path.read_text(encoding="utf-8"))
     assert data["version"] == 1
     assert data["default_provider"] == "brave"
     assert data["auto_routing"]["enabled"] is False
@@ -519,14 +519,14 @@ def test_config_set_default_writes_fixed_provider_and_disables_auto(tmp_path):
 
 def test_config_set_routing_on_keeps_default_but_reenables_auto(tmp_path):
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "default_provider": "brave", "auto_routing": {"enabled": false}}\n')
+    config_path.write_text('{"version": 1, "default_provider": "brave", "auto_routing": {"enabled": false}}\n', encoding="utf-8")
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["config", "set-routing", "on", "--config-path", str(config_path)])
 
     args.func(args)
 
-    data = json.loads(config_path.read_text())
+    data = json.loads(config_path.read_text(encoding="utf-8"))
     assert data["default_provider"] == "brave"
     assert data["auto_routing"]["enabled"] is True
 
@@ -539,7 +539,7 @@ def test_config_set_priority_normalizes_and_dedupes_providers(tmp_path, capsys):
 
     args.func(args)
 
-    data = json.loads(config_path.read_text())
+    data = json.loads(config_path.read_text(encoding="utf-8"))
     assert data["auto_routing"]["provider_priority"][:3] == ["tavily", "brave", "linkup"]
     assert "parallel" in data["auto_routing"]["provider_priority"]
     assert "duplicate provider ignored: tavily" in capsys.readouterr().err
@@ -554,7 +554,7 @@ def test_config_disable_and_enable_provider_updates_disabled_list(tmp_path):
     enable = parser.parse_args(["config", "enable", "brave", "--config-path", str(config_path)])
     enable.func(enable)
 
-    data = json.loads(config_path.read_text())
+    data = json.loads(config_path.read_text(encoding="utf-8"))
     assert "brave" not in data["auto_routing"]["disabled_providers"]
 
 
@@ -567,7 +567,7 @@ def test_config_set_auto_allow_updates_provider_gate(tmp_path):
     allow = parser.parse_args(["config", "set-auto-allow", "serpbase", "on", "--config-path", str(config_path)])
     allow.func(allow)
 
-    data = json.loads(config_path.read_text())
+    data = json.loads(config_path.read_text(encoding="utf-8"))
     assert data["auto_routing"]["auto_allow"]["serpbase"] is True
     assert data["auto_routing"]["auto_allow"]["querit"] is False
 
@@ -630,21 +630,21 @@ def test_config_dry_run_does_not_write(tmp_path, capsys):
 
 def test_config_reset_creates_backup(tmp_path):
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "default_provider": "brave"}\n')
+    config_path.write_text('{"version": 1, "default_provider": "brave"}\n', encoding="utf-8")
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["config", "reset", "--config-path", str(config_path), "--yes"])
 
     args.func(args)
 
-    assert json.loads(config_path.read_text())["default_provider"] is None
+    assert json.loads(config_path.read_text(encoding="utf-8"))["default_provider"] is None
     assert list(tmp_path.glob("config.json.bak-*"))
 
 
 def test_status_json_includes_routing_without_secrets(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("TAVILY_API_KEY", "tvly-secret-value")
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "default_provider": "tavily", "auto_routing": {"enabled": false}}\n')
+    config_path.write_text('{"version": 1, "default_provider": "tavily", "auto_routing": {"enabled": false}}\n', encoding="utf-8")
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["status", "--json", "--config-path", str(config_path)])
@@ -694,7 +694,7 @@ def test_config_set_threshold_rejects_out_of_range_without_writing(tmp_path):
 
 def test_corrupt_config_is_moved_aside_and_defaults_are_used(tmp_path, capsys):
     config_path = tmp_path / "config.json"
-    config_path.write_text("{ nope")
+    config_path.write_text("{ nope", encoding="utf-8")
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["config", "show", "--json", "--config-path", str(config_path)])
@@ -728,7 +728,7 @@ def test_setup_dry_run_with_routing_preferences_does_not_write(tmp_path, capsys)
 
 def test_config_show_human_contains_routing_summary(tmp_path, capsys):
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "auto_routing": {"enabled": true, "fallback_provider": "linkup"}}\n')
+    config_path.write_text('{"version": 1, "auto_routing": {"enabled": true, "fallback_provider": "linkup"}}\n', encoding="utf-8")
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["config", "show", "--config-path", str(config_path)])
@@ -754,7 +754,7 @@ def test_config_set_extract_priority_writes_isolated_complete_order(tmp_path):
 
     args.func(args)
 
-    data = json.loads(config_path.read_text())
+    data = json.loads(config_path.read_text(encoding="utf-8"))
     assert data["auto_routing"]["extract_provider_priority"] == [
         "serper", "parallel", "tavily", "exa", "linkup", "firecrawl", "you", "keenable", "donsetch"
     ]
@@ -780,7 +780,7 @@ def test_no_secret_leaks_across_status_and_config_commands(tmp_path, monkeypatch
     secret = "tvly-very-secret-value"
     monkeypatch.setenv("TAVILY_API_KEY", secret)
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "default_provider": "tavily", "auto_routing": {"enabled": false}}\n')
+    config_path.write_text('{"version": 1, "default_provider": "tavily", "auto_routing": {"enabled": false}}\n', encoding="utf-8")
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     for argv in [
@@ -810,7 +810,7 @@ def test_removed_provider_config_migrates_without_quarantine(tmp_path, monkeypat
             "disabled_providers": ["kilo_perplexity"],
             "auto_allow": {"perplexity": True, "kilo-perplexity": False, "brave": True},
         },
-    }))
+    }), encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
 
     config = search.load_config()
@@ -838,7 +838,7 @@ def test_setup_config_show_migrates_removed_providers_without_quarantine(tmp_pat
             "disabled_providers": ["perplexity"],
             "auto_allow": {"kilo-perplexity": True, "brave": True},
         },
-    }))
+    }), encoding="utf-8")
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["config", "show", "--json", "--config-path", str(config_path)])
@@ -867,7 +867,7 @@ def test_config_priority_rejects_unknown_provider(tmp_path):
 
 def test_invalid_semantic_config_is_moved_aside_and_defaults_are_used(tmp_path, capsys):
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "default_provider": "google"}\n')
+    config_path.write_text('{"version": 1, "default_provider": "google"}\n', encoding="utf-8")
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["config", "show", "--json", "--config-path", str(config_path)])
@@ -883,7 +883,7 @@ def test_invalid_semantic_config_is_moved_aside_and_defaults_are_used(tmp_path, 
 
 def test_invalid_threshold_config_is_moved_aside_and_defaults_are_used(tmp_path, capsys):
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "auto_routing": {"confidence_threshold": 2}}\n')
+    config_path.write_text('{"version": 1, "auto_routing": {"confidence_threshold": 2}}\n', encoding="utf-8")
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["status", "--json", "--config-path", str(config_path)])
@@ -899,7 +899,7 @@ def test_invalid_threshold_config_is_moved_aside_and_defaults_are_used(tmp_path,
 
 def test_fixed_provider_mode_does_not_add_fallback_providers(monkeypatch, tmp_path, capsys):
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "default_provider": "brave", "auto_routing": {"enabled": false, "provider_priority": ["tavily"]}}\n')
+    config_path.write_text('{"version": 1, "default_provider": "brave", "auto_routing": {"enabled": false, "provider_priority": ["tavily"]}}\n', encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     monkeypatch.setenv("BRAVE_API_KEY", "brave-key")
     monkeypatch.setenv("TAVILY_API_KEY", "tavily-key")
@@ -930,7 +930,7 @@ def test_fixed_provider_mode_does_not_add_fallback_providers(monkeypatch, tmp_pa
 
 def test_search_load_config_quarantines_invalid_default_provider(tmp_path, monkeypatch):
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "default_provider": "google", "auto_routing": {"enabled": false}}\n')
+    config_path.write_text('{"version": 1, "default_provider": "google", "auto_routing": {"enabled": false}}\n', encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
 
     config = search.load_config()
@@ -942,7 +942,7 @@ def test_search_load_config_quarantines_invalid_default_provider(tmp_path, monke
 
 def test_search_load_config_quarantines_invalid_threshold(tmp_path, monkeypatch):
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "auto_routing": {"confidence_threshold": 2}}\n')
+    config_path.write_text('{"version": 1, "auto_routing": {"confidence_threshold": 2}}\n', encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
 
     config = search.load_config()
@@ -956,9 +956,9 @@ def test_search_load_config_keeps_multiple_quarantines_in_same_second(tmp_path, 
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     monkeypatch.setattr(search.time, "time", lambda: 12345)
 
-    config_path.write_text('{"version": 1, "default_provider": "google"}\n')
+    config_path.write_text('{"version": 1, "default_provider": "google"}\n', encoding="utf-8")
     search.load_config()
-    config_path.write_text('{"version": 1, "auto_routing": {"confidence_threshold": 2}}\n')
+    config_path.write_text('{"version": 1, "auto_routing": {"confidence_threshold": 2}}\n', encoding="utf-8")
     search.load_config()
 
     broken_files = sorted(p.name for p in tmp_path.glob("config.json.broken-*"))
@@ -986,7 +986,7 @@ def test_setup_offers_keyless_public_tier_when_no_key_given(tmp_path, monkeypatc
     out = capsys.readouterr().out
     assert "keyless public tier available" in out
     assert "Enabled keyless public search for Keenable" in out
-    data = json.loads(config_path.read_text())
+    data = json.loads(config_path.read_text(encoding="utf-8"))
     assert data["keenable"]["allow_public"] is True
     assert not env_path.exists()
 
@@ -1001,7 +1001,7 @@ def test_setup_keyless_public_flag_enables_without_prompting(tmp_path, monkeypat
 
     args.func(args)
 
-    data = json.loads(config_path.read_text())
+    data = json.loads(config_path.read_text(encoding="utf-8"))
     assert data["keenable"]["allow_public"] is True
 
 
@@ -1021,7 +1021,7 @@ def test_setup_declining_keyless_writes_nothing(tmp_path, monkeypatch, capsys):
 
 def test_setup_skips_keyless_prompt_when_already_opted_in(tmp_path, monkeypatch, capsys):
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "keenable": {"allow_public": true}}\n')
+    config_path.write_text('{"version": 1, "keenable": {"allow_public": true}}\n', encoding="utf-8")
     _isolate_keyless_env(monkeypatch, config_path)
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
@@ -1046,7 +1046,7 @@ def _run_starter_setup(tmp_path, monkeypatch, *, tty: bool, answer: str, config_
     env_path = tmp_path / ".env"
     config_path = tmp_path / "config.json"
     if config_text is not None:
-        config_path.write_text(config_text)
+        config_path.write_text(config_text, encoding="utf-8")
     _isolate_keyless_env(monkeypatch, config_path)
     monkeypatch.setattr(wsp.sys, "stdin", _Stdin(tty))
     parser = wsp.argparse.ArgumentParser()
@@ -1061,7 +1061,7 @@ def _run_starter_setup(tmp_path, monkeypatch, *, tty: bool, answer: str, config_
 
 
 def _allow_public_written(config_path) -> bool:
-    return config_path.exists() and "allow_public" in config_path.read_text()
+    return config_path.exists() and "allow_public" in config_path.read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("answer", ["y", "Yes"])
@@ -1071,7 +1071,7 @@ def test_starter_setup_without_any_key_opts_in_to_keyless_start_on_yes(tmp_path,
     out = capsys.readouterr().out
     assert any("Start without a key using Keenable" in prompt and "[y/N]" in prompt for prompt in prompts)
     assert "Enabled keyless public search for Keenable" in out
-    assert json.loads(config_path.read_text())["keenable"]["allow_public"] is True
+    assert json.loads(config_path.read_text(encoding="utf-8"))["keenable"]["allow_public"] is True
     assert not env_path.exists()
 
 
@@ -1154,7 +1154,7 @@ def test_standalone_setup_script_still_runs_config_json_commands(tmp_path):
     )
 
     assert "Updated routing config" in result.stdout
-    assert json.loads(config_path.read_text())["auto_routing"]["enabled"] is False
+    assert json.loads(config_path.read_text(encoding="utf-8"))["auto_routing"]["enabled"] is False
 
 
 def test_starter_setup_with_a_search_key_in_the_process_environment_does_not_offer_keyless(tmp_path, monkeypatch, capsys):
@@ -1217,7 +1217,7 @@ def test_starter_setup_with_a_search_key_does_not_offer_keyless(tmp_path, monkey
     assert "fake-brave-key" not in out
     assert "BRAVE_API_KEY [set]" in out
     assert not env_path.exists()
-    assert not config_path.exists() or "allow_public" not in config_path.read_text()
+    assert not config_path.exists() or "allow_public" not in config_path.read_text(encoding="utf-8")
 
 
 def test_empty_dashboard_points_to_keyless_and_donsetch():
@@ -1228,14 +1228,14 @@ def test_empty_dashboard_points_to_keyless_and_donsetch():
 
 def test_routing_rewrite_preserves_non_routing_provider_sections(tmp_path):
     config_path = tmp_path / "config.json"
-    config_path.write_text('{"version": 1, "keenable": {"allow_public": true, "search_url": "https://custom"}, "searxng": {"instance_url": "https://x"}}\n')
+    config_path.write_text('{"version": 1, "keenable": {"allow_public": true, "search_url": "https://custom"}, "searxng": {"instance_url": "https://x"}}\n', encoding="utf-8")
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["config", "set-priority", "keenable,brave", "--config-path", str(config_path)])
 
     args.func(args)
 
-    data = json.loads(config_path.read_text())
+    data = json.loads(config_path.read_text(encoding="utf-8"))
     assert data["keenable"] == {"allow_public": True, "search_url": "https://custom"}
     assert data["searxng"] == {"instance_url": "https://x"}
     assert data["auto_routing"]["provider_priority"][:2] == ["keenable", "brave"]
@@ -1247,7 +1247,7 @@ def test_fastpath_report_detects_recommended_hermes_config(tmp_path):
     config_path.write_text(
         "agent:\n"
         "  disabled_toolsets: [web]\n"
-    )
+    , encoding="utf-8")
 
     report = wsp._build_fastpath_report(config_path)
 
@@ -1263,7 +1263,7 @@ def test_fastpath_report_requires_disabled_toolsets_under_agent(tmp_path):
     config_path.write_text(
         "other:\n"
         "  disabled_toolsets: [web]\n"
-    )
+    , encoding="utf-8")
 
     report = wsp._build_fastpath_report(config_path)
 
@@ -1274,7 +1274,7 @@ def test_fastpath_report_requires_disabled_toolsets_under_agent(tmp_path):
 
 def test_fastpath_report_is_advisory_when_hermes_config_lacks_hints(tmp_path):
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("agent:\n  disabled_toolsets: []\n")
+    config_path.write_text("agent:\n  disabled_toolsets: []\n", encoding="utf-8")
 
     report = wsp._build_fastpath_report(config_path)
 
@@ -1287,7 +1287,7 @@ def test_fastpath_report_is_advisory_when_hermes_config_lacks_hints(tmp_path):
 
 def test_fastpath_cli_outputs_json_without_core_patch_dependency(tmp_path, capsys):
     config_path = tmp_path / "config.yaml"
-    config_path.write_text("agent:\n  disabled_toolsets: [web]\n")
+    config_path.write_text("agent:\n  disabled_toolsets: [web]\n", encoding="utf-8")
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["fastpath", "--json", "--config-path", str(config_path)])
@@ -1311,7 +1311,7 @@ def test_fastpath_config_path_respects_profile_home(tmp_path, monkeypatch):
 
 def test_fastpath_native_selection_keeps_web_enabled(tmp_path):
     path = tmp_path / "config.yaml"
-    path.write_text("web:\n  search_backend: wsp\nagent:\n  disabled_toolsets: []\n")
+    path.write_text("web:\n  search_backend: wsp\nagent:\n  disabled_toolsets: []\n", encoding="utf-8")
     report = wsp._build_fastpath_report(path)
     assert report["mode"] == "native"
     assert report["native_capabilities"] == ["search"]
@@ -1322,7 +1322,7 @@ def test_fastpath_native_selection_keeps_web_enabled(tmp_path):
 
 def test_fastpath_native_selection_reports_disabled_web_conflict(tmp_path):
     path = tmp_path / "config.yaml"
-    path.write_text("web:\n  backend: wsp\nagent:\n  disabled_toolsets: [web, browser]\n")
+    path.write_text("web:\n  backend: wsp\nagent:\n  disabled_toolsets: [web, browser]\n", encoding="utf-8")
     report = wsp._build_fastpath_report(path)
     assert report["native_capabilities"] == ["search", "extract"]
     assert report["preferred_web_path_configured"] is False
@@ -1337,10 +1337,10 @@ def test_fastpath_native_overrides_and_unrelated_sections(tmp_path):
     path.write_text(
         "other:\n  search_backend: wsp\nweb:\n  backend: wsp\n"
         "  search_backend: searxng\n  extract_backend: 'wsp' # explicit\n"
-    )
+    , encoding="utf-8")
     report = wsp._build_fastpath_report(path)
     assert report["native_capabilities"] == ["extract"]
-    path.write_text("other:\n  backend: wsp\nweb:\n  search_backend: searxng\n")
+    path.write_text("other:\n  backend: wsp\nweb:\n  search_backend: searxng\n", encoding="utf-8")
     assert wsp._build_fastpath_report(path)["mode"] == "plus"
 
 
@@ -1377,7 +1377,7 @@ def test_session_hint_names_the_hermes_command(tmp_path):
 
 def _rescue_state(tmp_path, body):
     path = tmp_path / "config.yaml"
-    path.write_text(body)
+    path.write_text(body, encoding="utf-8")
     before = path.read_bytes()
     state = wsp._build_fastpath_report(path)["keyless_rescue"]
     assert path.read_bytes() == before  # read-only
@@ -1420,13 +1420,13 @@ def test_native_not_selected_reports_rescue_not_applicable(tmp_path):
 
 def test_status_command_shows_rescue_state_from_fake_config(tmp_path, monkeypatch, capsys):
     hermes = tmp_path / "hermes.yaml"
-    hermes.write_text("web:\n  extract_backend: wsp\n")
+    hermes.write_text("web:\n  extract_backend: wsp\n", encoding="utf-8")
     before = hermes.read_bytes()
     monkeypatch.setenv("HERMES_CONFIG", str(hermes))
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     cfg = tmp_path / "config.json"
-    cfg.write_text('{"version": 1}\n')
+    cfg.write_text('{"version": 1}\n', encoding="utf-8")
     args = parser.parse_args(["status", "--json", "--config-path", str(cfg)])
     args.func(args)
     payload = json.loads(capsys.readouterr().out)
@@ -1449,7 +1449,7 @@ def test_engine_moves_a_config_it_cannot_read_instead_of_failing_every_search(tm
     from wsp_core import config as wsp_config
 
     config_path = tmp_path / "config.json"
-    config_path.write_text(raw_config)
+    config_path.write_text(raw_config, encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     wsp_config.load_config()
     assert not config_path.exists()

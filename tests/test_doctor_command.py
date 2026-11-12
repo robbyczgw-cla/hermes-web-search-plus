@@ -35,7 +35,7 @@ def _clear_provider_env(monkeypatch):
 def test_doctor_json_reports_provider_capabilities_without_secrets(monkeypatch, tmp_path, capsys):
     _clear_provider_env(monkeypatch)
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({"version": 1, "auto_routing": {"disabled_providers": ["brave"]}}))
+    config_path.write_text(json.dumps({"version": 1, "auto_routing": {"disabled_providers": ["brave"]}}), encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     monkeypatch.setenv("SERPER_API_KEY", "very-sensitive-serper-secret")
     monkeypatch.setenv("TAVILY_API_KEY", "very-sensitive-tavily-secret")
@@ -75,7 +75,7 @@ def test_doctor_json_reports_provider_capabilities_without_secrets(monkeypatch, 
 def test_doctor_reports_keyless_badge_when_public_opted_in(monkeypatch, tmp_path, capsys):
     _clear_provider_env(monkeypatch)
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({"version": 1, "keenable": {"allow_public": True}}))
+    config_path.write_text(json.dumps({"version": 1, "keenable": {"allow_public": True}}), encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     monkeypatch.setattr(search, "provider_in_cooldown", lambda _provider: (False, 0))
     monkeypatch.setattr(sys, "argv", ["search.py", "doctor", "--json"])
@@ -92,7 +92,7 @@ def test_doctor_reports_keyless_badge_when_public_opted_in(monkeypatch, tmp_path
 def test_doctor_json_reports_provider_cooldowns(monkeypatch, tmp_path, capsys):
     _clear_provider_env(monkeypatch)
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({"version": 1}))
+    config_path.write_text(json.dumps({"version": 1}), encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     monkeypatch.setenv("SERPER_API_KEY", "very-sensitive-serper-secret")
     monkeypatch.setattr(search, "provider_in_cooldown", lambda provider: (provider == "serper", 42 if provider == "serper" else 0))
@@ -108,7 +108,7 @@ def test_doctor_json_reports_provider_cooldowns(monkeypatch, tmp_path, capsys):
 def test_doctor_plain_text_is_human_readable(monkeypatch, tmp_path, capsys):
     _clear_provider_env(monkeypatch)
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({"version": 1}))
+    config_path.write_text(json.dumps({"version": 1}), encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     monkeypatch.setenv("SERPER_API_KEY", "very-sensitive-serper-secret")
     monkeypatch.setattr(search, "provider_in_cooldown", lambda _provider: (False, 0))
@@ -126,7 +126,7 @@ def test_doctor_plain_text_is_human_readable(monkeypatch, tmp_path, capsys):
 def test_doctor_reports_provider_config_errors_without_crashing(monkeypatch, tmp_path, capsys):
     _clear_provider_env(monkeypatch)
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({"version": 1, "searxng": {"instance_url": "http://127.0.0.1:8888"}}))
+    config_path.write_text(json.dumps({"version": 1, "searxng": {"instance_url": "http://127.0.0.1:8888"}}), encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     monkeypatch.delenv("SEARXNG_ALLOW_PRIVATE", raising=False)
     monkeypatch.setattr(search, "provider_in_cooldown", lambda _provider: (False, 0))
@@ -145,7 +145,7 @@ def test_doctor_reports_provider_config_errors_without_crashing(monkeypatch, tmp
 def test_doctor_reports_cooldown_errors_without_crashing(monkeypatch, tmp_path, capsys):
     _clear_provider_env(monkeypatch)
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({"version": 1}))
+    config_path.write_text(json.dumps({"version": 1}), encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     monkeypatch.setenv("SERPER_API_KEY", "very-sensitive-serper-secret")
 
@@ -172,7 +172,7 @@ def test_doctor_reports_cooldown_errors_without_crashing(monkeypatch, tmp_path, 
 def test_doctor_plain_text_sanitizes_provider_config_errors(monkeypatch, tmp_path, capsys):
     _clear_provider_env(monkeypatch)
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({"version": 1, "searxng": {"instance_url": "http://127.0.0.1:8888"}}))
+    config_path.write_text(json.dumps({"version": 1, "searxng": {"instance_url": "http://127.0.0.1:8888"}}), encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     monkeypatch.delenv("SEARXNG_ALLOW_PRIVATE", raising=False)
     monkeypatch.setattr(search, "provider_in_cooldown", lambda _provider: (False, 0))
@@ -189,10 +189,10 @@ def test_doctor_plain_text_sanitizes_provider_config_errors(monkeypatch, tmp_pat
 
 def test_doctor_cli_handles_real_corrupt_provider_health_file(tmp_path):
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({"version": 1}))
+    config_path.write_text(json.dumps({"version": 1}), encoding="utf-8")
     cache_dir = tmp_path / "cache"
     cache_dir.mkdir()
-    (cache_dir / "provider_health.json").write_text(json.dumps({"serper": {"cooldown_until": "not-int"}}))
+    (cache_dir / "provider_health.json").write_text(json.dumps({"serper": {"cooldown_until": "not-int"}}), encoding="utf-8")
     env = os.environ.copy()
     for name in PROVIDER_ENV_VARS:
         env.pop(name, None)

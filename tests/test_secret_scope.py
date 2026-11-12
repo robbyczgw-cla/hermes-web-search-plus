@@ -217,7 +217,7 @@ def test_jev_key_comes_from_the_resolver_and_key_files_are_not_read(monkeypatch,
     from wsp_core import jev_optional
 
     key_file = tmp_path / "typesafe_api_key"
-    key_file.write_text("file-key")
+    key_file.write_text("file-key", encoding="utf-8")
     monkeypatch.setenv("TYPESAFE_API_KEY_FILE", str(key_file))
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
     assert jev_optional._key() == ""
@@ -276,7 +276,7 @@ def test_no_dotenv_file_is_ever_opened(tmp_path, mode):
     """
     home = tmp_path / "hermes-home"
     home.mkdir()
-    (home / ".env").write_text("BRAVE_API_KEY=dotenv-brave-key-1234567\n")
+    (home / ".env").write_text("BRAVE_API_KEY=dotenv-brave-key-1234567\n", encoding="utf-8")
     env = {
         "PATH": os.environ.get("PATH", ""),
         "HOME": str(tmp_path),

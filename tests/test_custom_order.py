@@ -75,12 +75,12 @@ def test_cli_set_order_persists_and_resets(tmp_path, monkeypatch):
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["config", "set-order", "serper,brave", "--config-path", str(path)])
     args.func(args)
-    auto = json.loads(path.read_text())["auto_routing"]
+    auto = json.loads(path.read_text(encoding="utf-8"))["auto_routing"]
     assert auto["order"] == "custom"
     assert auto["provider_priority"][:2] == ["serper", "brave"]
     args = parser.parse_args(["config", "set-order", "auto", "--config-path", str(path)])
     args.func(args)
-    assert json.loads(path.read_text())["auto_routing"]["order"] == "measured"
+    assert json.loads(path.read_text(encoding="utf-8"))["auto_routing"]["order"] == "measured"
 
 
 _FOUR_X_ORDER = ["you", "serper", "exa", "firecrawl", "tavily", "linkup", "brave"]
@@ -109,12 +109,12 @@ def test_a_4x_order_set_with_set_order_survives_later_config_writes(tmp_path, mo
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(path))
 
     _run_config_cli(wsp, path, "set-order", ",".join(ordered))
-    stored = json.loads(path.read_text())["auto_routing"]
+    stored = json.loads(path.read_text(encoding="utf-8"))["auto_routing"]
     assert stored["order"] == "custom"
     assert stored["provider_priority"][: len(ordered)] == ordered
 
     _run_config_cli(wsp, path, "set-fallback", "exa")
-    after = json.loads(path.read_text())["auto_routing"]
+    after = json.loads(path.read_text(encoding="utf-8"))["auto_routing"]
 
     assert after["order"] == "custom"
     assert after["provider_priority"] == stored["provider_priority"]

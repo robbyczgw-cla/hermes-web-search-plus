@@ -207,7 +207,7 @@ def test_pooled_http_to_https_upgrade_is_blocked_too():
 
 def test_non_keepalive_urlopen_blocks_non_http_schemes(tmp_path):
     target = tmp_path / "secret.txt"
-    target.write_text("local-secret")
+    target.write_text("local-secret", encoding="utf-8")
     with pytest.raises(ProviderRequestError):
         make_get_request(target.as_uri(), {})
     with pytest.raises(ProviderRequestError):

@@ -57,7 +57,7 @@ def test_m1_search_projection_validates_against_request_schema():
         },
     )
     schema = json.loads(
-        __import__("pathlib").Path("schemas/v3/request.schema.json").read_text()
+        __import__("pathlib").Path("schemas/v3/request.schema.json").read_text(encoding="utf-8")
     )
     jsonschema.validate(request.to_dict(), schema)
 
