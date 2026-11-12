@@ -526,7 +526,7 @@ def _keyless_rescue_state(text: str) -> Dict[str, Any]:
 def _hermes_keyless_rescue_state(config_path: Optional[Path] = None) -> Dict[str, Any]:
     """:func:`_keyless_rescue_state` for the Hermes config.yaml on disk; never writes it."""
     try:
-        text = (config_path or _get_hermes_config_path()).read_text(encoding="utf-8", errors="replace")
+        text = (config_path or _get_hermes_config_path()).read_text(encoding="utf-8-sig", errors="replace")
     except OSError:
         text = ""
     return _keyless_rescue_state(text)
@@ -559,7 +559,7 @@ def _build_fastpath_report(config_path: Optional[Path] = None) -> Dict[str, Any]
     config_exists = config_path.exists()
     if config_exists:
         try:
-            config_text = config_path.read_text(encoding="utf-8", errors="replace")
+            config_text = config_path.read_text(encoding="utf-8-sig", errors="replace")
         except OSError:
             config_text = ""
     legacy_web_disabled = _yamlish_nested_list_item(config_text, "agent", "disabled_toolsets", "web")

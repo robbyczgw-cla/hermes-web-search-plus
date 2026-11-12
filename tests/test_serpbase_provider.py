@@ -142,7 +142,7 @@ class SerpBaseProviderTests(unittest.TestCase):
                 ],
                 cwd=str(SEARCH_PATH.parent),
                 env=env,
-                text=True,
+                text=True, encoding="utf-8",
                 capture_output=True,
                 timeout=20,
             )

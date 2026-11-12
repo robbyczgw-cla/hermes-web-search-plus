@@ -740,7 +740,17 @@ def default_search_args(config: Dict[str, Any]) -> SimpleNamespace:
     )
 
 
+def _utf8_stdio() -> None:
+    """Print UTF-8 even where the console encoding (cp1252 on Windows) cannot."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main():
+    _utf8_stdio()
     # Maintenance commands live in modules a search never needs; load them here.
     from . import extract_bench_v3 as _extract_bench
     from . import state_migration_v3 as _state_migration

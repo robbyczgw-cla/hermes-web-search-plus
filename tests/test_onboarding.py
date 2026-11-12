@@ -161,7 +161,7 @@ def test_standalone_setup_script_lists_providers_without_hermes_core_cli():
     result = subprocess.run(
         [sys.executable, str(script), "list", "--json"],
         check=True,
-        text=True,
+        text=True, encoding="utf-8",
         capture_output=True,
     )
 
@@ -1128,7 +1128,7 @@ def test_standalone_setup_script_points_key_commands_to_the_hermes_cli(tmp_path,
         if command != "bench" else [sys.executable, str(script), command],
         input="\n" * 40,
         env=clean_env,
-        text=True,
+        text=True, encoding="utf-8",
         capture_output=True,
     )
 
@@ -1149,7 +1149,7 @@ def test_standalone_setup_script_still_runs_config_json_commands(tmp_path):
         [sys.executable, str(script), "config", "set-routing", "off", "--config-path", str(config_path)],
         env=clean_env,
         check=True,
-        text=True,
+        text=True, encoding="utf-8",
         capture_output=True,
     )
 

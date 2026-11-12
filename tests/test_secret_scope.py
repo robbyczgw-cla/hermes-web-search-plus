@@ -287,7 +287,7 @@ def test_no_dotenv_file_is_ever_opened(tmp_path, mode):
     }
     proc = subprocess.run(
         [sys.executable, "-c", _NO_DOTENV_PROBE, str(ROOT), mode],
-        capture_output=True, text=True, env=env, timeout=60, cwd=str(tmp_path),
+        capture_output=True, text=True, encoding="utf-8", env=env, timeout=60, cwd=str(tmp_path),
     )
     assert proc.returncode == 0, proc.stderr
     report = json.loads(proc.stderr.strip().splitlines()[-1])

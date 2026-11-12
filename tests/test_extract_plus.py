@@ -326,7 +326,7 @@ class ExtractPlusCoreTests(unittest.TestCase):
             [sys.executable, "search.py", "--extract-urls", "--provider", "firecrawl", "--compact"],
             cwd=os.path.dirname(os.path.dirname(search.__file__)),
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8",
             timeout=30,
         )
 

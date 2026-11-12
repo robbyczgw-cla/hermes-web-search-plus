@@ -127,7 +127,17 @@ def _redirect_to_hermes(command: str) -> int:
     return 2
 
 
+def _utf8_stdio() -> None:
+    """Print UTF-8 even where the console encoding (cp1252 on Windows) cannot."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main() -> None:
+    _utf8_stdio()
     if len(sys.argv) > 1 and sys.argv[1] == "new-provider":
         _new_provider(sys.argv[2:])
         return

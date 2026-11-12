@@ -207,7 +207,7 @@ def test_doctor_cli_handles_real_corrupt_provider_health_file(tmp_path):
         cwd=SEARCH_PATH.parent,
         env=env,
         check=True,
-        text=True,
+        text=True, encoding="utf-8",
         capture_output=True,
     )
 
