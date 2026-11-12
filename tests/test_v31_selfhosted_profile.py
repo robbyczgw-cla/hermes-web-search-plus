@@ -153,7 +153,7 @@ def test_status_displays_profile_pool_and_offline_prerequisites(tmp_path, capsys
                 "searxng": {"base_url": "https://search.example.test"},
             }
         )
-    )
+    , encoding="utf-8")
     parser = wsp.argparse.ArgumentParser()
     wsp._web_search_plus_cli_setup(parser)
     args = parser.parse_args(["status", "--plain", "--config-path", str(config_path)])

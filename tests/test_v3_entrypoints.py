@@ -19,7 +19,7 @@ CONFIG = {
         "disabled_providers": [],
     },
 }
-RESPONSE_SCHEMA = json.loads(Path("schemas/v3/response.schema.json").read_text())
+RESPONSE_SCHEMA = json.loads(Path("schemas/v3/response.schema.json").read_text(encoding="utf-8"))
 
 
 def _search_payload(provider="serper"):

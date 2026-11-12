@@ -78,7 +78,7 @@ def _run_in_subprocess(script: str) -> "tuple[float, dict]":
         [sys.executable, "-c", script],
         cwd=str(REPO_ROOT),
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8",
         timeout=20,
     )
     elapsed = time.monotonic() - start

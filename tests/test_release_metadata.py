@@ -17,13 +17,13 @@ def test_release_version_surfaces_are_in_sync():
     # The one deliberately hardcoded version gate. Bump every surface at once
     # with: python3 scripts/prepare_release.py <new-version> --write
     plugin = _load_plugin_module()
-    plugin_yaml = (ROOT / "plugin.yaml").read_text()
-    init_py = (ROOT / "__init__.py").read_text()
-    search_py = (ROOT / "wsp_core" / "search.py").read_text()
-    http_client_py = (ROOT / "wsp_core" / "http_client.py").read_text()
-    operator_console_py = (ROOT / "wsp_core" / "operator_console_v3.py").read_text()
-    ui_py = (ROOT / "wsp_core" / "ui.py").read_text()
-    changelog = (ROOT / "CHANGELOG.md").read_text()
+    plugin_yaml = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
+    init_py = (ROOT / "__init__.py").read_text(encoding="utf-8")
+    search_py = (ROOT / "wsp_core" / "search.py").read_text(encoding="utf-8")
+    http_client_py = (ROOT / "wsp_core" / "http_client.py").read_text(encoding="utf-8")
+    operator_console_py = (ROOT / "wsp_core" / "operator_console_v3.py").read_text(encoding="utf-8")
+    ui_py = (ROOT / "wsp_core" / "ui.py").read_text(encoding="utf-8")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
     assert plugin.__version__ == EXPECTED_VERSION
     assert f'version: "{EXPECTED_VERSION}"' in plugin_yaml
@@ -36,13 +36,13 @@ def test_release_version_surfaces_are_in_sync():
 
 
 def test_runtime_requirements_stay_stdlib_only():
-    assert (ROOT / "requirements.txt").read_text().strip() == ""
+    assert (ROOT / "requirements.txt").read_text(encoding="utf-8").strip() == ""
 
 
 def test_ci_ruff_policy_is_repo_local_and_pinned():
-    policy = (ROOT / "ruff.toml").read_text()
-    workflow = (ROOT / ".github/workflows/ci.yml").read_text()
-    requirements = (ROOT / "requirements-dev.txt").read_text()
+    policy = (ROOT / "ruff.toml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    requirements = (ROOT / "requirements-dev.txt").read_text(encoding="utf-8")
 
     assert 'select = ["E4", "E7", "E9", "F"]' in policy
     assert "ruff check --config ruff.toml ." in workflow
@@ -50,10 +50,10 @@ def test_ci_ruff_policy_is_repo_local_and_pinned():
 
 
 def test_current_release_surfaces_and_attribution():
-    readme = (ROOT / "README.md").read_text()
-    release_notes = (ROOT / "docs/RELEASE_NOTES_V400.md").read_text()
-    user_guide = (ROOT / "docs/USER_GUIDE.md").read_text()
-    env_template = (ROOT / ".env.template").read_text()
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    release_notes = (ROOT / "docs/RELEASE_NOTES_V400.md").read_text(encoding="utf-8")
+    user_guide = (ROOT / "docs/USER_GUIDE.md").read_text(encoding="utf-8")
+    env_template = (ROOT / ".env.template").read_text(encoding="utf-8")
     current_surfaces = "\n".join((readme, release_notes, user_guide, env_template))
 
     assert f"Current release: **v{EXPECTED_VERSION}**" in readme
@@ -71,9 +71,9 @@ def test_current_release_surfaces_and_attribution():
 
 
 def test_current_filter_help_mentions_all_new_native_support():
-    init_py = (ROOT / "__init__.py").read_text().lower()
-    search_py = (ROOT / "wsp_core" / "search.py").read_text().lower()
-    user_guide = (ROOT / "docs/USER_GUIDE.md").read_text().lower()
+    init_py = (ROOT / "__init__.py").read_text(encoding="utf-8").lower()
+    search_py = (ROOT / "wsp_core" / "search.py").read_text(encoding="utf-8").lower()
+    user_guide = (ROOT / "docs/USER_GUIDE.md").read_text(encoding="utf-8").lower()
 
     assert "google.serper.dev/news) and tinyfish" in init_py
     assert "currently serper and tinyfish" in search_py
@@ -83,7 +83,7 @@ def test_current_filter_help_mentions_all_new_native_support():
 
 
 def test_readme_intro_uses_plain_product_language():
-    readme = (ROOT / "README.md").read_text()
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
     intro = readme.split("## Quick Start", 1)[0].lower()
 
     for implementation_term in (

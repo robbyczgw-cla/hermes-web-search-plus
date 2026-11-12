@@ -142,7 +142,7 @@ class SerpBaseProviderTests(unittest.TestCase):
                 ],
                 cwd=str(SEARCH_PATH.parent),
                 env=env,
-                text=True,
+                text=True, encoding="utf-8",
                 capture_output=True,
                 timeout=20,
             )
@@ -154,7 +154,7 @@ class SerpBaseProviderTests(unittest.TestCase):
 
 def _recorded_shape(name):
     # Live 2026-10-30 response shapes; tokens, session IDs and text sanitised.
-    return json.loads((Path(__file__).parent / "fixtures" / name).read_text())
+    return json.loads((Path(__file__).parent / "fixtures" / name).read_text(encoding="utf-8"))
 
 
 def test_mobile_recorded_shape_keeps_six_sources_and_drops_two_goto():

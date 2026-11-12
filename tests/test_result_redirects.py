@@ -24,7 +24,7 @@ from wsp_core.config import _deepcopy_default_config
 from wsp_core.contract_v3 import Capability
 
 plugin = load_plugin("wsp_plugin_test_result_redirects")
-FIXTURE = json.loads((Path(__file__).parent / "fixtures/serper_goto.json").read_text())
+FIXTURE = json.loads((Path(__file__).parent / "fixtures/serper_goto.json").read_text(encoding="utf-8"))
 TARGETS = {
     "CAESduplicate": (302, "https://www.skins.example/guide/?utm_source=google"),
     "CAESresolved": (302, "https://download.example/skin"),

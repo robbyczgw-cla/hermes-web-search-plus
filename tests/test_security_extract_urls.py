@@ -271,7 +271,7 @@ def test_deviation_characters_are_refused_without_the_idna_package(no_dns, no_id
 
 def test_requirements_stay_free_of_idna():
     from pathlib import Path
-    text = (Path(__file__).resolve().parents[1] / "requirements.txt").read_text()
+    text = (Path(__file__).resolve().parents[1] / "requirements.txt").read_text(encoding="utf-8")
     assert "idna" not in text
 
 
