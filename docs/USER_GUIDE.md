@@ -227,7 +227,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py config show --json
 Pin a fixed provider:
 
 ```bash
-python ~/.hermes/plugins/web-search-plus/setup.py config set-default you
+python ~/.hermes/plugins/web-search-plus/setup.py config set-default brave
 ```
 
 Turn query-based auto-routing back on:
@@ -239,7 +239,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py config set-routing on
 Tune automatic search routing, extraction routing, and fallback:
 
 ```bash
-python ~/.hermes/plugins/web-search-plus/setup.py config set-priority you,serper,exa,firecrawl,tavily,linkup
+python ~/.hermes/plugins/web-search-plus/setup.py config set-priority brave,serper,exa,tavily,linkup
 python ~/.hermes/plugins/web-search-plus/setup.py config set-extract-priority serper,parallel,tavily,exa,linkup,firecrawl,you,keenable
 python ~/.hermes/plugins/web-search-plus/setup.py config set-fallback serper
 python ~/.hermes/plugins/web-search-plus/setup.py config disable brave
@@ -250,7 +250,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py config set-threshold 0.45
 Preview config changes without writing:
 
 ```bash
-python ~/.hermes/plugins/web-search-plus/setup.py config set-default you --dry-run
+python ~/.hermes/plugins/web-search-plus/setup.py config set-default brave --dry-run
 ```
 
 Semantics worth knowing:

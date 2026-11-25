@@ -4,13 +4,13 @@ description: "Multi-provider web search, URL extraction, quality reports, and op
 author: robbyczgw-cla
 requires_env: []
 optional_env:
-  - SERPER_API_KEY
-  - SERPBASE_API_KEY
   - BRAVE_API_KEY
-  - TAVILY_API_KEY
+  - SERPER_API_KEY
   - EXA_API_KEY
-  - QUERIT_API_KEY
   - LINKUP_API_KEY
+  - SERPBASE_API_KEY
+  - TAVILY_API_KEY
+  - QUERIT_API_KEY
   - FIRECRAWL_API_KEY
   - YOU_API_KEY
   - PARALLEL_API_KEY
@@ -33,9 +33,9 @@ onboarding:
   fastpath_status_command: "hermes web-search-plus fastpath"
   routing_status_command: "hermes web-search-plus config show"
   routing_config_commands:
-    fixed_provider: "hermes web-search-plus config set-default you"
+    fixed_provider: "hermes web-search-plus config set-default brave"
     auto_routing: "hermes web-search-plus config set-routing on"
-    priority: "hermes web-search-plus config set-priority you,serper,exa,firecrawl,tavily,linkup,parallel"
+    priority: "hermes web-search-plus config set-priority brave,serper,exa,tavily,linkup"
     fallback: "hermes web-search-plus config set-fallback serper"
     disable_provider: "hermes web-search-plus config disable brave"
     block_auto_provider: "hermes web-search-plus config set-auto-allow brave off"
@@ -49,7 +49,7 @@ onboarding:
       url: "https://api.search.brave.com/app/keys"
       secret: true
     - name: SERPER_API_KEY
-      description: "Serper — Google results; first for security and shopping queries"
+      description: "Serper — Google results; second in the automatic order"
       url: "https://serper.dev/api-key"
       secret: true
     - name: EXA_API_KEY
@@ -67,18 +67,18 @@ config_schema:
   auto_routing: {type: bool, label: "Auto routing", description: "Turn automatic provider routing on or off. Priority and budgets stay in config.json."}
   provider_order: {type: str, label: "Provider order", description: "Your own search order, comma-separated (e.g. exa,serper,brave). Used for every query. 'auto' returns to automatic routing by query type. Empty leaves config.json unchanged."}
   searxng_url: {type: str, label: "SearXNG URL", description: "SearXNG base URL. Not a secret. Empty leaves config.json unchanged."}
-  serper_api_key: {type: secret, env: SERPER_API_KEY, description: "Serper API key"}
   brave_api_key: {type: secret, env: BRAVE_API_KEY, description: "Brave Search API key"}
+  serper_api_key: {type: secret, env: SERPER_API_KEY, description: "Serper API key"}
+  exa_api_key: {type: secret, env: EXA_API_KEY, description: "Exa API key"}
+  linkup_api_key: {type: secret, env: LINKUP_API_KEY, description: "Linkup API key"}
   tavily_api_key: {type: secret, env: TAVILY_API_KEY, description: "Tavily API key"}
   you_api_key: {type: secret, env: YOU_API_KEY, description: "You.com API key"}
-  linkup_api_key: {type: secret, env: LINKUP_API_KEY, description: "Linkup API key"}
-  serpbase_api_key: {type: secret, env: SERPBASE_API_KEY, description: "SerpBase API key (explicit-only; enable in config.json)"}
-  exa_api_key: {type: secret, env: EXA_API_KEY, description: "Exa API key"}
-  querit_api_key: {type: secret, env: QUERIT_API_KEY, description: "Querit API key (explicit-only; enable in config.json)"}
+  serpbase_api_key: {type: secret, env: SERPBASE_API_KEY, description: "SerpBase API key (explicit-only; `hermes web-search-plus config set-auto-allow serpbase on` adds it to automatic search)"}
+  querit_api_key: {type: secret, env: QUERIT_API_KEY, description: "Querit API key (explicit-only; `hermes web-search-plus config set-auto-allow querit on` adds it to automatic search)"}
   firecrawl_api_key: {type: secret, env: FIRECRAWL_API_KEY, description: "Firecrawl API key"}
   parallel_api_key: {type: secret, env: PARALLEL_API_KEY, description: "Parallel API key"}
   keenable_api_key: {type: secret, env: KEENABLE_API_KEY, description: "Keenable API key"}
-  monid_api_key: {type: secret, env: MONID_API_KEY, description: "Monid API key (explicit-only; enable in config.json)"}
-  tinyfish_api_key: {type: secret, env: TINYFISH_API_KEY, description: "TinyFish API key (explicit-only; enable in config.json)"}
+  monid_api_key: {type: secret, env: MONID_API_KEY, description: "Monid API key for Octen (explicit-only; `hermes web-search-plus config set-auto-allow octen on` adds it to automatic search)"}
+  tinyfish_api_key: {type: secret, env: TINYFISH_API_KEY, description: "TinyFish API key (explicit-only; `hermes web-search-plus config set-auto-allow tinyfish on` adds it to automatic search)"}
   typesafe_api_key: {type: secret, env: TYPESAFE_API_KEY, description: "TypeSafe key for the optional Jev overlay (off unless enabled in config.json)"}
   donsetch_bin: {type: str, label: "DonSeTch binary", description: "Path to the DonSeTch binary (a file path, not a secret). Empty leaves config.json unchanged."}
