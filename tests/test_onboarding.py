@@ -970,6 +970,15 @@ def _isolate_keyless_env(monkeypatch, config_path):
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     for provider in wsp._KEYLESS_PROVIDER_IDS:
         monkeypatch.delenv(wsp.keyless_public_env_var(provider), raising=False)
+    # These tests pin the standalone path (the keyless flag goes into
+    # config.json). Under a Hermes host setup prints `hermes config set ...`
+    # instead, so a Hermes core importable from the test interpreter must not
+    # install its resolver (it did on a Hermes host, and these five failed).
+    monkeypatch.setitem(sys.modules, "agent", None)
+    monkeypatch.setitem(sys.modules, "agent.secret_scope", None)
+    credentials = sys.modules[wsp.__name__ + ".wsp_core.credentials"]
+    if getattr(credentials._resolver, "__module__", "").startswith("agent"):  # a test's own fake resolver stays
+        monkeypatch.setattr(credentials, "_resolver", None)
 
 
 def test_setup_offers_keyless_public_tier_when_no_key_given(tmp_path, monkeypatch, capsys):
