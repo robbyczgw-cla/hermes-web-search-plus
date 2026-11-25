@@ -1517,12 +1517,20 @@ def _handle_config_command(args: Any) -> None:
     path = Path(getattr(args, "config_path", None) or _get_plugin_config_path())
     config = _load_behavior_config(path)
     dry_run = bool(getattr(args, "dry_run", False))
+    # Searches use config.json with the Hermes plugin settings (Desktop or
+    # `hermes plugins config`) laid over it, as status shows. They are shown,
+    # never written into config.json.
+    hermes_settings = _desktop_settings(path)
+    hermes_source = "Hermes plugin settings (`hermes plugins config web-search-plus` or Hermes Desktop)"
 
     if subcommand == "show":
+        used = _apply_desktop_settings(json.loads(json.dumps(config)), hermes_settings)
         if getattr(args, "json", False):
-            print(json.dumps(redact_secrets(config), indent=2, sort_keys=True))
+            print(json.dumps(redact_secrets(used), indent=2, sort_keys=True))
         else:
-            print(_routing_summary(config))
+            print(_routing_summary(used))
+            if hermes_settings:
+                print(f"  from {hermes_source}: " + ", ".join(sorted(hermes_settings)))
         return
 
     if subcommand == "set-routing":
@@ -1581,8 +1589,19 @@ def _handle_config_command(args: Any) -> None:
     config = _merge_behavior_config(config)
     _write_behavior_config(path, config, dry_run=dry_run)
     if not dry_run:
+        used = _apply_desktop_settings(json.loads(json.dumps(config)), hermes_settings)
         print(f"✓ Updated routing config: {path}")
-        print(_routing_summary(config))
+        print(_routing_summary(used))
+        wrote, uses = config["auto_routing"], used["auto_routing"]
+        overridden = [name for name, mine, theirs in (
+            ("auto_routing", wrote.get("enabled"), uses.get("enabled")),
+            ("provider_order", (wrote.get("order"), wrote.get("provider_priority")),
+             (uses.get("order"), uses.get("provider_priority"))),
+        ) if mine != theirs]
+        if overridden:
+            # It used to say "Updated" while searches kept the other value.
+            print(f"! Saved to config.json, but your {hermes_source} set {', '.join(overridden)}, "
+                  "and searches use that. Change it there, then /reload.")
 
 
 def _web_search_plus_cli_command(args: Any) -> None:
@@ -1644,7 +1663,8 @@ def _web_search_plus_cli_command(args: Any) -> None:
                 print("\n" + payload["native_backend_hint"])
             print("\n" + "\n".join(_render_keyless_rescue(payload["hermes_native"])))
             if desktop:
-                print("  from Hermes Desktop settings: " + ", ".join(sorted(desktop)))
+                print("  from Hermes plugin settings (`hermes plugins config web-search-plus` or Hermes Desktop): "
+                      + ", ".join(sorted(desktop)))
             donsetch = payload.get("donsetch") or {}
             if donsetch.get("binary_configured") or donsetch.get("state") != "missing":
                 print(

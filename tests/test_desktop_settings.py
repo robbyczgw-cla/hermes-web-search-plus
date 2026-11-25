@@ -545,7 +545,7 @@ def test_status_shows_the_order_from_the_desktop_field(tmp_path, monkeypatch, bl
     payload = json.loads(_status(tmp_path, home, "--json"))
 
     assert "order: custom" in text
-    assert "from Hermes Desktop settings: provider_order" in text
+    assert "or Hermes Desktop): provider_order" in text
     assert payload["routing"]["auto_routing"]["order"] == "custom"
     assert payload["routing"]["auto_routing"]["provider_priority"][:3] == ["exa", "serper", "brave"]
     assert json.loads(path.read_text(encoding="utf-8")) == {"auto_routing": {"order": "measured"}}
@@ -555,7 +555,7 @@ def test_status_without_desktop_settings_names_no_desktop_source(tmp_path):
     home = tmp_path / "home"
     _write_plugin_config(home, {})
 
-    assert "from Hermes Desktop settings" not in _status(tmp_path, home)
+    assert "from Hermes plugin settings" not in _status(tmp_path, home)
 
 
 def test_donsetch_binary_desktop_field_sets_the_binary_path(tmp_path, monkeypatch):
@@ -583,3 +583,49 @@ def test_manifest_covers_every_provider_key_and_points_onboarding_at_the_hermes_
     assert {"donsetch_bin", "searxng_url"} <= _schema_setting_fields(text)
     assert "setup.py" not in "\n".join(_yaml_block(text, "onboarding:"))
     assert "hermes web-search-plus status" in text
+
+
+def _config_cli(tmp_path, home: Path, *argv: str) -> str:
+    import argparse
+    import contextlib
+    import io
+
+    wsp = load_plugin("wsp_plugin_desktop_config_cli")
+    parser = argparse.ArgumentParser()
+    wsp._web_search_plus_cli_setup(parser)
+    args = parser.parse_args(["config", *argv, "--config-path", str(home / "plugins" / "config.json")])
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        args.func(args)
+    return out.getvalue()
+
+
+def test_config_commands_show_what_searches_use_and_say_when_hermes_settings_win(tmp_path):
+    # 5.1.9: with auto_routing off in the Hermes plugin settings (written by
+    # `hermes plugins config` or Desktop), `config set-routing on` said
+    # "Updated" and `config show` said "on", while searches ran with it off.
+    home = tmp_path / "home"
+    path = _write_plugin_config(home, {"auto_routing": {"enabled": False}})
+    (home / "config.yaml").write_text(_settings_yaml(auto_routing="false"), encoding="utf-8")
+
+    out = _config_cli(tmp_path, home, "set-routing", "on")
+    assert "✓ Updated routing config" in out
+    assert "auto-routing: off" in out
+    assert "! Saved to config.json, but your Hermes plugin settings" in out
+    assert "set auto_routing, and searches use that" in out
+    assert json.loads(path.read_text(encoding="utf-8"))["auto_routing"]["enabled"] is True
+
+    shown = _config_cli(tmp_path, home, "show")
+    assert "auto-routing: off" in shown
+    assert "from Hermes plugin settings (`hermes plugins config web-search-plus` or Hermes Desktop): auto_routing" in shown
+    assert json.loads(_config_cli(tmp_path, home, "show", "--json"))["auto_routing"]["enabled"] is False
+    # The Hermes settings are shown, never copied into config.json.
+    assert json.loads(path.read_text(encoding="utf-8"))["auto_routing"]["enabled"] is True
+
+
+def test_config_commands_without_hermes_settings_print_no_override(tmp_path):
+    home = tmp_path / "home"
+    _write_plugin_config(home, {})
+    out = _config_cli(tmp_path, home, "set-routing", "off")
+    assert "auto-routing: off" in out and "! Saved to config.json" not in out
+    assert "from Hermes plugin settings" not in _config_cli(tmp_path, home, "show")
