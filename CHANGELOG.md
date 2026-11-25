@@ -2,11 +2,20 @@
 
 ## [Unreleased]
 
+## [v5.1.10] — 2026-11-25
+
 ### Fixed
 
 - Windows: the plugin reads `config.json`, its onboarding state file and the Hermes `config.yaml` as UTF-8, not in the locale encoding (usually cp1252). A valid `config.json` that held a character such as `”` was moved aside as invalid and replaced by the defaults. A UTF-8 byte-order mark is accepted by every reader of these files and of `.env`, including the engine's `load_config()`, and writes name UTF-8 explicitly.
 - Windows: `python setup.py config ...` and `python search.py` print UTF-8. On a cp1252 console `setup.py config set-routing off` wrote the config and then failed with `UnicodeEncodeError` on the check mark.
 - Tests: every test file read and write, temporary file and text-mode subprocess names UTF-8, so no test fails on a cp1252 locale only because of the file encoding.
+- `status` no longer recommends `tools.tool_search.never_defer`. Hermes has no such setting: tool search defers every plugin tool and never its own `web_search`, so following the advice changed nothing. The hint now says what happens without `web.search_backend wsp`: the model sees Hermes' `web_search` directly and `web_search_plus` only through tool search.
+- `config show` and the `config set-*` summaries show what searches use. Hermes v0.23.4's `hermes plugins config web-search-plus` (and Hermes Desktop) store some settings in `config.yaml`, which the engine and `status` lay over `config.json`; `config set-routing on` printed "Updated" and "on" while searches kept routing off. They now show the effective values, name the fields that come from the Hermes plugin settings, and say when those settings override what was just saved.
+- The `web_search_plus` description the model reads said "Serper for security and shopping"; routing has started both with Brave since 5.1.6. `hermes plugins config` listed keys starting with Serper and SerpBase, and explicit-only keys said "enable in config.json"; Brave, Serper, Exa and Linkup now come first and explicit-only keys name `config set-auto-allow <provider> on`. Onboarding examples no longer use You.com, and the standalone `search.py --help` table names Brave for shopping.
+
+### Added
+
+- `brave.api_url`, `tavily.search_url` and `exa.base_url` in `config.json` point search at a compatible proxy or gateway, like the existing `api_url` and extract endpoint overrides; defaults are unchanged. Same engine change as web-search-plus-mcp (contributed there by @hardworkDAD).
 
 ## [v5.1.9] — 2026-11-10
 

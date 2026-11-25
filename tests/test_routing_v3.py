@@ -730,3 +730,50 @@ def test_the_config_module_still_exports_the_migration_helper():
         DEFAULT_PROVIDER_PRIORITY
     )
     assert config_module._replace_pre_5_default_priority(["serper"]) == ["serper"]
+
+
+def test_tool_description_names_the_first_provider_routing_uses():
+    # 5.1.6 moved security and shopping to Brave; the web_search_plus
+    # description the model reads still said "Serper for security and shopping".
+    import re
+
+    from plugin_loader import load_plugin
+    from wsp_core.routing import INTENT_FIRST_PROVIDER
+
+    class Ctx:
+        def __init__(self):
+            self.tools = {}
+
+        def register_tool(self, **kwargs):
+            self.tools[kwargs["name"]] = kwargs
+
+        def __getattr__(self, _name):
+            return lambda *a, **k: None
+
+    ctx = Ctx()
+    load_plugin("wsp_plugin_tool_description").register(ctx)
+    text = ctx.tools["web_search_plus"]["schema"]["description"]
+    claims = {}
+    for provider, intents in re.findall(r"(\w+) first for ([^;]+?)(?:queries|;|$)", text):
+        for intent in re.findall(r"[a-z]+", intents.lower()):
+            claims.setdefault(intent, provider.lower())
+    for intent, provider in INTENT_FIRST_PROVIDER.items():
+        assert claims.get(intent) == provider, (intent, claims.get(intent), text)
+    assert "Serper for security" not in text
+
+
+def test_standalone_help_names_the_first_provider_routing_uses():
+    # The `search.py --help` table still said "shopping → Serper" after 5.1.6.
+    import re
+
+    from wsp_core import config as config_module, search
+    from wsp_core.routing import INTENT_FIRST_PROVIDER
+
+    help_text = search.build_parser(config_module._deepcopy_default_config()).format_help()
+    table = {}
+    for left, provider in re.findall(r"(?m)^  ([a-z ,]+?)\s+→ (\w+)\s", help_text):
+        for word in re.findall(r"[a-z]+", left):
+            table[word] = provider.lower()
+    for intent, provider in INTENT_FIRST_PROVIDER.items():
+        # An intent without a line of its own falls under "everything else".
+        assert table.get(intent, table["else"]) == provider, (intent, table)

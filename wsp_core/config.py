@@ -174,10 +174,15 @@ DEFAULT_CONFIG = {
     },
     "brave": {
         "safesearch": "moderate",
+        # Search endpoint; operator-overridable for compatible
+        # self-hosted/proxy services (firecrawl api_url pattern).
+        "api_url": "https://api.search.brave.com/res/v1/web/search",
     },
     "tavily": {
         "depth": "basic",
-        "topic": "general"
+        "topic": "general",
+        # Search endpoint; operator-overridable like ``extract_url``.
+        "search_url": "https://api.tavily.com/search"
     },
     "querit": {
         "base_url": "https://api.querit.ai",
@@ -193,7 +198,10 @@ DEFAULT_CONFIG = {
     "exa": {
         "type": "neural",
         "depth": "normal",
-        "verbosity": "standard"
+        "verbosity": "standard",
+        # Base URL for the search endpoints (``/search`` and
+        # ``/findSimilar`` are appended); operator-overridable.
+        "base_url": "https://api.exa.ai"
     },
     "parallel": {
         "api_url": "https://api.parallel.ai/v1/search",

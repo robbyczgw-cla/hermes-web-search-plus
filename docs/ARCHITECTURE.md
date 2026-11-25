@@ -92,7 +92,7 @@ Routing is rule-based. It is not ML and it is not magic.
 High-level flow (routing policy `routing-v3`, details in [Routing](ROUTING.md)):
 
 1. Assign the query one of eight intents from text cues (`wsp_core/intents.py`): academic, community, docs, general, local, news, security, shopping.
-2. Build the candidate order: the intent's first-provider rule if it has one (Exa for academic and docs, Serper for security and shopping), then the measured order (Brave, Serper, Exa, Tavily), then `provider_priority`. With `auto_routing.order: custom`, `provider_priority` alone is the order for every query.
+2. Build the candidate order: the intent's first-provider rule if it has one (Exa for academic and docs, Brave for security and shopping), then the measured order (Brave, Serper, Exa, Tavily), then `provider_priority`. With `auto_routing.order: custom`, `provider_priority` alone is the order for every query.
 3. Remove providers that do not have a key or required local config.
 4. Remove providers listed in `disabled_providers`.
 5. Remove providers with `auto_allow=false` from automatic routing.

@@ -593,6 +593,7 @@ def search_brave(
     language: Optional[str] = "en",
     time_range: Optional[str] = None,
     safesearch: str = "moderate",
+    api_url: str = "https://api.search.brave.com/res/v1/web/search",
 ) -> dict:
     """Search using Brave Search API. ``language=None`` omits ``search_lang``."""
     freshness_map = {
@@ -616,7 +617,7 @@ def search_brave(
     if time_range and time_range in freshness_map:
         params["freshness"] = freshness_map[time_range]
 
-    url = f"https://api.search.brave.com/res/v1/web/search?{urlencode(params)}"
+    url = f"{api_url}?{urlencode(params)}"
     headers = {
         "X-Subscription-Token": api_key,
         "Accept": "application/json",
@@ -693,9 +694,10 @@ def search_tavily(
     include_images: bool = False,
     include_raw_content: bool = False,
     time_range: Optional[str] = None,
+    api_url: str = "https://api.tavily.com/search",
 ) -> dict:
     """Search using Tavily (AI Research Search)."""
-    endpoint = "https://api.tavily.com/search"
+    endpoint = api_url
 
     body = {
         "api_key": api_key,
@@ -1492,6 +1494,7 @@ def search_exa(
     exclude_domains: Optional[List[str]] = None,
     text_verbosity: str = "standard",
     freshness: Optional[str] = None,
+    base_url: str = "https://api.exa.ai",
 ) -> dict:
     """Search Exa's source-result endpoint; synthesis modes are charter-banned."""
     if exa_depth in {"deep", "deep-reasoning"}:
@@ -1504,7 +1507,7 @@ def search_exa(
 
     if similar_url:
         # findSimilar does not support deep search types
-        endpoint = "https://api.exa.ai/findSimilar"
+        endpoint = f"{base_url.rstrip('/')}/findSimilar"
         body: Dict[str, Any] = {
             "url": similar_url,
             "numResults": max_results,
@@ -1514,7 +1517,7 @@ def search_exa(
             },
         }
     else:
-        endpoint = "https://api.exa.ai/search"
+        endpoint = f"{base_url.rstrip('/')}/search"
         body = {
             "query": query,
             "numResults": max_results,

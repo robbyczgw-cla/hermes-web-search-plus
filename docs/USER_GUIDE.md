@@ -41,7 +41,7 @@ hermes config set web.extract_backend wsp   # with an extraction key (Tavily, Ex
 hermes config set web.extract_backend exa   # search-only keys such as Brave: keep Hermes' own extraction
 ```
 
-Run `/reload` afterwards. Always set `web.extract_backend` together with `web.search_backend wsp`: if it is not set, Hermes picks `wsp` for extraction as well. Choose `wsp` only if one of your keys can extract pages (Brave, for example, only searches); otherwise every `web_extract` fails. Keep a Hermes backend such as `exa` (keyless tier) or `tavily` instead. `status` warns about both mistakes. The alternative is to keep Hermes' search and list the Plus tools under `tools.tool_search.never_defer` in your Hermes `config.yaml`: `[web_search_plus, web_extract_plus]`. Web Search Plus never writes your Hermes config; `status` only reads the `web` settings (`status --json`: `native_backend_hint`).
+Run `/reload` afterwards. Always set `web.extract_backend` together with `web.search_backend wsp`: if it is not set, Hermes picks `wsp` for extraction as well. Choose `wsp` only if one of your keys can extract pages (Brave, for example, only searches); otherwise every `web_extract` fails. Keep a Hermes backend such as `exa` (keyless tier) or `tavily` instead. `status` warns about both mistakes. Without it, Hermes offers its own `web_search` to the model directly and the Plus tools only through tool search (Hermes defers every plugin tool and has no setting to keep one in view), so most searches skip your keys. Web Search Plus never writes your Hermes config; `status` only reads the `web` settings (`status --json`: `native_backend_hint`).
 
 Smoke test from the plugin directory. The standalone script does not read `.env` files, so export the keys first:
 
@@ -227,7 +227,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py config show --json
 Pin a fixed provider:
 
 ```bash
-python ~/.hermes/plugins/web-search-plus/setup.py config set-default you
+python ~/.hermes/plugins/web-search-plus/setup.py config set-default brave
 ```
 
 Turn query-based auto-routing back on:
@@ -239,7 +239,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py config set-routing on
 Tune automatic search routing, extraction routing, and fallback:
 
 ```bash
-python ~/.hermes/plugins/web-search-plus/setup.py config set-priority you,serper,exa,firecrawl,tavily,linkup
+python ~/.hermes/plugins/web-search-plus/setup.py config set-priority brave,serper,exa,tavily,linkup
 python ~/.hermes/plugins/web-search-plus/setup.py config set-extract-priority serper,parallel,tavily,exa,linkup,firecrawl,you,keenable
 python ~/.hermes/plugins/web-search-plus/setup.py config set-fallback serper
 python ~/.hermes/plugins/web-search-plus/setup.py config disable brave
@@ -250,7 +250,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py config set-threshold 0.45
 Preview config changes without writing:
 
 ```bash
-python ~/.hermes/plugins/web-search-plus/setup.py config set-default you --dry-run
+python ~/.hermes/plugins/web-search-plus/setup.py config set-default brave --dry-run
 ```
 
 Semantics worth knowing:

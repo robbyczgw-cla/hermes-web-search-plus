@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import unicodedata
 from pathlib import Path
@@ -319,6 +320,10 @@ def test_contract_requires_execution_id():
 
 def test_schema_boundary_via_ajv():
     script = Path(__file__).parent / "schema_boundary_v3.mjs"
+    # Ajv comes from `npm ci` (package.json). CI installs it and must run this;
+    # a checkout without node_modules reports the missing tool, not a failure.
+    if not (script.parents[1] / "node_modules" / "ajv" / "dist" / "2020.js").is_file() and not os.environ.get("CI"):
+        pytest.skip("ajv is not installed (run `npm ci`); CI runs this check")
     proc = subprocess.run(
         ["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60,
     )

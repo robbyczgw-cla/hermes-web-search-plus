@@ -1,10 +1,9 @@
 """Query-intent detector for first-provider routing.
 
 ``classify_intent(query)`` labels a query with one of eight intents
-(academic, community, docs, general, local, news, security, shopping). The 5.0
-router uses the label to pick the first provider: Exa first for ``academic``
-and ``docs``, Serper first for ``security`` and ``shopping``, Brave first for
-everything else.
+(academic, community, docs, general, local, news, security, shopping). With
+measured routing, Exa leads for ``academic`` and ``docs``. Brave leads for
+the other intents, including ``security`` and ``shopping``.
 wsp_core/routing.py holds that table; this module only classifies.
 
 Design

@@ -1,11 +1,11 @@
 """
-web-search-plus — Hermes Plugin v5.1.9
+web-search-plus — Hermes Plugin v5.1.10
 Multi-provider web search, URL extraction, quality reports, and opt-in research mode.
 Ported from robbyczgw-cla/web-search-plus-plugin (OpenClaw) to Hermes Plugin API.
 """
 from __future__ import annotations
 
-__version__ = "5.1.9"
+__version__ = "5.1.10"
 
 import argparse
 import importlib
@@ -268,8 +268,10 @@ def _native_backend_hint(search_configured: bool, extract_configured: bool, nati
         return (
             "Hermes' own web_search does not use your Web Search Plus keys. To route it through them: "
             f"`hermes config set web.search_backend wsp`{extract_part}, then /reload. "
-            "Alternative: keep Hermes' search and list "
-            "web_search_plus/web_extract_plus under tools.tool_search.never_defer."
+            # Hermes' tool search always defers plugin tools and never its own
+            # web_search; it has no setting to keep a plugin tool in view.
+            "Otherwise the model sees Hermes' web_search directly and web_search_plus "
+            "only through tool search, so most searches skip your keys."
         )
     if extract_configured and "extract" not in selected:
         return (
@@ -1515,12 +1517,20 @@ def _handle_config_command(args: Any) -> None:
     path = Path(getattr(args, "config_path", None) or _get_plugin_config_path())
     config = _load_behavior_config(path)
     dry_run = bool(getattr(args, "dry_run", False))
+    # Searches use config.json with the Hermes plugin settings (Desktop or
+    # `hermes plugins config`) laid over it, as status shows. They are shown,
+    # never written into config.json.
+    hermes_settings = _desktop_settings(path)
+    hermes_source = "Hermes plugin settings (`hermes plugins config web-search-plus` or Hermes Desktop)"
 
     if subcommand == "show":
+        used = _apply_desktop_settings(json.loads(json.dumps(config)), hermes_settings)
         if getattr(args, "json", False):
-            print(json.dumps(redact_secrets(config), indent=2, sort_keys=True))
+            print(json.dumps(redact_secrets(used), indent=2, sort_keys=True))
         else:
-            print(_routing_summary(config))
+            print(_routing_summary(used))
+            if hermes_settings:
+                print(f"  from {hermes_source}: " + ", ".join(sorted(hermes_settings)))
         return
 
     if subcommand == "set-routing":
@@ -1579,8 +1589,19 @@ def _handle_config_command(args: Any) -> None:
     config = _merge_behavior_config(config)
     _write_behavior_config(path, config, dry_run=dry_run)
     if not dry_run:
+        used = _apply_desktop_settings(json.loads(json.dumps(config)), hermes_settings)
         print(f"✓ Updated routing config: {path}")
-        print(_routing_summary(config))
+        print(_routing_summary(used))
+        wrote, uses = config["auto_routing"], used["auto_routing"]
+        overridden = [name for name, mine, theirs in (
+            ("auto_routing", wrote.get("enabled"), uses.get("enabled")),
+            ("provider_order", (wrote.get("order"), wrote.get("provider_priority")),
+             (uses.get("order"), uses.get("provider_priority"))),
+        ) if mine != theirs]
+        if overridden:
+            # It used to say "Updated" while searches kept the other value.
+            print(f"! Saved to config.json, but your {hermes_source} set {', '.join(overridden)}, "
+                  "and searches use that. Change it there, then /reload.")
 
 
 def _web_search_plus_cli_command(args: Any) -> None:
@@ -1632,6 +1653,10 @@ def _web_search_plus_cli_command(args: Any) -> None:
         else:
             print(_render_setup_guidance(fancy=not getattr(args, "plain", False), config=config))
             print("\n" + _routing_summary(config))
+            if desktop:
+                # Under the routing it changes, not after the native backend block.
+                print("  from Hermes plugin settings (`hermes plugins config web-search-plus` or Hermes Desktop): "
+                      + ", ".join(sorted(desktop)))
             for notice in [*(payload.get("ignored_file_keys") or []), *(payload.get("ignored_file_settings") or [])]:
                 print("  ! " + notice)
             status_providers = payload.get("providers") or {}
@@ -1641,8 +1666,6 @@ def _web_search_plus_cli_command(args: Any) -> None:
             if payload.get("native_backend_hint"):
                 print("\n" + payload["native_backend_hint"])
             print("\n" + "\n".join(_render_keyless_rescue(payload["hermes_native"])))
-            if desktop:
-                print("  from Hermes Desktop settings: " + ", ".join(sorted(desktop)))
             donsetch = payload.get("donsetch") or {}
             if donsetch.get("binary_configured") or donsetch.get("state") != "missing":
                 print(
@@ -2634,10 +2657,11 @@ def register(ctx: Any) -> None:
             "Web search through your configured providers. "
             "Supports domain filters, freshness and research mode. "
             "Automatic routing by query type: "
-            "Brave first for general, news, local and community queries, "
-            "Exa for docs and academic queries, Serper for security and shopping queries; "
+            "Exa first for docs and academic queries, Brave first for all others "
+            "(general, news, local, community, security, shopping); "
             "if a provider fails, is slow or returns nothing, the next configured one is tried. "
-            "SerpBase/Querit only when explicitly enabled or forced. "
+            "SerpBase, Querit, Octen, TinyFish and DonSeTch run only when allowed for automatic search "
+            "or forced with the provider param. "
             "All providers are constrained to source-result/source-text modes. "
             "Override with provider param if needed."
         ),
