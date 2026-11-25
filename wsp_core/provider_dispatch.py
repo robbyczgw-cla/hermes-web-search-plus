@@ -167,11 +167,13 @@ def _call_brave_search(search_module, prov, args, key, config, routing_info):
         language=language,
         time_range=getattr(args, "time_range", None) or args.freshness,
         safesearch=brave_config.get("safesearch", "moderate"),
+        api_url=brave_config.get("api_url", "https://api.search.brave.com/res/v1/web/search"),
     )
     return _mark_query_truncated(result, truncated)
 
 
 def _call_tavily_search(search_module, prov, args, key, config, routing_info):
+    tavily_config = config.get("tavily", {})
     return _resolve(search_module, "search_tavily")(
         query=args.query,
         api_key=key,
@@ -183,6 +185,7 @@ def _call_tavily_search(search_module, prov, args, key, config, routing_info):
         include_images=args.images,
         include_raw_content=args.raw_content,
         time_range=getattr(args, "time_range", None) or args.freshness,
+        api_url=tavily_config.get("search_url", "https://api.tavily.com/search"),
     )
 
 
@@ -220,6 +223,7 @@ def _call_querit_search(search_module, prov, args, key, config, routing_info):
 
 
 def _call_exa_search(search_module, prov, args, key, config, routing_info):
+    exa_config = config.get("exa", {})
     return _resolve(search_module, "search_exa")(
         query=args.query or "",
         api_key=key,
@@ -234,6 +238,7 @@ def _call_exa_search(search_module, prov, args, key, config, routing_info):
         exclude_domains=args.exclude_domains,
         text_verbosity=args.exa_verbosity,
         freshness=getattr(args, "time_range", None) or args.freshness,
+        base_url=exa_config.get("base_url", "https://api.exa.ai"),
     )
 
 
