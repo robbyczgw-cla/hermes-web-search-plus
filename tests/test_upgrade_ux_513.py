@@ -175,7 +175,10 @@ def test_brave_user_is_told_how_to_route_hermes_search_through_wsp(hermes, capsy
     assert "web.extract_backend wsp" not in out
     # Without an extract pin Hermes' autodetect would send web_extract to wsp too.
     assert "`hermes config set web.extract_backend exa`" in out
-    assert "tools.tool_search.never_defer" in out
+    # Hermes has no never_defer setting (tool search defers every plugin tool):
+    # the old alternative sent users to a key Hermes ignores.
+    assert "never_defer" not in out
+    assert "web_search_plus only through tool search" in out
     assert KEY not in out
     data = json.loads(_status(capsys, "--json"))
     assert "web.search_backend wsp" in data["native_backend_hint"]

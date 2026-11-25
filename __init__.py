@@ -268,8 +268,10 @@ def _native_backend_hint(search_configured: bool, extract_configured: bool, nati
         return (
             "Hermes' own web_search does not use your Web Search Plus keys. To route it through them: "
             f"`hermes config set web.search_backend wsp`{extract_part}, then /reload. "
-            "Alternative: keep Hermes' search and list "
-            "web_search_plus/web_extract_plus under tools.tool_search.never_defer."
+            # Hermes' tool search always defers plugin tools and never its own
+            # web_search; it has no setting to keep a plugin tool in view.
+            "Otherwise the model sees Hermes' web_search directly and web_search_plus "
+            "only through tool search, so most searches skip your keys."
         )
     if extract_configured and "extract" not in selected:
         return (
