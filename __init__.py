@@ -1653,6 +1653,10 @@ def _web_search_plus_cli_command(args: Any) -> None:
         else:
             print(_render_setup_guidance(fancy=not getattr(args, "plain", False), config=config))
             print("\n" + _routing_summary(config))
+            if desktop:
+                # Under the routing it changes, not after the native backend block.
+                print("  from Hermes plugin settings (`hermes plugins config web-search-plus` or Hermes Desktop): "
+                      + ", ".join(sorted(desktop)))
             for notice in [*(payload.get("ignored_file_keys") or []), *(payload.get("ignored_file_settings") or [])]:
                 print("  ! " + notice)
             status_providers = payload.get("providers") or {}
@@ -1662,9 +1666,6 @@ def _web_search_plus_cli_command(args: Any) -> None:
             if payload.get("native_backend_hint"):
                 print("\n" + payload["native_backend_hint"])
             print("\n" + "\n".join(_render_keyless_rescue(payload["hermes_native"])))
-            if desktop:
-                print("  from Hermes plugin settings (`hermes plugins config web-search-plus` or Hermes Desktop): "
-                      + ", ".join(sorted(desktop)))
             donsetch = payload.get("donsetch") or {}
             if donsetch.get("binary_configured") or donsetch.get("state") != "missing":
                 print(

@@ -546,6 +546,8 @@ def test_status_shows_the_order_from_the_desktop_field(tmp_path, monkeypatch, bl
 
     assert "order: custom" in text
     assert "or Hermes Desktop): provider_order" in text
+    # The source line belongs to the routing block, above the native-backend block.
+    assert text.index("or Hermes Desktop): provider_order") < text.index("Native wsp backend")
     assert payload["routing"]["auto_routing"]["order"] == "custom"
     assert payload["routing"]["auto_routing"]["provider_priority"][:3] == ["exa", "serper", "brave"]
     assert json.loads(path.read_text(encoding="utf-8")) == {"auto_routing": {"order": "measured"}}

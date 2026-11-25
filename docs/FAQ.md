@@ -22,7 +22,7 @@ python ~/.hermes/plugins/web-search-plus/setup.py config set-auto-allow serpbase
 
 ## Which provider gets picked when multiple providers are configured?
 
-Automatic routing assigns the query one of eight intents (academic, community, docs, general, local, news, security, shopping) and tries Brave first, except Exa for academic and docs queries and Serper for security and shopping queries. Providers without a key, in `disabled_providers`, or with `auto_allow=false` are skipped; the rest of the chain follows `auto_routing.provider_priority`. The router does not score providers per query.
+Automatic routing assigns the query one of eight intents (academic, community, docs, general, local, news, security, shopping) and tries Brave first, except Exa for academic and docs queries. Providers without a key, in `disabled_providers`, or with `auto_allow=false` are skipped; the rest of the chain follows `auto_routing.provider_priority`. The router does not score providers per query.
 
 The default priority is Brave, Serper, Exa, Tavily, You.com, Firecrawl, Linkup, Parallel, then SerpBase, Querit, SearXNG and Keenable. SerpBase and Querit default to explicit/guarded use. To use your own order for every query, run `setup.py config set-order exa,serper,brave` (`set-order auto` switches back).
 
