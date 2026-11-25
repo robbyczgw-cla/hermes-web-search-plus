@@ -760,3 +760,20 @@ def test_tool_description_names_the_first_provider_routing_uses():
     for intent, provider in INTENT_FIRST_PROVIDER.items():
         assert claims.get(intent) == provider, (intent, claims.get(intent), text)
     assert "Serper for security" not in text
+
+
+def test_standalone_help_names_the_first_provider_routing_uses():
+    # The `search.py --help` table still said "shopping → Serper" after 5.1.6.
+    import re
+
+    from wsp_core import config as config_module, search
+    from wsp_core.routing import INTENT_FIRST_PROVIDER
+
+    help_text = search.build_parser(config_module._deepcopy_default_config()).format_help()
+    table = {}
+    for left, provider in re.findall(r"(?m)^  ([a-z ,]+?)\s+→ (\w+)\s", help_text):
+        for word in re.findall(r"[a-z]+", left):
+            table[word] = provider.lower()
+    for intent, provider in INTENT_FIRST_PROVIDER.items():
+        # An intent without a line of its own falls under "everything else".
+        assert table.get(intent, table["else"]) == provider, (intent, table)

@@ -8,7 +8,7 @@ Supports extract providers: Firecrawl, Linkup, Parallel, Tavily, Exa, You.com, K
 
 Automatic routing (provider "auto") labels the query with an intent and picks
 the first provider from a measured table: Exa for academic and documentation
-queries, Serper for shopping, Brave otherwise; the fallback chain follows
+queries, Brave for security, shopping and other queries; the fallback chain follows
 auto_routing.provider_priority. See docs/ROUTING.md.
 
 Usage:
@@ -17,7 +17,7 @@ Usage:
 
 Examples:
     python3 search.py -q "arXiv paper LLM scaling laws"            # → Exa (academic)
-    python3 search.py -q "iPhone 16 Pro Max price"                 # → Serper (shopping)
+    python3 search.py -q "iPhone 16 Pro Max price"                 # → Brave (shopping)
     python3 search.py -q "latest OpenSSH CVE mitigation"           # → Brave (security)
 """
 
@@ -304,11 +304,11 @@ def build_parser(config: Dict[str, Any]) -> argparse.ArgumentParser:
         description="Web Search Plus — Intelligent multi-provider search with smart auto-routing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Automatic routing (provider "auto"):
+Automatic routing (provider "auto", measured order):
   The query gets one of eight intents; the intent picks the first provider.
 
   academic, docs   → Exa      papers, studies, DOIs; API docs, error messages, code
-  shopping         → Serper   buy, price, deals, "best ... under 300 euros"
+  shopping         → Brave    buy, price, deals, "best ... under 300 euros"
   everything else  → Brave    community, general, local, news, security
 
   A missing provider is skipped (Brave, Serper, Exa, Tavily, then
@@ -317,7 +317,7 @@ Automatic routing (provider "auto"):
 Examples:
   python3 search.py -q "arXiv paper LLM scaling laws"            # → Exa (academic)
   python3 search.py -q "python asyncio TaskGroup documentation"  # → Exa (docs)
-  python3 search.py -q "iPhone 16 Pro Max price"                 # → Serper (shopping)
+  python3 search.py -q "iPhone 16 Pro Max price"                 # → Brave (shopping)
   python3 search.py -q "reddit best budget mechanical keyboard"  # → Brave (community)
   python3 search.py --explain-routing -q "your query"            # Show the decision
 
