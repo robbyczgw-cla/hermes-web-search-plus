@@ -94,7 +94,7 @@ def test_popen_and_version_check_both_use_the_filtered_env(monkeypatch, tmp_path
     module = _donsetch_module()
     monkeypatch.setenv("SERPER_API_KEY", "serper-test-value")
     binary = tmp_path / "donsetch"
-    binary.write_text("#!/bin/sh\necho donsetch 3.6.1\n")
+    binary.write_text("#!/bin/sh\necho donsetch 3.6.1\n", encoding="utf-8")
     binary.chmod(0o755)
     seen = []
 
@@ -129,7 +129,7 @@ def test_popen_and_version_check_both_use_the_filtered_env(monkeypatch, tmp_path
 
 def _journal(tmp_path, **kw):
     mod = importlib.import_module("wsp_core.operator_receipts_v3")
-    source = json.loads((ROOT / "tests/fixtures/v3/ws3/receipts.json").read_text())["receipts"][0]
+    source = json.loads((ROOT / "tests/fixtures/v3/ws3/receipts.json").read_text(encoding="utf-8"))["receipts"][0]
     now = float(source["timestamp"]) + 1.0
     return mod, mod.OperatorReceiptJournal(tmp_path, max_records=100, max_bytes=1_000_000, now=lambda: now, **kw), source
 
@@ -188,10 +188,10 @@ def test_symlinked_lock_is_still_refused(tmp_path):
     lock = journal.path.parent / ".receipts.lock"
     lock.unlink()
     outside = tmp_path / "outside"
-    outside.write_text("x")
+    outside.write_text("x", encoding="utf-8")
     lock.symlink_to(outside)
     assert journal.append(dict(source, execution_id=f"exec_{5:032x}")) is False
-    assert outside.read_text() == "x"
+    assert outside.read_text(encoding="utf-8") == "x"
 
 
 def test_parallel_first_use_with_injected_enoent_keeps_every_receipt(tmp_path):

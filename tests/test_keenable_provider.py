@@ -123,7 +123,7 @@ class KeenablePublicOptInStrictnessTests(unittest.TestCase):
 
     def test_registration_config_file_opt_in_is_strict(self):
         for v, expected in [(True, True), ("yes", True), ("false", False), (False, False), (0, False)]:
-            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
                 json.dump({"keenable": {"allow_public": v}}, f)
                 path = f.name
             try:

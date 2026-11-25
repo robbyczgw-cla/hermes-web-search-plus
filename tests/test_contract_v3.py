@@ -201,8 +201,8 @@ class ContractV3Tests(unittest.TestCase):
         self.assertEqual(response.status, ResponseStatus.DEGRADED)
 
     def test_schema_enum_values_match_python(self):
-        request_schema = json.loads((SCHEMA_DIR / "request.schema.json").read_text())
-        response_schema = json.loads((SCHEMA_DIR / "response.schema.json").read_text())
+        request_schema = json.loads((SCHEMA_DIR / "request.schema.json").read_text(encoding="utf-8"))
+        response_schema = json.loads((SCHEMA_DIR / "response.schema.json").read_text(encoding="utf-8"))
         self.assertEqual(
             request_schema["$defs"]["Capability"]["enum"],
             [item.value for item in Capability],
@@ -234,8 +234,8 @@ class ContractV3Tests(unittest.TestCase):
             import jsonschema
         except ImportError:
             self.skipTest("jsonschema is optional")
-        request_schema = json.loads((SCHEMA_DIR / "request.schema.json").read_text())
-        response_schema = json.loads((SCHEMA_DIR / "response.schema.json").read_text())
+        request_schema = json.loads((SCHEMA_DIR / "request.schema.json").read_text(encoding="utf-8"))
+        response_schema = json.loads((SCHEMA_DIR / "response.schema.json").read_text(encoding="utf-8"))
         jsonschema.Draft202012Validator.check_schema(request_schema)
         jsonschema.Draft202012Validator.check_schema(response_schema)
         jsonschema.validate(RequestV3.search("test query").to_dict(), request_schema)
@@ -255,7 +255,7 @@ class ContractV3Tests(unittest.TestCase):
         for fixture_path in sorted(fixture_dir.glob("*.json")):
             with self.subTest(fixture=fixture_path.name):
                 jsonschema.validate(
-                    json.loads(fixture_path.read_text()), response_schema
+                    json.loads(fixture_path.read_text(encoding="utf-8")), response_schema
                 )
 
     def test_schema_enforces_nfc_marker_and_typed_degrade_reason(self):
@@ -263,11 +263,11 @@ class ContractV3Tests(unittest.TestCase):
             import jsonschema
         except ImportError:
             self.skipTest("jsonschema is optional")
-        response_schema = json.loads((SCHEMA_DIR / "response.schema.json").read_text())
+        response_schema = json.loads((SCHEMA_DIR / "response.schema.json").read_text(encoding="utf-8"))
         fixture_dir = ROOT / "tests" / "fixtures" / "v3"
 
         extract_payload = json.loads(
-            (fixture_dir / "02_extract_success.json").read_text()
+            (fixture_dir / "02_extract_success.json").read_text(encoding="utf-8")
         )
         projected = extract_payload["results"][0]["text"]
         self.assertEqual(
@@ -278,7 +278,7 @@ class ContractV3Tests(unittest.TestCase):
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(extract_payload, response_schema)
 
-        degraded_payload = json.loads((fixture_dir / "05_degraded.json").read_text())
+        degraded_payload = json.loads((fixture_dir / "05_degraded.json").read_text(encoding="utf-8"))
         degraded_payload["warnings"][0]["code"] = "wsp.warning.misc"
         with self.assertRaises(jsonschema.ValidationError):
             jsonschema.validate(degraded_payload, response_schema)

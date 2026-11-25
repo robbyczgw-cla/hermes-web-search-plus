@@ -149,7 +149,7 @@ def test_old_api_key_file_config_still_loads_without_crashing(tmp_path, monkeypa
     from wsp_core.config import load_config
 
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({"version": 1, "jev": {"enabled": True, "api_key_file": "/old/key"}}))
+    config_path.write_text(json.dumps({"version": 1, "jev": {"enabled": True, "api_key_file": "/old/key"}}), encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
 
     assert load_config()["jev"]["enabled"] is True

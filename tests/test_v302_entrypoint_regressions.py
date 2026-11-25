@@ -578,7 +578,7 @@ def test_never_started_research_deadline_receipts_match_the_wire_schema(
         and attempt.budget_decision == "unknown"
         for attempt in execution.response.provider_attempts
     )
-    schema = json.loads((ROOT / "schemas" / "v3" / "response.schema.json").read_text())
+    schema = json.loads((ROOT / "schemas" / "v3" / "response.schema.json").read_text(encoding="utf-8"))
     jsonschema.validate(execution.response.to_dict(), schema)
 
 
@@ -870,15 +870,15 @@ def test_extract_cache_rejects_the_previous_lossy_schema(tmp_path, monkeypatch):
 
     search.run_extract_request([url], provider="linkup", config=config)
     cache_file = next((tmp_path / "v3" / "response" / "extract").glob("*.json"))
-    old_envelope = json.loads(cache_file.read_text())
+    old_envelope = json.loads(cache_file.read_text(encoding="utf-8"))
     old_envelope["cache_schema_version"] = 2
-    cache_file.write_text(json.dumps(old_envelope))
+    cache_file.write_text(json.dumps(old_envelope), encoding="utf-8")
 
     result = search.run_extract_request([url], provider="linkup", config=config)
 
     assert calls == 2
     assert not result.get("cached")
-    assert json.loads(cache_file.read_text())["cache_schema_version"] == 3
+    assert json.loads(cache_file.read_text(encoding="utf-8"))["cache_schema_version"] == 3
 
 
 @pytest.mark.parametrize("first_count,second_count", [(10, 11), (11, 10)])
@@ -1076,7 +1076,7 @@ def test_bounded_extract_is_cached_and_receipted_after_limits(tmp_path, monkeypa
 
     cache_files = list((tmp_path / "v3" / "response" / "extract").glob("*.json"))
     assert len(cache_files) == 1
-    material = json.loads(cache_files[0].read_text())["payload"]
+    material = json.loads(cache_files[0].read_text(encoding="utf-8"))["payload"]
     assert material["limits_applied"]["extract"]["max_context_chars"] == 60_000
     assert len(material["projection"][0]["text"]["text"]) == 60_000
 
@@ -1098,7 +1098,7 @@ def test_bounded_extract_is_cached_and_receipted_after_limits(tmp_path, monkeypa
     assert cached_response.policy_actions == material["policy_actions"]
     assert cached_response.stored_content == material["stored_content"]
 
-    receipt_lines = (tmp_path / "operator" / "v3" / "receipts.jsonl").read_text().splitlines()
+    receipt_lines = (tmp_path / "operator" / "v3" / "receipts.jsonl").read_text(encoding="utf-8").splitlines()
     receipt = json.loads(receipt_lines[-1])["payload"]
     assert receipt["status"] == "degraded"
     assert "wsp.content.truncated" in receipt["warning_codes"]
@@ -1113,7 +1113,7 @@ def test_bounded_extract_is_cached_and_receipted_after_limits(tmp_path, monkeypa
 
 
 def test_public_metadata_omits_removed_provider_ids():
-    plugin_yaml = (ROOT / "plugin.yaml").read_text()
+    plugin_yaml = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
 
     module = load_plugin("wsp_v302_metadata_under_test")
 

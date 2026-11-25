@@ -29,7 +29,7 @@ def test_fixture_provider_zero_core_edit_path_with_opt_in(tmp_path: Path) -> Non
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8",
         timeout=120,
     )
     assert proc.returncode == 0, proc.stderr

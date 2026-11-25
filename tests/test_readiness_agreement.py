@@ -85,7 +85,7 @@ def _search_text(ctx, **args):
 
 
 def test_keyless_flag_in_config_json_under_hermes_is_named_not_reported_ready(world, monkeypatch):
-    world.write_text(json.dumps({"keenable": {"allow_public": True}}))
+    world.write_text(json.dumps({"keenable": {"allow_public": True}}), encoding="utf-8")
     _hermes_profile(monkeypatch, {})
     ctx = _register(monkeypatch)
 
@@ -152,7 +152,7 @@ def test_setup_keyless_under_hermes_prints_the_profile_command_and_writes_nothin
     out = capsys.readouterr().out
     assert "✓ Enabled keyless public search" not in out
     assert "hermes config set KEENABLE_ALLOW_PUBLIC 1" in out
-    assert not (world.exists() and "allow_public" in world.read_text())
+    assert not (world.exists() and "allow_public" in world.read_text(encoding="utf-8"))
 
 
 def test_setup_keyless_standalone_writes_and_confirms_what_the_engine_uses(world, monkeypatch, capsys):
@@ -165,7 +165,7 @@ def test_setup_keyless_standalone_writes_and_confirms_what_the_engine_uses(world
 
     out = capsys.readouterr().out
     assert "✓ Enabled keyless public search for Keenable" in out
-    assert json.loads(world.read_text())["keenable"]["allow_public"] is True
+    assert json.loads(world.read_text(encoding="utf-8"))["keenable"]["allow_public"] is True
     assert engine_config.provider_configured("keenable", wsp.load_config())
 
 
@@ -187,7 +187,7 @@ def test_placeholder_key_keeps_the_tool_and_says_it_is_a_placeholder(world, monk
 
 def test_private_searxng_url_names_the_opt_in(world, monkeypatch):
     _standalone(monkeypatch)
-    world.write_text(json.dumps({"searxng": {"base_url": "http://127.0.0.1:8888"}}))
+    world.write_text(json.dumps({"searxng": {"base_url": "http://127.0.0.1:8888"}}), encoding="utf-8")
     ctx = _register(monkeypatch)
 
     status, listed, engine_pool = _surfaces(ctx)
@@ -199,9 +199,9 @@ def test_private_searxng_url_names_the_opt_in(world, monkeypatch):
 
 def test_donsetch_binary_from_config_counts_on_both_hosts(world, monkeypatch, tmp_path):
     binary = tmp_path / "donsetch"
-    binary.write_text("#!/bin/sh\nexit 0\n")
+    binary.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     binary.chmod(binary.stat().st_mode | stat.S_IXUSR)
-    world.write_text(json.dumps({"donsetch": {"binary": str(binary)}}))
+    world.write_text(json.dumps({"donsetch": {"binary": str(binary)}}), encoding="utf-8")
     for host in ("hermes", "standalone"):
         if host == "hermes":
             _hermes_profile(monkeypatch, {})
@@ -226,7 +226,7 @@ def test_missing_donsetch_binary_is_invalid_not_configured(world, monkeypatch):
 def test_only_provider_disabled_says_so_instead_of_setup_starter(world, monkeypatch):
     _standalone(monkeypatch)
     monkeypatch.setenv("BRAVE_API_KEY", "brave-real-looking-key-123")
-    world.write_text(json.dumps({"auto_routing": {"disabled_providers": ["brave"]}}))
+    world.write_text(json.dumps({"auto_routing": {"disabled_providers": ["brave"]}}), encoding="utf-8")
     ctx = _register(monkeypatch)
 
     text = _search_text(ctx)
@@ -249,7 +249,7 @@ def test_nothing_configured_keeps_the_setup_hint_without_a_serper_line(world, mo
 
 
 def test_session_hint_names_the_ignored_setting(world, monkeypatch, tmp_path):
-    world.write_text(json.dumps({"keenable": {"allow_public": True}}))
+    world.write_text(json.dumps({"keenable": {"allow_public": True}}), encoding="utf-8")
     _hermes_profile(monkeypatch, {})
 
     hint = wsp._unconfigured_session_hint(state_path=tmp_path / "hint-state.json")
@@ -299,7 +299,7 @@ def test_native_extract_with_only_a_search_key_says_what_to_set_up(world, monkey
 
 
 def test_human_status_starts_with_the_problem_and_its_fix(world, monkeypatch):
-    world.write_text(json.dumps({"keenable": {"allow_public": True}}))
+    world.write_text(json.dumps({"keenable": {"allow_public": True}}), encoding="utf-8")
     _hermes_profile(monkeypatch, {})
 
     for fancy in (False, True):
@@ -333,7 +333,7 @@ def test_v3_contract_reports_setup_problems_as_config_errors(world, monkeypatch)
     assert error["details"]["readiness"][0]["reason_code"] == "placeholder_value"
     # Nothing from the serper filler attempt the user never chose.
     assert "provider" not in error and "env_var" not in error["details"]
-    schema = json.loads((Path(__file__).resolve().parents[1] / "schemas/v3/response.schema.json").read_text())
+    schema = json.loads((Path(__file__).resolve().parents[1] / "schemas/v3/response.schema.json").read_text(encoding="utf-8"))
     assert list(Draft202012Validator(schema).iter_errors(payload)) == []
 
 
@@ -377,7 +377,7 @@ def test_status_text_says_when_no_provider_runs_automatically(auto_routing, fix,
     # "✓ search" and "Active: Brave Search", --plain "web-search-plus is configured"
     # and "search=yes", while status --json had search_auto_ready false and the
     # first search without provider="brave" failed.
-    world.write_text(json.dumps({"auto_routing": auto_routing}))
+    world.write_text(json.dumps({"auto_routing": auto_routing}), encoding="utf-8")
     _hermes_profile(monkeypatch, {"BRAVE_API_KEY": "brave-real-key-123456"})
     monkeypatch.setenv("NO_COLOR", "1")
     warning = '! Automatic search: no provider runs without provider="name".'

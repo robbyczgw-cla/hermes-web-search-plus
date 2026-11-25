@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Windows: the plugin reads `config.json`, its onboarding state file and the Hermes `config.yaml` as UTF-8, not in the locale encoding (usually cp1252). A valid `config.json` that held a character such as `”` was moved aside as invalid and replaced by the defaults. A UTF-8 byte-order mark is accepted by every reader of these files and of `.env`, including the engine's `load_config()`, and writes name UTF-8 explicitly.
+- Windows: `python setup.py config ...` and `python search.py` print UTF-8. On a cp1252 console `setup.py config set-routing off` wrote the config and then failed with `UnicodeEncodeError` on the check mark.
+- Tests: every test file read and write, temporary file and text-mode subprocess names UTF-8, so no test fails on a cp1252 locale only because of the file encoding.
+
 ## [v5.1.9] — 2026-11-10
 
 ### Fixed

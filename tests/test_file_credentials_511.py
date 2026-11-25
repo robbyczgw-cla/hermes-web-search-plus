@@ -68,7 +68,7 @@ def test_validate_api_key_fails_without_calling_the_provider(monkeypatch):
 
 def test_check_fn_is_false_when_only_config_json_has_a_key(tmp_path, monkeypatch):
     path = tmp_path / "config.json"
-    path.write_text(json.dumps(_config(serper={}, tavily={})))
+    path.write_text(json.dumps(_config(serper={}, tavily={})), encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(path))
     _resolver(monkeypatch)
 
@@ -111,12 +111,12 @@ def _run_cli(argv):
 
 def test_status_reports_ignored_key_once_without_the_value(tmp_path, monkeypatch, capsys, caplog):
     path = tmp_path / "config.json"
-    path.write_text(json.dumps({"version": 1, **_config(serper={}, keenable={})}))
+    path.write_text(json.dumps({"version": 1, **_config(serper={}, keenable={})}), encoding="utf-8")
     _resolver(monkeypatch)
     with caplog.at_level(logging.WARNING):
         _run_cli(["status", "--config-path", str(path)])
         _run_cli(["status", "--config-path", str(path)])
-        wsp_config.get_api_key("serper", json.loads(path.read_text()))
+        wsp_config.get_api_key("serper", json.loads(path.read_text(encoding="utf-8")))
     out = capsys.readouterr().out
     assert FILE_KEY not in out
     assert out.count("config.json contains an API key for serper; it is ignored") == 2  # one per status run
@@ -129,7 +129,7 @@ def test_status_reports_ignored_key_once_without_the_value(tmp_path, monkeypatch
 @pytest.mark.parametrize("with_resolver", [True, False])
 def test_status_and_config_json_never_contain_the_key(tmp_path, monkeypatch, capsys, with_resolver):
     path = tmp_path / "config.json"
-    path.write_text(json.dumps({"version": 1, **_config(serper={}, keenable={"allow_public": True}, searxng={})}))
+    path.write_text(json.dumps({"version": 1, **_config(serper={}, keenable={"allow_public": True}, searxng={})}), encoding="utf-8")
     if with_resolver:
         _resolver(monkeypatch, {"TAVILY_API_KEY": PROFILE_KEY, "TYPESAFE_API_KEY": PROFILE_KEY})
     for argv in (["status", "--json"], ["config", "show", "--json"]):
@@ -142,13 +142,13 @@ def test_status_and_config_json_never_contain_the_key(tmp_path, monkeypatch, cap
 
 def test_config_dry_run_redacts_existing_keys_but_still_preserves_them_on_write(tmp_path, capsys):
     path = tmp_path / "config.json"
-    path.write_text(json.dumps({"version": 1, **_config(keenable={})}))
+    path.write_text(json.dumps({"version": 1, **_config(keenable={})}), encoding="utf-8")
     _run_cli(["config", "set-fallback", "tavily", "--config-path", str(path), "--dry-run"])
     out = capsys.readouterr().out
     assert FILE_KEY not in out
     assert '"fallback_provider": "tavily"' in out
     _run_cli(["config", "set-fallback", "tavily", "--config-path", str(path)])
-    assert json.loads(path.read_text())["keenable"]["api_key"] == FILE_KEY
+    assert json.loads(path.read_text(encoding="utf-8"))["keenable"]["api_key"] == FILE_KEY
 
 
 def test_redact_secrets_masks_any_secret_field_and_keeps_the_rest():
@@ -177,7 +177,7 @@ def _settings_config():
 
 def test_ignored_settings_reported_under_resolver_without_url(tmp_path, monkeypatch, capsys, caplog):
     path = tmp_path / "config.json"
-    path.write_text(json.dumps(_settings_config()))
+    path.write_text(json.dumps(_settings_config()), encoding="utf-8")
     _resolver(monkeypatch)
     with caplog.at_level(logging.WARNING):
         _run_cli(["status", "--config-path", str(path)])
@@ -202,7 +202,7 @@ def test_ignored_settings_silent_without_resolver(tmp_path, capsys, monkeypatch)
     monkeypatch.setattr(wsp, "_install_hermes_secret_resolver", lambda: None)
     assert credentials.get_secret_resolver() is None
     path = tmp_path / "config.json"
-    path.write_text(json.dumps(_settings_config()))
+    path.write_text(json.dumps(_settings_config()), encoding="utf-8")
     _run_cli(["status", "--json", "--config-path", str(path)])
     out = capsys.readouterr().out
     assert json.loads(out[out.index('{'):])["ignored_file_settings"] == []

@@ -235,7 +235,7 @@ def test_compute_provider_score_orders_fast_reliable_quality():
 def test_cli_bench_flag_emits_json_report(monkeypatch, tmp_path, capsys):
     _clear_provider_env(monkeypatch)
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({"version": 1}))
+    config_path.write_text(json.dumps({"version": 1}), encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     monkeypatch.setenv("YOU_API_KEY", "you-test-key")
     monkeypatch.setattr(providers, "search_you", lambda **kw: _payload("you", _rich_results()))
@@ -251,7 +251,7 @@ def test_cli_bench_flag_emits_json_report(monkeypatch, tmp_path, capsys):
 def test_cli_bench_command_prints_human_readable_table(monkeypatch, tmp_path, capsys):
     _clear_provider_env(monkeypatch)
     config_path = tmp_path / "config.json"
-    config_path.write_text(json.dumps({"version": 1}))
+    config_path.write_text(json.dumps({"version": 1}), encoding="utf-8")
     monkeypatch.setenv("WEB_SEARCH_PLUS_CONFIG", str(config_path))
     monkeypatch.setenv("YOU_API_KEY", "you-test-key")
     monkeypatch.setattr(providers, "search_you", lambda **kw: _payload("you", _rich_results()))

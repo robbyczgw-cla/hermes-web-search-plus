@@ -15,7 +15,7 @@ from wsp_core import config as wsp_config
 def donsetch_bin(tmp_path):
     """An executable stand-in: since 5.1.8 a missing binary is invalid_value, not configured."""
     path = tmp_path / "donsetch"
-    path.write_text("#!/bin/sh\nexit 0\n")
+    path.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
     return str(path)
 
@@ -88,4 +88,4 @@ def test_set_auto_allow_alone_puts_donsetch_into_auto_search(monkeypatch, tmp_pa
         assert config["auto_routing"]["order"] == "measured"
         assert ("donsetch" in config["auto_routing"]["provider_priority"]) is (state == "on")
         assert routing.route_query("python asyncio taskgroup", config)["provider"] == routed
-    assert "donsetch" not in json.loads(config_path.read_text())["auto_routing"].get("provider_priority", [])
+    assert "donsetch" not in json.loads(config_path.read_text(encoding="utf-8"))["auto_routing"].get("provider_priority", [])

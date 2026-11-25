@@ -74,7 +74,7 @@ def test_orchestrator_v3_cache_hit_skips_provider_and_rebinds_request_id(tmp_pat
     assert "provider_attempt" not in second.stage_trace
     assert "cache_write" not in second.stage_trace
     cache_file = next((tmp_path / "v3" / "response" / "search").glob("*.json"))
-    envelope = json.loads(cache_file.read_text())
+    envelope = json.loads(cache_file.read_text(encoding="utf-8"))
     stored = envelope["payload"]
     assert stored["origin_execution_id"] == first.response.execution_id
     assert "request_id" not in stored

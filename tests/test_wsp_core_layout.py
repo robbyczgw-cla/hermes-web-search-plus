@@ -33,7 +33,7 @@ print(json.dumps({
 def _defaults() -> dict:
     proc = subprocess.run(
         [sys.executable, "-I", "-c", PROBE, str(ROOT)],
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, encoding="utf-8", timeout=60,
         env={"HERMES_HOME": "/nonexistent-hermes-home", "PATH": "/usr/bin:/bin"},
     )
     assert proc.returncode == 0, proc.stderr[-2000:]

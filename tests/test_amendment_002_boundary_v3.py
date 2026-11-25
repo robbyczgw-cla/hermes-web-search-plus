@@ -320,7 +320,7 @@ def test_contract_requires_execution_id():
 def test_schema_boundary_via_ajv():
     script = Path(__file__).parent / "schema_boundary_v3.mjs"
     proc = subprocess.run(
-        ["node", str(script)], capture_output=True, text=True, timeout=60,
+        ["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60,
     )
     assert proc.returncode == 0, (
         f"ajv schema boundary failed:\n{proc.stdout}\n{proc.stderr}"

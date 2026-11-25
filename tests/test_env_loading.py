@@ -28,8 +28,8 @@ class EnvLoadingTests(unittest.TestCase):
             plugin_dir = Path(tmp) / "web-search-plus"
             plugin_dir.mkdir()
             fake_script = plugin_dir / "search.py"
-            fake_script.write_text("# fake")
-            (plugin_dir / ".env").write_text("LINKUP_API_KEY=local-plugin-key\n")
+            fake_script.write_text("# fake", encoding="utf-8")
+            (plugin_dir / ".env").write_text("LINKUP_API_KEY=local-plugin-key\n", encoding="utf-8")
 
             with _hermes_profile_env(Path(tmp) / "missing-hermes.env"):
                 with mock.patch.dict(os.environ, {}, clear=True):
@@ -41,8 +41,8 @@ class EnvLoadingTests(unittest.TestCase):
             plugin_dir = Path(tmp) / "web-search-plus"
             plugin_dir.mkdir()
             fake_script = plugin_dir / "search.py"
-            fake_script.write_text("# fake")
-            (plugin_dir / ".env").write_text("SERPER_API_KEY=***\nLINKUP_API_KEY=real-linkup-key\n")
+            fake_script.write_text("# fake", encoding="utf-8")
+            (plugin_dir / ".env").write_text("SERPER_API_KEY=***\nLINKUP_API_KEY=real-linkup-key\n", encoding="utf-8")
 
             with _hermes_profile_env(Path(tmp) / "missing-hermes.env"):
                 with mock.patch.dict(os.environ, {}, clear=True):
@@ -55,10 +55,10 @@ class EnvLoadingTests(unittest.TestCase):
             plugin_dir = Path(tmp) / "web-search-plus"
             plugin_dir.mkdir()
             fake_script = plugin_dir / "search.py"
-            fake_script.write_text("# fake")
+            fake_script.write_text("# fake", encoding="utf-8")
             hermes_env = Path(tmp) / "hermes-home" / ".env"
             hermes_env.parent.mkdir()
-            hermes_env.write_text("TAVILY_API_KEY=tvly-from-hermes\n")
+            hermes_env.write_text("TAVILY_API_KEY=tvly-from-hermes\n", encoding="utf-8")
 
             with _hermes_profile_env(hermes_env):
                 with mock.patch.dict(os.environ, {}, clear=True):
@@ -70,10 +70,10 @@ class EnvLoadingTests(unittest.TestCase):
             plugin_dir = Path(tmp) / "web-search-plus"
             plugin_dir.mkdir()
             fake_config = plugin_dir / "config.py"
-            fake_config.write_text("# fake")
+            fake_config.write_text("# fake", encoding="utf-8")
             hermes_env = Path(tmp) / "hermes-home" / ".env"
             hermes_env.parent.mkdir()
-            hermes_env.write_text("EXA_API_KEY=exa-from-hermes\n")
+            hermes_env.write_text("EXA_API_KEY=exa-from-hermes\n", encoding="utf-8")
 
             with _hermes_profile_env(hermes_env):
                 with mock.patch.dict(os.environ, {}, clear=True):
@@ -85,10 +85,10 @@ class EnvLoadingTests(unittest.TestCase):
             plugin_dir = Path(tmp) / "web-search-plus"
             plugin_dir.mkdir()
             fake_script = plugin_dir / "search.py"
-            fake_script.write_text("# fake")
+            fake_script.write_text("# fake", encoding="utf-8")
             hermes_env = Path(tmp) / "hermes-home" / ".env"
             hermes_env.parent.mkdir()
-            hermes_env.write_text("TAVILY_API_KEY=tvly-from-hermes\n")
+            hermes_env.write_text("TAVILY_API_KEY=tvly-from-hermes\n", encoding="utf-8")
 
             with _hermes_profile_env(hermes_env):
                 with mock.patch.dict(os.environ, {"TAVILY_API_KEY": "already-set"}, clear=True):

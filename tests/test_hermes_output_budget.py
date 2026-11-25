@@ -19,7 +19,7 @@ from plugin_loader import load_plugin
 from wsp_core.config import _deepcopy_default_config
 
 plugin = load_plugin("wsp_plugin_test_hermes_output_budget")
-SEARCH_FIXTURE = json.loads((Path(__file__).parent / "fixtures/hermes_search_eight.json").read_text())
+SEARCH_FIXTURE = json.loads((Path(__file__).parent / "fixtures/hermes_search_eight.json").read_text(encoding="utf-8"))
 
 
 class Context:

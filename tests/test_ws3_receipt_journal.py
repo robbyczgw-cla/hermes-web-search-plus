@@ -752,7 +752,7 @@ def test_append_is_constant_time_below_the_limits(tmp_path: Path, monkeypatch: p
     monkeypatch.setattr(journal, "_rewrite", no_rewrite)
     for _ in range(20):
         assert journal.append(dict(record, timestamp=time.time())) is True
-    assert len(journal.path.read_text().splitlines()) == 21
+    assert len(journal.path.read_text(encoding="utf-8").splitlines()) == 21
 
 
 def test_full_journal_compacts_with_headroom(tmp_path: Path) -> None:
@@ -761,7 +761,7 @@ def test_full_journal_compacts_with_headroom(tmp_path: Path) -> None:
     record = fixture("receipts.json")["receipts"][0]
     for _ in range(21):
         assert journal.append(dict(record, timestamp=time.time())) is True
-    lines = journal.path.read_text().splitlines()
+    lines = journal.path.read_text(encoding="utf-8").splitlines()
     assert len(lines) == 18  # trimmed to 90 % so the next appends stay O(1)
     assert len(journal.load(limit=100)) == 18
 

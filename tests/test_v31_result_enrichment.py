@@ -225,7 +225,7 @@ def test_single_source_projection_shape_remains_unchanged_for_non_clustered_snip
 
 
 def test_generated_schema_declares_aggregate_provenance_and_typed_enrichment_fields():
-    schema = json.loads((ROOT / "schemas" / "v3" / "response.schema.json").read_text())
+    schema = json.loads((ROOT / "schemas" / "v3" / "response.schema.json").read_text(encoding="utf-8"))
     definitions = schema["$defs"]
 
     assert definitions["ProjectedAggregateProvenanceV31"]["properties"]["separator"] == {

@@ -87,7 +87,7 @@ def test_provider_argparse_choices_stay_in_registry_sync():
 
 
 def test_architecture_auto_allow_examples_match_registry_defaults():
-    text = (ROOT / "docs" / "ARCHITECTURE.md").read_text()
+    text = (ROOT / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
     assert '"brave": false' not in text
     assert '"parallel": false' not in text
     for name in registry.DEFAULT_AUTO_ALLOW:

@@ -877,7 +877,7 @@ def _desktop_settings(config_path: Path) -> Dict[str, Any]:
         yaml_path = config_path.parent.parent / "config.yaml"
         if not yaml_path.is_file():
             return {}
-        data = _read_yaml_mapping(yaml_path.read_text(encoding="utf-8"))
+        data = _read_yaml_mapping(yaml_path.read_text(encoding="utf-8-sig", errors="replace"))
         if not isinstance(data, dict):
             return {}
         plugins = data.get("plugins")
@@ -992,7 +992,7 @@ def load_config() -> Dict[str, Any]:
 
     if config_path.exists():
         try:
-            with open(config_path, encoding="utf-8") as f:
+            with open(config_path, encoding="utf-8-sig") as f:
                 user_config = json.load(f)
             # Checked once here: any file that is not a valid config object is
             # quarantined, so every caller gets a dict and needs no guard.

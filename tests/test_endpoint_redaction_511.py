@@ -39,8 +39,8 @@ def test_searxng_error_does_not_echo_url_or_transport_reason(monkeypatch):
     assert "fixture" not in str(caught.value)
     assert "private-token" not in str(caught.value)
     provider_health.mark_provider_failure("searxng", str(caught.value))
-    assert "fixture" not in provider_health.PROVIDER_HEALTH_FILE.read_text()
-    assert "private-token" not in provider_health.PROVIDER_HEALTH_FILE.read_text()
+    assert "fixture" not in provider_health.PROVIDER_HEALTH_FILE.read_text(encoding="utf-8")
+    assert "private-token" not in provider_health.PROVIDER_HEALTH_FILE.read_text(encoding="utf-8")
 
 
 def test_searxng_metadata_contains_only_origin(monkeypatch):

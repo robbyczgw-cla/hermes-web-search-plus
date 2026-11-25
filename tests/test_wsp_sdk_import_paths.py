@@ -98,7 +98,7 @@ print(json.dumps({
 def _run(tmp_path: Path, bootstrap: str) -> dict:
     proc = subprocess.run(
         [sys.executable, "-I", "-c", bootstrap + CHECKS, str(ROOT)],
-        cwd=tmp_path, capture_output=True, text=True, timeout=120,
+        cwd=tmp_path, capture_output=True, text=True, encoding="utf-8", timeout=120,
         env={"WSP_CACHE_DIR": str(tmp_path / "cache"), "HERMES_HOME": str(tmp_path / "hermes"),
              "WEB_SEARCH_PLUS_CONFIG": str(tmp_path / "config.json"), "PATH": "/usr/bin:/bin"},
     )

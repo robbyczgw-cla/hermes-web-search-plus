@@ -154,7 +154,7 @@ def test_apply_imports_both_sources_atomically_and_second_run_is_noop(tmp_path):
     assert first.action == "apply"
     assert first.backup_id
     backup_dir = backup_root / first.backup_id
-    manifest = json.loads((backup_dir / "manifest.json").read_text())
+    manifest = json.loads((backup_dir / "manifest.json").read_text(encoding="utf-8"))
     assert stat.S_IMODE(backup_root.stat().st_mode) == 0o700
     assert stat.S_IMODE(backup_dir.stat().st_mode) == 0o700
     assert stat.S_IMODE((backup_dir / "manifest.json").stat().st_mode) == 0o600
